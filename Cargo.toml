@@ -1,0 +1,36 @@
+[package]
+name = "prime-chain"
+version = "0.1.0"
+authors = ["Rodolfo Cova @rodaemonic"]
+edition = "2024"
+autobins = false
+
+[dependencies]
+anyhow = "1.0"
+hex = "0.4"
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "sha256", "std"] }
+bincode = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+sled = "0.34"
+tungstenite = "0.21"
+url = "2.5"
+serde_json = "1.0"
+revm = { version = "12", default-features = false, features = ["std"] }
+tiny_http = "0.12"
+thiserror = "1.0"
+rand = "0.8"
+
+# Logging and metrics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+metrics = "0.19"
+metrics-exporter-prometheus = "0.10"
+once_cell = "1.20"
+
+[dev-dependencies]
+tempfile = "3.10"
+rand = "0.8"
+
+[[bin]]
+name = "prime-chain"
+path = "src/bin/prime-chain.rs"
