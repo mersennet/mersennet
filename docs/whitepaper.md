@@ -40,18 +40,15 @@ Each block contains:
 
 ## 2. State Model
 Let the global state be:
-$
-S = (S_{evm}, S_{orders}, S_{bridge})
-$
+$S = (S_{evm}, S_{orders}, S_{bridge})$
+
 Where:
 - $S_{evm}$: account balances, nonces, storage
 - $S_{orders}$: markets, order books, orders, accounts, positions
 - $S_{bridge}$: queues $Q_{orders\to evm}$ and $Q_{evm\to orders}$
 
 The block transition is:
-$
-S_{t+1} = \mathcal{T}(S_t, B_t)
-$
+$S_{t+1} = \mathcal{T}(S_t, B_t)$
 
 ```mermaid
 flowchart TD
@@ -65,20 +62,16 @@ flowchart TD
 
 ## 3. State Root
 State root commits all components:
-$
-R = H(S_{evm}) \oplus H(S_{orders}) \oplus H(S_{bridge})
-$
+$R = H(S_{evm}) \oplus H(S_{orders}) \oplus H(S_{bridge})$
 Where $H(\cdot)$ is a deterministic hash over serialized state items and $\oplus$ is deterministic concatenation + hash.
 
 ## 4. Fee Market (EIP-1559 Style)
 Target gas:
-$
-G_{target} = \frac{G_{limit}}{\gamma}
-$
+$G_{target} = \frac{G_{limit}}{\gamma}$
+
 Base fee update:
-$
-baseFee_{t+1} = baseFee_t \times \left(1 + \frac{G_{used} - G_{target}}{G_{target} \times D}\right)
-$
+$baseFee_{t+1} = baseFee_t \times \left(1 + \frac{G_{used} - G_{target}}{G_{target} \times D}\right)$
+
 Where:
 - $\gamma$ = elasticity multiplier
 - $D$ = max change denominator
@@ -89,45 +82,33 @@ Orders are matched price-time deterministically. For a market $m$:
 - Best ask: min price in ask book
 
 A taker order of size $q$ matches against the opposite book:
-$
-q_{fill} = \min(q_{remaining}, q_{maker})
-$
+$q_{fill} = \min(q_{remaining}, q_{maker})$
+
 Each fill produces a trade record:
-$
-T = (taker, maker, market, side, price, size)
-$
+$T = (taker, maker, market, side, price, size)$
 
 ## 6. Margin and Liquidation
 Let collateral for account $a$ be $C_a$ and position size $p$ at mark price $P$.
 
 **Notional**:
-$
-N = |p| \cdot P
-$
+$N = |p| \cdot P$
+
 **Initial margin requirement**:
-$
-IM = N \cdot \frac{m_{init}}{10{,}000}
-$
+$IM = N \cdot \frac{m_{init}}{10{,}000}$
+
 **Maintenance margin requirement**:
-$
-MM = N \cdot \frac{m_{maint}}{10{,}000}
-$
+$MM = N \cdot \frac{m_{maint}}{10{,}000}$
 
 Account equity $E_a$:
-$
-E_a = C_a + \sum_i (p_i \cdot (P_i - P_{entry,i}))
-$
+$E_a = C_a + \sum_i (p_i \cdot (P_i - P_{entry,i}))$
 
 Liquidation condition:
-$
-E_a < MM
-$
+$E_a < MM$
 
 ## 7. Bridge Queues
 Bridge queues are ordered by nonce:
-$
-Q = [m_1, m_2, \dots, m_n],\quad m_i.nonce < m_{i+1}.nonce
-$
+$Q = [m_1, m_2, \dots, m_n],\quad m_i.nonce < m_{i+1}.nonce$
+
 Each enqueue increments a domain-specific nonce. Dequeue preserves FIFO order.
 
 ```mermaid
@@ -143,9 +124,8 @@ sequenceDiagram
 
 ## 8. Domain Events
 Each block emits a deterministic ordered event list:
-$
-E_t = [e_1, e_2, \dots, e_k]
-$
+$E_t = [e_1, e_2, \dots, e_k]$
+
 Events include:
 - Market added
 - Order submitted/cancelled
@@ -157,16 +137,14 @@ These events are included in the block and can be queried via RPC.
 
 ## 9. Snapshot Sync
 Snapshots are serialized state bundles with a verification hash:
-$
-H_{snapshot} = H(\text{snapshot bytes})
-$
+$H_{snapshot} = H(\text{snapshot bytes})$
+
 Nodes accept a snapshot only if the computed hash matches the header.
 
 ### 9.1 TCP Chunked Transfer
 Snapshots are streamed over TCP with a fixed header:
-$
-	ext{header} = ("PSNP", v, chunk\_size, total\_len, H_{snapshot})
-$
+$ext{header} = ("PSNP", v, chunk\_size, total\_len, H_{snapshot})$
+
 Receivers validate $H_{snapshot}$ after reassembly.
 
 ```mermaid
@@ -182,9 +160,7 @@ sequenceDiagram
 
 ## 10. Node Identity + Peer Store
 Each node persists a local identity key and a peer list for UDP gossip. Identity derives the node address:
-$
-addr = \text{last}_{20}(\text{keccak256}(pubkey))
-$
+$addr = \text{last}_{20}(\text{keccak256}(pubkey))$
 
 ## 11. Health + Operations
 Nodes expose a health endpoint with height and chain ID for monitoring:
@@ -198,27 +174,22 @@ Prime Chain targets a deflationary supply profile through a capped issuance sche
 
 ### 12.1 Supply Cap and Issuance
 Maximum supply is capped at $S_{max}$. New issuance is defined by a halving schedule:
-$
-R_t = \left\lfloor R_0 \cdot 2^{-\left\lfloor \frac{t}{H} \right\rfloor} \right\rfloor
-$
+$R_t = \left\lfloor R_0 \cdot 2^{-\left\lfloor \frac{t}{H} \right\rfloor} \right\rfloor$
+
 where:
 - $R_0$ is the initial block reward
 - $H$ is the halving interval in blocks
 
 Total minted supply at height $t$:
-$
-S_{minted}(t) = \sum_{i=0}^{t} R_i,\quad S_{minted}(t) \le S_{max}
-$
+$S_{minted}(t) = \sum_{i=0}^{t} R_i,\quad S_{minted}(t) \le S_{max}$
 
 ### 12.2 Fee Burning
 Base fees are burned, reducing circulating supply:
-$
-S_{burned}(t) = \sum_{i=0}^{t} baseFee_i \cdot gasUsed_i
-$
+$S_{burned}(t) = \sum_{i=0}^{t} baseFee_i \cdot gasUsed_i$
+
 Net supply change over a window is:
-$
-\Delta S = S_{minted} - S_{burned}
-$
+$\Delta S = S_{minted} - S_{burned}$
+
 Deflation occurs when $S_{burned} > S_{minted}$.
 
 ### 12.3 Economic Security
