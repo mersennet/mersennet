@@ -212,7 +212,7 @@ mod tests {
             gas_limit: 21_000,
             gas_price: U256::from(1u64),
             nonce: 0,
-            chain_id: Some(999),
+            chain_id: Some(7919),
             signature: None,
         }
     }
