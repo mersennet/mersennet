@@ -15,7 +15,7 @@ PUBLIC_NODE=
 SSH_USER=root
 
 # Chain configuration
-CHAIN_ID=999
+CHAIN_ID=7919
 BLOCK_TIME_MS=2000
 
 # Optional: domain for TLS on public RPC (e.g. rpc.primechain.io)

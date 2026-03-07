@@ -211,7 +211,7 @@ fn redb_prime_orders_persistence() {
 fn redb_block_storage_via_engine() {
     use prime_chain::engine::Engine;
     let dir = tempdir().expect("temp dir");
-    let mut engine = Engine::new_with_backend(999, dir.path(), "redb");
+    let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
 
     let alice = Address::from_slice(&[0xCC; 20]);
     engine.fund_account(alice, U256::from(10_000_000u64), 0);
@@ -222,14 +222,14 @@ fn redb_block_storage_via_engine() {
 
     let loaded = engine.evm.state.load_block(1).expect("load").expect("block exists");
     assert_eq!(loaded.number, 1);
-    assert_eq!(loaded.chain_id, 999);
+    assert_eq!(loaded.chain_id, 7919);
 }
 
 #[test]
 fn redb_engine_integration() {
     use prime_chain::engine::Engine;
     let dir = tempdir().expect("temp dir");
-    let mut engine = Engine::new_with_backend(999, dir.path(), "redb");
+    let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
 
     let alice = Address::from_slice(&[0xAA; 20]);
     let bob = Address::from_slice(&[0xBB; 20]);
