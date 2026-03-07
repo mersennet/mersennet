@@ -196,10 +196,14 @@ TECHNOLOGY: WHY WE WIN
    • Deterministic execution = provable fairness
    • No MEV manipulation possible
 
-⚡ Institutional Performance
-   • Sub-second finality (vs. 12s Ethereum)
-   • 10,000+ orders/second throughput
+⚡ Institutional Performance (Measured)
+   • 72,181 EVM TPS | 2.4M CLOB ops/s
+   • ~200ms finality (vs. 12s Ethereum)
    • Low latency (critical for trading)
+
+🔗 CLOB Precompile (0x0100)
+   • Solidity contracts can atomically trade on our order book
+   • Same-transaction EVM ↔ CLOB composability
 
 🔗 EVM Compatibility
    • Full Ethereum ecosystem integration
@@ -315,7 +319,7 @@ Pilot Programs: Q1 2026 | Partnerships: Q2 2026 | Mainnet: Q4 2026
 COMPETITIVE ADVANTAGE
 
 vs. Ethereum:
-  ✅ 12x faster finality (sub-second vs. 12s)
+  ✅ 60x faster finality (~200ms vs. 12s)
   ✅ Native order matching (vs. smart contracts)
   ✅ Deterministic execution (vs. probabilistic)
 
@@ -323,6 +327,15 @@ vs. Solana:
   ✅ EVM compatibility (vs. custom VM)
   ✅ Deterministic matching (vs. none)
   ✅ Better for regulated assets
+
+vs. Hyperliquid:
+  ✅ ATOMIC EVM↔CLOB (vs. async — delayed by seconds, different blocks)
+  ✅ 12x faster CLOB (2.4M vs 200K ops/s)
+  ✅ Same-transaction composability
+
+vs. Monad:
+  ✅ Native CLOB (Monad has parallel EVM ~10K TPS but no CLOB)
+  ✅ Order book trading built-in
 
 vs. L2s (Polygon, Arbitrum):
   ✅ L1 security (vs. L2 dependencies)
@@ -334,7 +347,7 @@ vs. App-Chains (dYdX):
   ✅ EVM composability (vs. none)
   ✅ RWA + Credit support (vs. crypto-only)
 
-Moat: Technical (native matching) + Network (partnerships)
+Moat: Technical (atomic EVM↔CLOB) + Network (partnerships)
 ```
 
 **Design Notes**:
@@ -668,7 +681,7 @@ Status: Pilot programs Q1 2026, Fundraising Q2 2026
 5. **Eye Contact**: Engage with investors, not just slides
 
 ### Key Messages to Emphasize
-1. **"Only L1 with native order matching"** - Repeat this
+1. **"Only L1 with ATOMIC EVM↔CLOB composability"** - Repeat this (Hyperliquid has async)
 2. **"$18.5T market opportunity"** - Massive TAM
 3. **"Standard Chartered, XDC Network partnerships"** - Proven connections
 4. **"Sub-second finality, provable fairness"** - Technical superiority

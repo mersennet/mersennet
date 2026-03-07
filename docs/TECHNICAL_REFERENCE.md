@@ -1,625 +1,1150 @@
-# Prime Chain: Comprehensive Technical Reference
+# Prime Chain — Technical Reference
 
-**Version 1.0**  
-**Last Updated: January 2026**
-
-This document provides exhaustive technical documentation for the Prime Chain codebase, covering architecture, data structures, algorithms, APIs, configuration, and implementation details.
+**Version:** 0.1.0  
+**Authors:** Rodolfo Cova (@rodaemonic)  
+**Rust Edition:** 2024  
+**EVM Target:** Shanghai (SpecId::SHANGHAI)  
+**Chain ID:** 999 (default)
 
 ---
 
 ## Table of Contents
 
-1. [System Overview](#1-system-overview)
-2. [Project Structure](#2-project-structure)
-3. [Dependencies & Build](#3-dependencies--build)
-4. [Core Architecture](#4-core-architecture)
-5. [Execution Engine](#5-execution-engine)
-6. [Consensus Mechanism](#6-consensus-mechanism)
-7. [PrimeOrders Matching Engine](#7-primeorders-matching-engine)
-8. [Bridge System](#8-bridge-system)
-9. [State Management](#9-state-management)
-10. [Mempool](#10-mempool)
-11. [RPC Layer](#11-rpc-layer)
-12. [Network Layer](#12-network-layer)
-13. [Identity & Key Management](#13-identity--key-management)
-14. [Governance](#14-governance)
-15. [Events System](#15-events-system)
-16. [Configuration](#16-configuration)
-17. [Metrics & Observability](#17-metrics--observability)
-18. [CLI & Entry Point](#18-cli--entry-point)
-19. [Testing](#19-testing)
-20. [Appendix: Data Formats](#20-appendix-data-formats)
-21. [Algorithm Specifications](#21-algorithm-specifications)
-22. [RPC Method Reference (Complete)](#22-rpc-method-reference-complete)
-23. [Database Schema (sled)](#23-database-schema-sled)
-24. [Snapshot Protocol (PSNP)](#24-snapshot-protocol-psnp)
-25. [Security Considerations](#25-security-considerations)
-26. [Performance Characteristics](#26-performance-characteristics)
-27. [Environment Variables](#27-environment-variables)
-28. [File I/O Summary](#28-file-io-summary)
+1. [Architecture Overview](#1-architecture-overview)
+2. [Module Map](#2-module-map)
+3. [Engine — Block Production Pipeline](#3-engine--block-production-pipeline)
+4. [Parallel EVM Execution](#4-parallel-evm-execution)
+5. [HotStuff-2 Consensus](#5-hotstuff-2-consensus)
+6. [CometBFT-Style Consensus](#6-cometbft-style-consensus)
+7. [PrimeOrders — CLOB Matching Engine](#7-primeorders--clob-matching-engine)
+8. [CLOB Precompile](#8-clob-precompile)
+9. [Frequent Batch Auctions (FBA)](#9-frequent-batch-auctions-fba)
+10. [Commit-Reveal MEV Protection](#10-commit-reveal-mev-protection)
+11. [Mempool](#11-mempool)
+12. [State & Persistence](#12-state--persistence)
+13. [Networking](#13-networking)
+14. [RPC Interface](#14-rpc-interface)
+15. [Cryptography](#15-cryptography)
+16. [Bridge](#16-bridge)
+17. [Observability](#17-observability)
+18. [Configuration Reference](#18-configuration-reference)
+19. [API Reference](#19-api-reference)
+20. [Deployment Guide](#20-deployment-guide)
+21. [Performance Tuning](#21-performance-tuning)
+22. [Competitive Comparison](#22-competitive-comparison)
+23. [Security Considerations](#23-security-considerations)
+24. [Testing](#24-testing)
 
 ---
 
-## 1. System Overview
+## 1. Architecture Overview
 
-### 1.1 High-Level Architecture
-
-Prime Chain is a Layer 1 blockchain that unifies four primary execution domains under a single consensus layer:
+Prime Chain is a high-performance EVM-compatible blockchain with a native central limit order book (CLOB) embedded at the protocol level as an EVM precompile. It combines parallel transaction execution, two-phase BFT consensus, frequent batch auctions for fair price discovery, and commit-reveal MEV protection into a single vertically-integrated stack.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CONSENSUS LAYER                                      │
-│  Proof-of-Stake │ Finality Rounds (Prevote/Precommit) │ Slashing │ Rewards  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                        │
-        ┌───────────────────────────────┼───────────────────────────────┐
-        │                               │                               │
-┌───────▼────────┐            ┌─────────▼─────────┐            ┌───────▼───────┐
-│  PrimeEVM      │            │  PrimeOrders      │            │  Bridge       │
-│  (revm)        │◄──────────►│  (Matching)       │◄──────────►│  (Queues)     │
-│  EVM Exec      │            │  Order Books      │            │  Cross-Domain │
-└───────┬────────┘            └─────────┬─────────┘            └───────┬───────┘
-        │                               │                               │
-        └───────────────────────────────┼───────────────────────────────┘
-                                        │
-                            ┌───────────▼───────────┐
-                            │  PersistentState      │
-                            │  (sled database)      │
-                            │  accounts, storage,   │
-                            │  prime_orders, bridge │
-                            └───────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CLIENT LAYER                                │
+│   JSON-RPC 2.0 (tiny_http)  ·  eth_* compatibility  ·  CORS       │
+│   primeorders_*  ·  primebridge_*  ·  /health  ·  /metrics        │
+└──────────────────────────┬──────────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────────┐
+│                        ENGINE (engine.rs)                           │
+│  ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌─────────────────┐   │
+│  │ Mempool  │ │   EVM (revm) │ │  Bridge  │ │ Commit-Reveal   │   │
+│  │ pending  │ │  + Precompile│ │ ←→ Queue │ │ Pool            │   │
+│  │ queued   │ │  (CLOB)      │ │          │ │                 │   │
+│  │ basefee  │ │              │ │          │ │                 │   │
+│  └──────────┘ └──────────────┘ └──────────┘ └─────────────────┘   │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │            ParallelExecutor (Block-STM / Grevm)               │ │
+│  │   analyze_dependencies → find_independent_groups → fork+exec  │ │
+│  │   MVCC validate → merge_fork_dbs                              │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────┐  ┌────────────────────────────────┐ │
+│  │   PrimeOrders (CLOB)    │  │   FBA Engine                   │ │
+│  │   BTreeMap order books   │  │   Batch auctions per market    │ │
+│  │   Price-time priority    │  │   Clearing price + pro-rata    │ │
+│  │   GTC / IOC / FOK        │  │                                │ │
+│  └──────────────────────────┘  └────────────────────────────────┘ │
+└──────────────────────────┬──────────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────────┐
+│                      CONSENSUS LAYER                                │
+│  ┌──────────────────────┐   ┌──────────────────────────────────┐   │
+│  │  CometBFT-style      │   │  HotStuff-2                     │   │
+│  │  prevote/precommit   │   │  2-chain commit rule             │   │
+│  │  weighted proposer   │   │  Weighted round-robin leader     │   │
+│  │  slashing + jailing  │   │  QC-based finality               │   │
+│  └──────────────────────┘   └──────────────────────────────────┘   │
+└──────────────────────────┬──────────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────────┐
+│                      NETWORK LAYER                                  │
+│  UDP Gossip (dedup, TTL)  ·  TCP Snapshot Sync  ·  PeerManager     │
+│  Wire formats: WireTx, WireBlock, WireReceipt                      │
+└──────────────────────────┬──────────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────────┐
+│                     STORAGE LAYER                                   │
+│  sled embedded DB  ·  Binary Merkle tree  ·  Incremental commits   │
+│  State pruning  ·  Merkle proofs  ·  Snapshot export/import        │
+│  Trees: accounts, storage, prime_orders, bridge_*, blocks, pruning │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 Design Principles
+### Codebase Statistics
 
-| Principle | Implementation |
-|-----------|----------------|
-| **Determinism** | All state transitions produce identical outputs for identical inputs |
-| **Atomicity** | EVM, PrimeOrders, and Bridge operations commit atomically per block |
-| **Composability** | Cross-domain bridge enables EVM ↔ PrimeOrders message passing |
-| **Security** | Economic security via staking, slashing, and validator rotation |
-| **Performance** | Sub-second finality, high throughput, optimized data structures |
-| **Transparency** | All state transitions and events are publicly verifiable |
+| Category | Files | Lines (approx.) |
+|----------|-------|-----------------|
+| Core sources (`src/`) | 28 | ~10,600 |
+| Tests (`tests/`) | 10 | ~2,500 |
+| Benchmarks (`benches/`) | 1 | ~200 |
+| **Total** | **39** | **~13,300** |
 
-### 1.3 Technology Stack
+### Key Dependencies
 
-| Component | Technology |
-|-----------|------------|
-| Language | Rust 2024 Edition |
-| EVM | revm v12 (Shanghai spec) |
-| Database | sled v0.34 (embedded key-value) |
-| Cryptography | k256 v0.13 (secp256k1 ECDSA) |
-| Serialization | serde, bincode, serde_json |
-| HTTP/RPC | tiny_http v0.12 |
-| Logging | tracing, tracing-subscriber |
-| Metrics | metrics v0.19, metrics-exporter-prometheus v0.10 |
-| Networking | std::net (TcpListener, UdpSocket), tungstenite (WebSocket) |
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| `revm` | 12 | EVM execution engine (Shanghai spec) |
+| `sled` | 0.34 | Embedded persistent key-value store |
+| `k256` | 0.13 | secp256k1 ECDSA signatures |
+| `tiny_http` | 0.12 | Lightweight HTTP server for RPC |
+| `metrics` / `metrics-exporter-prometheus` | 0.19 / 0.10 | Prometheus metrics |
+| `tracing` / `tracing-subscriber` | 0.1 / 0.3 | Structured logging |
+| `serde` / `serde_json` / `bincode` | 1.0 / 1.0 / 1.3 | Serialization |
 
 ---
 
-## 2. Project Structure
-
-### 2.1 Directory Layout
+## 2. Module Map
 
 ```
-prime-chain/
-├── Cargo.toml              # Package manifest, dependencies
-├── Cargo.lock              # Locked dependency versions
-├── src/
-│   ├── lib.rs              # Library root, module exports
-│   ├── main.rs             # Minimal entrypoint (redirects to bin)
-│   ├── errors.rs           # Error types (PrimeOrdersError, RpcInputError)
-│   ├── bin/
-│   │   └── prime-chain.rs  # CLI binary, main application logic
-│   ├── config/
-│   │   └── config.rs       # Configuration structs, parsing
-│   ├── core/
-│   │   ├── engine.rs       # Main Engine, block execution
-│   │   ├── consensus.rs    # PoS consensus, finality, slashing
-│   │   ├── prime_orders.rs # Order matching, risk engine
-│   │   ├── mempool.rs      # Transaction pool
-│   │   ├── bridge.rs       # Cross-domain message queues
-│   │   ├── state.rs        # Persistent state, snapshots
-│   │   └── events.rs       # Domain events
-│   ├── governance/
-│   │   └── governance.rs   # On-chain governance
-│   ├── identity/
-│   │   └── identity.rs     # Node identity, key management
-│   ├── network/
-│   │   ├── network.rs      # NetworkSim (consensus message simulation)
-│   │   ├── net_transport.rs# UDP gossip, TCP sync, snapshots
-│   │   └── p2p.rs          # P2P network simulation
-│   ├── rpc/
-│   │   ├── rpc.rs          # JSON-RPC server, request handling
-│   │   └── rpc_router.rs   # Method routing, parameter parsing
-│   ├── prometheus/
-│   │   └── prometheus.rs   # Prometheus metrics initialization
-│   └── metrics/
-│       └── metric.rs       # Metrics module (re-exports prometheus)
-├── tests/
-│   ├── consensus_sim.rs    # Consensus simulation tests
-│   ├── fuzz_mempool.rs     # Mempool fuzzing
-│   ├── integration_block.rs# Block execution integration
-│   ├── prime_orders_integration.rs
-│   └── state_tests.rs      # State persistence tests
-└── docs/                   # Documentation
-```
-
-### 2.2 Module Dependency Graph
-
-```
-lib.rs
-  ├── consensus
-  ├── bridge
-  ├── config
-  ├── engine ─────┬── consensus, bridge, events, errors, mempool
-  │               ├── prime_orders, state, network
-  │               └── revm
-  ├── identity
-  ├── errors
-  ├── events
-  ├── governance
-  ├── mempool
-  ├── net_transport
-  ├── network
-  ├── p2p ──────────────── engine, network
-  ├── prometheus
-  ├── rpc_router ───────── engine, bridge, events, prime_orders, errors
-  ├── prime_orders
-  ├── rpc ───────────────── rpc_router, prometheus, engine
-  └── state
+src/
+├── lib.rs                          # Module re-exports
+├── bin/prime-chain.rs              # Node entry point (CLI)
+├── core/
+│   ├── engine.rs          (1505)   # Block production, tx execution, subsystem orchestration
+│   ├── consensus.rs        (850)   # CometBFT-style prevote/precommit/commit
+│   ├── hotstuff2.rs        (760)   # HotStuff-2 protocol state machine
+│   ├── prime_orders.rs     (800)   # CLOB matching engine
+│   ├── precompiles.rs      (292)   # EVM precompile bridge to CLOB
+│   ├── precompile_abi.rs   (109)   # ABI encoding/decoding, selectors, gas costs
+│   ├── parallel.rs         (589)   # Block-STM parallel EVM execution
+│   ├── fba.rs              (392)   # Frequent batch auctions
+│   ├── commit_reveal.rs    (129)   # Commit-reveal MEV protection
+│   ├── state.rs            (958)   # Persistent state, Merkle tree, pruning
+│   ├── mempool.rs          (512)   # Multi-pool transaction management
+│   ├── bridge.rs                   # Cross-domain bridge queues
+│   └── events.rs                   # Domain event types
+├── network/
+│   ├── net_transport.rs            # UDP gossip + TCP sync transport
+│   ├── network.rs                  # NetworkSim (vote simulation)
+│   └── p2p.rs                      # P2P node, wire types, NetworkNode
+├── rpc/
+│   ├── rpc.rs                      # JSON-RPC 2.0 server
+│   └── rpc_router.rs               # Method dispatch router
+├── crypto/
+│   └── mod.rs                      # ECDSA signing, recovery, key generation
+├── config/
+│   └── config.rs                   # AppConfig, JSON config, defaults
+├── prometheus/
+│   └── prometheus.rs               # Prometheus exporter, metric registry
+├── errors.rs                       # Error types
+├── metrics/
+│   └── metric.rs                   # Metric helpers
+├── identity/
+│   └── identity.rs                 # Node identity
+└── governance/
+    └── governance.rs               # Governance module
 ```
 
 ---
 
-## 3. Dependencies & Build
+## 3. Engine — Block Production Pipeline
 
-### 3.1 Cargo.toml Dependencies
+**File:** `src/core/engine.rs` (~1505 lines)
 
-```toml
-[dependencies]
-anyhow = "1.0"           # Error handling
-hex = "0.4"              # Hex encoding/decoding
-k256 = "0.13"            # ECDSA (secp256k1)
-bincode = "1.3"          # Binary serialization
-serde = "1.0"            # Serialization
-sled = "0.34"            # Embedded database
-tungstenite = "0.21"     # WebSocket
-url = "2.5"              # URL parsing
-serde_json = "1.0"       # JSON
-revm = "12"              # EVM implementation
-tiny_http = "0.12"       # HTTP server
-thiserror = "1.0"        # Error derives
-rand = "0.8"             # Randomness
-tracing = "0.1"          # Logging
-tracing-subscriber = "0.3"
-metrics = "0.19"         # Metrics
-metrics-exporter-prometheus = "0.10"
-once_cell = "1.20"       # Lazy statics
-```
+The `Engine` struct is the central orchestrator that owns all subsystems and drives the block production lifecycle.
 
-### 3.2 Build Commands
-
-```bash
-# Debug build
-cargo build
-
-# Release build (optimized)
-cargo build --release
-
-# Run binary
-cargo run --bin prime-chain
-
-# Run with arguments
-cargo run --bin prime-chain -- --config config.json --rpc
-
-# Run tests
-cargo test
-
-# Run specific test
-cargo test prime_orders_limit_matching
-```
-
-### 3.3 Cargo Features
-
-The project uses default features. revm is configured with `default-features = false` and `features = ["std"]` for minimal footprint.
-
----
-
-## 4. Core Architecture
-
-### 4.1 Engine Structure
-
-The `Engine` struct (`src/core/engine.rs`) is the central coordinator:
+### Engine Struct
 
 ```rust
 pub struct Engine {
-    pub chain_id: u64,
-    pub block_number: u64,
-    pub base_fee: U256,
-    pub coinbase: Address,
-    pub gas_limit_per_block: u64,
-    pub spec_id: SpecId,                    // Shanghai
-    pub consensus: ConsensusEngine,
-    pub fee_max_change_denominator: u64,
-    pub fee_elasticity_multiplier: u64,
-    pub fee_target_gas: u64,
-    pub evm: EvmEngine,
-    pub chain: Vec<Block>,
-    pub orders: OrdersEngine,
-    pub bridge: BridgeEngine,
-    pub pending_events: Vec<DomainEvent>,
-    mempool: Mempool,
+    pub chain_id: u64,                  // Default: 999
+    pub block_number: u64,              // Next block to produce
+    pub base_fee: U256,                 // EIP-1559 base fee
+    pub coinbase: Address,              // Block reward recipient
+    pub gas_limit_per_block: u64,       // Default: 30,000,000
+    pub spec_id: SpecId,                // SHANGHAI
+    pub consensus: ConsensusEngine,     // CometBFT + HotStuff-2
+    pub evm: EvmEngine,                // State DB + InMemoryDB
+    pub orders: OrdersEngine,           // CLOB state
+    pub bridge: BridgeEngine,           // Cross-domain message queues
+    pub fba_engine: FBAEngine,          // Batch auction engine
+    pub commit_reveal: CommitRevealPool,// MEV protection
+    mempool: Mempool,                   // Transaction pool
+    // ...
 }
 ```
 
-### 4.2 Sub-Engine Types
+### Block Production Flow (`execute_block`)
 
-**EvmEngine:**
+```
+┌─────────────────────────────────────────────────────┐
+│ 1. Set CLOB precompile context                      │
+│    set_prime_orders_context(Arc<Mutex<PrimeOrders>>) │
+├─────────────────────────────────────────────────────┤
+│ 2. Drain mempool by gas-price priority              │
+│    - Sort senders by highest ready gas price        │
+│    - Check gas limit budget                         │
+│    - Execute tx via revm (execute_tx)               │
+│    - Track nonces, accumulate gas_used              │
+│    - Loop until no more progress                    │
+├─────────────────────────────────────────────────────┤
+│ 3. Clear CLOB precompile context                    │
+│    clear_prime_orders_context()                     │
+├─────────────────────────────────────────────────────┤
+│ 4. Compute block hash                               │
+│    keccak256(number ‖ chain_id ‖ gas_limit ‖        │
+│              gas_used ‖ base_fee ‖ coinbase ‖       │
+│              tx_count)                              │
+├─────────────────────────────────────────────────────┤
+│ 5. Consensus finalization                           │
+│    - apply_pending_changes (stake/unbond)           │
+│    - run_finality_rounds (prevote/precommit x 2)    │
+│    - Process slashing evidence                      │
+│    - finalize() → weighted proposer, rewards        │
+│    - process_unbonding()                            │
+│    - apply_pending_slashes()                        │
+├─────────────────────────────────────────────────────┤
+│ 6. Apply rewards to validator accounts              │
+├─────────────────────────────────────────────────────┤
+│ 7. Commit state                                     │
+│    commit_state(evm_db, prime_orders, bridge, h)    │
+│    → writes dirty accounts to sled                  │
+│    → serializes CLOB + bridge state                 │
+│    → computes Merkle state_root                     │
+├─────────────────────────────────────────────────────┤
+│ 8. Store block to sled, emit metrics                │
+├─────────────────────────────────────────────────────┤
+│ 9. Update EIP-1559 base fee                         │
+│    next_base_fee(gas_used)                          │
+│    promote/demote mempool txs                       │
+├─────────────────────────────────────────────────────┤
+│ 10. Increment block_number                          │
+└─────────────────────────────────────────────────────┘
+```
+
+### EIP-1559 Base Fee Update
+
+The `next_base_fee` function implements the standard EIP-1559 algorithm:
+
+- **Target gas:** `gas_limit_per_block / fee_elasticity_multiplier` (default: 15M)
+- **Max change denominator:** 8 (default)
+- If `gas_used > target`: base fee increases proportionally
+- If `gas_used < target`: base fee decreases proportionally
+- Minimum base fee: 1 wei
+
+### Transaction Execution (`execute_tx`)
+
+Each transaction is executed through `revm` with the PrimeOrders precompile registered:
+
 ```rust
-pub struct EvmEngine {
-    pub state: PersistentState,  // sled database handle
-    pub db: InMemoryDB,          // revm in-memory database
-}
+let mut evm = Evm::builder()
+    .with_db(self.evm.db.clone())
+    .with_spec_id(self.spec_id)
+    .with_env(Box::new(env))
+    .append_handler_register(precompiles::register_prime_orders_precompile)
+    .build();
+
+let result = evm.transact_commit()?;
 ```
 
-**ConsensusEngine:**
-```rust
-pub struct ConsensusEngine {
-    pub inner: Consensus,        // Validators, slashing, rewards
-    pub network: NetworkSim,     // Consensus message simulation
-}
-```
+Post-execution, the DB state is swapped back and dirty addresses are tracked for incremental persistence.
 
-**OrdersEngine:**
-```rust
-pub struct OrdersEngine {
-    pub state: PrimeOrdersState, // Markets, orders, positions
-}
-```
-
-**BridgeEngine:**
-```rust
-pub struct BridgeEngine {
-    pub orders_to_evm: BridgeQueue,
-    pub evm_to_orders: BridgeQueue,
-}
-```
-
-### 4.3 Block Execution Flow
+### Transaction Validation Pipeline
 
 ```
-1. Transaction Selection
-   - Get senders from mempool
-   - Sort by fee (descending)
-   - For each sender: select tx with expected nonce
-   - Stop when block gas limit reached
-
-2. Transaction Execution Loop
-   - Execute each selected tx via revm
-   - Accumulate gas_used, receipts
-   - Update nonce cache
-
-3. Block Hash Computation
-   - Hash: number, chain_id, gas_limit, gas_used, base_fee, coinbase, tx_count
-
-4. Consensus Finalization
-   - Apply pending validator changes
-   - Run finality rounds (prevote, precommit)
-   - Detect slashing evidence
-   - Finalize block
-   - Process unbonding
-   - Apply pending slashes
-
-5. Reward Distribution
-   - Calculate rewards per validator
-   - Apply to EVM account balances
-
-6. State Commit
-   - Write EVM state to sled
-   - Commit PrimeOrders state
-   - Commit bridge queues
-   - Compute state root
-
-7. Block Assembly
-   - Dequeue bridge messages
-   - Take pending events
-   - Create Block struct
-   - Push to chain
-
-8. Post-Execution
-   - Update base fee (EIP-1559)
-   - Increment block_number
-   - Emit metrics
+submit_tx(tx)
+  │
+  ├─ validate_tx_basic()
+  │    ├─ gas_limit ≤ block gas limit
+  │    ├─ chain_id matches (if present)
+  │    └─ verify_tx_signature() → ECDSA recovery
+  │
+  ├─ mempool.validate()
+  │    ├─ nonce ≥ account nonce
+  │    ├─ balance ≥ gas_cost + value
+  │    └─ gas_price ≥ base_fee
+  │
+  └─ mempool.insert() → pending / queued / base_fee_pool
 ```
 
 ---
 
-## 5. Execution Engine
+## 4. Parallel EVM Execution
 
-### 5.1 Transaction Structure
+**File:** `src/core/parallel.rs` (589 lines)
+
+Implements optimistic parallel transaction execution following the Block-STM / Grevm pattern. Achieves ~6x speedup on 8 cores for workloads with independent transactions.
+
+### Algorithm
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 1. ANALYZE: Static read/write set analysis per tx            │
+│    - reads:  {tx.from, tx.to}                                │
+│    - writes: {tx.from, tx.to}                                │
+│    - Coinbase excluded (would collapse all groups)           │
+├──────────────────────────────────────────────────────────────┤
+│ 2. GROUP: Union-Find over conflicting addresses              │
+│    - Build write_map: address → [tx indices]                 │
+│    - Union all writers to same address                       │
+│    - Union readers with writers of same address              │
+│    - Extract disjoint groups                                 │
+├──────────────────────────────────────────────────────────────┤
+│ 3. EXECUTE: std::thread::scope, one thread per group         │
+│    - Fork InMemoryDB per group                               │
+│    - Execute txs sequentially within group                   │
+│    - Record MVCC writes: (address, tx_index) → AccountInfo   │
+├──────────────────────────────────────────────────────────────┤
+│ 4. VALIDATE: MVCC conflict detection                         │
+│    - For each tx's read set, verify no lower-indexed tx      │
+│      in another group modified the same address              │
+│    - On conflict → sequential fallback                       │
+├──────────────────────────────────────────────────────────────┤
+│ 5. MERGE: Combine forked DBs                                 │
+│    - Each group's dirty accounts → merged DB (disjoint)      │
+│    - Coinbase: accumulate balance deltas across groups        │
+│      merged_coinbase = base + Σ(group_coinbase - base)       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Fallback Conditions
+
+Sequential execution is used when:
+- Transaction count < `PARALLEL_THRESHOLD` (8)
+- Union-find produces only 1 group (all txs are dependent)
+- MVCC validation detects a conflict
+
+### Key Structs
+
+| Struct | Purpose |
+|--------|---------|
+| `ParallelExecutor` | Top-level executor with `num_threads` and `max_retries` |
+| `TxAccessSet` | Per-tx `reads: HashSet<Address>` and `writes: HashSet<Address>` |
+| `MultiVersionMemory` | MVCC store: `HashMap<Address, BTreeMap<usize, AccountInfo>>` |
+| `ParallelExecutionResult` | Results vec, merged DB, dirty addresses set |
+| `UnionFind` | Disjoint-set with path compression and union-by-rank |
+
+### Integration
+
+The engine's `execute_block_parallel()` method collects transactions from the mempool using the same priority ordering as `execute_block()`, then delegates to `ParallelExecutor::execute()`.
 
 ```rust
-pub struct Transaction {
-    pub from: Address,
-    pub to: Option<Address>,      // None = contract creation
-    pub value: U256,
-    pub data: Bytes,
-    pub gas_limit: u64,
-    pub gas_price: U256,
-    pub nonce: u64,
-    pub chain_id: Option<u64>,
-}
+let num_threads = std::thread::available_parallelism()
+    .map(|n| n.get())
+    .unwrap_or(4);
+let executor = ParallelExecutor::new(num_threads, 3);
+let par_result = executor.execute(&collected_txs, &self.evm.db, ...);
 ```
-
-### 5.2 Transaction Validation
-
-**Basic Validation (`validate_tx_basic`):**
-- `gas_limit <= block_gas_limit`
-- `chain_id` matches (if provided)
-
-**State Validation (`validate_tx_state`):**
-- `nonce >= account.nonce`
-- `gas_price >= base_fee`
-- `balance >= gas_cost + value` where `gas_cost = gas_limit * gas_price`
-
-### 5.3 Transaction Execution
-
-Uses revm's `Evm::builder()`:
-- **Env**: block number, coinbase, gas limit, base fee
-- **Tx**: caller, gas limit, gas price, nonce, value, data
-- **TransactTo**: `TxKind::Call(to)` or `TxKind::Create`
-
-Execution result mapped to `TxExecution`:
-- Success: gas_used, output, created_address, logs
-- Revert: gas_used, output
-- Halt: gas_used
-
-### 5.4 Block Hash Computation
-
-```rust
-fn compute_block_hash(
-    number, chain_id, gas_limit, gas_used,
-    base_fee, coinbase, tx_count
-) -> B256
-```
-
-Payload: 8+8+8+8+32+20+8 bytes, Keccak-256 hashed.
-
-### 5.5 Base Fee Update (EIP-1559)
-
-```
-target = gas_limit / elasticity_multiplier
-if gas_used == target: base_fee unchanged
-if gas_used > target:
-  delta = gas_used - target
-  fee_delta = base_fee * delta / target / max_change_denominator
-  base_fee = base_fee + fee_delta
-if gas_used < target:
-  delta = target - gas_used
-  fee_delta = base_fee * delta / target / max_change_denominator
-  base_fee = base_fee - fee_delta
-base_fee = max(base_fee, 1)
-```
-
-### 5.6 ABI Utilities
-
-```rust
-pub mod abi {
-    pub fn selector(signature: &str) -> [u8; 4]
-    pub fn decode_u64(output: &Bytes) -> Option<u64>
-}
-```
-
-Selector: Keccak-256(signature)[0..4]
 
 ---
 
-## 6. Consensus Mechanism
+## 5. HotStuff-2 Consensus
 
-### 6.1 Data Structures
+**File:** `src/core/hotstuff2.rs` (760 lines)
 
-**Validator:**
+Implements the HotStuff-2 protocol — a linear-communication BFT consensus with a **2-chain commit rule**, reducing the original HotStuff's 3-chain requirement to 2 consecutive certified rounds.
+
+### Data Structures
+
 ```rust
-pub struct Validator {
-    pub address: Address,
-    pub stake: U256,
-}
-```
-
-**Vote:**
-```rust
-pub struct Vote {
-    pub validator: Address,
+pub struct QuorumCertificate {
     pub block_hash: B256,
-    pub stake: U256,
-}
-```
-
-**Finalization:**
-```rust
-pub struct Finalization {
-    pub block_hash: B256,
-    pub proposer: Address,
-    pub total_stake: U256,
-    pub committed_stake: U256,
-    pub threshold: U256,
-    pub votes: Vec<Vote>,
-    pub finalized: bool,
-    pub rewards: Vec<Reward>,
-    pub total_reward: U256,
-    pub burned_reward: U256,
-    pub scheduled_reward: U256,
-    pub remaining_supply: U256,
-}
-```
-
-**SlashingEvidence:**
-```rust
-pub struct SlashingEvidence {
-    pub validator: Address,
-    pub kind: EvidenceKind,    // DoubleSign | PrecommitTimeout
     pub height: u64,
     pub round: u64,
-    pub rounds_missed: u64,
+    pub signers: Vec<Address>,
+    pub aggregate_stake: U256,
+}
+
+pub enum HotStuffMessage {
+    Propose(Proposal),
+    Vote { block_hash, height, round, voter, voter_stake },
+    NewView { round, high_qc, sender },
+    Timeout { round, high_qc, sender },
 }
 ```
 
-### 6.2 Proposer Selection
+### State Machine
 
 ```rust
-proposer(height) = validators[height % validators.len()]
+pub struct HotStuff2 {
+    pub address: Address,
+    pub validators: Vec<Validator>,
+    pub current_round: u64,
+    pub current_height: u64,
+    pub locked_qc: Option<QuorumCertificate>,    // Safety lock
+    pub high_qc: Option<QuorumCertificate>,      // Highest known QC
+    pub last_committed_round: u64,
+    pub pending_votes: HashMap<(u64, u64), Vec<(Address, U256)>>,
+    pub pending_timeouts: HashMap<u64, Vec<(Address, Option<QC>)>>,
+    pub last_voted_round: u64,
+    pub tombstoned: HashSet<Address>,
+    pub round_timeout_base_ms: u64,              // Default: 3000
+    pub round_timeout_delta_ms: u64,             // Default: 500
+}
 ```
 
-Round-robin rotation.
-
-### 6.3 Finality Threshold
+### Protocol Flow
 
 ```
-threshold = (total_stake * 2 / 3) + 1
+Round r:
+  Leader ─── Propose(block, parent_qc, justify) ──→ All validators
+  
+  Validators:
+    1. Verify leader for round
+    2. Check is_safe_to_vote(proposal)
+       - round > last_voted_round
+       - justify.round ≥ locked_qc.round (or extends locked block)
+    3. Send Vote(block_hash, round, voter, stake)
+  
+  Leader collects votes:
+    - on_vote() accumulates (voter, stake) per (height, round)
+    - When aggregate_stake ≥ threshold → form QC
+    - threshold = ⌊2 * total_stake / 3⌋ + 1
+  
+  try_commit(qc):
+    If locked_qc.round == r AND qc.round == r+1:
+      → COMMIT block at round r  (2-chain rule)
+    Always advance locked_qc to higher QC
+
+Timeout:
+  on_timeout() → broadcast Timeout message
+  on_timeout_msg() → collect timeouts
+  If quorum of timeouts → advance_round via NewView
+  Timeout duration = base_ms + round * delta_ms
 ```
 
-Block finalized when prevote_stake >= threshold AND precommit_stake >= threshold.
+### Leader Election
 
-### 6.4 Finality Rounds Algorithm
+Deterministic weighted selection:
 
-For each round (0..rounds):
-1. Validators broadcast prevote (except miss_prevote set)
-2. Drain prevotes from network, detect double-sign
-3. Validators broadcast precommit (except miss_precommit set)
-4. Drain precommits, detect double-sign
-5. Validators in prevote but not precommit → timeout evidence
-6. If prevote_stake >= threshold AND precommit_stake >= threshold → finalized, break
-
-### 6.5 Slashing Calculation
-
-```
-base_bps = DoubleSign ? 500 : 100
-escalated = base_bps + (offenses * step_bps) + (rounds_missed * step_bps)
-bps = min(escalated, max_escalation_bps)
-slash = stake * bps / 10000
+```rust
+pub fn leader_for_round(&self, round: u64) -> Address {
+    let total_weight = Σ(eligible validators' stake);
+    let target = round % total_weight;
+    // Walk through validators accumulating stake until target
+}
 ```
 
-### 6.6 Reward Distribution
+### Safety Invariants
 
-```
-reward_per_validator = total_reward * validator_stake / total_stake
-```
+1. **No equivocation:** A validator never votes twice for the same round (`last_voted_round` monotonically increases)
+2. **Lock-based safety:** Votes require `justify.round ≥ locked_qc.round` or the proposal must directly extend the locked block
+3. **Commit safety:** Commits only fire on consecutive round QCs (the 2-chain rule)
 
-Capped by remaining supply. Burned = scheduled - distributed.
+### Garbage Collection
 
-### 6.7 Unbonding
-
-- Unbond queues amount with unlock_height = current + unbonding_period
-- Each block: release entries where height >= unlock_height
+On `advance_round(new_round)`:
+- `pending_votes` retains only entries where `round ≥ new_round - 2`
+- `pending_timeouts` retains only entries where `round ≥ new_round - 2`
 
 ---
 
-## 7. PrimeOrders Matching Engine
+## 6. CometBFT-Style Consensus
 
-### 7.1 Data Structures
+**File:** `src/core/consensus.rs` (~850 lines)
 
-**Market:**
-```rust
-pub struct Market {
-    pub id: MarketId,
-    pub symbol: String,
-    pub tick_size: U256,
-    pub lot_size: U256,
-    pub last_price: U256,
-}
+A CometBFT-inspired prevote/precommit consensus with validator set management, slashing with escalation, jailing, tombstoning, and token economics.
+
+### Finality Rounds
+
+Each block runs up to `N` finality rounds (default: 2):
+
+```
+For each round:
+  1. PREVOTE:  Eligible validators broadcast prevotes
+  2. Collect prevotes; detect double-signs
+  3. If prevote_stake ≥ 2/3+1 → lock on block (PoLC)
+  4. PRECOMMIT: Eligible validators broadcast precommits
+  5. Collect precommits; detect timeouts
+  6. If prevote_stake ≥ threshold AND precommit_stake ≥ threshold → FINALIZED
+  7. If finalized → unlock, break
 ```
 
-**Order:**
-```rust
-pub struct Order {
-    pub id: OrderId,
-    pub owner: Address,
-    pub market: MarketId,
-    pub side: Side,           // Buy | Sell
-    pub price: U256,
-    pub size: U256,
-    pub tif: TimeInForce,     // Gtc | Ioc | Fok
-}
+### Slashing
+
+| Evidence Type | Base BPS | Default |
+|---------------|----------|---------|
+| Double-sign | `double_sign_bps` | 500 (5%) |
+| Precommit timeout | `timeout_bps` | 100 (1%) |
+
+**Escalation formula:**
+
+```
+effective_bps = base_bps
+    + escalation_step_bps × offense_count
+    + escalation_step_bps × (rounds_missed - 1)
+effective_bps = min(effective_bps, max_escalation_bps)
 ```
 
-**OrderBook:**
+Slashing draws from unbonding entries first, then active stake.
+
+### Jailing & Tombstoning
+
+- **Jailing:** Validator excluded from consensus until `jailed_until` height
+- **Tombstoning:** Permanent exclusion (cannot rejoin); triggered by double-sign evidence
+- **Unjail:** Requires jail period expiry and no tombstone
+
+### Weighted Proposer Selection
+
+CometBFT-style weighted round-robin using `proposer_priorities`:
+
+```
+For each validator:
+  priority += stake
+Winner = max(priority)
+winner.priority -= total_voting_stake
+```
+
+New validators receive a penalty: `-(total_voting_stake + total_voting_stake / 8)` to prevent immediate selection.
+
+### Token Economics
+
+- **Halving:** `reward_per_block(height) = initial_reward / 2^(height / halving_interval)`
+- **Distribution:** Pro-rata by stake
+- **Burn:** `burned = scheduled_reward - Σ(distributed_rewards)` (rounding dust)
+- **Supply cap:** Rewards capped at `remaining_supply = max_supply - total_minted`
+- **Defaults:** 42M max supply (18 decimals), 100 tokens/block initial reward, 4.2M block halving interval
+
+---
+
+## 7. PrimeOrders — CLOB Matching Engine
+
+**File:** `src/core/prime_orders.rs` (~800 lines)
+
+A full central limit order book with price-time priority matching, margin validation, insurance fund, auto-deleveraging, and market circuit breakers.
+
+### Data Model
+
 ```rust
+pub struct PrimeOrdersState {
+    pub next_order_id: u64,
+    pub markets: HashMap<MarketId, Market>,
+    pub orders: HashMap<OrderId, Order>,
+    pub accounts: HashMap<Address, AccountState>,
+    pub books: HashMap<MarketId, OrderBook>,
+    pub initial_margin_bps: u64,
+    pub maintenance_margin_bps: u64,
+    pub insurance_fund: U256,
+    pub insurance_contribution_rate_bps: u64,
+}
+
 pub struct OrderBook {
-    pub bids: BTreeMap<U256, VecDeque<OrderId>>,  // price -> order queue
-    pub asks: BTreeMap<U256, VecDeque<OrderId>>,
+    pub bids: BTreeMap<U256, VecDeque<OrderId>>,  // Price → FIFO queue
+    pub asks: BTreeMap<U256, VecDeque<OrderId>>,   // Price → FIFO queue
 }
 ```
 
-**Position:**
-```rust
-pub struct Position {
-    pub size: i128,           // Long positive, short negative
-    pub entry_price: U256,
-    pub realized_pnl: i128,
-}
+### Order Types
+
+| Time-in-Force | Behavior |
+|---------------|----------|
+| **GTC** (Good-Til-Cancelled) | Rests on book if not fully filled |
+| **IOC** (Immediate-or-Cancel) | Fills what it can, cancels remainder |
+| **FOK** (Fill-or-Kill) | Rejected if full liquidity unavailable |
+
+### Matching Algorithm (`submit_order`)
+
+```
+1. Validate market exists and is Active
+2. Validate order size > 0
+3. Check initial margin requirement
+4. For FOK: verify available_liquidity ≥ size
+5. Collect opposing price levels:
+   - Buy order  → matching_asks (asks ≤ limit price)
+   - Sell order → matching_bids (bids ≥ limit price)
+6. For each level (price-time priority):
+   a. For each resting order in FIFO queue:
+      - Compute fill = min(remaining, maker.size)
+      - Validate fill margin for both taker and maker
+      - Apply fill: update positions, maker order size
+      - Compute insurance fee: notional × insurance_rate_bps / 10,000
+      - Record Trade
+      - Remove fully-filled maker orders
+7. Clean empty price levels
+8. If GTC and remaining > 0: place_order (rest on book)
+9. Return OrderOutcome { order_id, filled, remaining, trades }
 ```
 
-### 7.2 Matching Algorithm (submit_order)
+### VWAP Entry Price
 
-1. Validate: market exists, size > 0
-2. Initial margin check (ensure_initial_margin)
-3. FOK: check available_liquidity, reject if not fillable
-4. Get matching price levels:
-   - Buy: matching_asks(market, limit_price)
-   - Sell: matching_bids(market, limit_price)
-5. Iterate levels, match against opposite book
-6. For each fill: apply_fill (update positions, last_price)
-7. Remove fully filled orders from book
-8. If remaining > 0 and GTC: place_order (add to book)
-9. Return OrderOutcome (order_id?, filled, remaining, trades)
+When a position increases in the same direction, entry price is updated via volume-weighted average:
 
-### 7.3 Price-Time Priority
-
-- Bids: sorted descending (highest first)
-- Asks: sorted ascending (lowest first)
-- Within price level: VecDeque (FIFO)
-
-### 7.4 Margin & Liquidation
-
-**Initial Margin:**
 ```
-required = notional * initial_margin_bps / 10000
+new_entry = (|old_size| × old_entry + |delta| × fill_price) / (|old_size| + |delta|)
 ```
 
-**Maintenance Margin:**
-```
-required = sum over positions of (|size| * mark_price * maintenance_bps / 10000)
-```
+When reducing or flipping a position, realized PnL is computed against the entry price.
 
-**Liquidation:** equity < maintenance_margin
-- Cancel all open orders
-- Clear positions
-- Collateral remains
+### Margin System
 
-### 7.5 Error Types
+| Parameter | Purpose |
+|-----------|---------|
+| `initial_margin_bps` | Required collateral to open a position |
+| `maintenance_margin_bps` | Minimum equity to avoid liquidation |
 
-- `UnknownMarket`
-- `InvalidSize` (zero)
-- `FokNotFillable`
-- `InsufficientCollateral`
+**Liquidation check:** `account_equity < maintenance_margin_required`
+
+Where:
+- `equity = collateral + Σ(position_size × (mark_price - entry_price))`
+- `maintenance_required = Σ(|position_size| × mark_price × maintenance_bps / 10,000)`
+
+### Auto-Deleveraging (ADL)
+
+When the insurance fund cannot cover a liquidation deficit:
+
+1. Find all accounts with profitable positions in the same market
+2. Sort by PnL-per-unit (highest first)
+3. Close positions pro-rata against profitable counterparties until deficit covered
+
+### Market Controls
+
+- `halt_market(id)` — Sets status to `Halted`, blocks new orders
+- `resume_market(id)` — Sets status to `Active`
+- `MarketStatus::SettleOnly` — Settle-only mode
 
 ---
 
-## 8. Bridge System
+## 8. CLOB Precompile
 
-### 8.1 BridgeDomain
+**Files:** `src/core/precompiles.rs` (292 lines), `src/core/precompile_abi.rs` (109 lines)
+
+The CLOB is exposed to EVM smart contracts via a stateful precompile at a fixed address.
+
+### Precompile Address
+
+```
+0x0000000000000000000000000000000000000100
+```
+
+### Function Signatures & Gas Costs
+
+| Function | Selector | Gas | Input | Output |
+|----------|----------|-----|-------|--------|
+| `placeOrder(uint64,bool,uint256,uint256,uint8)` | `keccak256(sig)[0:4]` | 50,000 | marketId, isBuy, price, size, tif | (orderId, filled, remaining) |
+| `cancelOrder(uint256)` | — | 20,000 | orderId | (success) |
+| `depositCollateral(uint256)` | — | 25,000 | amount | (success) |
+| `withdrawCollateral(uint256)` | — | 25,000 | amount | (success) |
+| `getPosition(uint64)` | — | 5,000 | marketId | (int128 size, uint256 entryPrice) |
+| `getCollateral()` | — | 3,000 | — | (uint256 collateral) |
+| `isLiquidatable(address)` | — | 10,000 | account | (bool) |
+| `getBestBidAsk(uint64)` | — | 5,000 | marketId | (uint256 bestBid, uint256 bestAsk) |
+
+### ABI Encoding
+
+Standard Solidity ABI: 4-byte function selector followed by 32-byte words. All integers are big-endian padded to 32 bytes.
+
+### Context Lifecycle
 
 ```rust
-pub enum BridgeDomain {
-    PrimeOrders,
-    PrimeEvm,
+static PRIME_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<PrimeOrdersState>>>>> = ...;
+
+// Before block execution:
+set_prime_orders_context(Arc::clone(&shared_orders));
+
+// After block execution:
+clear_prime_orders_context();
+```
+
+The precompile acquires the global mutex, gets the `Arc`, then locks the inner `PrimeOrdersState` for each call. This ensures EVM transactions can call the CLOB atomically during execution.
+
+### Registration
+
+```rust
+pub fn register_prime_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
+    let prev_load = handler.pre_execution.load_precompiles.clone();
+    handler.pre_execution.load_precompiles = Arc::new(move || {
+        let mut precompiles = prev_load();
+        precompiles.extend([(
+            PRIME_ORDERS_PRECOMPILE,
+            ContextPrecompile::Ordinary(Precompile::Env(prime_orders_precompile)),
+        )]);
+        precompiles
+    });
 }
 ```
 
-### 8.2 BridgeMessage
+---
+
+## 9. Frequent Batch Auctions (FBA)
+
+**File:** `src/core/fba.rs` (392 lines)
+
+Implements frequent batch auctions for fair price discovery, reducing the advantage of speed-based MEV strategies.
+
+### Architecture
 
 ```rust
+pub struct FBAEngine {
+    pub auctions: HashMap<MarketId, BatchAuction>,
+    pub batch_interval_ms: u64,          // Default: 100ms
+    pub current_batch_start: u64,
+}
+
+pub struct BatchAuction {
+    pub market: MarketId,
+    pub orders: Vec<BatchOrder>,
+    pub next_sequence: u64,              // Arrival ordering
+}
+```
+
+### Clearing Price Algorithm
+
+```
+1. Separate orders into buys and sells
+2. Sort: buys by price DESC (then sequence ASC), sells by price ASC (then sequence ASC)
+3. If no crossing (best_ask > best_bid) → no match
+4. Collect all unique price levels from both sides
+5. For each candidate price:
+   - demand = Σ(buy.size where buy.price ≥ candidate)
+   - supply = Σ(sell.size where sell.price ≤ candidate)
+   - matched = min(demand, supply)
+6. Select price that maximizes matched volume
+   - Ties broken by highest price (benefits sell side)
+7. Pro-rata allocation for oversubscribed side:
+   - fill_i = order_i.size × matched_volume / total_side_volume
+8. Pair buyers with sellers to produce fills
+```
+
+### Integration with Engine
+
+```rust
+pub fn submit_batch_order(&mut self, order: BatchOrder) {
+    self.fba_engine.submit_order(order);
+}
+
+pub fn execute_batch_auctions(&mut self) -> Vec<AuctionResult> {
+    let results = self.fba_engine.execute_all();
+    self.fba_engine.apply_results(&results, &mut self.orders.state);
+    results
+}
+```
+
+`apply_results` writes fills back to `PrimeOrdersState`, updating buyer/seller positions and market `last_price`.
+
+---
+
+## 10. Commit-Reveal MEV Protection
+
+**File:** `src/core/commit_reveal.rs` (129 lines)
+
+A two-phase commit-reveal scheme that prevents front-running and sandwich attacks by hiding transaction details until after ordering is finalized.
+
+### Protocol
+
+```
+Block N:   User submits commitment = keccak256(tx_bytes ‖ salt)
+Block N+1: User reveals (tx_bytes, salt)
+           Verification: keccak256(tx_bytes ‖ salt) == commitment_hash
+Block N+2: If not revealed by block N + commit_window → pruned
+```
+
+### Data Structures
+
+```rust
+pub struct TxCommitment {
+    pub commitment_hash: B256,    // keccak256(tx ‖ salt)
+    pub sender: Address,
+    pub block_number: u64,
+}
+
+pub struct TxReveal {
+    pub commitment_hash: B256,
+    pub encrypted_tx: Bytes,      // Original tx bytes
+    pub salt: B256,
+}
+
+pub struct CommitRevealPool {
+    commitments: HashMap<B256, TxCommitment>,
+    revealed: Vec<(B256, Bytes)>,
+    revealed_set: HashMap<B256, ()>,  // Dedup
+    pub commit_window: u64,           // Default: 2 blocks
+    pub current_block: u64,
+}
+```
+
+### Error Cases
+
+| Error | Condition |
+|-------|-----------|
+| `DuplicateCommitment` | Same commitment hash already pending |
+| `CommitmentNotFound` | Reveal for unknown commitment |
+| `CommitmentExpired` | `current_block > commitment.block_number + commit_window` |
+| `InvalidReveal` | Hash mismatch: `keccak256(tx ‖ salt) ≠ commitment_hash` |
+| `AlreadyRevealed` | Commitment was already successfully revealed |
+
+### Lifecycle
+
+```rust
+engine.commit_tx(commitment)?;           // Phase 1
+let tx_bytes = engine.reveal_tx(reveal)?; // Phase 2
+let drained = pool.drain_revealed();      // Collect for execution
+pool.prune_expired(current_block);        // Garbage collect
+```
+
+---
+
+## 11. Mempool
+
+**File:** `src/core/mempool.rs` (~512 lines)
+
+A three-pool transaction management system inspired by Geth's design.
+
+### Pool Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│                      Mempool                          │
+│                                                       │
+│  ┌─────────┐   ┌─────────┐   ┌──────────────────┐   │
+│  │ pending  │   │ queued  │   │  base_fee_pool   │   │
+│  │         │   │         │   │                  │   │
+│  │ Ready to │   │ Future  │   │ Gas price below  │   │
+│  │ execute  │   │ nonce   │   │ current base fee │   │
+│  │         │   │ gap     │   │                  │   │
+│  └─────────┘   └─────────┘   └──────────────────┘   │
+│       ↕              ↕              ↕                  │
+│   promote()      fill_gaps()    promote()/demote()    │
+└──────────────────────────────────────────────────────┘
+```
+
+### Per-Pool Structure
+
+Each pool is a `HashMap<Address, BTreeMap<u64, Transaction>>` — sender → nonce-sorted queue.
+
+### Transaction Lifecycle
+
+1. **Insert:** Route to `pending`, `queued`, or `base_fee_pool` based on nonce gap and gas price vs. base fee
+2. **Gap filling:** When a pending tx is inserted, check queued pool for consecutive nonces to promote
+3. **Promotion:** After base fee decrease, move qualifying txs from `base_fee_pool` to `pending`
+4. **Demotion:** After base fee increase, move under-priced txs from `pending` to `base_fee_pool`
+5. **Mining:** `take_ready(sender, nonce)` extracts for execution; `remove_mined(sender, nonce)` post-confirmation
+6. **Replacement:** Existing tx at same nonce can be replaced if `new_gas_price ≥ old_gas_price × (1 + bump_bps/10000)`
+7. **Eviction:** When `max_total` reached, lowest-fee tx across all pools is evicted (if incoming fee is higher)
+
+### Limits
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_total` | 10,000 | Total txs across all pools |
+| `max_per_sender` | 1,000 | Per-sender limit across all pools |
+| `min_replace_bump_bps` | 1,000 (10%) | Minimum fee increase for replacement |
+
+### Validation
+
+```rust
+pub fn validate(&self, tx, base_fee, account_nonce, account_balance) -> Result<(), TxRejection>
+```
+
+Checks: nonce ordering, balance sufficiency (`gas_limit × gas_price + value ≤ balance`), base fee compliance.
+
+---
+
+## 12. State & Persistence
+
+**File:** `src/core/state.rs` (~958 lines)
+
+### Storage Backend
+
+Uses **sled** (embedded B-tree database) with the following trees:
+
+| Tree | Key | Value |
+|------|-----|-------|
+| `accounts` | `Address` (20 bytes) | `AccountRecord` (bincode) |
+| `storage` | `Address ‖ Slot` (52 bytes) | `U256` (32 bytes BE) |
+| `prime_orders` | `"state"` | `PrimeOrdersSnapshot` (bincode) |
+| `bridge_orders_to_evm` | `"queue"` | `BridgeQueueRecord` (bincode) |
+| `bridge_evm_to_orders` | `"queue"` | `BridgeQueueRecord` (bincode) |
+| `blocks` | `height` (8 bytes BE) | `Block` (JSON) |
+| `pruning` | `height` (8 bytes BE) | `state_root` (32 bytes) |
+| `height_meta` | `"latest_height"` | `height` (8 bytes) |
+
+### Incremental Commits
+
+The `dirty_accounts: Mutex<HashSet<Address>>` set tracks which accounts were modified during block execution. On commit, only dirty accounts are re-serialized to sled — avoiding a full DB rewrite.
+
+```rust
+pub fn commit_state(
+    &self,
+    evm_db: &InMemoryDB,
+    prime_orders: &PrimeOrdersState,
+    bridge_orders_to_evm: &BridgeQueue,
+    bridge_evm_to_orders: &BridgeQueue,
+    height: u64,
+) -> Result<B256> {
+    self.write_evm_state(evm_db)?;        // Only dirty accounts
+    self.commit_prime_orders(prime_orders)?;
+    self.commit_bridge_queues(..)?;
+    let root = self.compute_state_root();
+    self.record_height(height, root)?;
+    Ok(root)
+}
+```
+
+### Binary Merkle Tree
+
+The state root is a binary Merkle tree computed over all key-value pairs from all trees:
+
+```
+1. Collect all (key, value) pairs from: accounts, storage, prime_orders, bridge_*
+2. Sort by key
+3. Leaf = keccak256(key ‖ value)
+4. Internal = keccak256(left ‖ right)
+5. Odd leaves are promoted without hashing
+```
+
+### State Proofs
+
+```rust
+pub fn generate_proof(&self, key: &[u8]) -> Result<StateProof>
+
+pub struct StateProof {
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
+    pub siblings: Vec<B256>,
+    pub path: Vec<bool>,        // true = sibling is on left
+    pub root: B256,
+}
+```
+
+Verification: walk from leaf to root, hashing with siblings according to `path`.
+
+### Pruning
+
+```rust
+pub fn prune_before(&self, height: u64) -> Result<u64>
+```
+
+Removes all pruning metadata and block data below the given height. Returns count of entries removed.
+
+### Snapshots
+
+```rust
+pub fn export_snapshot(&self, path, height, state_root) -> Result<()>
+pub fn import_snapshot(&self, path) -> Result<SnapshotMeta>
+```
+
+Exports/imports a self-contained bincode archive containing all account records, storage, CLOB state, and bridge queues. Import verifies the state root matches after restoration.
+
+---
+
+## 13. Networking
+
+**Files:** `src/network/p2p.rs`, `src/network/net_transport.rs`
+
+### Transport Layers
+
+| Protocol | Purpose | Port Offset |
+|----------|---------|-------------|
+| **UDP** | Gossip protocol (blocks, txs) | Base (e.g., 30303) |
+| **TCP** | Snapshot sync (full chain) | Base + 1000 (e.g., 31303) |
+
+### UDP Gossip
+
+- **Deduplication:** Packet ID tracking prevents re-processing
+- **TTL:** Each packet has a hop count that decrements; dropped at 0
+- **Peer discovery:** Periodic discovery loop (every 30s)
+- **Peer pruning:** Stale peers removed periodically
+
+```rust
+pub struct GossipPacket {
+    pub topic: String,     // "block", "tx", "sync_request", "sync_response"
+    pub data: Vec<u8>,     // Serialized wire format
+    pub id: String,        // Unique packet ID for dedup
+    pub ttl: u8,           // Hop count
+}
+```
+
+### TCP Snapshot Sync
+
+On connection:
+1. Requester sends `GossipPacket { topic: "sync_request" }`
+2. Responder serializes all blocks as `Vec<WireBlock>` JSON
+3. Requester imports blocks via `engine.import_block()`
+
+### Wire Formats
+
+| Type | Fields |
+|------|--------|
+| `WireTx` | from, to, value, data, gas_limit, gas_price, nonce, chain_id (all hex strings) |
+| `WireBlock` | number, chain_id, gas_limit, gas_used, base_fee, coinbase, hash, proposer, finalized, state_root, total_reward, burned_reward, transactions, receipts |
+| `WireReceipt` | success, gas_used, output, created_address, error |
+
+### NetworkNode
+
+Wraps `Engine` + `UdpGossip` for real P2P networking:
+
+```rust
+pub struct NetworkNode {
+    gossip: Arc<Mutex<UdpGossip>>,
+    running: Arc<AtomicBool>,
+}
+```
+
+Spawns three background threads:
+1. **gossip-listener** — Receives and processes incoming packets
+2. **tcp-snapshot** — Serves sync requests
+3. **peer-discovery** — Periodic peer discovery and pruning
+
+---
+
+## 14. RPC Interface
+
+**File:** `src/rpc/rpc.rs` (~970 lines)
+
+JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatible method aliases.
+
+### HTTP Endpoints
+
+| Path | Method | Purpose |
+|------|--------|---------|
+| `/` | POST | JSON-RPC 2.0 dispatch |
+| `/health` | GET | `{ status, height, chain_id }` |
+| `/metrics` | GET | Prometheus text format |
+| `*` | OPTIONS | CORS preflight (204) |
+
+### Supported Methods
+
+#### Core Chain
+
+| Method | Eth Alias | Description |
+|--------|-----------|-------------|
+| `prime_chainId` | `eth_chainId` | Returns chain ID |
+| `prime_blockNumber` | `eth_blockNumber` | Latest block height |
+| `prime_getBalance` | `eth_getBalance` | Account balance |
+| `prime_getCode` | `eth_getCode` | Account bytecode |
+| `prime_getStorageAt` | `eth_getStorageAt` | Storage slot value |
+| `prime_getTransactionCount` | `eth_getTransactionCount` | Account nonce |
+| `prime_gasPrice` | `eth_gasPrice` | Current base fee |
+| `prime_call` | `eth_call` | Simulate call (no state change) |
+| — | `eth_estimateGas` | Gas estimation |
+| — | `net_version` | Network version |
+| — | `web3_clientVersion` | Client version |
+
+#### Blocks & Transactions
+
+| Method | Description |
+|--------|-------------|
+| `prime_getBlockByNumber` / `eth_getBlockByNumber` | Block by number (supports "latest") |
+| `eth_getBlockByHash` | Block by hash |
+| `prime_sendTransaction` / `eth_sendTransaction` | Submit transaction |
+| `prime_getTransactionReceipt` / `eth_getTransactionReceipt` | Transaction receipt |
+| `prime_getTransactionByHash` / `eth_getTransactionByHash` | Transaction by hash |
+| `prime_getLogs` / `eth_getLogs` | Log filtering with block range, addresses, topics |
+| `prime_getDomainEvents` | Domain events (CLOB + bridge) |
+
+#### PrimeOrders
+
+| Method | Description |
+|--------|-------------|
+| `primeorders_addMarket` | Create new market |
+| `primeorders_submitOrder` | Submit order to CLOB |
+| `primeorders_cancelOrder` | Cancel order |
+| `primeorders_getOrderBook` | Get order book levels |
+| `primeorders_getOpenOrders` | Get open orders for account |
+| `primeorders_setMarginParams` | Set margin parameters |
+| `primeorders_depositCollateral` | Deposit collateral |
+| `primeorders_isLiquidatable` | Check liquidation eligibility |
+| `primeorders_liquidate` | Liquidate account |
+
+#### Bridge
+
+| Method | Description |
+|--------|-------------|
+| `primebridge_enqueueOrdersToEvm` | Enqueue message: orders → EVM |
+| `primebridge_enqueueEvmToOrders` | Enqueue message: EVM → orders |
+| `primebridge_dequeueOrdersToEvm` | Dequeue message: orders → EVM |
+| `primebridge_dequeueEvmToOrders` | Dequeue message: EVM → orders |
+
+### Error Codes
+
+| Code | Meaning |
+|------|---------|
+| -32700 | Parse error (invalid JSON) |
+| -32601 | Method not found |
+| -32602 | Invalid params |
+| -32000 | Internal error |
+| -32005 | Transaction rejected (with `reason` in data) |
+
+---
+
+## 15. Cryptography
+
+**File:** `src/crypto/mod.rs` (152 lines)
+
+ECDSA secp256k1 signatures using the `k256` crate.
+
+### Transaction Signing (EIP-155 Inspired)
+
+```
+signing_hash = keccak256(chain_id ‖ nonce ‖ gas_price ‖ gas_limit ‖ to ‖ value ‖ data)
+```
+
+All fields are big-endian. `to` is 20 bytes (or 20 zero bytes for contract creation).
+
+### Signature Format
+
+```rust
+pub struct SignedTransaction {
+    pub tx: Transaction,
+    pub v: U256,     // recovery_id + 35 + chain_id * 2
+    pub r: U256,     // Signature R component
+    pub s: U256,     // Signature S component
+}
+```
+
+The `v` value follows EIP-155: `v = recovery_id + 35 + chain_id × 2`
+
+### Key Operations
+
+| Function | Purpose |
+|----------|---------|
+| `tx_signing_hash(tx)` | Compute deterministic hash for signing |
+| `sign_transaction(tx, key)` | Sign with `SigningKey`, returns `SignedTransaction` |
+| `recover_signer(signed_tx)` | Recover `Address` from signature |
+| `address_from_signing_key(key)` | Derive address from private key |
+| `generate_keypair()` | Generate random (key, address) pair |
+
+### Address Derivation
+
+Standard Ethereum: `keccak256(uncompressed_public_key[1..])[12..]`
+
+---
+
+## 16. Bridge
+
+**Files:** `src/core/bridge.rs`
+
+Bidirectional message queue between the PrimeOrders domain and the EVM domain.
+
+### Domains
+
+| Domain | Description |
+|--------|-------------|
+| `PrimeOrders` | CLOB / order book domain |
+| `PrimeEvm` | EVM execution domain |
+
+### Queue Structure
+
+```rust
+pub struct BridgeQueue {
+    queue: VecDeque<BridgeMessage>,
+    next_nonce: u64,
+    max_len: Option<usize>,
+}
+
 pub struct BridgeMessage {
     pub nonce: u64,
     pub from: BridgeDomain,
@@ -628,810 +1153,608 @@ pub struct BridgeMessage {
 }
 ```
 
-### 8.3 BridgeQueue
+Two independent queues: `orders_to_evm` and `evm_to_orders`. Each message gets a monotonically increasing nonce. Optional `max_len` caps queue size.
 
-- FIFO VecDeque
-- Optional max_len (evicts oldest when full)
-- push(): increment nonce, append
-- pop(): remove from front
-- snapshot/restore for persistence
-
-### 8.4 Queue Processing
-
-Per block: all messages dequeued and included in block. Bridge queues committed to state.
+Bridge state is persisted to sled on each block commit and restored on node startup.
 
 ---
 
-## 9. State Management
+## 17. Observability
 
-### 9.1 PersistentState (sled)
+### Prometheus Metrics
 
-**Trees:**
-- `accounts`: address -> AccountRecord
-- `storage`: (address, slot) -> value
-- `prime_orders`: "state" -> serialized PrimeOrdersSnapshot
-- `bridge_orders_to_evm`: "queue" -> serialized BridgeQueueRecord
-- `bridge_evm_to_orders`: "queue" -> serialized BridgeQueueRecord
+**File:** `src/prometheus/prometheus.rs` (137 lines)
 
-### 9.2 AccountRecord (serialization)
+Initialized once via `prometheus::init()`. All metrics are pre-described with HELP/TYPE annotations.
 
-```rust
-struct AccountRecord {
-    balance: [u8; 32],
-    nonce: u64,
-    code_hash: [u8; 32],
-    code: Vec<u8>,
-}
-```
+| Metric | Type | Description |
+|--------|------|-------------|
+| `prime_chain_up` | Gauge | Node liveness (always 1) |
+| `prime_chain_blocks_produced_total` | Counter | Total blocks produced |
+| `prime_chain_height` | Gauge | Latest block height |
+| `prime_chain_block_gas_used` | Gauge | Gas in latest block |
+| `prime_chain_block_tx_count` | Gauge | Tx count in latest block |
+| `prime_chain_block_execution_seconds` | Histogram | Block execution time |
+| `prime_chain_base_fee_wei` | Gauge | Current base fee |
+| `prime_chain_consensus_rounds` | Counter | Consensus rounds executed |
+| `prime_chain_consensus_finalized` | Counter | Blocks finalized |
+| `prime_chain_slashing_events` | Counter | Slashing events by kind |
+| `prime_chain_validators_active` | Gauge | Active validator count |
+| `prime_chain_total_stake` | Gauge | Total staked amount |
+| `prime_chain_orders_submitted` | Counter | Orders submitted |
+| `prime_chain_orders_filled` | Counter | Orders fully filled |
+| `prime_chain_orders_cancelled` | Counter | Orders cancelled |
+| `prime_chain_trades_executed` | Counter | Trade fills executed |
+| `prime_chain_insurance_fund_balance` | Gauge | Insurance fund balance |
+| `prime_chain_markets_active` | Gauge | Active market count |
+| `prime_chain_mempool_size` | Gauge | Mempool total size |
+| `prime_chain_mempool_rejected` | Counter | Rejected txs by reason |
+| `prime_chain_rpc_requests` | Counter | RPC requests by method |
+| `prime_chain_rpc_errors` | Counter | RPC errors by method+code |
+| `prime_chain_rpc_duration_seconds` | Histogram | RPC latency by method |
+| `parallel_execution_total` | Counter | Parallel execution runs |
+| `parallel_execution_groups` | Gauge | Groups in last parallel run |
+| `hotstuff2_commits` | Counter | HotStuff-2 commits |
+| `hotstuff2_timeouts` | Counter | HotStuff-2 timeouts |
+| `tx_submitted_total` | Counter | Total submitted txs |
 
-### 9.3 State Root Computation
+### Structured Logging
 
-- Collect all (key, value) from accounts, storage, prime_orders, bridge trees
-- Sort by key
-- Concatenate, Keccak-256
+Uses `tracing` with `tracing-subscriber` (fmt + env-filter). Controlled via `RUST_LOG` environment variable.
 
-### 9.4 Snapshot Format
-
-**SnapshotRecord (bincode):**
-- height, state_root
-- accounts: Vec<(Address, AccountRecord)>
-- storage: Vec<((Address, U256), U256)>
-- prime_orders: Option<Vec<u8>>
-- bridge_orders_to_evm: Option<Vec<u8>>
-- bridge_evm_to_orders: Option<Vec<u8>>
-
-### 9.5 Snapshot Transfer (TCP)
-
-**Header (49 bytes):**
-- Magic: "PSNP" (4 bytes)
-- Version: 1 (1 byte)
-- Chunk size: u32 big-endian
-- Total length: u64 big-endian
-- Hash: 32 bytes (Keccak-256 of snapshot)
-
-**Body:** Chunked snapshot bytes
-
----
-
-## 10. Mempool
-
-### 10.1 Structure
-
-```rust
-by_sender: HashMap<Address, BTreeMap<u64, Transaction>>
-max_total: usize
-max_per_sender: usize
-min_replace_bump_bps: u64
-```
-
-### 10.2 Insert Logic
-
-1. If full: evict_for_fee (lowest fee tx, require bump)
-2. If sender queue full: evict_sender_for_fee
-3. Reject duplicate nonce
-4. Insert
-
-### 10.3 Eviction
-
-- Replace requires: new_fee >= old_fee * (1 + bump_bps/10000)
-- Default bump: 1000 bps (10%)
-
-### 10.4 TxRejection Codes
-
-- DuplicateNonce, MempoolFull, SenderQueueFull, FeeTooLow
-- GasLimitTooHigh, InvalidChainId, NonceTooLow
-- GasPriceTooLow, InsufficientBalance, DatabaseError
+Key log points:
+- Block production: `height`, `txs`, `gas`, `finalized`, `base_fee`
+- Consensus rounds: `round`, `prevote_stake`, `precommit_stake`, `finalized`
+- Slashing evidence: `validator`, `kind`, `height`, `round`
+- Trades: `taker`, `maker`, `market`, `price`, `size`
+- Parallel execution: `groups`, `txs`
 
 ---
 
-## 11. RPC Layer
+## 18. Configuration Reference
 
-### 11.1 HTTP Server
+**File:** `src/config/config.rs` (360 lines)
 
-- tiny_http Server
-- Default: 127.0.0.1:8545
-- POST: JSON-RPC
-- GET /health: status, height, chain_id
-- GET /metrics: Prometheus format
+JSON-based configuration loaded from a file path. All fields have defaults.
 
-### 11.2 JSON-RPC Methods
-
-**Chain:**
-- `prime_chainId` -> hex chain ID
-- `prime_blockNumber` -> hex latest height
-- `prime_getBalance` (address, block?) -> hex balance
-
-**Blocks:**
-- `prime_getBlockByNumber` (number, include_txs) -> block DTO
-
-**Transactions:**
-- `prime_sendTransaction` (tx) -> tx hash
-- `prime_getTransactionByHash` (hash) -> tx DTO
-- `prime_getTransactionReceipt` (hash) -> receipt DTO
-
-**Logs:**
-- `prime_getLogs` (filter) -> log array
-
-**Domain Events:**
-- `prime_getDomainEvents` (filter) -> events array
-
-**PrimeOrders:**
-- `primeorders_addMarket` (symbol, tick_size, lot_size)
-- `primeorders_submitOrder` (order object)
-- `primeorders_cancelOrder` (order_id)
-- `primeorders_getOrderBook` (market_id)
-- `primeorders_getOpenOrders` (owner)
-- `primeorders_setMarginParams` (initial_bps, maintenance_bps)
-- `primeorders_depositCollateral` (owner, amount)
-- `primeorders_isLiquidatable` (owner)
-- `primeorders_liquidate` (owner)
-
-**Bridge:**
-- `primebridge_enqueueOrdersToEvm` (payload)
-- `primebridge_enqueueEvmToOrders` (payload)
-- `primebridge_dequeueOrdersToEvm`
-- `primebridge_dequeueEvmToOrders`
-
-### 11.3 Parameter Parsing
-
-- Address: 0x-prefixed hex, 20 bytes
-- Hash: 0x-prefixed hex, 32 bytes
-- U256: 0x hex or decimal
-- Block tag: "latest" or hex number
-
-### 11.4 RPC Error Codes
-
-- -32700: Parse error
-- -32601: Method not found
-- -32602: Invalid params
-- -32000: Internal error
-- -32005: Tx rejected
-- -32010..-32013: PrimeOrders errors
-
----
-
-## 12. Network Layer
-
-### 12.1 NetworkSim (Consensus)
-
-- In-memory message buffer
-- broadcast(Message)
-- drain_round(block_hash, height, round, stage) -> matching messages
-
-### 12.2 UdpGossip
-
-**GossipPacket:**
-- topic, data, id, ttl
-
-**GossipConfig:**
-- fanout, max_peers, max_seen
-- peer_ttl, seen_ttl
-- retry_base, retry_max
-- peer_discovery_topic
-
-**Features:**
-- Peer discovery via topic
-- TTL-based forwarding
-- Deduplication (seen set)
-- Retry with exponential backoff
-- Peer store persistence (JSON)
-
-### 12.3 TcpSync
-
-- send_packet/recv_packet: length-prefixed JSON
-- send_snapshot/recv_snapshot: PSNP protocol
-
-### 12.4 P2pNetwork (Simulation)
-
-- HashMap of Node
-- broadcast(from, message): deliver to other nodes
-- sync_blocks(from, peer): copy blocks from peer to from
-
-### 12.5 Node (P2p)
-
-- inbox: Vec<P2pMessage>
-- process_inbox: submit tx, import block, broadcast vote
-
----
-
-## 13. Identity & Key Management
-
-### 13.1 NodeIdentity
-
-```rust
-pub struct NodeIdentity {
-    pub signing_key: SigningKey,  // k256 ECDSA
-    pub address: Address,
-}
-```
-
-### 13.2 Address Derivation
-
-```
-pubkey = verifying_key.to_encoded_point(false).as_bytes()
-hash = keccak256(pubkey[1..])
-address = hash[12..32]
-```
-
-### 13.3 Storage
-
-- Path: configurable (default state/node_key.json)
-- Format: JSON { "private_key": "0x..." }
-- Create if not exists: SigningKey::random(OsRng)
-
----
-
-## 14. Governance
-
-### 14.1 ProposalKind
-
-- SetFeeMarket { gas_limit_per_block, elasticity_multiplier, max_change_denominator }
-- SetTokenEconomics { max_supply, initial_reward_per_block, halving_interval }
-
-### 14.2 Proposal Lifecycle
-
-1. submit(title, kind, current_height) -> proposal_id
-2. vote(proposal_id, height, voter, stake, support)
-3. execute(proposal_id, height, finalized, total_stake, apply_fn)
-
-### 14.3 Execution Conditions
-
-- Block finalized
-- height > proposal.end_height
-- tally.passed (quorum + pass threshold)
-- Not already executed
-
----
-
-## 15. Events System
-
-### 15.1 DomainEvent
-
-- PrimeOrders(PrimeOrdersEvent)
-- Bridge(BridgeEvent)
-
-### 15.2 PrimeOrdersEvent Variants
-
-- MarketAdded
-- OrderSubmitted
-- OrderCancelled
-- Trade
-- MarginParamsUpdated
-- CollateralDeposited
-- Liquidation
-
-### 15.3 BridgeEvent Variants
-
-- Enqueued { queue, message }
-- Dequeued { queue, message }
-
-### 15.4 Indexing
-
-- Events stored per block
-- Query: domain_events_in_range(from, to, domain?, kind?)
-- RPC: prime_getDomainEvents with filter
-
----
-
-## 16. Configuration
-
-### 16.1 AppConfig Structure
+### Complete Configuration Schema
 
 ```json
 {
-  "engine": { "chain_id", "state_path", "gas_limit_per_block", ... },
-  "mempool": { "max_total", "max_per_sender", "bump_bps" },
-  "prime_orders": { "initial_margin_bps", "maintenance_margin_bps" },
-  "bridge": { "max_queue_len" },
-  "genesis": { "accounts": [...] },
-  "slashing": { "double_sign_bps", "timeout_bps", ... },
-  "token_economics": { "max_supply", "initial_reward_per_block", "halving_interval" },
-  "rpc": { "enabled", "addr" },
-  "p2p": { "node_key_path", "peer_store_path" }
+  "engine": {
+    "chain_id": 999,
+    "state_path": "state",
+    "gas_limit_per_block": 30000000,
+    "fee_elasticity_multiplier": 2,
+    "fee_max_change_denominator": 8
+  },
+  "mempool": {
+    "max_total": 10000,
+    "max_per_sender": 1000,
+    "bump_bps": 1000
+  },
+  "prime_orders": {
+    "initial_margin_bps": 0,
+    "maintenance_margin_bps": 0
+  },
+  "bridge": {
+    "max_queue_len": 10000
+  },
+  "genesis": {
+    "accounts": [
+      {
+        "address": "0x...",
+        "balance": "1000000000000000000000",
+        "nonce": 0
+      }
+    ]
+  },
+  "slashing": {
+    "double_sign_bps": 500,
+    "timeout_bps": 100,
+    "escalation_step_bps": 25,
+    "escalation_max_bps": 1000,
+    "round_timeout_ms": 500,
+    "unbonding_period": 2
+  },
+  "token_economics": {
+    "max_supply": "42000000000000000000000000",
+    "initial_reward_per_block": "100000000000000000000",
+    "halving_interval": 4200000
+  },
+  "rpc": {
+    "enabled": false,
+    "addr": "127.0.0.1:8545"
+  },
+  "p2p": {
+    "node_key_path": "state/node_key.json",
+    "peer_store_path": "state/peers.json",
+    "listen": "0.0.0.0:30303",
+    "peers": [],
+    "block_time_ms": 1000
+  }
 }
 ```
 
-### 16.2 Default Values
+### Default Values
 
-- chain_id: 999
-- state_path: "state"
-- gas_limit_per_block: 30_000_000
-- max_total: 10_000
-- max_per_sender: 1_000
-- double_sign_bps: 500
-- timeout_bps: 100
-- rpc addr: 127.0.0.1:8545
-
-### 16.3 Hot Reload
-
-Config file watcher (2s interval) applies runtime changes without restart.
-
----
-
-## 17. Metrics & Observability
-
-### 17.1 Prometheus Metrics
-
-| Name | Type | Labels | Description |
-|------|------|--------|-------------|
-| prime_chain_up | gauge | - | Node up (1.0) |
-| block_height_gauge | gauge | - | Current block number |
-| blocks_executed_total | counter | - | Blocks executed |
-| blocks_finalized_total | counter | - | Blocks finalized |
-| tx_submitted_total | counter | - | Transactions submitted |
-| mempool_size_gauge | gauge | - | Mempool size |
-| block_exec_duration_seconds | histogram | - | Block execution time |
-| consensus_rounds_total | counter | - | Consensus rounds |
-| consensus_slashing_evidence_total | counter | kind | Slashing evidence |
-| rpc_requests_total | counter | method | RPC requests |
-| rpc_request_errors_total | counter | code, method | RPC errors |
-| rpc_request_duration_seconds | histogram | method | RPC latency |
-| metrics_requests_total | counter | - | /metrics hits |
-| network_messages_broadcast_total | counter | - | Messages broadcast |
-| network_messages_pending_gauge | gauge | - | Pending messages |
-| network_messages_drained_total | counter | stage | Messages drained |
-| snapshot_chunks_sent_total | counter | - | Snapshot chunks sent |
-| snapshot_bytes_sent_total | counter | - | Snapshot bytes sent |
-| snapshot_chunks_received_total | counter | - | Snapshot chunks received |
-| snapshot_bytes_received_total | counter | - | Snapshot bytes received |
-
-### 17.2 Prometheus Initialization
-
-- OnceCell for handle
-- install_recorder() at startup
-- Exposed via /metrics endpoint
+| Parameter | Default | Unit |
+|-----------|---------|------|
+| `chain_id` | 999 | — |
+| `gas_limit_per_block` | 30,000,000 | gas |
+| `fee_elasticity_multiplier` | 2 | — |
+| `fee_max_change_denominator` | 8 | — |
+| `mempool.max_total` | 10,000 | txs |
+| `mempool.max_per_sender` | 1,000 | txs |
+| `mempool.bump_bps` | 1,000 | basis points (10%) |
+| `slashing.double_sign_bps` | 500 | basis points (5%) |
+| `slashing.timeout_bps` | 100 | basis points (1%) |
+| `slashing.escalation_step_bps` | 25 | basis points (0.25%) |
+| `slashing.escalation_max_bps` | 1,000 | basis points (10%) |
+| `slashing.round_timeout_ms` | 500 | milliseconds |
+| `slashing.unbonding_period` | 2 | blocks |
+| `token_economics.max_supply` | 42M × 10^18 | wei |
+| `token_economics.initial_reward_per_block` | 100 × 10^18 | wei |
+| `token_economics.halving_interval` | 4,200,000 | blocks |
+| `rpc.addr` | 127.0.0.1:8545 | — |
+| `p2p.listen` | 0.0.0.0:30303 | — |
+| `p2p.block_time_ms` | 1,000 | milliseconds |
 
 ---
 
-## 18. CLI & Entry Point
+## 19. API Reference
 
-### 18.1 CLI Arguments
-
-| Argument | Description |
-|----------|-------------|
-| --config | Config file path |
-| --state | Override state path |
-| --mempool-max | Override mempool max |
-| --mempool-per-sender | Override per-sender limit |
-| --mempool-bump-bps | Override fee bump |
-| --rpc | Enable RPC |
-| --rpc-addr | RPC bind address |
-| --mode | full | validator | devnet |
-| --devnet | Alias for mode=devnet |
-| --snapshot-listen | Listen for snapshot transfer |
-| --snapshot-fetch | Fetch snapshot from address |
-| --snapshot-out | Save snapshot to file |
-| --snapshot-chunk-size | Chunk size bytes |
-| --snapshot-max-bytes | Max receive size |
-| --node-key-path | Identity key path |
-| --peer-store-path | Peer store path |
-
-### 18.2 Node Modes
-
-- **Devnet**: Demo with validators, txs, governance
-- **Full**: Full node (minimal logging)
-- **Validator**: Validator node (minimal logging)
-
-### 18.3 Snapshot CLI Flow
-
-**Listen:** Bind TCP, accept connection, export snapshot, send chunked.
-
-**Fetch:** Connect TCP, receive chunked, verify hash, import.
-
----
-
-## 19. Testing
-
-### 19.1 Test Categories
-
-- **consensus_sim**: Consensus round simulation
-- **fuzz_mempool**: Mempool insert/evict fuzzing
-- **integration_block**: Full block execution
-- **prime_orders_integration**: Order matching, GTC/IOC/FOK
-- **state_tests**: State persistence, snapshot
-
-### 19.2 Key Test Patterns
-
-- TempDir for state isolation
-- Engine::new_with_state(chain_id, path)
-- Assert on receipts, balances, order book state
-
----
-
-## 20. Appendix: Data Formats
-
-### 20.1 Hex Encoding Conventions
-
-- Addresses: 0x + 40 hex chars
-- Hashes: 0x + 64 hex chars
-- U256: 0x + variable hex (no leading zeros in output)
-- u64: 0x + hex
-
-### 20.2 JSON-RPC Request
+### JSON-RPC Request Format
 
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "prime_getBalance",
-  "params": ["0x...", "latest"]
+  "method": "prime_blockNumber",
+  "params": []
 }
 ```
 
-### 20.3 JSON-RPC Response
+### Example: Submit Transaction
+
+```bash
+curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "prime_sendTransaction",
+    "params": [{
+      "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "value": "0x3e8",
+      "gas": "0x5208",
+      "gas_price": "0x1",
+      "nonce": "0x0",
+      "chain_id": 999
+    }]
+  }'
+```
+
+### Example: Get Block
+
+```bash
+curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "prime_getBlockByNumber",
+    "params": ["latest", true]
+  }'
+```
+
+### Example: Submit CLOB Order via Precompile
+
+From a Solidity contract:
+
+```solidity
+interface IPrimeOrders {
+    function placeOrder(
+        uint64 marketId,
+        bool isBuy,
+        uint256 price,
+        uint256 size,
+        uint8 tif
+    ) external returns (uint256 orderId, uint256 filled, uint256 remaining);
+}
+
+// Address: 0x0000000000000000000000000000000000000100
+IPrimeOrders clob = IPrimeOrders(0x0000000000000000000000000000000000000100);
+
+// TimeInForce: 0=GTC, 1=IOC, 2=FOK
+(uint256 id, uint256 filled, uint256 remaining) = clob.placeOrder(1, true, 50000, 100, 0);
+```
+
+### Example: CLOB via RPC
+
+```bash
+curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "primeorders_addMarket",
+    "params": ["ETH-USD", "0x1", "0x1"]
+  }'
+```
+
+### Health Check
+
+```bash
+curl http://localhost:8545/health
+# {"status":"ok","height":42,"chain_id":999}
+```
+
+### Prometheus Metrics
+
+```bash
+curl http://localhost:8545/metrics
+# HELP prime_chain_height Latest committed block height
+# TYPE prime_chain_height gauge
+# prime_chain_height 42
+```
+
+---
+
+## 20. Deployment Guide
+
+### Docker Build
+
+```bash
+docker build -t prime-chain:latest .
+```
+
+The multi-stage Dockerfile uses `rust:1.85-slim` for building and `debian:bookworm-slim` for the runtime image.
+
+**Exposed ports:**
+- `8545` — JSON-RPC
+- `9090` — Prometheus (application-level, served via `/metrics` on 8545)
+- `9100` — Reserved
+
+### Docker Compose (3-Validator Testnet)
+
+```bash
+docker-compose up -d
+```
+
+This starts three validator nodes:
+
+| Service | RPC Port | Metrics Port | Config |
+|---------|----------|--------------|--------|
+| `validator-1` | 8545 | 9090 | `testnet/configs/validator-1.json` |
+| `validator-2` | 8546 | 9091 | `testnet/configs/validator-2.json` |
+| `validator-3` | 8547 | 9092 | `testnet/configs/validator-3.json` |
+
+Each validator has:
+- Health check: `curl -sf http://localhost:8545/health`
+- Restart policy: `unless-stopped`
+- `RUST_LOG=info`
+- Persistent data volume
+
+### Manual Testnet Setup
+
+1. Generate validator configs:
 
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "0x..."
+  "engine": {
+    "chain_id": 999,
+    "state_path": "/data/state"
+  },
+  "genesis": {
+    "accounts": [
+      { "address": "0x...", "balance": "1000000000000000000000000" }
+    ]
+  },
+  "rpc": {
+    "enabled": true,
+    "addr": "0.0.0.0:8545"
+  },
+  "p2p": {
+    "listen": "0.0.0.0:30303",
+    "peers": ["validator-2:30303", "validator-3:30303"],
+    "block_time_ms": 1000
+  },
+  "slashing": {
+    "double_sign_bps": 500,
+    "timeout_bps": 100,
+    "round_timeout_ms": 500,
+    "unbonding_period": 100
+  },
+  "token_economics": {
+    "max_supply": "42000000000000000000000000",
+    "initial_reward_per_block": "100000000000000000000",
+    "halving_interval": 4200000
+  }
 }
 ```
 
-### 20.4 Peer Store Format
+2. Start nodes:
 
-```json
-{
-  "peers": ["127.0.0.1:42001", "127.0.0.1:42002"]
+```bash
+prime-chain --config /etc/prime-chain/config.json --validator --rpc
+```
+
+3. Verify:
+
+```bash
+curl http://localhost:8545/health
+curl http://localhost:8545/metrics
+```
+
+---
+
+## 21. Performance Tuning
+
+### Parallel Execution
+
+| Parameter | Effect | Recommendation |
+|-----------|--------|----------------|
+| `PARALLEL_THRESHOLD` | Minimum tx count for parallel path | 8 (compile-time constant) |
+| Thread count | `available_parallelism()` | Matches CPU cores automatically |
+| `max_retries` | MVCC conflict retries | 3 (hardcoded in engine) |
+
+**Workload characteristics for parallel benefit:**
+- Many independent senders (different `from` / `to` addresses)
+- Contract calls to different contracts
+- Minimal shared state (storage slot contention)
+
+**Degradation to sequential:** Single sender chains, DEX swaps to same pool, coinbase-heavy workloads (coinbase is excluded from grouping, but if all txs share other addresses, they collapse).
+
+### Gas & Fee Market
+
+| Parameter | Tuning Effect |
+|-----------|---------------|
+| `gas_limit_per_block` | Higher → more txs per block, lower finality density |
+| `fee_elasticity_multiplier` | Higher → narrower target band, more volatile fees |
+| `fee_max_change_denominator` | Higher → slower fee adjustment |
+
+### Mempool
+
+| Parameter | Tuning Effect |
+|-----------|---------------|
+| `max_total` | Higher → more pending txs, more memory |
+| `max_per_sender` | Higher → allows longer nonce chains |
+| `bump_bps` | Lower → easier replacement, higher spam risk |
+
+### CLOB Performance
+
+- Order book uses `BTreeMap<U256, VecDeque<OrderId>>` — O(log n) insert/lookup per price level
+- FIFO queues within price levels — O(1) front/back operations
+- FOK orders check `available_liquidity` before matching — avoids partial execution overhead
+
+### FBA Tuning
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `batch_interval_ms` | 100 | Shorter → lower latency, less batch aggregation |
+
+### Consensus Timing
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `round_timeout_ms` | 500 | Lower → faster finality, more timeout risk |
+| `timeout_delta_ms` | 100 | Progressive backoff per round |
+| HotStuff-2 `round_timeout_base_ms` | 3000 | Base timeout for HotStuff-2 rounds |
+| HotStuff-2 `round_timeout_delta_ms` | 500 | Linear backoff per round |
+
+### State Pruning
+
+Periodic pruning of old blocks and height metadata via `prune_before(height)`. Recommended to prune blocks older than the finality window to keep sled compact.
+
+### Measured Benchmarks
+
+| Component | Measured Performance | Notes |
+|-----------|----------------------|-------|
+| EVM (parallel, 8 cores) | 72,181 TPS | Independent transfers, release mode |
+| CLOB (PrimeOrders) | 2,484,170 ops/s | Native matching engine |
+| FBA (Frequent Batch Auctions) | 5,053,782 ops/s | Clearing price + pro-rata |
+| HotStuff-2 | 0.001 ms/round | Per-round latency |
+
+---
+
+## 22. Competitive Comparison
+
+### Hyperliquid HyperEVM Architecture
+
+Hyperliquid operates a dual-execution architecture:
+
+- **HyperEVM** is a Cancun-spec EVM running alongside **HyperCore** (native CLOB) under HyperBFT consensus.
+- The two are **separate execution environments** that run sequentially.
+- EVM reads HyperCore state from the **previous block** — 1 block stale.
+- **CoreWriter** at `0x333...333` queues orders for the **next block** — seconds delay.
+- **Dual blocks**: big blocks (~1 min, 30M gas) and small blocks (~1 sec, 2M gas).
+- HyperEVM remains in **alpha** as of 2026.
+
+### EVM ↔ CLOB Composability Comparison
+
+| Aspect | Prime Chain (Precompile 0x0100) | Hyperliquid (HyperEVM) |
+|--------|--------------------------------|------------------------|
+| **Composability** | Atomic same-transaction | Async next-block |
+| **Read latency** | Current block (live) | Previous block (1 block stale) |
+| **Write latency** | Immediate (same tx) | CoreWriter queues for next block (seconds) |
+| **Use case** | Vault: deposit → place order → react to fill in one tx | Requires multi-tx, multi-block flow |
+
+Prime Chain's CLOB precompile achieves **atomic same-tx composability** — a Solidity contract can deposit collateral, place an order, and react to the fill in a single transaction. HyperEVM's CoreWriter pattern is intentionally async, trading composability for maximum CLOB throughput.
+
+---
+
+## 23. Security Considerations
+
+### Consensus Safety
+
+- **BFT tolerance:** System is safe with up to `f < n/3` Byzantine validators (stake-weighted)
+- **2-chain commit rule:** HotStuff-2 requires two consecutive QCs for commit — prevents spurious commits
+- **Locked QC safety:** Validators only vote if the proposal's justify QC is at least as high as their locked QC
+- **No equivocation:** `last_voted_round` prevents double-voting within a round
+- **Tombstoning:** Double-sign evidence results in permanent validator exclusion
+
+### Slashing Escalation
+
+Repeat offenders face escalating penalties: `base_bps + escalation_step × offense_count`. Capped at `max_escalation_bps`.
+
+### MEV Protection
+
+- **Commit-reveal:** Transactions are committed as `keccak256(tx ‖ salt)` before revealing contents. Block producers cannot reorder based on transaction content during the commit phase.
+- **FBA:** Batch auctions eliminate speed-based MEV by executing all orders at a uniform clearing price.
+
+### Precompile Security
+
+- **Gas metering:** Every precompile function checks `gas_limit ≥ required_gas` before execution
+- **Context isolation:** CLOB state is set before block execution and cleared after — no cross-block state leakage
+- **Caller identification:** `env.tx.caller` is used for all auth-sensitive operations (deposit, withdraw, position queries)
+
+### Transaction Validation
+
+- **Signature verification:** ECDSA recovery verifies `recovered_address == tx.from`
+- **Replay protection:** Chain ID in signature hash (EIP-155 style)
+- **Nonce ordering:** Strict nonce enforcement prevents double-spending
+- **Balance checks:** `gas_limit × gas_price + value ≤ balance` verified at submission and execution
+
+### State Integrity
+
+- **Merkle state root:** Every block includes a Merkle root covering all state trees
+- **State proofs:** Verifiable Merkle inclusion proofs for any key in the state
+- **Snapshot verification:** Imported snapshots are verified against the embedded state root
+
+### Known Limitations
+
+- Unsigned transactions are accepted with a warning (backward compatibility) — production deployments should enforce signatures
+- CLOB margin system uses `initial_margin_bps = 0` by default — must be configured for production
+- UDP gossip is unencrypted — suitable for testnet; production should use encrypted transport
+- The `InMemoryDB` clone during parallel execution has memory overhead proportional to state size
+
+---
+
+## 24. Testing
+
+### Test Files
+
+| File | Lines | Coverage |
+|------|-------|----------|
+| `tests/state_tests.rs` | ~500 | State persistence, Merkle tree, proofs, pruning, snapshots |
+| `tests/consensus_tests.rs` | ~300 | Validator management, slashing, finality rounds, rewards |
+| `tests/bridge_tests.rs` | ~200 | Bridge queue operations, persistence |
+| `tests/rpc_tests.rs` | ~300 | JSON-RPC method dispatch, error handling |
+| `tests/crypto_tests.rs` | ~150 | ECDSA signing, recovery, determinism |
+| `tests/prime_orders_advanced.rs` | ~400 | CLOB matching, margin, liquidation, ADL |
+| `tests/fuzz_mempool.rs` | ~200 | Fuzz testing for mempool operations |
+| Inline tests in `hotstuff2.rs` | ~160 | Quorum threshold, 2-chain commit, timeouts, safety |
+| Inline tests in `crypto/mod.rs` | ~50 | Sign/recover roundtrip |
+
+### Running Tests
+
+```bash
+# All tests
+cargo test
+
+# Specific test file
+cargo test --test state_tests
+
+# With logging
+RUST_LOG=debug cargo test -- --nocapture
+```
+
+### TPS Benchmark
+
+```bash
+cargo run --release --bin tps-bench
+```
+
+Measures transactions-per-second under controlled conditions.
+
+### Fuzz Testing
+
+The mempool fuzz test (`tests/fuzz_mempool.rs`) generates random transactions and exercises insert/evict/replace/promote/demote paths to verify invariants under adversarial input.
+
+### Key Test Scenarios
+
+**HotStuff-2:**
+- Quorum threshold calculation: 4 validators × 100 stake → threshold = 267
+- 2-chain commit: QC at round 0 + QC at round 1 → commit block from round 0
+- Duplicate vote rejection
+- Timeout-driven round advance
+- Safety: no voting on rounds ≤ `last_voted_round`
+
+**Parallel Execution:**
+- Independent transactions execute in parallel groups
+- Conflicting transactions fall back to sequential
+- Coinbase balances correctly accumulated across groups
+
+**CLOB:**
+- Price-time priority matching
+- GTC/IOC/FOK order types
+- Margin validation at match time
+- Liquidation triggers and insurance fund draw
+- Auto-deleveraging when insurance insufficient
+
+---
+
+## Appendix A: Block Structure
+
+```rust
+pub struct Block {
+    pub number: u64,
+    pub chain_id: u64,
+    pub gas_limit: u64,
+    pub gas_used: u64,
+    pub base_fee: U256,
+    pub coinbase: Address,
+    pub hash: B256,
+    pub proposer: Address,
+    pub finalized: bool,
+    pub consensus: Finalization,
+    pub unbonded: Vec<Unbonding>,
+    pub applied_validator_changes: Vec<ValidatorChange>,
+    pub slashes: Vec<Slashing>,
+    pub finality_rounds: Vec<RoundResult>,
+    pub slashing_evidence: Vec<SlashingEvidence>,
+    pub rewards: Vec<Reward>,
+    pub total_reward: U256,
+    pub burned_reward: U256,
+    pub state_root: B256,
+    pub transactions: Vec<Transaction>,
+    pub receipts: Vec<Receipt>,
+    pub bridge_orders_to_evm: Vec<BridgeMessage>,
+    pub bridge_evm_to_orders: Vec<BridgeMessage>,
+    pub domain_events: Vec<DomainEvent>,
 }
 ```
 
-### 20.5 Node Key Format
+## Appendix B: Transaction Structure
 
-```json
-{
-  "private_key": "0x..."
+```rust
+pub struct Transaction {
+    pub from: Address,
+    pub to: Option<Address>,       // None = contract creation
+    pub value: U256,
+    pub data: Bytes,
+    pub gas_limit: u64,
+    pub gas_price: U256,
+    pub nonce: u64,
+    pub chain_id: Option<u64>,
+    pub signature: Option<(U256, U256, u64)>,  // (r, s, v)
 }
 ```
 
----
-
-## 21. Algorithm Specifications
-
-### 21.1 Block Hash Computation (Pseudocode)
-
-```
-FUNCTION compute_block_hash(number, chain_id, gas_limit, gas_used, base_fee, coinbase, tx_count):
-    payload = concat(
-        number.to_be_bytes(8),
-        chain_id.to_be_bytes(8),
-        gas_limit.to_be_bytes(8),
-        gas_used.to_be_bytes(8),
-        base_fee.to_be_bytes(32),
-        coinbase.bytes(20),
-        tx_count.to_be_bytes(8)
-    )
-    RETURN keccak256(payload)
-```
-
-### 21.2 Transaction Hash (RPC)
-
-```
-FUNCTION tx_hash(tx):
-    payload = concat(
-        tx.from,
-        tx.to.is_some() ? 1 : 0,
-        tx.to.unwrap_or_default(),
-        tx.value.to_be_bytes(32),
-        tx.gas_price.to_be_bytes(32),
-        tx.gas_limit.to_be_bytes(8),
-        tx.nonce.to_be_bytes(8),
-        tx.data,
-        tx.chain_id.unwrap_or(0).to_be_bytes(8)
-    )
-    RETURN keccak256(payload)
-```
-
-### 21.3 Mempool Transaction Selection
-
-```
-FUNCTION select_transactions_for_block(mempool, nonce_cache, gas_limit):
-    senders = mempool.senders()
-    SORT senders BY ready_fee(sender, expected_nonce) DESC
-    gas_used = 0
-    transactions = []
-    FOR sender IN senders:
-        expected_nonce = nonce_cache.get(sender) OR get_account_nonce(sender)
-        tx = mempool.take_ready(sender, expected_nonce)
-        IF tx AND gas_used + tx.gas_limit <= gas_limit:
-            transactions.append(tx)
-            gas_used += tx.gas_limit
-            nonce_cache[sender] = expected_nonce + 1
-    RETURN transactions
-```
-
-### 21.4 Order Matching (PrimeOrders) Pseudocode
-
-```
-FUNCTION submit_order(owner, market, side, price, size, tif):
-    IF NOT market.exists: RETURN Err(UnknownMarket)
-    IF size == 0: RETURN Err(InvalidSize)
-    IF NOT ensure_initial_margin(owner, price, size): RETURN Err(InsufficientCollateral)
-    IF tif == FOK AND available_liquidity(market, side, price) < size: RETURN Err(FokNotFillable)
-
-    remaining = size
-    trades = []
-    levels = side == Buy ? matching_asks(market, price) : matching_bids(market, price)
-
-    FOR level_price IN levels:
-        IF remaining == 0: BREAK
-        queue = book.opposite_side(level_price)
-        WHILE queue not empty AND remaining > 0:
-            maker_order = queue.front
-            fill = min(remaining, maker_order.size)
-            remaining -= fill
-            maker_order.size -= fill
-            apply_fill(market, buyer, seller, fill, level_price)
-            trades.append(Trade{taker: owner, maker: maker_order.owner, ...})
-            IF maker_order.size == 0: queue.pop_front
-    IF remaining > 0 AND tif == GTC: place_order(owner, market, side, price, remaining, tif)
-    RETURN OrderOutcome{filled: size - remaining, remaining, trades}
-```
-
-### 21.5 State Root Computation
-
-```
-FUNCTION compute_state_root():
-    items = []
-    FOR (key, value) IN accounts: items.append((key, value))
-    FOR (key, value) IN storage: items.append((key, value))
-    FOR (key, value) IN prime_orders: items.append((key, value))
-    FOR (key, value) IN bridge_orders_to_evm: items.append((key, value))
-    FOR (key, value) IN bridge_evm_to_orders: items.append((key, value))
-    SORT items BY key
-    buffer = concat all (key || value)
-    RETURN keccak256(buffer)
-```
-
----
-
-## 22. RPC Method Reference (Complete)
-
-### 22.1 prime_chainId
-
-**Params:** `[]`  
-**Returns:** `"0x3e7"` (hex chain ID)  
-**Example:** `{"method":"prime_chainId","params":[],"id":1}`
-
-### 22.2 prime_blockNumber
-
-**Params:** `[]`  
-**Returns:** `"0x5"` (hex block number)  
-**Example:** `{"method":"prime_blockNumber","params":[],"id":1}`
-
-### 22.3 prime_getBalance
-
-**Params:** `[address: string, block?: string|number]`  
-**Returns:** `"0x..."` (hex balance)  
-**Example:** `{"method":"prime_getBalance","params":["0x..."],"id":1}`
-
-### 22.4 prime_getBlockByNumber
-
-**Params:** `[blockNumber: string|number, includeTransactions?: boolean]`  
-**Returns:** Block object or null  
-**Block fields:** number, hash, gas_limit, gas_used, base_fee, state_root, transactions, domain_events
-
-### 22.5 prime_sendTransaction
-
-**Params:** `[tx: object]`  
-**Tx fields:** from, to?, value?, data?, gas?, gas_price?, nonce?, chain_id?  
-**Returns:** `"0x..."` (tx hash)  
-**Errors:** -32005 with reason on rejection
-
-### 22.6 prime_getTransactionByHash
-
-**Params:** `[hash: string]`  
-**Returns:** Transaction object or null
-
-### 22.7 prime_getTransactionReceipt
-
-**Params:** `[hash: string]`  
-**Returns:** Receipt object or null  
-**Receipt fields:** transaction_hash, block_hash, block_number, gas_used, status, contract_address?, output, logs
-
-### 22.8 prime_getLogs
-
-**Params:** `[filter: object]`  
-**Filter fields:** fromBlock?, toBlock?, address?, topics?  
-**Returns:** Array of Log objects
-
-### 22.9 prime_getDomainEvents
-
-**Params:** `[filter?: object]`  
-**Filter fields:** fromBlock?, toBlock?, domain?, kind?  
-**Returns:** Array of {block_number, event_index, domain, kind, data}
-
-### 22.10 primeorders_addMarket
-
-**Params:** `[symbol: string, tickSize: string, lotSize: string]`  
-**Returns:** `"0x1"` (hex market ID)
-
-### 22.11 primeorders_submitOrder
-
-**Params:** `[{owner, market_id, side, price, size, tif?}]`  
-**Returns:** `{order_id?, filled, remaining, trades}`  
-**side:** "buy" | "sell"  
-**tif:** "gtc" | "ioc" | "fok" (default: gtc)
-
-### 22.12 primeorders_cancelOrder
-
-**Params:** `[orderId: string|number]`  
-**Returns:** `true` if cancelled, `false` if not found
-
-### 22.13 primeorders_getOrderBook
-
-**Params:** `[marketId: string|number]`  
-**Returns:** `{bids: [{price, size}], asks: [{price, size}]}` or null
-
-### 22.14 primeorders_getOpenOrders
-
-**Params:** `[owner: string]`  
-**Returns:** Array of order objects
-
-### 22.15 primebridge_enqueueOrdersToEvm
-
-**Params:** `[payload: string]` (0x-prefixed hex)  
-**Returns:** `{nonce, from, to, payload}`
-
-### 22.16 primebridge_enqueueEvmToOrders
-
-**Params:** `[payload: string]`  
-**Returns:** Bridge message object
-
-### 22.17 primebridge_dequeueOrdersToEvm
-
-**Params:** `[]`  
-**Returns:** Message object or null
-
-### 22.18 primebridge_dequeueEvmToOrders
-
-**Params:** `[]`  
-**Returns:** Message object or null
-
----
-
-## 23. Database Schema (sled)
-
-### 23.1 accounts Tree
-
-**Key:** 20-byte address  
-**Value:** bincode(AccountRecord)  
-**AccountRecord:** balance[32], nonce, code_hash[32], code[]
-
-### 23.2 storage Tree
-
-**Key:** 52 bytes (address[20] || slot[32])  
-**Value:** 32-byte value (big-endian)
-
-### 23.3 prime_orders Tree
-
-**Key:** "state"  
-**Value:** bincode(PrimeOrdersSnapshot)  
-**PrimeOrdersSnapshot:** next_order_id, initial_margin_bps, maintenance_margin_bps, markets[], orders[], accounts[], books[]
-
-### 23.4 bridge_orders_to_evm Tree
-
-**Key:** "queue"  
-**Value:** bincode(BridgeQueueRecord)
-
-### 23.5 bridge_evm_to_orders Tree
-
-**Key:** "queue"  
-**Value:** bincode(BridgeQueueRecord)
-
----
-
-## 24. Snapshot Protocol (PSNP)
-
-### 24.1 Wire Format
-
-| Offset | Size | Field |
-|--------|------|-------|
-| 0 | 4 | Magic "PSNP" |
-| 4 | 1 | Version (1) |
-| 5 | 4 | Chunk size (u32 BE) |
-| 9 | 8 | Total length (u64 BE) |
-| 17 | 32 | Keccak-256 hash |
-| 49 | N | Chunked snapshot data |
-
-### 24.2 Chunk Boundaries
-
-Chunks are sequential. Last chunk may be shorter than chunk_size. Total bytes = total_len.
-
-### 24.3 Verification
-
-Receiver must compute Keccak-256 of reassembled data and compare with header hash. Mismatch = reject.
-
-### 24.4 Size Limits
-
-- Max packet (TcpSync): 4 MiB for generic packets
-- Snapshot: configurable max_bytes (default 256 MiB)
-
----
-
-## 25. Security Considerations
-
-### 25.1 Transaction Validation
-
-- Nonce ordering enforced
-- Balance checked before execution
-- Gas limits prevent runaway execution
-- Chain ID prevents cross-chain replay (when provided)
-
-### 25.2 Consensus Security
-
-- 2/3 threshold for finality
-- Double-sign detection and slashing
-- Timeout slashing for missing precommits
-- Unbonding period prevents quick exit attacks
-
-### 25.3 State Integrity
-
-- State root commits all domains
-- Snapshot hash verification
-- Atomic commits per block
-
-### 25.4 Known Limitations
-
-- No transaction signature verification (transactions accepted as-is)
-- No peer authentication in UDP gossip
-- No message encryption
-- Centralized genesis/validator initialization
-
----
-
-## 26. Performance Characteristics
-
-### 26.1 Block Execution
-
-- Complexity: O(n) in transactions
-- Gas limit: 30M default
-- Typical block: 1-1000 transactions
-
-### 26.2 Mempool
-
-- Lookup: O(1) per sender, O(log n) per nonce (BTreeMap)
-- Eviction: O(n) scan for lowest fee
-- Insert: O(log n) for BTreeMap
-
-### 26.3 Order Book
-
-- Price levels: BTreeMap O(log n) lookup
-- Queue: VecDeque O(1) front/back
-- Matching: O(levels * orders_per_level)
-
-### 26.4 State
-
-- sled: LSM-tree based, persistent
-- In-memory: InMemoryDB for revm (full copy during execution)
-
----
-
-## 27. Environment Variables
-
-### 27.1 Logging
-
-- `RUST_LOG`: tracing filter (e.g., `prime_chain=info`)
-
-### 27.2 Tracing
-
-- Uses tracing-subscriber with env-filter
-- Configured in main() before any logging
-
----
-
-## 28. File I/O Summary
-
-| Path | Purpose |
-|------|---------|
-| state/ | sled database directory |
-| state/node_key.json | Node identity (created if missing) |
-| state/peers.json | Peer store (UDP gossip) |
-| config.json | Application config (optional) |
-| snapshot.bin | Exported snapshot (--snapshot-out) |
-
----
-
-**End of Technical Reference**
-
-*For strategic and fundraising documentation, see STRATEGIC_POSITIONING.md and related documents.*
+## Appendix C: Domain Events
+
+Events emitted by the engine for indexing and RPC subscription:
+
+| Domain | Event Kind | Fields |
+|--------|-----------|--------|
+| PrimeOrders | `MarketAdded` | market_id, symbol, tick_size, lot_size |
+| PrimeOrders | `OrderSubmitted` | order_id, owner, market_id, side, price, size, tif, filled, remaining |
+| PrimeOrders | `OrderCancelled` | order_id, owner, market_id |
+| PrimeOrders | `Trade` | taker, maker, market_id, side, price, size |
+| PrimeOrders | `MarginParamsUpdated` | initial_bps, maintenance_bps |
+| PrimeOrders | `CollateralDeposited` | owner, amount |
+| PrimeOrders | `Liquidation` | owner, liquidated |
+| Bridge | `Enqueued` | queue, nonce, from, to, payload |
+| Bridge | `Dequeued` | queue, nonce, from, to, payload |

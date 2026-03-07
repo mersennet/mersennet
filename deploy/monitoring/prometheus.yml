@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'prime-chain-local'
+    static_configs:
+      - targets: ['host.docker.internal:8545']
+        labels:
+          node: 'public-rpc'
+
+  - job_name: 'prime-chain-validators'
+    static_configs:
+      - targets: ['46.225.183.192:8545']
+        labels:
+          node: 'validator-1'
+      - targets: ['91.99.53.19:8545']
+        labels:
+          node: 'validator-2'
+      - targets: ['46.225.229.248:8545']
+        labels:
+          node: 'validator-3'
+      - targets: ['46.225.236.68:8545']
+        labels:
+          node: 'validator-4'
+    metrics_path: '/metrics'

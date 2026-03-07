@@ -1,0 +1,205 @@
+# Prime Chain Public Testnet
+# 4 validators, 1 RPC node, 1 faucet, Prometheus + Grafana
+#
+# Prerequisites:
+#   1. Run genesis tool: cargo run --bin genesis -- --validators 4 --output-dir genesis-output
+#   2. Generate faucet key: echo '{"private_key":"0x<32-byte-hex>"}' > genesis-output/faucet-key.json
+#   3. Add faucet address to genesis accounts with balance
+#
+# Usage: cd testnet && docker compose -f docker-compose.testnet.yml up -d --build
+
+version: "3.9"
+
+services:
+  # Validators (run genesis first to generate configs)
+  validator-1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-testnet-validator-1
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./genesis-output/configs/validator-1.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/keys/validator-1.json:/data/node_key.json:ro
+      - validator-1-data:/data
+    ports:
+      - "8546:8545"
+      - "9090:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  validator-2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-testnet-validator-2
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./genesis-output/configs/validator-2.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/keys/validator-2.json:/data/node_key.json:ro
+      - validator-2-data:/data
+    ports:
+      - "8546:8545"
+      - "9091:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  validator-3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-testnet-validator-3
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./genesis-output/configs/validator-3.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/keys/validator-3.json:/data/node_key.json:ro
+      - validator-3-data:/data
+    ports:
+      - "8547:8545"
+      - "9092:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  validator-4:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-testnet-validator-4
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./genesis-output/configs/validator-4.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/keys/validator-4.json:/data/node_key.json:ro
+      - validator-4-data:/data
+    ports:
+      - "8548:8545"
+      - "9093:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  # RPC node (non-validator, read-only, exposes 8545 for public access)
+  rpc-node:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-testnet-rpc
+    command: ["--config", "/etc/prime-chain/config.json", "--mode", "full", "--rpc"]
+    volumes:
+      - ./genesis-output/configs/rpc-node.json:/etc/prime-chain/config.json:ro
+      - rpc-node-data:/data
+    ports:
+      - "8545:8545"
+    networks:
+      - prime-testnet
+    depends_on:
+      - validator-1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  # Faucet service
+  faucet:
+    build:
+      context: ..
+      dockerfile: Dockerfile.faucet
+    container_name: prime-testnet-faucet
+    command: ["--port", "8080", "--rpc-url", "http://rpc-node:8545", "--private-key", "/etc/faucet/faucet-key.json"]
+    volumes:
+      - ./genesis-output/keys/faucet-key.json:/etc/faucet/faucet-key.json:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - prime-testnet
+    depends_on:
+      - rpc-node
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prime-testnet-prometheus
+    ports:
+      - "9099:9090"
+    volumes:
+      - ./prometheus.testnet.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - prime-testnet
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: prime-testnet-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=primechain
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - prime-testnet
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  validator-1-data:
+  validator-2-data:
+  validator-3-data:
+  validator-4-data:
+  rpc-node-data:
+  grafana-data:
+
+networks:
+  prime-testnet:
+    driver: bridge

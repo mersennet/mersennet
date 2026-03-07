@@ -1,0 +1,23 @@
+# Prime Chain Testnet Node Configuration
+# Copy this file to nodes.conf and fill in your VPS IPs.
+# cp deploy/nodes.conf.example deploy/nodes.conf
+
+# Validators (4x 2 vCPU, 4GB RAM)
+VALIDATOR_1=
+VALIDATOR_2=
+VALIDATOR_3=
+VALIDATOR_4=
+
+# Public node (1x 4 vCPU, 8GB RAM)
+PUBLIC_NODE=
+
+# SSH user (default: root for Hetzner)
+SSH_USER=root
+
+# Chain configuration
+CHAIN_ID=999
+BLOCK_TIME_MS=2000
+
+# Optional: domain for TLS on public RPC (e.g. rpc.primechain.io)
+RPC_DOMAIN=
+FAUCET_DOMAIN=

@@ -1,15 +1,17 @@
 # Prime Chain: Strategic Positioning & Fundraising Strategy
 
-**Version 2.0 - Refined**  
-**Last Updated: January 2026**
+**Version 3.0 - Updated March 2026**  
+**Last Updated: March 2026**
 
 ## Executive Summary
 
 Prime Chain is the **only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture—combining full EVM compatibility with institutional-grade trading infrastructure—solves a critical gap in the $16T+ Real-World Asset (RWA) tokenization market AND the $2.5T+ on-chain institutional credit market.
 
+**Current State (v6.0)**: Prime Chain v6.0 is complete with a working testnet, 62 passing tests, and comprehensive documentation. **Measured performance**: 72K TPS (EVM), 2.4M CLOB ops/s, HotStuff-2 ~200ms finality. The CLOB precompile (0x0100) enables **atomic EVM ↔ CLOB composability** — Solidity contracts can trade on the order book in the same transaction. FBA (Federated Byzantine Agreement) provides MEV protection.
+
 **The Opportunity**: Traditional finance is tokenizing trillions in assets (bonds, commodities, real estate, trade finance) AND credit instruments (loans, credit derivatives, trade finance credit), but existing blockchains lack the deterministic, auditable trading infrastructure required by regulators and institutions.
 
-**The Solution**: Prime Chain provides a unified blockchain where smart contracts and order books coexist in a single atomic state, enabling compliant trading of tokenized RWAs AND on-chain credit markets with sub-second finality and provable execution fairness.
+**The Solution**: Prime Chain provides a unified blockchain where smart contracts and order books coexist in a single atomic state, enabling compliant trading of tokenized RWAs AND on-chain credit markets with ~200ms finality and provable execution fairness. **Note on Hyperliquid**: Hyperliquid has HyperEVM (alpha) and a CLOB, but EVM↔CLOB composability is **ASYNC** — CoreWriter is delayed by seconds, reads are stale by 1 block. Prime Chain has **TRUE atomic composability** (same transaction). Our CLOB matching is **12x faster** than Hyperliquid's (2.4M vs 200K ops/s).
 
 **The Advantage**: Deep connections to Standard Chartered (RWA tokenization leader), XDC Network (trade finance blockchain), Binance (exchange infrastructure), and Greg Kidd (institutional crypto pioneer) position Prime Chain uniquely to capture this market.
 
@@ -91,10 +93,10 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
    - **Regulatory value**: Can provide audit trails required by SEC, FCA, MAS
 
 4. **Institutional Performance** ⭐ **PRODUCTION-READY**
-   - **What it means**: Sub-second finality, 10,000+ orders/second, low latency
+   - **What it means**: ~200ms finality (HotStuff-2), 72K EVM TPS, 2.4M CLOB ops/s, low latency
    - **Why it matters**: Traditional exchanges require millisecond latency
-   - **Proof point**: Deterministic execution enables parallel verification
-   - **Competitive advantage**: Ethereum finality is 12 seconds, Solana lacks determinism
+   - **Proof point**: Deterministic execution enables parallel verification; CLOB matching 12x faster than Hyperliquid (2.4M vs 200K ops/s)
+   - **Competitive advantage**: Ethereum finality is 12 seconds, Solana lacks determinism; Hyperliquid has async EVM↔CLOB (delayed by seconds)
    - **Institutional value**: Meets HFT requirements for market making
 
 ---
@@ -653,7 +655,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 | Feature | Ethereum | Prime Chain | Advantage |
 |---------|----------|-------------|-----------|
-| Finality | 12 seconds | <1 second | **12x faster** - Critical for trading |
+| Finality | 12 seconds | ~200ms | **60x faster** - Critical for trading |
 | Order Matching | Smart contracts (Uniswap, etc.) | Native consensus-level | **Provable fairness** - No MEV |
 | Determinism | Probabilistic | Fully deterministic | **Regulatory compliance** |
 | RWA Support | Requires complex contracts | Built-in order books | **Institutional ready** |
@@ -666,7 +668,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 | Feature | Solana | Prime Chain | Advantage |
 |---------|--------|-------------|-----------|
-| Finality | ~400ms | <1 second | Comparable |
+| Finality | ~400ms | ~200ms | **Faster** |
 | VM | Custom (Sealevel) | EVM (revm) | **Full ecosystem** - All Ethereum tools work |
 | Order Matching | None (requires DEX) | Native consensus-level | **Built-in** - No smart contract risk |
 | Determinism | Partial | Fully deterministic | **Regulatory compliance** |
@@ -681,12 +683,24 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 |---------|-----|-------------|-----------|
 | Security | Depends on L1 | Native L1 | **No dependencies** - Full security |
 | Order Matching | Smart contracts | Native consensus-level | **Provable fairness** |
-| Finality | 1-2 seconds | <1 second | **Faster** |
+| Finality | 1-2 seconds | ~200ms | **Faster** |
 | RWA Support | Limited | Built-in | **Institutional ready** |
 | Withdrawal | 7 days (Arbitrum) | Instant | **No lockup** |
 | **Use Case Fit** | Scaling Ethereum | **RWA Trading** | Prime Chain wins |
 
 **Pitch**: "L2s scale Ethereum, but Prime Chain is purpose-built for institutional RWA trading."
+
+### vs. Hyperliquid ⭐ **Atomic vs. Async Composability**
+
+| Feature | Hyperliquid | Prime Chain | Advantage |
+|---------|-------------|-------------|-----------|
+| Finality | ~200ms | ~200ms | Comparable |
+| CLOB | Native (200K ops/s) | Native (2.4M ops/s) | **12x faster** |
+| EVM | HyperEVM (alpha) | Full EVM | **Production-ready** |
+| EVM↔CLOB | **ASYNC** (CoreWriter delayed by seconds, reads stale by 1 block) | **ATOMIC** (same transaction) | **True composability** |
+| **Use Case Fit** | Crypto derivatives | **RWA + Credit + DeFi** | Prime Chain wins for atomic flows |
+
+**Pitch**: "Hyperliquid has a CLOB and EVM, but they're async — different blocks, delayed by seconds. Prime Chain has TRUE atomic composability: Solidity contracts trade on the order book in the same transaction."
 
 ### vs. dYdX / Orderly ⭐ **Full Blockchain + Composability**
 
@@ -715,7 +729,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### Competitive Moat Analysis
 
 **1. Technical Moat** ⭐⭐⭐⭐⭐
-- **Native order matching**: No other L1 has this
+- **Atomic EVM ↔ CLOB composability**: Only L1 with same-transaction composability (Hyperliquid has async)
 - **Deterministic execution**: Provable fairness
 - **Cross-domain architecture**: Unique RWA ↔ DeFi bridge
 - **Defensibility**: Hard to replicate (requires consensus-level changes)
@@ -832,8 +846,8 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
   - Deterministic execution (provable, auditable)
   - Cross-domain bridge (RWA ↔ DeFi atomic operations)
 - **Performance**:
-  - Sub-second finality (vs. 12s Ethereum)
-  - 10,000+ orders/second
+  - ~200ms finality via HotStuff-2 (vs. 12s Ethereum)
+  - 72K EVM TPS, 2.4M CLOB ops/s
   - Low latency (critical for trading)
 - **Compliance**:
   - Deterministic = auditable
@@ -957,8 +971,8 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 - **Technical Advisory**: Engage blockchain experts for technical review
 
 **Success Metrics**:
-- ✅ Sub-second finality achieved
-- ✅ 10,000+ orders/second throughput
+- ✅ ~200ms finality achieved (HotStuff-2)
+- ✅ 72K EVM TPS, 2.4M CLOB ops/s throughput
 - ✅ Security audit passed
 - ✅ EVM compatibility verified
 

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prime Chain Testnet Faucet</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+        h1 { font-size: 1.5rem; }
+        label { display: block; margin-top: 1rem; font-weight: 500; }
+        input { width: 100%; padding: 0.5rem; font-family: monospace; }
+        button { margin-top: 1rem; padding: 0.5rem 1rem; background: #333; color: #fff; border: none; cursor: pointer; }
+        button:hover { background: #555; }
+        .result { margin-top: 1rem; padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>Prime Chain Testnet Faucet</h1>
+    <p>Enter your wallet address to receive test tokens.</p>
+    <form id="faucet-form">
+        <label for="address">Address (0x...)</label>
+        <input type="text" id="address" name="address" placeholder="0x..." required>
+        <button type="submit">Request Tokens</button>
+    </form>
+    <div id="result"></div>
+    <script>
+        document.getElementById('faucet-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const addr = document.getElementById('address').value.trim();
+            const resultEl = document.getElementById('result');
+            resultEl.textContent = 'Sending...';
+            resultEl.className = 'result';
+            try {
+                const r = await fetch('/faucet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: addr })
+                });
+                const data = await r.json();
+                if (data.success) {
+                    resultEl.textContent = 'Success! Tx: ' + data.tx_hash;
+                    resultEl.className = 'result success';
+                } else {
+                    resultEl.textContent = 'Error: ' + (data.error || 'Unknown');
+                    resultEl.className = 'result error';
+                }
+            } catch (err) {
+                resultEl.textContent = 'Error: ' + err.message;
+                resultEl.className = 'result error';
+            }
+        };
+    </script>
+</body>
+</html>

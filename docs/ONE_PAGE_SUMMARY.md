@@ -19,20 +19,20 @@
 
 **Prime Chain is the only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture enables:
 
-✅ **Sub-second finality** (vs. 12s Ethereum) - Institutional-grade latency  
+✅ **~200ms finality via HotStuff-2** (vs. 12s Ethereum) - Institutional-grade latency  
 ✅ **Provable fairness** - Every trade is auditable, no MEV manipulation  
 ✅ **EVM compatibility** - Full DeFi ecosystem integration  
 ✅ **Built-in risk management** - Margin, liquidation, position management  
 ✅ **Regulatory compliance** - Deterministic execution = auditable = compliance-ready  
 
-**Architecture**: Unified blockchain where smart contracts and order books coexist in a single atomic state, enabling compliant trading of tokenized RWAs AND on-chain credit markets.
+**Architecture**: Unified blockchain where smart contracts and order books coexist in a single atomic state, enabling compliant trading of tokenized RWAs AND on-chain credit markets. **Measured performance**: 72,181 EVM TPS, 2.4M CLOB ops/s. **Atomic EVM ↔ CLOB precompile (0x0100)** — Solidity contracts can trade on the order book in the same transaction.
 
 ---
 
 ## Why Prime Chain Wins
 
 ### 1. Unique Technology Moat ⭐⭐⭐⭐⭐
-- **Only L1 with native order matching** (defensible technical moat)
+- **Only L1 with ATOMIC EVM ↔ CLOB composability** — Hyperliquid has a CLOB + EVM but they are async (different blocks); Prime Chain has atomic same-transaction composability (defensible technical moat)
 - **Deterministic execution** (regulatory compliance)
 - **Cross-domain bridge** (RWA ↔ Credit ↔ DeFi atomic operations)
 
@@ -75,16 +75,17 @@
 
 ## Competitive Advantage
 
-| Feature | Ethereum | Solana | Prime Chain |
-|---------|----------|--------|-------------|
-| Finality | 12 seconds | ~400ms | **<1 second** |
-| Order Matching | Smart contracts | None | **Native consensus** |
-| Determinism | Probabilistic | Partial | **Fully deterministic** |
-| EVM | Yes | No | **Yes** |
-| RWA Support | Complex contracts | Limited | **Built-in** |
-| Credit Support | Complex contracts | Limited | **Built-in** |
+| Feature | Ethereum | Solana | Hyperliquid | Monad | Sei v2 | Prime Chain |
+|---------|----------|--------|-------------|-------|--------|-------------|
+| Finality | 12 seconds | ~400ms | ~200ms | ~1s | ~400ms | **~200ms** |
+| Order Matching | Smart contracts | None | Native (200K ops/s) | None | Deprecated DEX | **Native (2.4M ops/s)** |
+| EVM↔CLOB | N/A | N/A | **ASYNC** (next-block, delayed by seconds) | N/A | N/A | **ATOMIC** (same tx) |
+| EVM | Yes | No | HyperEVM (alpha) | Yes (~10K TPS) | Yes (~5K TPS) | **Yes** |
+| Determinism | Probabilistic | Partial | Partial | Partial | Partial | **Fully deterministic** |
+| RWA Support | Complex contracts | Limited | Limited | Limited | Limited | **Built-in** |
+| Credit Support | Complex contracts | Limited | Limited | Limited | Limited | **Built-in** |
 
-**Moat**: Native order matching is hard to replicate (requires consensus-level changes)
+**Moat**: Only L1 with ATOMIC EVM ↔ CLOB composability — Hyperliquid has CLOB + EVM but they are async (different blocks). Native order matching is hard to replicate (requires consensus-level changes).
 
 ---
 
@@ -139,7 +140,7 @@
 **Prime Chain is positioned to capture a significant portion of the $18.5T+ combined market (RWA + On-Chain Credit) by providing the only blockchain infrastructure that meets institutional requirements for deterministic, auditable trading.**
 
 **Why Invest Now**:
-1. **Unique Technology**: Only L1 with native order matching (defensible moat)
+1. **Unique Technology**: Only L1 with ATOMIC EVM↔CLOB composability (defensible moat)
 2. **Massive TAM**: $18.5T+ opportunity with regulatory tailwinds
 3. **Proven Connections**: Standard Chartered, XDC Network, Binance partnerships
 4. **First-Mover**: No direct competitor with same tech + positioning
@@ -148,7 +149,7 @@
 **Risk Mitigation**:
 - ✅ Early regulatory engagement (FCA, MAS, SEC)
 - ✅ Strong institutional partnerships (Standard Chartered, XDC)
-- ✅ Performance benchmarks (sub-second finality proven)
+- ✅ Performance benchmarks (72K TPS, 2.4M CLOB ops/s, ~200ms finality proven)
 - ✅ Technical moat (native matching hard to replicate)
 
 ---
@@ -173,7 +174,7 @@
 **Prime Chain**  
 *The Institutional Trading Layer for Real-World Assets + On-Chain Credit Markets*
 
-**Key Differentiator**: The only blockchain with native, deterministic order matching built into consensus.
+**Key Differentiator**: The only blockchain with ATOMIC EVM ↔ CLOB composability — Hyperliquid has CLOB + EVM but they are async (different blocks).
 
 **Market**: $18.5T+ TAM by 2030  
 **Technology**: Native order matching + EVM compatibility  

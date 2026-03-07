@@ -1,0 +1,59 @@
+{
+  "engine": {
+    "chain_id": 999,
+    "state_path": "/data/state",
+    "gas_limit_per_block": 30000000
+  },
+  "mempool": {
+    "max_total": 10000,
+    "max_per_sender": 1000,
+    "bump_bps": 1000
+  },
+  "rpc": {
+    "enabled": true,
+    "addr": "0.0.0.0:8545"
+  },
+  "p2p": {
+    "listen": "0.0.0.0:9090",
+    "peers": [
+      "validator-1:9090",
+      "validator-2:9090",
+      "validator-3:9090"
+    ],
+    "block_time_ms": 1000,
+    "node_key_path": "/data/node_key.json",
+    "peer_store_path": "/data/peers.json"
+  },
+  "slashing": {
+    "double_sign_bps": 500,
+    "timeout_bps": 100,
+    "escalation_step_bps": 25,
+    "escalation_max_bps": 1000,
+    "round_timeout_ms": 500,
+    "unbonding_period": 100
+  },
+  "token_economics": {
+    "max_supply": "42000000000000000000000000",
+    "initial_reward_per_block": "100000000000000000000",
+    "halving_interval": 4200000
+  },
+  "genesis": {
+    "accounts": [
+      {
+        "address": "0x0000000000000000000000000000000000000001",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x0000000000000000000000000000000000000002",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x0000000000000000000000000000000000000003",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      }
+    ]
+  }
+}
