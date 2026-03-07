@@ -516,7 +516,7 @@ New validators receive a penalty: `-(total_voting_stake + total_voting_stake / 8
 - **Distribution:** Pro-rata by stake
 - **Burn:** `burned = scheduled_reward - Σ(distributed_rewards)` (rounding dust)
 - **Supply cap:** Rewards capped at `remaining_supply = max_supply - total_minted`
-- **Defaults:** 42M max supply (18 decimals), 100 tokens/block initial reward, 4.2M block halving interval
+- **Defaults:** 1B PRIM max supply (18 decimals), 10 PRIM/block initial reward, 35M block halving interval. Block rewards: 70% of supply.
 
 ---
 
@@ -1258,9 +1258,9 @@ JSON-based configuration loaded from a file path. All fields have defaults.
     "unbonding_period": 2
   },
   "token_economics": {
-    "max_supply": "42000000000000000000000000",
-    "initial_reward_per_block": "100000000000000000000",
-    "halving_interval": 4200000
+    "max_supply": "1000000000000000000000000000",
+    "initial_reward_per_block": "10000000000000000000",
+    "halving_interval": 35000000
   },
   "rpc": {
     "enabled": false,
@@ -1293,9 +1293,9 @@ JSON-based configuration loaded from a file path. All fields have defaults.
 | `slashing.escalation_max_bps` | 1,000 | basis points (10%) |
 | `slashing.round_timeout_ms` | 500 | milliseconds |
 | `slashing.unbonding_period` | 2 | blocks |
-| `token_economics.max_supply` | 42M × 10^18 | wei |
-| `token_economics.initial_reward_per_block` | 100 × 10^18 | wei |
-| `token_economics.halving_interval` | 4,200,000 | blocks |
+| `token_economics.max_supply` | 1B × 10^18 (PRIM) | wei |
+| `token_economics.initial_reward_per_block` | 10 × 10^18 (PRIM) | wei |
+| `token_economics.halving_interval` | 35,000,000 | blocks |
 | `rpc.addr` | 127.0.0.1:8545 | — |
 | `p2p.listen` | 0.0.0.0:30303 | — |
 | `p2p.block_time_ms` | 1,000 | milliseconds |
@@ -1465,12 +1465,12 @@ Each validator has:
     "double_sign_bps": 500,
     "timeout_bps": 100,
     "round_timeout_ms": 500,
-    "unbonding_period": 100
+    "unbonding_period": 2
   },
   "token_economics": {
-    "max_supply": "42000000000000000000000000",
-    "initial_reward_per_block": "100000000000000000000",
-    "halving_interval": 4200000
+    "max_supply": "1000000000000000000000000000",
+    "initial_reward_per_block": "10000000000000000000",
+    "halving_interval": 35000000
   }
 }
 ```

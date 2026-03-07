@@ -401,18 +401,18 @@ fn default_unbonding_period() -> u64 {
 
 fn default_max_supply() -> String {
     let decimals = 1_000_000_000_000_000_000u128;
-    let max = 42_000_000u128 * decimals;
+    let max = 1_000_000_000u128 * decimals;
     max.to_string()
 }
 
 fn default_initial_reward() -> String {
     let decimals = 1_000_000_000_000_000_000u128;
-    let reward = 100u128 * decimals;
+    let reward = 10u128 * decimals;
     reward.to_string()
 }
 
 fn default_halving_interval() -> u64 {
-    4_200_000
+    35_000_000
 }
 
 fn default_rpc_addr() -> String {

@@ -491,8 +491,8 @@ impl Consensus {
         }
 
         if is_new {
-            let total = self.total_voting_stake();
-            let penalty = -(total as i128 + total as i128 / 8);
+            let total = self.total_voting_weight();
+            let penalty = -(total.saturating_add(total / 8));
             self.proposer_priorities.insert(address, penalty);
         }
 
@@ -716,15 +716,27 @@ impl Consensus {
         current_height.saturating_sub(evidence_height) > self.max_evidence_age
     }
 
-    fn total_voting_stake(&self) -> u64 {
+    fn voting_weight(&self, stake: U256) -> i128 {
+        let total = self.total_stake();
+        if total.is_zero() {
+            return 0;
+        }
+        // Normalize stakes to a safe i128 range by scaling relative to total.
+        // weight = (stake * 1_000_000) / total_stake — preserves proportions
+        // without overflowing i128 regardless of 18-decimal U256 magnitudes.
+        stake
+            .saturating_mul(U256::from(1_000_000u64))
+            .checked_div(total)
+            .unwrap_or(U256::ZERO)
+            .as_limbs()[0] as i128
+    }
+
+    fn total_voting_weight(&self) -> i128 {
         self.validators
             .iter()
             .filter(|v| self.is_eligible(&v.address))
-            .map(|v| {
-                let limbs = v.stake.as_limbs();
-                limbs[0]
-            })
-            .fold(0u64, |acc, s| acc.saturating_add(s))
+            .map(|v| self.voting_weight(v.stake))
+            .fold(0i128, |acc, w| acc.saturating_add(w))
     }
 
     pub fn proposer(&mut self, height: u64) -> Address {
@@ -743,12 +755,12 @@ impl Consensus {
             return eligible[0].address;
         }
 
-        let total_voting = self.total_voting_stake() as i128;
+        let total_voting = self.total_voting_weight();
 
         for v in &eligible {
-            let stake_i128 = v.stake.as_limbs()[0] as i128;
+            let weight = self.voting_weight(v.stake);
             let priority = self.proposer_priorities.entry(v.address).or_insert(0);
-            *priority = priority.saturating_add(stake_i128);
+            *priority = priority.saturating_add(weight);
         }
 
         let winner = eligible
@@ -813,8 +825,7 @@ impl Consensus {
                 .iter()
                 .map(|validator| Reward {
                     address: validator.address,
-                    amount: self
-                        .reward_per_block(height)
+                    amount: effective_reward
                         .saturating_mul(validator.stake)
                         .checked_div(total_stake)
                         .unwrap_or(U256::ZERO),
@@ -830,7 +841,11 @@ impl Consensus {
 
         let active_count = self.validators.iter().filter(|v| self.is_eligible(&v.address)).count();
         metrics::gauge!("prime_chain_validators_active", active_count as f64);
-        metrics::gauge!("prime_chain_total_stake", total_stake.as_limbs()[0] as f64);
+        let stake_display = total_stake
+            .checked_div(U256::from(1_000_000_000_000_000_000u128))
+            .unwrap_or(U256::ZERO)
+            .as_limbs()[0] as f64;
+        metrics::gauge!("prime_chain_total_stake", stake_display);
 
         Finalization {
             block_hash,
