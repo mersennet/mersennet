@@ -120,12 +120,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "escalation_step_bps": 25,
                 "escalation_max_bps": 1000,
                 "round_timeout_ms": 500,
-                "unbonding_period": 100
+                "unbonding_period": 2
             },
             "token_economics": {
-                "max_supply": "42000000000000000000000000",
-                "initial_reward_per_block": "100000000000000000000",
-                "halving_interval": 4200000
+                "max_supply": "1000000000000000000000000000",
+                "initial_reward_per_block": "10000000000000000000",
+                "halving_interval": 35000000
             },
             "genesis": genesis
         });
@@ -164,12 +164,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "escalation_step_bps": 25,
             "escalation_max_bps": 1000,
             "round_timeout_ms": 500,
-            "unbonding_period": 100
+            "unbonding_period": 2
         },
         "token_economics": {
-            "max_supply": "42000000000000000000000000",
-            "initial_reward_per_block": "100000000000000000000",
-            "halving_interval": 4200000
+            "max_supply": "1000000000000000000000000000",
+            "initial_reward_per_block": "10000000000000000000",
+            "halving_interval": 35000000
         },
         "genesis": genesis
     });
