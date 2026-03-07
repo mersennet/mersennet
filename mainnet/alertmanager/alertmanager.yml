@@ -1,0 +1,24 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical'
+      continue: true
+
+receivers:
+  - name: 'default'
+    # Configure your notification channel (Slack, PagerDuty, email, etc.)
+    # webhook_configs:
+    #   - url: 'https://hooks.slack.com/services/xxx'
+
+  - name: 'critical'
+    # webhook_configs:
+    #   - url: 'https://hooks.slack.com/services/xxx'
