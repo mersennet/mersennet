@@ -12,6 +12,10 @@ deploy/.genesis-output/
 deploy/.deployment-info
 deploy/nodes.conf
 
+# Dependencies
+node_modules/
+sdk/node_modules/
+
 # IDE / OS
 .DS_Store
 *.swp
