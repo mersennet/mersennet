@@ -1,0 +1,69 @@
+# Extends the testnet compose with load testing containers.
+# Usage: docker compose -f docker-compose.testnet.yml -f docker-compose.loadtest.yml up
+version: '3.8'
+
+services:
+  loadtest-transfer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-loadtest-transfer
+    entrypoint: ["/usr/local/bin/loadtest"]
+    command: ["--rpc", "http://rpc-node:8545", "--rate", "500", "--duration", "120", "--mode", "transfer"]
+    depends_on:
+      rpc-node:
+        condition: service_healthy
+    networks:
+      - prime-testnet
+    environment:
+      - RUST_LOG=info
+
+  loadtest-clob:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-loadtest-clob
+    entrypoint: ["/usr/local/bin/loadtest"]
+    command: ["--rpc", "http://rpc-node:8545", "--rate", "200", "--duration", "120", "--mode", "clob"]
+    depends_on:
+      rpc-node:
+        condition: service_healthy
+    networks:
+      - prime-testnet
+    environment:
+      - RUST_LOG=info
+
+  loadtest-mixed:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-loadtest-mixed
+    entrypoint: ["/usr/local/bin/loadtest"]
+    command: ["--rpc", "http://rpc-node:8545", "--rate", "300", "--duration", "120", "--mode", "mixed"]
+    depends_on:
+      rpc-node:
+        condition: service_healthy
+    networks:
+      - prime-testnet
+    environment:
+      - RUST_LOG=info
+
+  stresstest:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-stresstest
+    entrypoint: ["/usr/local/bin/stresstest"]
+    command: ["--rpc", "http://rpc-node:8545"]
+    depends_on:
+      rpc-node:
+        condition: service_healthy
+    networks:
+      - prime-testnet
+    environment:
+      - RUST_LOG=info
+
+networks:
+  prime-testnet:
+    external: true
+    name: testnet_prime-testnet

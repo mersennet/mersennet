@@ -1,0 +1,58 @@
+{
+  "engine": {
+    "chain_id": 13370,
+    "state_path": "/var/lib/prime-chain/state",
+    "storage_backend": "redb",
+    "gas_limit_per_block": 30000000,
+    "fee_elasticity_multiplier": 2,
+    "fee_max_change_denominator": 8
+  },
+  "mempool": {
+    "max_total": 10000,
+    "max_per_sender": 1000,
+    "bump_bps": 1000
+  },
+  "prime_orders": {
+    "initial_margin_bps": 500,
+    "maintenance_margin_bps": 250
+  },
+  "bridge": {
+    "max_queue_len": 10000
+  },
+  "genesis": {
+    "accounts": []
+  },
+  "slashing": {
+    "double_sign_bps": 500,
+    "timeout_bps": 100,
+    "escalation_step_bps": 25,
+    "escalation_max_bps": 1000,
+    "round_timeout_ms": 500,
+    "unbonding_period": 100
+  },
+  "token_economics": {
+    "max_supply": "42000000000000000000000000",
+    "initial_reward_per_block": "100000000000000000000",
+    "halving_interval": 4200000
+  },
+  "rpc": {
+    "enabled": true,
+    "addr": "0.0.0.0:8545"
+  },
+  "p2p": {
+    "node_key_path": "/var/lib/prime-chain/node_key.json",
+    "peer_store_path": "/var/lib/prime-chain/peers.json",
+    "listen": "0.0.0.0:30303",
+    "peers": [],
+    "block_time_ms": 200,
+    "noise_enabled": true
+  },
+  "ws": {
+    "enabled": true,
+    "addr": "0.0.0.0:9945"
+  },
+  "zk": {
+    "enabled": false,
+    "checkpoint_interval": 100
+  }
+}
