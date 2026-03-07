@@ -2560,7 +2560,7 @@ Configuration is JSON-based with hot-reload support:
 ```json
 {
   "engine": {
-    "chain_id": 999,
+    "chain_id": 7919,
     "state_path": "state",
     "gas_limit_per_block": 30000000,
     "fee_elasticity_multiplier": 2,

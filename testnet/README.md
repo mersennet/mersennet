@@ -9,7 +9,7 @@ This directory contains tooling to run a Prime Chain public testnet with multipl
 From the project root:
 
 ```bash
-cargo run --bin genesis -- --validators 4 --chain-id 999 --output-dir genesis-output
+cargo run --bin genesis -- --validators 4 --chain-id 7919 --output-dir genesis-output
 ```
 
 This creates:
@@ -37,7 +37,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 | Parameter    | Value |
 |-------------|-------|
-| Chain ID    | 999   |
+| Chain ID    | 7919   |
 | RPC URL     | http://localhost:8545 |
 | Faucet URL  | http://localhost:8080 |
 | Block Time  | ~1 second |
@@ -49,7 +49,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 2. Use:
    - **Network Name**: Prime Chain Testnet
    - **RPC URL**: `http://localhost:8545` (or your public RPC)
-   - **Chain ID**: 999
+   - **Chain ID**: 7919
    - **Currency Symbol**: PRIME
 
 3. Import an account or create one, then use the faucet to fund it.

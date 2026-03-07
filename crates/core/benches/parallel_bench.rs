@@ -18,7 +18,7 @@ fn main() {
 
     for batch_size in [100, 500, 1000, 1428] {
         let dir = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(999, dir.path().join("s1"));
+        let mut eng = Engine::new_with_state(7919, dir.path().join("s1"));
         eng.add_validator(make_address(1), U256::from(1000u64)).unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
         
@@ -39,7 +39,7 @@ fn main() {
                 gas_limit: 21_000,
                 gas_price: U256::from(1u64),
                 nonce: 0,
-                chain_id: Some(999),
+                chain_id: Some(7919),
                 signature: None,
             };
             let _ = eng.submit_tx(tx);
@@ -47,7 +47,7 @@ fn main() {
 
         // Sequential execution
         let dir2 = tempfile::tempdir().unwrap();
-        let mut eng2 = Engine::new_with_state(999, dir2.path().join("s2"));
+        let mut eng2 = Engine::new_with_state(7919, dir2.path().join("s2"));
         eng2.add_validator(make_address(1), U256::from(1000u64)).unwrap();
         eng2.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
         for i in 1..=(batch_size as u16 + 1) {
@@ -64,7 +64,7 @@ fn main() {
                 gas_limit: 21_000,
                 gas_price: U256::from(1u64),
                 nonce: 0,
-                chain_id: Some(999),
+                chain_id: Some(7919),
                 signature: None,
             };
             let _ = eng2.submit_tx(tx);
@@ -96,7 +96,7 @@ fn main() {
     println!("\n=== Frequent Batch Auction Benchmark ===\n");
     for batch_size in [100, 500, 1000, 5000, 10000] {
         let dir = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(999, dir.path().join("fba"));
+        let mut eng = Engine::new_with_state(7919, dir.path().join("fba"));
         let market = eng.prime_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
         
         let start = Instant::now();
@@ -136,7 +136,7 @@ fn main() {
     println!("\n=== HotStuff-2 Consensus Benchmark ===\n");
     {
         let dir = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(999, dir.path().join("hs2"));
+        let mut eng = Engine::new_with_state(7919, dir.path().join("hs2"));
         for i in 1..=10u16 {
             eng.add_validator(make_address(i), U256::from(100u64)).unwrap();
         }
@@ -161,7 +161,7 @@ fn main() {
         for backend in ["sled", "redb"] {
             let dir = tempfile::tempdir().unwrap();
             std::fs::create_dir_all(dir.path()).ok();
-            let mut eng = Engine::new_with_backend(999, dir.path(), backend);
+            let mut eng = Engine::new_with_backend(7919, dir.path(), backend);
             eng.add_validator(make_address(1), U256::from(1000u64)).unwrap();
             eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
             for i in 1..=(batch_size as u16 + 1) {
@@ -176,7 +176,7 @@ fn main() {
                     gas_limit: 21_000,
                     gas_price: U256::from(1u64),
                     nonce: (i / 255) as u64,
-                    chain_id: Some(999),
+                    chain_id: Some(7919),
                     signature: None,
                 };
                 let _ = eng.submit_tx(tx);

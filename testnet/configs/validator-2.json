@@ -1,6 +1,6 @@
 {
   "engine": {
-    "chain_id": 999,
+    "chain_id": 7919,
     "state_path": "/data/state",
     "gas_limit_per_block": 30000000
   },

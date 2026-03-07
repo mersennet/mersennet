@@ -20,9 +20,9 @@ fn hex_addr(address: Address) -> String {
 
 #[test]
 fn rpc_prime_chain_id() {
-    let (mut engine, _dir) = setup_engine(999);
+    let (mut engine, _dir) = setup_engine(7919);
     let result = route("prime_chainId", Value::Null, &mut engine).expect("rpc ok");
-    assert_eq!(result, Value::String("0x3e7".to_string()));
+    assert_eq!(result, Value::String("0x1eef".to_string()));
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn rpc_prime_get_balance() {
 
 #[test]
 fn rpc_prime_send_transaction_adds_to_mempool() {
-    let (mut engine, _dir) = setup_engine(999);
+    let (mut engine, _dir) = setup_engine(7919);
     let alice = addr(0x11);
     let bob = addr(0x22);
     engine.fund_account(alice, U256::from(1_000_000u64), 0);
@@ -62,7 +62,7 @@ fn rpc_prime_send_transaction_adds_to_mempool() {
         gas_limit: 21_000,
         gas_price: U256::from(1u64),
         nonce: 0,
-        chain_id: Some(999),
+        chain_id: Some(7919),
         signature: None,
     };
 
