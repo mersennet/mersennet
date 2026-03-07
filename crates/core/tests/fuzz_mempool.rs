@@ -22,7 +22,7 @@ fn mempool_randomized_inserts_do_not_exceed_limits() {
             gas_limit: 21_000,
             gas_price: U256::from(rng.gen_range(1u64..1000u64)),
             nonce: rng.gen_range(0u64..100u64),
-            chain_id: Some(999),
+            chain_id: Some(7919),
             signature: None,
         };
         let _ = mempool.insert(tx, base_fee, 0);
