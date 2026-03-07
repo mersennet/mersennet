@@ -1,0 +1,43 @@
+[package]
+name = "prime-chain-node"
+version = "0.7.0"
+authors = ["Rodolfo Cova @rodaemonic"]
+edition = "2024"
+
+[[bin]]
+name = "prime-chain"
+path = "src/bin/prime-chain.rs"
+
+[[bin]]
+name = "genesis"
+path = "src/bin/genesis.rs"
+
+[[bin]]
+name = "faucet"
+path = "src/bin/faucet.rs"
+
+[[bin]]
+name = "loadtest"
+path = "src/bin/loadtest.rs"
+
+[[bin]]
+name = "stresstest"
+path = "src/bin/stresstest.rs"
+
+[dependencies]
+prime-chain = { path = "../core" }
+prime-chain-network = { path = "../network" }
+prime-chain-rpc = { path = "../rpc" }
+anyhow = "1.0"
+hex = "0.4"
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "sha256", "std"] }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tiny_http = "0.12"
+ureq = "2.9"
+revm = { version = "12", default-features = false, features = ["std", "serde"] }
+ctrlc = "3.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+metrics = "0.19"

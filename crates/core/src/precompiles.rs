@@ -1,0 +1,291 @@
+use std::sync::{Arc, Mutex};
+
+use once_cell::sync::Lazy;
+use revm::db::InMemoryDB;
+use revm::handler::register::EvmHandler;
+use revm::precompile::Precompile;
+use revm::primitives::{Address, Bytes, Env, PrecompileError, PrecompileErrors, PrecompileOutput, PrecompileResult, U256};
+use revm::ContextPrecompile;
+
+use crate::precompile_abi::*;
+use crate::prime_orders::{MarketId, OrderId, PrimeOrdersState, Side, TimeInForce};
+
+// ---------------------------------------------------------------------------
+// Global PrimeOrders context — set before block execution, cleared after.
+// ---------------------------------------------------------------------------
+
+static PRIME_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<PrimeOrdersState>>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+pub fn set_prime_orders_context(state: Arc<Mutex<PrimeOrdersState>>) {
+    *PRIME_ORDERS_CTX.lock().unwrap() = Some(state);
+}
+
+pub fn clear_prime_orders_context() {
+    *PRIME_ORDERS_CTX.lock().unwrap() = None;
+}
+
+fn with_orders<F, R>(f: F) -> Result<R, PrecompileErrors>
+where
+    F: FnOnce(&mut PrimeOrdersState) -> R,
+{
+    let guard = PRIME_ORDERS_CTX.lock().map_err(|_| PrecompileErrors::Fatal {
+        msg: "prime orders context lock poisoned".into(),
+    })?;
+    let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
+        msg: "prime orders context not set".into(),
+    })?;
+    let mut state = arc.lock().map_err(|_| PrecompileErrors::Fatal {
+        msg: "prime orders state lock poisoned".into(),
+    })?;
+    Ok(f(&mut state))
+}
+
+// ---------------------------------------------------------------------------
+// Handler register — plugs the precompile into an EVM builder.
+// ---------------------------------------------------------------------------
+
+pub fn register_prime_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
+    let prev_load = handler.pre_execution.load_precompiles.clone();
+    handler.pre_execution.load_precompiles = Arc::new(move || {
+        let mut precompiles = prev_load();
+        precompiles.extend([(
+            PRIME_ORDERS_PRECOMPILE,
+            ContextPrecompile::Ordinary(Precompile::Env(prime_orders_precompile)),
+        )]);
+        precompiles
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Main precompile entry-point (dispatches on function selector).
+// ---------------------------------------------------------------------------
+
+fn prime_orders_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> PrecompileResult {
+    if input.len() < 4 {
+        return Err(PrecompileError::other("input too short for function selector").into());
+    }
+
+    let sel = [input[0], input[1], input[2], input[3]];
+    let caller = env.tx.caller;
+
+    if sel == place_order_selector() {
+        handle_place_order(input, gas_limit, caller)
+    } else if sel == cancel_order_selector() {
+        handle_cancel_order(input, gas_limit)
+    } else if sel == deposit_collateral_selector() {
+        handle_deposit_collateral(input, gas_limit, caller)
+    } else if sel == withdraw_collateral_selector() {
+        handle_withdraw_collateral(input, gas_limit, caller)
+    } else if sel == get_position_selector() {
+        handle_get_position(input, gas_limit, caller)
+    } else if sel == get_collateral_selector() {
+        handle_get_collateral(input, gas_limit, caller)
+    } else if sel == is_liquidatable_selector() {
+        handle_is_liquidatable(input, gas_limit)
+    } else if sel == get_best_bid_ask_selector() {
+        handle_get_best_bid_ask(input, gas_limit)
+    } else {
+        Err(PrecompileError::other("unknown function selector").into())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gas guard
+// ---------------------------------------------------------------------------
+
+fn check_gas(gas_limit: u64, required: u64) -> Result<(), PrecompileErrors> {
+    if gas_limit < required {
+        Err(PrecompileError::OutOfGas.into())
+    } else {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// placeOrder(uint64 marketId, bool isBuy, uint256 price, uint256 size, uint8 tif)
+//   -> (uint256 orderId, uint256 filled, uint256 remaining)
+// ---------------------------------------------------------------------------
+
+fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_PLACE_ORDER)?;
+
+    let market_id_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing marketId"))?;
+    let is_buy_w = read_word(input, 1).ok_or_else(|| PrecompileError::other("missing isBuy"))?;
+    let price_w = read_word(input, 2).ok_or_else(|| PrecompileError::other("missing price"))?;
+    let size_w = read_word(input, 3).ok_or_else(|| PrecompileError::other("missing size"))?;
+    let tif_w = read_word(input, 4).ok_or_else(|| PrecompileError::other("missing tif"))?;
+
+    let market_id = MarketId(decode_u64(market_id_w));
+    let side = if decode_bool(is_buy_w) { Side::Buy } else { Side::Sell };
+    let price = decode_u256(price_w);
+    let size = decode_u256(size_w);
+    let tif = match decode_u8(tif_w) {
+        0 => TimeInForce::Gtc,
+        1 => TimeInForce::Ioc,
+        2 => TimeInForce::Fok,
+        _ => return Err(PrecompileError::other("invalid TimeInForce value").into()),
+    };
+
+    let outcome = with_orders(|state| {
+        state.submit_order(caller, market_id, side, price, size, tif)
+    })?;
+
+    let outcome = outcome.map_err(|e| PrecompileError::other(e.to_string()))?;
+
+    let order_id_val = outcome
+        .order_id
+        .map(|id| U256::from(id.0))
+        .unwrap_or(U256::ZERO);
+
+    let mut out = Vec::with_capacity(96);
+    out.extend_from_slice(&encode_u256(order_id_val));
+    out.extend_from_slice(&encode_u256(outcome.filled));
+    out.extend_from_slice(&encode_u256(outcome.remaining));
+
+    Ok(PrecompileOutput::new(GAS_PLACE_ORDER, Bytes::from(out)))
+}
+
+// ---------------------------------------------------------------------------
+// cancelOrder(uint256 orderId) -> (bool success)
+// ---------------------------------------------------------------------------
+
+fn handle_cancel_order(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+    check_gas(gas_limit, GAS_CANCEL_ORDER)?;
+
+    let id_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing orderId"))?;
+    let order_id = OrderId(decode_u256(id_w).as_limbs()[0]);
+
+    let success = with_orders(|state| state.cancel_order(order_id).is_some())?;
+
+    Ok(PrecompileOutput::new(GAS_CANCEL_ORDER, Bytes::from(encode_bool(success).to_vec())))
+}
+
+// ---------------------------------------------------------------------------
+// depositCollateral(uint256 amount) -> (bool success)
+// ---------------------------------------------------------------------------
+
+fn handle_deposit_collateral(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_DEPOSIT_COLLATERAL)?;
+
+    let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
+    let amount = decode_u256(amt_w);
+
+    with_orders(|state| state.deposit_collateral(caller, amount))?;
+
+    Ok(PrecompileOutput::new(
+        GAS_DEPOSIT_COLLATERAL,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// withdrawCollateral(uint256 amount) -> (bool success)
+// ---------------------------------------------------------------------------
+
+fn handle_withdraw_collateral(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_WITHDRAW_COLLATERAL)?;
+
+    let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
+    let amount = decode_u256(amt_w);
+
+    let result = with_orders(|state| state.withdraw_collateral(caller, amount))?;
+
+    Ok(PrecompileOutput::new(
+        GAS_WITHDRAW_COLLATERAL,
+        Bytes::from(encode_bool(result.is_ok()).to_vec()),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// getPosition(uint64 marketId) -> (int128 size, uint256 entryPrice)
+// ---------------------------------------------------------------------------
+
+fn handle_get_position(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_GET_POSITION)?;
+
+    let mid_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing marketId"))?;
+    let market_id = MarketId(decode_u64(mid_w));
+
+    let (size, entry_price) = with_orders(|state| {
+        state
+            .accounts
+            .get(&caller)
+            .and_then(|a| a.positions.get(&market_id))
+            .map(|p| (p.size, p.entry_price))
+            .unwrap_or((0, U256::ZERO))
+    })?;
+
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&encode_i128(size));
+    out.extend_from_slice(&encode_u256(entry_price));
+
+    Ok(PrecompileOutput::new(GAS_GET_POSITION, Bytes::from(out)))
+}
+
+// ---------------------------------------------------------------------------
+// getCollateral() -> (uint256 collateral)
+// ---------------------------------------------------------------------------
+
+fn handle_get_collateral(_input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_GET_COLLATERAL)?;
+
+    let collateral = with_orders(|state| {
+        state
+            .accounts
+            .get(&caller)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO)
+    })?;
+
+    Ok(PrecompileOutput::new(
+        GAS_GET_COLLATERAL,
+        Bytes::from(encode_u256(collateral).to_vec()),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// isLiquidatable(address account) -> (bool)
+// ---------------------------------------------------------------------------
+
+fn handle_is_liquidatable(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+    check_gas(gas_limit, GAS_IS_LIQUIDATABLE)?;
+
+    let addr_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing account"))?;
+    let account = decode_address(addr_w);
+
+    let liquidatable = with_orders(|state| state.is_liquidatable(account))?;
+
+    Ok(PrecompileOutput::new(
+        GAS_IS_LIQUIDATABLE,
+        Bytes::from(encode_bool(liquidatable).to_vec()),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// getBestBidAsk(uint64 marketId) -> (uint256 bestBid, uint256 bestAsk)
+// ---------------------------------------------------------------------------
+
+fn handle_get_best_bid_ask(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+    check_gas(gas_limit, GAS_GET_BEST_BID_ASK)?;
+
+    let mid_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing marketId"))?;
+    let market_id = MarketId(decode_u64(mid_w));
+
+    let (best_bid, best_ask) = with_orders(|state| {
+        match state.order_book(market_id) {
+            Some(view) => {
+                let bid = view.bids.last().map(|l| l.price).unwrap_or(U256::ZERO);
+                let ask = view.asks.first().map(|l| l.price).unwrap_or(U256::ZERO);
+                (bid, ask)
+            }
+            None => (U256::ZERO, U256::ZERO),
+        }
+    })?;
+
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&encode_u256(best_bid));
+    out.extend_from_slice(&encode_u256(best_ask));
+
+    Ok(PrecompileOutput::new(GAS_GET_BEST_BID_ASK, Bytes::from(out)))
+}

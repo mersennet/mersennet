@@ -1,0 +1,77 @@
+version: "3.9"
+
+services:
+  validator-1:
+    build: .
+    container_name: prime-validator-1
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./testnet/configs/validator-1.json:/etc/prime-chain/config.json:ro
+      - validator-1-data:/data
+    ports:
+      - "8545:8545"
+      - "9090:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  validator-2:
+    build: .
+    container_name: prime-validator-2
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./testnet/configs/validator-2.json:/etc/prime-chain/config.json:ro
+      - validator-2-data:/data
+    ports:
+      - "8546:8545"
+      - "9091:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+  validator-3:
+    build: .
+    container_name: prime-validator-3
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./testnet/configs/validator-3.json:/etc/prime-chain/config.json:ro
+      - validator-3-data:/data
+    ports:
+      - "8547:8545"
+      - "9092:9090"
+    networks:
+      - prime-testnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+
+volumes:
+  validator-1-data:
+  validator-2-data:
+  validator-3-data:
+
+networks:
+  prime-testnet:
+    driver: bridge
