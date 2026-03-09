@@ -1,0 +1,88 @@
+---
+slug: /getting-started/wallet-setup
+sidebar_position: 3
+title: "Wallet Setup"
+---
+
+# Wallet Setup
+
+Connect to Prime Chain testnet using MetaMask or the native PrimeXDC Wallet.
+
+## Option 1: MetaMask (Manual Setup)
+
+### Step 1: Open MetaMask
+
+1. Install [MetaMask](https://metamask.io/) if you haven't already.
+2. Click the network dropdown in the top-left of MetaMask.
+
+### Step 2: Add Network
+
+1. Select **Add network** → **Add a network manually**.
+2. Enter the following:
+
+| Field | Value |
+|-------|-------|
+| **Network name** | Prime Chain Testnet |
+| **RPC URL** | `http://46.225.30.187:8545` |
+| **Chain ID** | `7919` |
+| **Currency symbol** | PRIM |
+| **Block explorer URL** | `http://46.225.30.187` |
+
+3. Click **Save**.
+
+### Step 3: Switch Network
+
+Select **Prime Chain Testnet** from the network dropdown. You're ready to use Prime Chain.
+
+---
+
+## Option 2: MetaMask (One-Click)
+
+import AddToMetaMask from '@site/src/components/AddToMetaMask';
+
+<AddToMetaMask />
+
+This triggers the following MetaMask call:
+
+```javascript
+await window.ethereum.request({
+  method: 'wallet_addEthereumChain',
+  params: [{
+    chainId: '0x1EEF',
+    chainName: 'Prime Chain Testnet',
+    nativeCurrency: { name: 'PRIM', symbol: 'PRIM', decimals: 18 },
+    rpcUrls: ['http://46.225.30.187:8545'],
+    blockExplorerUrls: ['http://46.225.30.187']
+  }]
+});
+```
+
+Click **Approve** in MetaMask to add the network.
+
+---
+
+## Option 3: PrimeXDC Wallet
+
+:::note
+PrimeXDC Wallet is currently in development. For now, use MetaMask or any EVM-compatible wallet.
+:::
+
+**PrimeXDC Wallet** is a browser extension wallet built natively for the Prime Chain ecosystem. It supports Chain ID 7919 out of the box and provides a tailored experience for Prime Chain dApps.
+
+### Installation
+
+1. Install the PrimeXDC Wallet browser extension (Chrome/Chromium).
+2. Create or import a wallet.
+3. Prime Chain testnet is preconfigured—select it from the network list.
+
+:::info
+PrimeXDC Wallet is built with React and ethers.js, using Chrome Manifest V3. It is designed for the Prime Chain ecosystem and may offer additional features for PrimeOrders and native dApps.
+:::
+
+---
+
+## Verify Your Setup
+
+1. **Network** — Ensure "Prime Chain Testnet" (or equivalent) is selected.
+2. **Balance** — You need PRIM for gas. Use the [faucet](/getting-started/faucet) to get testnet tokens.
+3. **Explorer** — Visit http://46.225.30.187 to view blocks and transactions.
