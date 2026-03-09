@@ -1,11 +1,13 @@
+# Rust build artifacts
 /target
 
+# Chain state / data
 /state
 /state-*
 testnet-state/
 genesis-output/
-
 testnet/data/
+mainnet/data/
 
 # Deploy secrets (never commit)
 deploy/.genesis-output/
@@ -14,8 +16,58 @@ deploy/nodes.conf
 
 # Dependencies
 node_modules/
-sdk/node_modules/
+
+# Foundry / Solidity build artifacts
+contracts/cache/
+contracts/out/
+
+# Docusaurus build output
+docs-site/build/
+docs-site/.docusaurus/
+
+# Build outputs
+**/build/
+**/dist/
+
+# Archives and binaries
+*.tar.gz
+*.zip
+*.csv
+
+# Zone.Identifier (WSL artifacts)
+*Zone.Identifier
 
 # IDE / OS
 .DS_Store
 *.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Cursor / Editor
+.cursor/
+
+# Rust
+target/
+
+# Lockfiles (keep package.json, ignore locks for sub-apps)
+primeswap-v2/package-lock.json
+primeswap-v2/yarn.lock
+node-dashboard/package-lock.json
+
+# Node dashboard extras
+node-dashboard/e2e/
+node-dashboard/deploy-*.sh
+node-dashboard/remote-*.sh
+node-dashboard/restart-*.sh
+node-dashboard/*.tar.gz
