@@ -1,11 +1,13 @@
 # Prime Chain
 
-Prime Chain is a Rust blockchain prototype that combines an EVM execution engine with a PrimeOrders matching engine, domain events, and a lightweight P2P and RPC stack.
+High-performance EVM-compatible L1 blockchain with a native on-chain order matching engine (PrimeOrders), built in Rust.
+
+**Chain ID:** 7919 (1000th prime number)
 
 ## Features
 
 - EVM execution (revm) with block production and receipts
-- PrimeOrders matching engine with margin checks and liquidation hooks
+- PrimeOrders CLOB matching engine with margin checks and liquidation hooks
 - Domain events indexed per block and queryable via RPC
 - Snapshot export/import with TCP chunked sync + hash verification
 - Structured RPC errors, metrics, and health endpoint
@@ -40,27 +42,73 @@ cargo test
 ## RPC
 
 - JSON-RPC served at the configured address (default: 127.0.0.1:8545)
-- Health endpoint: GET /health
-- Metrics endpoint: GET /metrics
+- Health endpoint: `GET /health`
+- Metrics endpoint: `GET /metrics`
 
 ## Snapshot Sync (TCP)
 
-- Listen mode: --snapshot-listen <addr>
-- Fetch mode: --snapshot-fetch <addr>
-- Optional: --snapshot-out <path>
+- Listen mode: `--snapshot-listen <addr>`
+- Fetch mode: `--snapshot-fetch <addr>`
+- Optional: `--snapshot-out <path>`
 
 ## Project Layout
 
-- src/core — engine, state, orders, consensus, bridge, events
-- src/network — net transport + p2p
-- src/rpc — JSON-RPC server + router
-- src/config — app config and parsing helpers
-- src/identity — node key management
-- src/governance — governance logic
-- src/prometheus — metrics exporter
-- src/bin/prime-chain.rs — CLI entrypoint
+```
+crates/
+├── core/       — Engine, state, orders, consensus, crypto
+├── network/    — P2P transport layer
+├── rpc/        — JSON-RPC server + router
+└── node/       — CLI entrypoint and faucet
 
-## Docs
+contracts/      — Solidity contracts (Foundry)
+├── src/dex/         — PrimeSwap factory, pair, router
+├── src/foundation/  — WPRIM, MockERC20, Multicall3
+├── src/primeorders/ — AtomicArbitrage, SmartContractMM, VaultStrategy
+└── src/interfaces/  — IPrimeOrders
 
-- docs/prime-orders-evm.md
-- docs/whitepaper.md
+deploy/         — Testnet deployment configs
+docs/           — Whitepaper, fundraising, roadmaps
+docs-site/      — Docusaurus documentation (docs.primechain.xyz)
+sdk/            — TypeScript SDK
+sdk-go/         — Go SDK
+sdk-python/     — Python SDK
+testnet/        — Testnet configuration
+```
+
+## Ecosystem Repos
+
+All ecosystem applications live in their own repositories:
+
+| App | Repo | Description |
+|-----|------|-------------|
+| **PrimeTrade** | [prime-trade](https://github.com/PrimeNumbersLabs/prime-trade) | Professional CLOB trading terminal — perpetual futures with TradingView charts, 5 order types, TP/SL |
+| **PrimeScan** | [primescan-explorer](https://github.com/PrimeNumbersLabs/primescan-explorer) | Block explorer — transactions, addresses, tokens, validators |
+| **PrimeSwap V2** | [primeswap-v2](https://github.com/PrimeNumbersLabs/primeswap-v2) | Uniswap V2-style AMM DEX (React) |
+| **PrimeSwap V3** | [primeswap-v3](https://github.com/PrimeNumbersLabs/primeswap-v3) | Concentrated liquidity DEX frontend |
+| **PrimeSwap DEX** | [primeswap-dex](https://github.com/PrimeNumbersLabs/primeswap-dex) | Lightweight swap interface (vanilla JS) |
+| **Validator Explorer** | [prime-chain-explorer](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Validator staking metrics and delegation UI |
+| **Node Dashboard** | [primenodes-dashboard](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator monitoring and analytics |
+| **Faucet** | [prime-faucet](https://github.com/PrimeNumbersLabs/prime-faucet) | Testnet PRIM token faucet |
+| **Trading Bots** | [prime-bots](https://github.com/PrimeNumbersLabs/prime-bots) | Market maker, trader, and volume bots for CLOB testing |
+| **SDK** | [prime-chain-sdk](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK for JSON-RPC and PrimeOrders |
+
+## Testnet
+
+- **RPC:** `https://rpc.primechain.xyz` (or `http://46.225.30.187:8545`)
+- **Explorer:** `http://46.225.30.187:4000`
+- **PrimeTrade:** `http://46.225.30.187:4004`
+- **PrimeSwap:** `http://46.225.30.187:4002`
+- **Faucet:** `http://46.225.30.187:4005`
+- **Docs:** `http://46.225.30.187:3001`
+
+## Documentation
+
+- [Whitepaper](docs/whitepaper.md)
+- [Ecosystem Roadmap](docs/ECOSYSTEM_ROADMAP.md)
+- [Infrastructure Roadmap](docs/INFRASTRUCTURE_ROADMAP.md)
+- [Team](docs/TEAM.md)
+- [Fundraising Materials](docs/fundraising/)
+
+## License
+
+Proprietary — PrimeNumbers Labs
