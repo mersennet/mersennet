@@ -179,7 +179,7 @@ fn parallel_execution_matches_sequential() {
             chain_id: Some(7919),
             signature: None,
         };
-        engine.submit_tx(tx).expect("submit");
+        engine.submit_tx_unsigned(tx).expect("submit");
     }
 
     let par_block = engine.execute_block_parallel().expect("parallel block");
@@ -208,7 +208,7 @@ fn parallel_execution_matches_sequential() {
             chain_id: Some(7919),
             signature: None,
         };
-        engine2.submit_tx(tx).expect("submit");
+        engine2.submit_tx_unsigned(tx).expect("submit");
     }
     let seq_block = engine2.execute_block().expect("sequential block");
 

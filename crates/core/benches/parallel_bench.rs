@@ -42,7 +42,7 @@ fn main() {
                 chain_id: Some(7919),
                 signature: None,
             };
-            let _ = eng.submit_tx(tx);
+            let _ = eng.submit_tx_unsigned(tx);
         }
 
         // Sequential execution
@@ -67,7 +67,7 @@ fn main() {
                 chain_id: Some(7919),
                 signature: None,
             };
-            let _ = eng2.submit_tx(tx);
+            let _ = eng2.submit_tx_unsigned(tx);
         }
 
         // Run sequential
@@ -179,7 +179,7 @@ fn main() {
                     chain_id: Some(7919),
                     signature: None,
                 };
-                let _ = eng.submit_tx(tx);
+                let _ = eng.submit_tx_unsigned(tx);
             }
             let start = Instant::now();
             let block = eng.execute_block().unwrap();

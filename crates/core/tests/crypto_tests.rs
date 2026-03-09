@@ -55,6 +55,7 @@ fn tampered_data_breaks_recovery() {
         v: signed.v,
         r: signed.r,
         s: signed.s,
+        tx_type: 0,
     };
 
     let recovered = recover_signer(&tampered_signed).expect("recovery succeeds but address differs");
@@ -80,6 +81,7 @@ fn chain_id_protection() {
         v: signed_a.v,
         r: signed_a.r,
         s: signed_a.s,
+        tx_type: 0,
     };
     let recovered_cross = recover_signer(&cross_chain);
     match recovered_cross {

@@ -28,7 +28,7 @@ use revm::primitives::{
 use revm::{Database, Evm};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::flat_state::{FlatState, FlatAccount, StateChangeset};
 use crate::market_maker::MarketMakerEngine;
@@ -103,6 +103,7 @@ pub struct Receipt {
 pub struct Block {
     pub number: u64,
     pub chain_id: u64,
+    pub timestamp: u64,
     pub gas_limit: u64,
     pub gas_used: u64,
     pub base_fee: U256,
@@ -647,7 +648,17 @@ impl Engine {
 
     pub fn submit_tx(&mut self, tx: Transaction) -> Result<(), TxRejection> {
         self.validate_tx_basic(&tx)?;
+        self.insert_validated_tx(tx)
+    }
 
+    /// Submit a transaction from eth_sendTransaction (unsigned, from field is trusted).
+    /// Skips signature verification since the caller specifies `from` directly.
+    pub fn submit_tx_unsigned(&mut self, tx: Transaction) -> Result<(), TxRejection> {
+        self.validate_tx_basic_no_sig(&tx)?;
+        self.insert_validated_tx(tx)
+    }
+
+    fn insert_validated_tx(&mut self, tx: Transaction) -> Result<(), TxRejection> {
         let account = self
             .evm
             .db
@@ -881,9 +892,14 @@ impl Engine {
         let domain_events = std::mem::take(&mut self.pending_events);
 
         let tx_count = transactions.len();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let block = Block {
             number: self.block_number,
             chain_id: self.chain_id,
+            timestamp,
             gas_limit: self.gas_limit_per_block,
             gas_used,
             base_fee: self.base_fee,
@@ -1136,9 +1152,14 @@ impl Engine {
         let domain_events = std::mem::take(&mut self.pending_events);
 
         let tx_count = transactions.len();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let block = Block {
             number: self.block_number,
             chain_id: self.chain_id,
+            timestamp,
             gas_limit: self.gas_limit_per_block,
             gas_used,
             base_fee: self.base_fee,
@@ -1300,7 +1321,7 @@ impl Engine {
             .append_handler_register(precompiles::register_prime_orders_precompile)
             .build();
 
-        let result = evm.transact()?;
+        let result = evm.transact_preverified()?;
         precompiles::clear_prime_orders_context();
 
         match result.result {
@@ -1347,7 +1368,7 @@ impl Engine {
         nonce: u64,
         value: U256,
     ) -> Result<()> {
-        let result = self.submit_tx(Transaction {
+        let result = self.submit_tx_unsigned(Transaction {
             from,
             to: None,
             value,
@@ -1395,7 +1416,7 @@ impl Engine {
             .append_handler_register(precompiles::register_prime_orders_precompile)
             .build();
 
-        let result = evm.transact()?;
+        let result = evm.transact_preverified()?;
         precompiles::clear_prime_orders_context();
 
         Ok(result.result.output().cloned().unwrap_or_default())
@@ -1423,7 +1444,7 @@ impl Engine {
         gas_price: U256,
         nonce: u64,
     ) -> Result<()> {
-        let result = self.submit_tx(Transaction {
+        let result = self.submit_tx_unsigned(Transaction {
             from,
             to: Some(to),
             value,
@@ -1457,6 +1478,12 @@ impl Engine {
     }
 
     fn validate_tx_basic(&self, tx: &Transaction) -> Result<(), TxRejection> {
+        self.validate_tx_basic_no_sig(tx)?;
+        self.verify_tx_signature(tx)?;
+        Ok(())
+    }
+
+    fn validate_tx_basic_no_sig(&self, tx: &Transaction) -> Result<(), TxRejection> {
         if tx.gas_limit > self.gas_limit_per_block {
             return Err(TxRejection::GasLimitTooHigh);
         }
@@ -1465,14 +1492,12 @@ impl Engine {
                 return Err(TxRejection::InvalidChainId);
             }
         }
-        self.verify_tx_signature(tx)?;
         Ok(())
     }
 
     fn verify_tx_signature(&self, tx: &Transaction) -> Result<(), TxRejection> {
         let Some((r, s, v)) = &tx.signature else {
-            tracing::warn!(from = ?tx.from, nonce = tx.nonce, "unsigned transaction accepted (no signature)");
-            return Ok(());
+            return Err(TxRejection::InvalidSignature("unsigned transactions are not accepted".to_string()));
         };
 
         let signed = SignedTransaction {
@@ -1480,6 +1505,7 @@ impl Engine {
             v: U256::from(*v),
             r: *r,
             s: *s,
+            tx_type: 0,
         };
 
         let recovered = crypto::recover_signer(&signed)

@@ -58,7 +58,7 @@ fn main() {
                 chain_id: Some(7919),
                 signature: None,
             };
-            let _ = eng.submit_tx(tx);
+            let _ = eng.submit_tx_unsigned(tx);
         }
         let submit_elapsed = submit_start.elapsed();
 
@@ -121,7 +121,7 @@ fn main() {
                 chain_id: Some(7919),
                 signature: None,
             };
-            let _ = eng.submit_tx(tx);
+            let _ = eng.submit_tx_unsigned(tx);
         }
 
         let exec_start = Instant::now();
@@ -236,7 +236,7 @@ fn main() {
                 chain_id: Some(7919),
                 signature: None,
             };
-            let _ = eng.submit_tx(tx);
+            let _ = eng.submit_tx_unsigned(tx);
         }
 
         // Submit 500 maker + 500 taker orders

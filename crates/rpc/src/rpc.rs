@@ -7,10 +7,53 @@ use anyhow::{anyhow, Result};
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tiny_http::{Header, Method, Response, Server};
 use prime_chain::prometheus;
 use tracing::info;
+
+// ---------------------------------------------------------------------------
+// Filter state for eth_newFilter / eth_getFilterChanges / eth_uninstallFilter
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+enum FilterKind {
+    Log(LogFilter),
+    Block,
+    PendingTx,
+}
+
+#[derive(Debug)]
+struct InstalledFilter {
+    kind: FilterKind,
+    last_poll_block: u64,
+}
+
+type FilterStore = Arc<Mutex<FilterState>>;
+
+#[derive(Debug)]
+struct FilterState {
+    filters: HashMap<u64, InstalledFilter>,
+    next_id: u64,
+}
+
+impl FilterState {
+    fn new() -> Self {
+        Self { filters: HashMap::new(), next_id: 1 }
+    }
+
+    fn install(&mut self, kind: FilterKind, current_block: u64) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.filters.insert(id, InstalledFilter { kind, last_poll_block: current_block });
+        id
+    }
+
+    fn remove(&mut self, id: u64) -> bool {
+        self.filters.remove(&id).is_some()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct RpcRequest {
@@ -44,18 +87,36 @@ struct RpcError {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct BlockDto {
     number: String,
     hash: String,
+    parent_hash: String,
+    nonce: String,
+    sha3_uncles: String,
+    logs_bloom: String,
+    transactions_root: String,
+    state_root: String,
+    receipts_root: String,
+    miner: String,
+    difficulty: String,
+    total_difficulty: String,
+    extra_data: String,
+    size: String,
     gas_limit: String,
     gas_used: String,
-    base_fee: String,
-    state_root: String,
+    #[serde(rename = "baseFeePerGas")]
+    base_fee_per_gas: String,
+    timestamp: String,
     transactions: Vec<Value>,
+    uncles: Vec<Value>,
+    mix_hash: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     domain_events: Vec<Value>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TxDto {
     hash: String,
     from: String,
@@ -65,34 +126,54 @@ struct TxDto {
     gas: String,
     gas_price: String,
     input: String,
+    block_hash: Option<String>,
+    block_number: Option<String>,
+    transaction_index: Option<String>,
+    #[serde(rename = "type")]
+    tx_type: String,
+    v: String,
+    r: String,
+    s: String,
+    chain_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TxInput {
     from: String,
     to: Option<String>,
     value: Option<String>,
     data: Option<String>,
     gas: Option<String>,
+    #[serde(alias = "gas_price")]
     gas_price: Option<String>,
     nonce: Option<String>,
+    #[serde(alias = "chain_id")]
     chain_id: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ReceiptDto {
     transaction_hash: String,
     block_hash: String,
     block_number: String,
     transaction_index: String,
+    from: String,
+    to: Option<String>,
     gas_used: String,
+    cumulative_gas_used: String,
+    effective_gas_price: String,
     status: String,
     contract_address: Option<String>,
-    output: String,
+    logs_bloom: String,
+    #[serde(rename = "type")]
+    tx_type: String,
     logs: Vec<LogDto>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LogDto {
     address: String,
     topics: Vec<String>,
@@ -102,6 +183,7 @@ struct LogDto {
     transaction_hash: String,
     transaction_index: String,
     log_index: String,
+    removed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,16 +212,17 @@ enum TopicFilter {
 
 pub fn serve(engine: Arc<Mutex<Engine>>, addr: &str) -> Result<()> {
     let server = Server::http(addr).map_err(|err| anyhow!(err.to_string()))?;
+    let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
     info!("RPC listening on http://{addr}");
 
     for request in server.incoming_requests() {
-        handle_request(request, &engine)?;
+        handle_request(request, &engine, &filters)?;
     }
 
     Ok(())
 }
 
-fn handle_request(mut request: tiny_http::Request, engine: &Arc<Mutex<Engine>>) -> Result<()> {
+fn handle_request(mut request: tiny_http::Request, engine: &Arc<Mutex<Engine>>, filters: &FilterStore) -> Result<()> {
     // Expose metrics on GET /metrics
     if request.method() == &Method::Get && request.url() == "/metrics" {
         if let Some(handle) = prometheus::handle() {
@@ -207,7 +290,7 @@ fn handle_request(mut request: tiny_http::Request, engine: &Arc<Mutex<Engine>>) 
     let response = match parsed {
         Ok(call) => {
             let method = call.method.clone();
-            match dispatch(call, engine) {
+            match dispatch(call, engine, filters) {
                 Ok(payload) => payload,
                 Err((id, error)) => {
                     metrics::increment_counter!(
@@ -248,7 +331,7 @@ fn handle_request(mut request: tiny_http::Request, engine: &Arc<Mutex<Engine>>) 
     Ok(())
 }
 
-fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Value, RpcError)> {
+fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>, filters: &FilterStore) -> Result<String, (Value, RpcError)> {
     let id = call.id.clone();
     let start = std::time::Instant::now();
     // count requests per method
@@ -303,10 +386,14 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
             let tx_hash = parse_hash_param(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
             let engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
-            let tx = find_transaction(&engine, tx_hash);
-            match tx {
-                Some(tx) => serde_json::to_value(tx_to_dto(tx))
-                    .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
+            let result = find_transaction(&engine, tx_hash);
+            match result {
+                Some((tx, block, idx)) => serde_json::to_value(tx_to_dto_with_block(
+                    tx,
+                    hex_b256(block.hash),
+                    hex_u64(block.number),
+                    idx,
+                )).map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
                 None => Value::Null,
             }
         }
@@ -333,7 +420,7 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
             let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let tx_hash = tx_hash(&tx);
             engine
-                .submit_tx(tx)
+                .submit_tx_unsigned(tx)
                 .map_err(|err| {
                     let data = json!({
                         "reason": err.code(),
@@ -375,6 +462,162 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
                     .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
                 None => Value::Null,
             }
+        }
+        "eth_feeHistory" => {
+            let params = call.params.unwrap_or(Value::Null);
+            let engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let latest = engine.latest_height();
+            let array = match params { Value::Array(v) => v, _ => vec![] };
+            let block_count = match array.get(0) {
+                Some(Value::String(s)) => parse_hex_u64(s).unwrap_or(1),
+                Some(Value::Number(n)) => n.as_u64().unwrap_or(1),
+                _ => 1,
+            };
+            let newest = match array.get(1) {
+                Some(Value::String(s)) if s == "latest" || s == "pending" => latest,
+                Some(Value::String(s)) => parse_hex_u64(s).unwrap_or(latest),
+                _ => latest,
+            };
+            let oldest = newest.saturating_sub(block_count.saturating_sub(1));
+            let base_fees: Vec<String> = (oldest..=newest + 1)
+                .map(|n| {
+                    engine.block_by_number(n)
+                        .map(|b| hex_u256(b.base_fee))
+                        .unwrap_or_else(|| "0x1".to_string())
+                })
+                .collect();
+            let gas_ratios: Vec<Vec<f64>> = (oldest..=newest)
+                .map(|n| {
+                    engine.block_by_number(n)
+                        .map(|b| {
+                            if b.gas_limit > 0 {
+                                vec![b.gas_used as f64 / b.gas_limit as f64]
+                            } else {
+                                vec![0.0]
+                            }
+                        })
+                        .unwrap_or_else(|| vec![0.0])
+                })
+                .collect();
+            json!({
+                "oldestBlock": hex_u64(oldest),
+                "baseFeePerGas": base_fees,
+                "gasUsedRatio": gas_ratios.into_iter().map(|v| v[0]).collect::<Vec<f64>>(),
+                "reward": []
+            })
+        }
+        "eth_maxPriorityFeePerGas" => {
+            Value::String("0x0".to_string())
+        }
+        "eth_accounts" => {
+            Value::Array(vec![])
+        }
+        "eth_mining" => {
+            Value::Bool(false)
+        }
+        "eth_syncing" => {
+            Value::Bool(false)
+        }
+        "eth_getUncleCountByBlockNumber" | "eth_getUncleCountByBlockHash" => {
+            Value::String("0x0".to_string())
+        }
+        "eth_protocolVersion" => {
+            Value::String("0x41".to_string())
+        }
+        "eth_newFilter" => {
+            let params = call.params.unwrap_or(Value::Null);
+            let filter = parse_log_filter(params, engine, id.clone())
+                .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
+            let latest = {
+                let eng = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                eng.latest_height()
+            };
+            let mut fs = filters.lock().map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
+            let filter_id = fs.install(FilterKind::Log(filter), latest);
+            Value::String(hex_u64(filter_id))
+        }
+        "eth_newBlockFilter" => {
+            let latest = {
+                let eng = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                eng.latest_height()
+            };
+            let mut fs = filters.lock().map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
+            let filter_id = fs.install(FilterKind::Block, latest);
+            Value::String(hex_u64(filter_id))
+        }
+        "eth_newPendingTransactionFilter" => {
+            let latest = {
+                let eng = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                eng.latest_height()
+            };
+            let mut fs = filters.lock().map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
+            let filter_id = fs.install(FilterKind::PendingTx, latest);
+            Value::String(hex_u64(filter_id))
+        }
+        "eth_getFilterChanges" => {
+            let params = call.params.unwrap_or(Value::Null);
+            let array = match params { Value::Array(v) => v, _ => vec![] };
+            let filter_id = match array.get(0) {
+                Some(Value::String(s)) => parse_hex_u64(s).map_err(|e| (id.clone(), rpc_error_invalid_params(e.to_string())))?,
+                _ => return Err((id.clone(), rpc_error_invalid_params("filter id required"))),
+            };
+            let mut fs = filters.lock().map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
+            let filter = fs.filters.get_mut(&filter_id)
+                .ok_or_else(|| (id.clone(), rpc_error_invalid_params("filter not found")))?;
+            let engine_guard = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let latest = engine_guard.latest_height();
+            let from_block = filter.last_poll_block + 1;
+
+            let result = match &filter.kind {
+                FilterKind::Log(log_filter) => {
+                    let mut f = log_filter.clone();
+                    f.from_block = from_block;
+                    f.to_block = latest;
+                    let logs = collect_logs(&engine_guard, &f);
+                    serde_json::to_value(logs).map_err(|e| (id.clone(), rpc_error_internal(e.to_string())))?
+                }
+                FilterKind::Block => {
+                    let hashes: Vec<Value> = (from_block..=latest)
+                        .filter_map(|n| engine_guard.block_by_number(n))
+                        .map(|b| Value::String(hex_b256(b.hash)))
+                        .collect();
+                    Value::Array(hashes)
+                }
+                FilterKind::PendingTx => {
+                    Value::Array(vec![])
+                }
+            };
+            filter.last_poll_block = latest;
+            result
+        }
+        "eth_getFilterLogs" => {
+            let params = call.params.unwrap_or(Value::Null);
+            let array = match params { Value::Array(v) => v, _ => vec![] };
+            let filter_id = match array.get(0) {
+                Some(Value::String(s)) => parse_hex_u64(s).map_err(|e| (id.clone(), rpc_error_invalid_params(e.to_string())))?,
+                _ => return Err((id.clone(), rpc_error_invalid_params("filter id required"))),
+            };
+            let fs = filters.lock().map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
+            let filter = fs.filters.get(&filter_id)
+                .ok_or_else(|| (id.clone(), rpc_error_invalid_params("filter not found")))?;
+            match &filter.kind {
+                FilterKind::Log(log_filter) => {
+                    let engine_guard = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                    let logs = collect_logs(&engine_guard, log_filter);
+                    serde_json::to_value(logs).map_err(|e| (id.clone(), rpc_error_internal(e.to_string())))?
+                }
+                _ => Value::Array(vec![]),
+            }
+        }
+        "eth_uninstallFilter" => {
+            let params = call.params.unwrap_or(Value::Null);
+            let array = match params { Value::Array(v) => v, _ => vec![] };
+            let filter_id = match array.get(0) {
+                Some(Value::String(s)) => parse_hex_u64(s).map_err(|e| (id.clone(), rpc_error_invalid_params(e.to_string())))?,
+                _ => return Err((id.clone(), rpc_error_invalid_params("filter id required"))),
+            };
+            let mut fs = filters.lock().map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
+            Value::Bool(fs.remove(filter_id))
         }
         "primeorders_addMarket" | "primeorders_submitOrder" | "primeorders_cancelOrder" | "primeorders_getOrderBook" | "primeorders_getOpenOrders" | "primeorders_setMarginParams" | "primeorders_depositCollateral" | "primeorders_isLiquidatable" | "primeorders_liquidate" => {
             let params = call.params.unwrap_or(Value::Null);
@@ -665,18 +908,18 @@ fn find_receipt(engine: &mut Engine, hash: B256) -> Option<ReceiptDto> {
     for block in &engine.chain {
         for (index, (tx, receipt)) in block.transactions.iter().zip(&block.receipts).enumerate() {
             if tx_hash(tx) == hash {
-                return Some(receipt_to_dto(block, receipt, index as u64, hash));
+                return Some(receipt_to_dto(block, tx, receipt, index as u64, hash));
             }
         }
     }
     None
 }
 
-fn find_transaction<'a>(engine: &'a Engine, hash: B256) -> Option<&'a Transaction> {
+fn find_transaction<'a>(engine: &'a Engine, hash: B256) -> Option<(&'a Transaction, &'a Block, u64)> {
     for block in &engine.chain {
-        for tx in &block.transactions {
+        for (index, tx) in block.transactions.iter().enumerate() {
             if tx_hash(tx) == hash {
-                return Some(tx);
+                return Some((tx, block, index as u64));
             }
         }
     }
@@ -684,11 +927,19 @@ fn find_transaction<'a>(engine: &'a Engine, hash: B256) -> Option<&'a Transactio
 }
 
 fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
+    let block_hash = hex_b256(block.hash);
+    let block_number = hex_u64(block.number);
+
     let transactions = if include_txs {
         block
             .transactions
             .iter()
-            .map(|tx| serde_json::to_value(tx_to_dto(tx)).unwrap_or(Value::Null))
+            .enumerate()
+            .map(|(i, tx)| {
+                serde_json::to_value(tx_to_dto_with_block(
+                    tx, block_hash.clone(), block_number.clone(), i as u64,
+                )).unwrap_or(Value::Null)
+            })
             .collect()
     } else {
         block
@@ -698,14 +949,34 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
             .collect()
     };
 
+    let timestamp = block.timestamp;
+
     BlockDto {
-        number: hex_u64(block.number),
-        hash: hex_b256(block.hash),
+        number: block_number.clone(),
+        hash: block_hash,
+        parent_hash: if block.number > 0 {
+            hex_b256(B256::from(U256::from(block.number - 1)))
+        } else {
+            hex_b256(B256::ZERO)
+        },
+        nonce: "0x0000000000000000".to_string(),
+        sha3_uncles: hex_b256(B256::ZERO),
+        logs_bloom: format!("0x{}", "0".repeat(512)),
+        transactions_root: hex_b256(block.state_root),
+        state_root: hex_b256(block.state_root),
+        receipts_root: hex_b256(B256::ZERO),
+        miner: hex_address(block.coinbase),
+        difficulty: "0x0".to_string(),
+        total_difficulty: "0x0".to_string(),
+        extra_data: "0x".to_string(),
+        size: hex_u64(0),
         gas_limit: hex_u64(block.gas_limit),
         gas_used: hex_u64(block.gas_used),
-        base_fee: hex_u256(block.base_fee),
-        state_root: hex_b256(block.state_root),
+        base_fee_per_gas: hex_u256(block.base_fee),
+        timestamp: hex_u64(timestamp),
         transactions,
+        uncles: vec![],
+        mix_hash: hex_b256(B256::ZERO),
         domain_events: block
             .domain_events
             .iter()
@@ -714,7 +985,30 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
     }
 }
 
+#[allow(dead_code)]
 fn tx_to_dto(tx: &Transaction) -> TxDto {
+    tx_to_dto_in_block(tx, None, None, 0)
+}
+
+fn tx_to_dto_with_block(
+    tx: &Transaction,
+    block_hash: String,
+    block_number: String,
+    tx_index: u64,
+) -> TxDto {
+    tx_to_dto_in_block(tx, Some(block_hash), Some(block_number), tx_index)
+}
+
+fn tx_to_dto_in_block(
+    tx: &Transaction,
+    block_hash: Option<String>,
+    block_number: Option<String>,
+    tx_index: u64,
+) -> TxDto {
+    let (v, r, s) = match &tx.signature {
+        Some((r, s, v)) => (hex_u64(*v), hex_u256(*r), hex_u256(*s)),
+        None => ("0x0".to_string(), "0x0".to_string(), "0x0".to_string()),
+    };
     TxDto {
         hash: hex_b256(tx_hash(tx)),
         from: hex_address(tx.from),
@@ -724,6 +1018,14 @@ fn tx_to_dto(tx: &Transaction) -> TxDto {
         gas: hex_u64(tx.gas_limit),
         gas_price: hex_u256(tx.gas_price),
         input: format!("0x{}", hex::encode(&tx.data)),
+        block_hash,
+        block_number,
+        transaction_index: Some(hex_u64(tx_index)),
+        tx_type: "0x0".to_string(),
+        v,
+        r,
+        s,
+        chain_id: tx.chain_id.map(hex_u64),
     }
 }
 
@@ -842,7 +1144,7 @@ fn bridge_domain_to_str(domain: &BridgeDomain) -> &'static str {
     }
 }
 
-fn receipt_to_dto(block: &Block, receipt: &Receipt, index: u64, hash: B256) -> ReceiptDto {
+fn receipt_to_dto(block: &Block, tx: &Transaction, receipt: &Receipt, index: u64, hash: B256) -> ReceiptDto {
     let logs = receipt
         .logs
         .iter()
@@ -854,10 +1156,15 @@ fn receipt_to_dto(block: &Block, receipt: &Receipt, index: u64, hash: B256) -> R
         block_hash: hex_b256(block.hash),
         block_number: hex_u64(block.number),
         transaction_index: hex_u64(index),
+        from: hex_address(tx.from),
+        to: tx.to.map(hex_address),
         gas_used: hex_u64(receipt.gas_used),
+        cumulative_gas_used: hex_u64(receipt.gas_used),
+        effective_gas_price: hex_u256(tx.gas_price),
         status: if receipt.success { "0x1".to_string() } else { "0x0".to_string() },
         contract_address: receipt.created_address.map(hex_address),
-        output: format!("0x{}", hex::encode(&receipt.output)),
+        logs_bloom: format!("0x{}", "0".repeat(512)),
+        tx_type: "0x0".to_string(),
         logs,
     }
 }
@@ -872,6 +1179,7 @@ fn log_to_dto(block: &Block, tx_hash: B256, tx_index: u64, log_index: u64, log: 
         transaction_hash: hex_b256(tx_hash),
         transaction_index: hex_u64(tx_index),
         log_index: hex_u64(log_index),
+        removed: false,
     }
 }
 

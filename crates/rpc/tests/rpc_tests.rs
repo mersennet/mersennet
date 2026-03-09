@@ -67,7 +67,7 @@ fn rpc_prime_send_transaction_adds_to_mempool() {
     };
 
     assert!(engine.mempool_is_empty(), "mempool starts empty");
-    engine.submit_tx(tx).expect("tx accepted");
+    engine.submit_tx_unsigned(tx).expect("tx accepted");
     assert!(!engine.mempool_is_empty(), "tx should be in mempool");
 }
 

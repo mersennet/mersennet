@@ -163,6 +163,20 @@ fn main() -> anyhow::Result<()> {
             let network = NetworkNode::new(&gossip_config)?;
             network.start_networking(engine.clone(), &gossip_config);
 
+            let ws_manager = Arc::new(Mutex::new(ws::WsSubscriptionManager::new()));
+
+            if app_config.ws.enabled {
+                let ws_addr = app_config.ws.addr.clone();
+                let ws_mgr = ws_manager.clone();
+                std::thread::Builder::new()
+                    .name("ws-server".into())
+                    .spawn(move || {
+                        info!(addr = %ws_addr, "starting WebSocket server");
+                        ws::WsServer::start(&ws_addr, ws_mgr);
+                    })?;
+                info!("WebSocket subscriptions enabled on {}", app_config.ws.addr);
+            }
+
             if is_validator {
                 let block_time =
                     std::time::Duration::from_millis(app_config.p2p.block_time_ms);
@@ -171,6 +185,7 @@ fn main() -> anyhow::Result<()> {
                 let shutdown_producer = Arc::clone(&shutdown);
                 let zk_enabled = app_config.zk.enabled;
                 let zk_interval = app_config.zk.checkpoint_interval;
+                let ws_mgr_producer = ws_manager.clone();
                 std::thread::Builder::new()
                     .name("block-producer".into())
                     .spawn(move || {
@@ -201,6 +216,55 @@ fn main() -> anyhow::Result<()> {
                                 txs = block.transactions.len(),
                                 "produced block"
                             );
+
+                            if let Ok(mut mgr) = ws_mgr_producer.lock() {
+                                let block_json = serde_json::json!({
+                                    "number": format!("0x{:x}", block.number),
+                                    "hash": format!("{}", block.hash),
+                                    "parentHash": format!("0x{:064x}", block.number.saturating_sub(1)),
+                                    "timestamp": format!("0x{:x}", block.timestamp),
+                                    "gasLimit": format!("0x{:x}", block.gas_limit),
+                                    "gasUsed": format!("0x{:x}", block.gas_used),
+                                    "baseFeePerGas": format!("0x{:x}", block.base_fee),
+                                    "stateRoot": format!("{}", block.state_root),
+                                    "miner": format!("{}", block.proposer),
+                                    "nonce": "0x0000000000000000",
+                                    "difficulty": "0x0",
+                                    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                                    "sha3Uncles": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                                    "receiptsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                                    "transactionsRoot": format!("{}", block.state_root),
+                                    "extraData": "0x",
+                                });
+                                mgr.notify_new_block(&block_json);
+
+                                for tx in &block.transactions {
+                                    let hash = prime_chain::crypto::tx_signing_hash(tx);
+                                    mgr.notify_new_tx(&format!("{}", hash));
+                                }
+
+                                for (rx_idx, receipt) in block.receipts.iter().enumerate() {
+                                    for (log_idx, log) in receipt.logs.iter().enumerate() {
+                                        let log_json = serde_json::json!({
+                                            "address": format!("{}", log.address),
+                                            "topics": log.topics.iter().map(|t| format!("{}", t)).collect::<Vec<_>>(),
+                                            "data": format!("0x{}", hex::encode(&log.data)),
+                                            "blockNumber": format!("0x{:x}", block.number),
+                                            "blockHash": format!("{}", block.hash),
+                                            "transactionHash": format!("{}", block.hash),
+                                            "transactionIndex": format!("0x{:x}", rx_idx),
+                                            "logIndex": format!("0x{:x}", log_idx),
+                                            "removed": false,
+                                        });
+                                        mgr.notify_log(
+                                            &log_json,
+                                            log.address,
+                                            &log.topics,
+                                        );
+                                    }
+                                }
+                            }
+
                             if let Err(err) = net.broadcast_block(&block) {
                                 tracing::warn!(%err, "block broadcast error");
                             }
@@ -220,19 +284,6 @@ fn main() -> anyhow::Result<()> {
                             }
                         }
                     })?;
-            }
-
-            if app_config.ws.enabled {
-                let ws_manager = Arc::new(Mutex::new(ws::WsSubscriptionManager::new()));
-                let ws_addr = app_config.ws.addr.clone();
-                let ws_mgr = ws_manager.clone();
-                std::thread::Builder::new()
-                    .name("ws-server".into())
-                    .spawn(move || {
-                        info!(addr = %ws_addr, "starting WebSocket server");
-                        ws::WsServer::start(&ws_addr, ws_mgr);
-                    })?;
-                info!("WebSocket subscriptions enabled on {}", app_config.ws.addr);
             }
 
             if let Some(path) = cli.config_path.clone() {
