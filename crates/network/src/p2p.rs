@@ -133,6 +133,8 @@ pub struct WireReceipt {
 pub struct WireBlock {
     pub number: u64,
     pub chain_id: u64,
+    #[serde(default)]
+    pub timestamp: u64,
     pub gas_limit: u64,
     pub gas_used: u64,
     pub base_fee: String,
@@ -245,6 +247,7 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
     WireBlock {
         number: block.number,
         chain_id: block.chain_id,
+        timestamp: block.timestamp,
         gas_limit: block.gas_limit,
         gas_used: block.gas_used,
         base_fee: hex_u256(&block.base_fee),
@@ -274,6 +277,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
     Some(Block {
         number: wire.number,
         chain_id: wire.chain_id,
+        timestamp: if wire.timestamp > 0 { wire.timestamp } else { wire.number },
         gas_limit: wire.gas_limit,
         gas_used: wire.gas_used,
         base_fee,

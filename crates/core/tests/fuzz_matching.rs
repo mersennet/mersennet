@@ -152,10 +152,10 @@ fn fuzz_parallel_determinism() {
         }
 
         for tx in txs.clone() {
-            engine.submit_tx(tx).ok();
+            engine.submit_tx_unsigned(tx).ok();
         }
         for tx in txs {
-            engine2.submit_tx(tx).ok();
+            engine2.submit_tx_unsigned(tx).ok();
         }
 
         let par_block = engine.execute_block_parallel().expect("parallel block");
