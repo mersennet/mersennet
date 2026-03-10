@@ -7,198 +7,286 @@
     <meta name="description" content="Get testnet PRIM and mock tokens for development on Prime Chain (Chain ID 7919)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
         :root{
-            --violet:#4901FF;--violet-light:#6d2fff;--violet-dim:rgba(73,1,255,0.12);
-            --cyan:#00FFF9;--cyan-dim:rgba(0,255,249,0.1);
-            --pink:#FF00C0;
-            --bg:#0b0b12;--bg-card:#111122;--bg-surface:#14142a;--bg-input:#0e0e1e;
-            --text:#e8edf5;--text-secondary:#94a3b8;--text-muted:#64748b;
-            --success:#3fe57f;--success-dim:rgba(63,229,127,0.1);
-            --danger:#ef2961;--danger-dim:rgba(239,41,97,0.1);
-            --warn:#f8d353;
-            --font:'Sora',system-ui,-apple-system,sans-serif;
+            --color-main:#9461FF;
+            --color-secondary:#6A2FFF;
+            --color-deep:#4901FF;
+            --color-accent:#00FFF9;
+            --gradient-primary:linear-gradient(90deg,#9461FF 35%,#6A2FFF 100%);
+            --gradient-linear:linear-gradient(90deg,#6A2FFF,#00FFF9);
+
+            --text-primary:#3A334D;
+            --text-secondary:#99B2C6;
+            --text-white:#FFF;
+            --color-border:#F1F5F7;
+
+            --bg-100:#F8F9FE;
+            --bg-200:#F3EDFF;
+            --bg-300:#E8DCFF;
+            --bg-card:#FFFFFF;
+
+            --success:#1AB280;
+            --success-bg:#DFFBEE;
+            --danger:#B61616;
+            --danger-bg:#FDE4E9;
+            --warning:#C75E05;
+
+            --shadow-sm:0px 2px 4px 0px rgba(0,0,0,0.05);
+            --shadow-md:0px 4px 12px rgba(0,0,0,0.08);
+            --font:'Sora',sans-serif;
             --mono:'JetBrains Mono','Fira Code',monospace;
-            --radius:12px;--radius-sm:8px;
+            --radius:12px;
+            --radius-sm:8px;
+            --transition:200ms ease;
         }
-        html{scroll-behavior:smooth}
+
+        .dark-mode{
+            --color-main:#EFE8FF;
+            --color-secondary:#4901FF;
+            --text-primary:#FFFFFF;
+            --text-secondary:#B4B1F5;
+            --color-border:#472F83;
+            --bg-100:#0D002F;
+            --bg-200:#513197;
+            --bg-300:#9461FF;
+            --bg-card:#281459;
+            --success:#42E342;
+            --success-bg:#134213;
+            --danger:#FAB5B5;
+            --danger-bg:#721414;
+        }
+
+        html{scroll-behavior:smooth;font-size:16px}
         body{
-            font-family:var(--font);background:var(--bg);color:var(--text);
-            min-height:100vh;display:flex;flex-direction:column;align-items:center;
-            -webkit-font-smoothing:antialiased;
+            font-family:var(--font);font-weight:300;background:var(--bg-100);
+            color:var(--text-primary);min-height:100vh;display:flex;flex-direction:column;
+            align-items:center;-webkit-font-smoothing:antialiased;
+            transition:background .3s,color .3s;
         }
-        ::selection{background:var(--violet-dim);color:var(--text)}
-        a{color:var(--cyan);text-decoration:none;transition:opacity .2s}
+        ::selection{background:var(--bg-200);color:var(--text-primary)}
+        a{color:var(--color-secondary);text-decoration:none;transition:opacity var(--transition)}
         a:hover{opacity:.8}
+        .dark-mode a{color:var(--color-accent)}
 
-        .topbar{
-            width:100%;padding:8px 0;text-align:center;font-size:.75rem;font-weight:500;
-            background:linear-gradient(90deg,var(--violet),var(--pink),var(--cyan));color:#0b0b12;
-            letter-spacing:.02em;
+        /* Header */
+        .header{
+            width:100%;position:sticky;top:0;z-index:10;
+            background:var(--bg-card);box-shadow:var(--shadow-sm);
+            transition:background .3s;
         }
-        .topbar a{color:#0b0b12;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+        .header-inner{
+            max-width:600px;margin:0 auto;padding:0 1.5rem;
+            height:64px;display:flex;align-items:center;justify-content:space-between;
+        }
+        .header-left{display:flex;align-items:center;gap:.75rem}
+        .header-left svg{width:32px;height:32px;flex-shrink:0}
+        .header-title{font-size:18px;font-weight:700;letter-spacing:-0.02em}
 
-        .container{
-            width:100%;max-width:520px;padding:0 1.25rem;margin:0 auto;
-            display:flex;flex-direction:column;align-items:center;flex:1;
+        .header-actions{display:flex;align-items:center;gap:.5rem}
+        .theme-toggle{
+            width:36px;height:36px;border-radius:8px;border:1px solid var(--color-border);
+            background:transparent;cursor:pointer;display:flex;align-items:center;
+            justify-content:center;transition:all var(--transition);color:var(--text-secondary);
         }
+        .theme-toggle:hover{border-color:var(--color-main);color:var(--color-main)}
+        .theme-toggle svg{width:18px;height:18px}
 
-        .logo-area{margin-top:2.5rem;display:flex;align-items:center;gap:.75rem}
-        .logo-area svg{width:44px;height:44px}
-        .logo-area h1{font-size:1.5rem;font-weight:800;letter-spacing:-.03em;
-            background:linear-gradient(135deg,#fff 20%,var(--cyan) 100%);
-            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+        .chain-pill{
+            display:inline-flex;align-items:center;gap:.4rem;
+            padding:.3rem .75rem;border-radius:100px;font-size:11px;font-weight:600;
+            font-family:var(--mono);background:var(--bg-200);color:var(--color-secondary);
+            border:1px solid var(--color-border);transition:all .3s;
         }
-
-        .subtitle{
-            margin-top:.5rem;color:var(--text-secondary);font-size:.9rem;text-align:center;line-height:1.5;
-        }
-
-        .chain-badge{
-            margin-top:1rem;display:inline-flex;align-items:center;gap:.5rem;
-            padding:.35rem .9rem;border-radius:100px;font-size:.75rem;font-weight:600;
-            font-family:var(--mono);background:var(--violet-dim);color:var(--cyan);
-            border:1px solid rgba(0,255,249,.12);
-        }
-        .chain-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--success);
+        .dark-mode .chain-pill{color:var(--color-accent)}
+        .chain-dot{width:6px;height:6px;border-radius:50%;background:var(--success);
             box-shadow:0 0 6px var(--success);animation:pulse 2s infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-        .card{
-            margin-top:2rem;width:100%;padding:2rem;
-            background:var(--bg-card);border:1px solid rgba(73,1,255,.15);
-            border-radius:var(--radius);
+        /* Container */
+        .container{
+            width:100%;max-width:520px;padding:0 1.5rem;margin:0 auto;
+            display:flex;flex-direction:column;align-items:center;flex:1;
         }
 
-        .card-title{font-size:1.1rem;font-weight:700;margin-bottom:.25rem}
-        .card-desc{font-size:.85rem;color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.5}
+        /* Hero */
+        .hero{margin-top:2.5rem;text-align:center}
+        .hero h2{
+            font-size:24px;font-weight:700;margin-bottom:.5rem;
+        }
+        .hero .gradient-title{
+            background:linear-gradient(82.84deg,var(--text-primary) 51.47%,#9461FF 99.63%);
+            background-clip:text;-webkit-text-fill-color:transparent;
+        }
+        .dark-mode .hero .gradient-title{
+            background:linear-gradient(82.84deg,#fff 51.47%,#bfa0ff 99.63%);
+            background-clip:text;-webkit-text-fill-color:transparent;
+        }
+        .hero p{color:var(--text-secondary);font-size:14px;line-height:1.6;margin-top:.25rem}
 
-        label{display:block;font-size:.8rem;font-weight:600;color:var(--text-secondary);margin-bottom:.4rem}
+        /* Card */
+        .card{
+            margin-top:2rem;width:100%;padding:1.75rem;
+            background:var(--bg-card);border:1px solid var(--color-border);
+            border-radius:var(--radius);box-shadow:var(--shadow-sm);
+            transition:all .3s;
+        }
+        .card-title{font-size:16px;font-weight:600;margin-bottom:.2rem}
+        .card-desc{font-size:13px;color:var(--text-secondary);margin-bottom:1.25rem;line-height:1.6}
+
+        /* Form */
+        label{display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:.4rem}
 
         .input-wrap{
             display:flex;align-items:center;gap:.5rem;
-            background:var(--bg-input);border:1px solid rgba(73,1,255,.2);
-            border-radius:var(--radius-sm);padding:.1rem .1rem .1rem .75rem;
-            transition:border-color .2s;
+            background:var(--bg-100);border:1px solid var(--color-border);
+            border-radius:var(--radius-sm);padding:.15rem .15rem .15rem .75rem;
+            transition:border-color var(--transition);
         }
-        .input-wrap:focus-within{border-color:var(--cyan)}
+        .input-wrap:focus-within{border-color:var(--color-secondary)}
         .input-wrap input{
-            flex:1;background:none;border:none;outline:none;color:var(--text);
-            font-family:var(--mono);font-size:.85rem;padding:.6rem 0;
+            flex:1;background:none;border:none;outline:none;color:var(--text-primary);
+            font-family:var(--mono);font-size:13px;padding:.6rem 0;
         }
-        .input-wrap input::placeholder{color:var(--text-muted)}
-        .input-wrap .wallet-btn{
-            flex-shrink:0;padding:.55rem .75rem;border-radius:var(--radius-sm);
-            background:var(--bg-surface);border:1px solid rgba(73,1,255,.2);
-            color:var(--text-secondary);font-size:.75rem;font-weight:600;
-            cursor:pointer;transition:all .2s;font-family:var(--font);
-        }
-        .input-wrap .wallet-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+        .input-wrap input::placeholder{color:var(--text-secondary);opacity:.6}
 
-        .submit-btn{
-            margin-top:1rem;width:100%;padding:.75rem;border:none;cursor:pointer;
-            border-radius:var(--radius-sm);font-family:var(--font);font-size:.9rem;
-            font-weight:700;color:#0b0b12;
-            background:linear-gradient(135deg,var(--violet),var(--pink) 60%,var(--cyan));
-            transition:all .2s;position:relative;overflow:hidden;
+        .wallet-btn{
+            flex-shrink:0;padding:.5rem .7rem;border-radius:var(--radius-sm);
+            background:var(--bg-card);border:1px solid var(--color-border);
+            color:var(--text-secondary);font-size:12px;font-weight:600;
+            cursor:pointer;transition:all var(--transition);font-family:var(--font);
         }
-        .submit-btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(73,1,255,.3)}
-        .submit-btn:active{transform:translateY(0)}
-        .submit-btn:disabled{opacity:.6;cursor:wait;transform:none}
-        .submit-btn .spinner{display:none;width:16px;height:16px;border:2px solid transparent;
-            border-top-color:#0b0b12;border-radius:50%;animation:spin .6s linear infinite;
-            margin-right:.5rem;vertical-align:middle}
+        .wallet-btn:hover{border-color:var(--color-main);color:var(--color-main)}
+
+        /* Primary button */
+        .submit-btn{
+            margin-top:1rem;width:100%;padding:.7rem;border:none;cursor:pointer;
+            border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;
+            font-weight:600;color:var(--text-white);position:relative;overflow:hidden;
+            background:var(--gradient-primary);transition:all var(--transition);
+        }
+        .submit-btn div{
+            background:#9461FF;border:solid 1px #9461FF;
+            padding:.65rem;border-radius:calc(var(--radius-sm) - 2px);
+            transition:all .3s;color:white;font-weight:600;font-size:14px;
+            font-family:var(--font);
+        }
+        .submit-btn:hover div{background:transparent}
+        .submit-btn:disabled{opacity:.4;cursor:wait}
+        .submit-btn:disabled div{background:#9461FF}
+
+        .spinner{display:none;width:14px;height:14px;border:2px solid transparent;
+            border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;
+            margin-right:.4rem;vertical-align:middle}
         @keyframes spin{to{transform:rotate(360deg)}}
 
+        /* Result */
         .result{
-            margin-top:1rem;padding:.75rem 1rem;border-radius:var(--radius-sm);
-            font-family:var(--mono);font-size:.8rem;line-height:1.6;display:none;
+            margin-top:1rem;padding:.7rem 1rem;border-radius:var(--radius-sm);
+            font-family:var(--mono);font-size:12px;line-height:1.6;display:none;
             word-break:break-all;
         }
         .result.show{display:block}
-        .result.success{background:var(--success-dim);color:var(--success);border:1px solid rgba(63,229,127,.2)}
-        .result.error{background:var(--danger-dim);color:var(--danger);border:1px solid rgba(239,41,97,.2)}
+        .result.success{background:var(--success-bg);color:var(--success);border:1px solid var(--success)}
+        .result.error{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger)}
         .result a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 
+        /* Info grid */
         .info-section{
-            margin-top:1.5rem;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:.75rem;
+            margin-top:1.25rem;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:.6rem;
         }
         .info-card{
-            padding:1rem;background:var(--bg-card);border:1px solid rgba(73,1,255,.1);
-            border-radius:var(--radius-sm);
+            padding:.85rem 1rem;background:var(--bg-card);border:1px solid var(--color-border);
+            border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);transition:all .3s;
         }
-        .info-card .info-label{font-size:.7rem;font-weight:600;color:var(--text-muted);
-            text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem}
-        .info-card .info-value{font-size:.85rem;font-weight:600;font-family:var(--mono)}
-        .info-card .info-value.accent{color:var(--cyan)}
+        .info-label{font-size:11px;font-weight:600;color:var(--text-secondary);
+            text-transform:uppercase;letter-spacing:.04em;margin-bottom:.2rem}
+        .info-value{font-size:14px;font-weight:600;font-family:var(--mono)}
+        .info-value.accent{color:var(--color-secondary)}
+        .dark-mode .info-value.accent{color:var(--color-accent)}
 
+        /* Tokens */
         .tokens-section{
-            margin-top:1.5rem;width:100%;padding:1.5rem;
-            background:var(--bg-card);border:1px solid rgba(73,1,255,.1);
-            border-radius:var(--radius);
+            margin-top:1.25rem;width:100%;padding:1.25rem;
+            background:var(--bg-card);border:1px solid var(--color-border);
+            border-radius:var(--radius);box-shadow:var(--shadow-sm);transition:all .3s;
         }
-        .tokens-title{font-size:.9rem;font-weight:700;margin-bottom:.75rem}
+        .tokens-title{font-size:14px;font-weight:600;margin-bottom:.6rem}
         .token-row{
             display:flex;align-items:center;justify-content:space-between;
-            padding:.5rem 0;border-bottom:1px solid rgba(73,1,255,.06);
+            padding:.45rem 0;border-bottom:1px solid var(--color-border);
         }
         .token-row:last-child{border-bottom:none}
-        .token-row .token-name{font-weight:600;font-size:.85rem}
-        .token-row .token-hint{font-size:.75rem;color:var(--text-muted);font-family:var(--mono)}
-        .token-row .token-call{
-            font-size:.7rem;padding:.3rem .6rem;border-radius:100px;
-            background:var(--violet-dim);color:var(--violet-light);border:1px solid rgba(73,1,255,.2);
-            cursor:default;font-weight:600;
+        .token-name{font-weight:600;font-size:13px}
+        .token-hint{font-size:11px;color:var(--text-secondary);font-family:var(--mono)}
+        .token-badge{
+            font-size:11px;padding:.25rem .55rem;border-radius:100px;
+            background:var(--bg-200);color:var(--color-secondary);
+            border:1px solid var(--color-border);font-weight:600;font-family:var(--mono);
         }
+        .dark-mode .token-badge{color:var(--color-accent)}
 
+        /* Links */
         .links{
-            margin-top:2rem;margin-bottom:2rem;display:flex;flex-wrap:wrap;
-            justify-content:center;gap:1rem;font-size:.8rem;color:var(--text-muted);
+            margin-top:1.5rem;margin-bottom:1.5rem;display:flex;flex-wrap:wrap;
+            justify-content:center;gap:.75rem;font-size:12px;
         }
-        .links a{color:var(--text-secondary);font-weight:500}
-        .links a:hover{color:var(--cyan)}
-        .links .sep{opacity:.3}
+        .links a{color:var(--text-secondary);font-weight:500;transition:color var(--transition)}
+        .links a:hover{color:var(--color-secondary);opacity:1}
+        .dark-mode .links a:hover{color:var(--color-accent)}
+        .links .sep{opacity:.3;color:var(--text-secondary)}
 
+        /* Footer */
         footer{
-            padding:1.5rem;text-align:center;font-size:.7rem;color:var(--text-muted);
-            border-top:1px solid rgba(73,1,255,.06);width:100%;
+            padding:1.25rem;text-align:center;font-size:11px;color:var(--text-secondary);
+            border-top:1px solid var(--color-border);width:100%;transition:all .3s;
         }
 
         @media(max-width:540px){
             .info-section{grid-template-columns:1fr}
-            .card{padding:1.5rem}
+            .card{padding:1.25rem}
+            .hero h2{font-size:20px}
         }
     </style>
 </head>
 <body>
-    <div class="topbar">
-        Prime Chain Testnet — Chain ID 7919 —
-        <a href="http://46.225.30.187:3001" target="_blank">Docs</a> ·
-        <a href="http://46.225.30.187" target="_blank">Explorer</a>
-    </div>
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="header-left">
+                <svg viewBox="0 0 125 86" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M0 0 C4.65 4.23 5.79 9.68 7.09 15.62 C8.41 21.18 10.06 25.1 14.72 28.56 C20.1 31.38 24.77 32.16 30.72 30.56 C34.86 28.52 36.66 26.54 38.84 22.5 C40.67 19.13 41.47 17.73 44.72 15.56 C47.3 20.77 46.34 24 44.84 29.43 C40.78 40.81 33.12 49.57 22.72 55.56 C13.28 59.91 3.47 61.59 -6.47 57.94 C-20.15 51.68 -27.12 43.07 -32.59 29.25 C-34.19 20.71 -34.33 12.37 -30.28 4.56 C-22.13 -5.1 -10.58 -7.39 0 0 Z" fill="#4901FF" transform="translate(33.28,24.44)"/>
+                    <path d="M0 0 C10.09 6.6 17.64 15.51 20.59 27.38 C21.87 35.58 21.85 43.56 18 51 C14.35 55.33 10.62 58.67 4.88 59.4 C-3.03 59.34 -8.26 58.88 -14.12 53.25 C-17.87 48.7 -18.8 43.14 -20.04 37.52 C-21.41 32.48 -22.87 29.81 -27.12 26.75 C-31.96 24.27 -36.79 23.27 -42.14 24.49 C-47.72 26.74 -49.97 30.54 -52.68 35.76 C-54 38 -54 38 -57 40 C-58.58 38.42 -58.28 36.88 -58.38 34.69 C-58.22 23.85 -52.44 14.54 -45 7 C-32.28 -4.18 -15.38 -8.02 0 0 Z" fill="#4901FF" transform="translate(104,6)"/>
+                    <path d="M0 0 C2.18 2.07 2.85 3.64 3.63 6.55 C2.75 9.31 2.75 9.31 1.18 12.34 C0.61 13.49 0.04 14.63 -0.54 15.81 C-0.84 16.41 -1.15 17.02 -1.46 17.65 C-3.02 20.89 -4.37 24.23 -5.73 27.56 C-6.29 28.93 -6.86 30.29 -7.42 31.66 C-8.28 33.75 -9.14 35.85 -10 37.94 C-10.84 40 -11.69 42.07 -12.54 44.12 C-13.04 45.34 -13.53 46.55 -14.05 47.79 C-15.37 50.55 -15.37 50.55 -17.37 51.55 C-26.01 44.98 -31.5 36.33 -33.37 25.55 C-34.03 17.94 -33.91 11.39 -30.37 4.55 C-21.85 -5.54 -11.02 -6.85 0 0 Z" fill="#4901FF" transform="translate(33.37,24.45)"/>
+                    <path d="M0 0 C-0.66 0.33 -1.32 0.66 -2 1 C-2 18.82 -2 36.64 -2 55 C-5.08 51.92 -5.44 47.8 -6.41 43.67 C-7.84 37.94 -9.28 34.24 -14.12 30.75 C-18.96 28.27 -23.79 27.27 -29.14 28.49 C-34.72 30.74 -36.97 34.54 -39.68 39.76 C-41 42 -41 42 -44 44 C-45.58 42.42 -45.28 40.88 -45.38 38.69 C-45.22 27.85 -39.44 18.54 -32 11 C-22.82 2.93 -12.21 -0.97 0 0 Z" fill="#4901FF" transform="translate(91,2)"/>
+                    <path d="M0 0 C2 1 2 1 2.69 2.71 C4.06 12.9 -2.7 22.33 -8.25 30.19 C-13.23 35.28 -19.17 39.77 -26 42 C-27.32 42 -28.64 42 -30 42 C-29.08 38.96 -28.07 35.99 -27 33 C-26.78 32.36 -26.57 31.72 -26.35 31.07 C-21.87 18.08 -21.87 18.08 -17.34 15.47 C-15.46 14.95 -13.57 14.48 -11.66 14.05 C-6.47 12 -4.55 6.68 -2 2 C-1.34 1.34 -0.68 0.68 0 0 Z" fill="#4901FF" transform="translate(77,40)"/>
+                    <path d="M0 0 C0 6.93 0 13.86 0 21 C-0.84 21.22 -0.84 21.22 -5.06 22.31 C-11.29 24.52 -13.51 27.85 -16.56 33.54 C-18 36 -18 36 -21 38 C-22.58 36.42 -22.28 34.88 -22.38 32.69 C-22.22 21.79 -16.38 12.65 -9 5 C-3.22 0 -3.22 0 0 0 Z" fill="#4901FF" transform="translate(68,8)"/>
+                    <path d="M0 0 C2.57 3.85 1.83 5.59 1 10 C-1.69 11.25 -1.69 11.25 -5 12 C-7.94 10.56 -7.94 10.56 -10 8 C-10.06 4.38 -10.06 4.38 -9 1 C-6.05 -1.53 -3.57 -1.22 0 0 Z" fill="#4901FF" transform="translate(67,37)"/>
+                    <path d="M0 0 C1.32 0 2.64 0 4 0 C4 3.63 4 7.26 4 11 C0 10 0 10 -2 8 C-1.42 1.42 -1.42 1.42 0 0 Z" fill="#4901FF" transform="translate(59,37)"/>
+                </svg>
+                <span class="header-title">Faucet</span>
+            </div>
+            <div class="header-actions">
+                <div class="chain-pill"><span class="chain-dot"></span>Testnet</div>
+                <button class="theme-toggle" id="themeBtn" title="Toggle theme">
+                    <svg id="sunIcon" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11 1V3M11 19V21M3 11H1M5.31 5.31L3.9 3.9M16.69 5.31L18.1 3.9M5.31 16.69L3.9 18.1M16.69 16.69L18.1 18.1M21 11H19M16 11C16 13.76 13.76 16 11 16S6 13.76 6 11 8.24 6 11 6s5 2.24 5 5Z"/>
+                    </svg>
+                    <svg id="moonIcon" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
 
     <div class="container">
-        <div class="logo-area">
-            <svg width="80" height="55" viewBox="0 0 125 86" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M0 0 C4.65 4.23 5.79 9.68 7.09 15.62 C8.41 21.18 10.06 25.1 14.72 28.56 C20.1 31.38 24.77 32.16 30.72 30.56 C34.86 28.52 36.66 26.54 38.84 22.5 C40.67 19.13 41.47 17.73 44.72 15.56 C47.3 20.77 46.34 24 44.84 29.43 C40.78 40.81 33.12 49.57 22.72 55.56 C13.28 59.91 3.47 61.59 -6.47 57.94 C-20.15 51.68 -27.12 43.07 -32.59 29.25 C-34.19 20.71 -34.33 12.37 -30.28 4.56 C-22.13 -5.1 -10.58 -7.39 0 0 Z" fill="#4901FF" transform="translate(33.28,24.44)"/>
-                <path d="M0 0 C10.09 6.6 17.64 15.51 20.59 27.38 C21.87 35.58 21.85 43.56 18 51 C14.35 55.33 10.62 58.67 4.88 59.4 C-3.03 59.34 -8.26 58.88 -14.12 53.25 C-17.87 48.7 -18.8 43.14 -20.04 37.52 C-21.41 32.48 -22.87 29.81 -27.12 26.75 C-31.96 24.27 -36.79 23.27 -42.14 24.49 C-47.72 26.74 -49.97 30.54 -52.68 35.76 C-54 38 -54 38 -57 40 C-58.58 38.42 -58.28 36.88 -58.38 34.69 C-58.22 23.85 -52.44 14.54 -45 7 C-32.28 -4.18 -15.38 -8.02 0 0 Z" fill="#4901FF" transform="translate(104,6)"/>
-                <path d="M0 0 C2.18 2.07 2.85 3.64 3.63 6.55 C2.75 9.31 2.75 9.31 1.18 12.34 C0.61 13.49 0.04 14.63 -0.54 15.81 C-0.84 16.41 -1.15 17.02 -1.46 17.65 C-3.02 20.89 -4.37 24.23 -5.73 27.56 C-6.29 28.93 -6.86 30.29 -7.42 31.66 C-8.28 33.75 -9.14 35.85 -10 37.94 C-10.84 40 -11.69 42.07 -12.54 44.12 C-13.04 45.34 -13.53 46.55 -14.05 47.79 C-15.37 50.55 -15.37 50.55 -17.37 51.55 C-26.01 44.98 -31.5 36.33 -33.37 25.55 C-34.03 17.94 -33.91 11.39 -30.37 4.55 C-21.85 -5.54 -11.02 -6.85 0 0 Z" fill="#4901FF" transform="translate(33.37,24.45)"/>
-                <path d="M0 0 C-0.66 0.33 -1.32 0.66 -2 1 C-2 18.82 -2 36.64 -2 55 C-5.08 51.92 -5.44 47.8 -6.41 43.67 C-7.84 37.94 -9.28 34.24 -14.12 30.75 C-18.96 28.27 -23.79 27.27 -29.14 28.49 C-34.72 30.74 -36.97 34.54 -39.68 39.76 C-41 42 -41 42 -44 44 C-45.58 42.42 -45.28 40.88 -45.38 38.69 C-45.22 27.85 -39.44 18.54 -32 11 C-22.82 2.93 -12.21 -0.97 0 0 Z" fill="#4901FF" transform="translate(91,2)"/>
-                <path d="M0 0 C2 1 2 1 2.69 2.71 C4.06 12.9 -2.7 22.33 -8.25 30.19 C-13.23 35.28 -19.17 39.77 -26 42 C-27.32 42 -28.64 42 -30 42 C-29.08 38.96 -28.07 35.99 -27 33 C-26.78 32.36 -26.57 31.72 -26.35 31.07 C-21.87 18.08 -21.87 18.08 -17.34 15.47 C-15.46 14.95 -13.57 14.48 -11.66 14.05 C-6.47 12 -4.55 6.68 -2 2 C-1.34 1.34 -0.68 0.68 0 0 Z" fill="#4901FF" transform="translate(77,40)"/>
-                <path d="M0 0 C0 6.93 0 13.86 0 21 C-0.84 21.22 -0.84 21.22 -5.06 22.31 C-11.29 24.52 -13.51 27.85 -16.56 33.54 C-18 36 -18 36 -21 38 C-22.58 36.42 -22.28 34.88 -22.38 32.69 C-22.22 21.79 -16.38 12.65 -9 5 C-3.22 0 -3.22 0 0 0 Z" fill="#4901FF" transform="translate(68,8)"/>
-                <path d="M0 0 C2.57 3.85 1.83 5.59 1 10 C-1.69 11.25 -1.69 11.25 -5 12 C-7.94 10.56 -7.94 10.56 -10 8 C-10.06 4.38 -10.06 4.38 -9 1 C-6.05 -1.53 -3.57 -1.22 0 0 Z" fill="#4901FF" transform="translate(67,37)"/>
-                <path d="M0 0 C1.32 0 2.64 0 4 0 C4 3.63 4 7.26 4 11 C0 10 0 10 -2 8 C-1.42 1.42 -1.42 1.42 0 0 Z" fill="#4901FF" transform="translate(59,37)"/>
-            </svg>
-            <h1>Prime Chain Faucet</h1>
-        </div>
-
-        <p class="subtitle">Get testnet PRIM tokens for development and testing on Prime Chain.</p>
-
-        <div class="chain-badge">
-            <span class="dot"></span>
-            Testnet · Chain ID 7919
+        <div class="hero">
+            <h2 class="gradient-title">Prime Chain Faucet</h2>
+            <p>Get testnet PRIM tokens for development and testing on Prime Chain.</p>
         </div>
 
         <div class="card">
@@ -209,12 +297,14 @@
                 <label for="address">Wallet Address</label>
                 <div class="input-wrap">
                     <input type="text" id="address" name="address" placeholder="0x..." required pattern="^0x[a-fA-F0-9]{40}$" spellcheck="false">
-                    <button type="button" class="wallet-btn" id="connect-btn" title="Connect MetaMask">🦊 Connect</button>
+                    <button type="button" class="wallet-btn" id="connect-btn" title="Connect MetaMask">Connect</button>
                     <button type="button" class="wallet-btn" id="paste-btn" title="Paste from clipboard">Paste</button>
                 </div>
                 <button type="submit" class="submit-btn" id="submit-btn">
-                    <span class="spinner" id="spinner"></span>
-                    <span id="btn-text">Request 1,000 PRIM</span>
+                    <div>
+                        <span class="spinner" id="spinner"></span>
+                        <span id="btn-text">Request 1,000 PRIM</span>
+                    </div>
                 </button>
             </form>
 
@@ -247,24 +337,24 @@
                     <div class="token-name">MockUSDC</div>
                     <div class="token-hint">0xb22f...238d</div>
                 </div>
-                <div class="token-call">faucet()</div>
+                <span class="token-badge">faucet()</span>
             </div>
             <div class="token-row">
                 <div>
                     <div class="token-name">MockUSDT</div>
                     <div class="token-hint">0x877f...5c17</div>
                 </div>
-                <div class="token-call">faucet()</div>
+                <span class="token-badge">faucet()</span>
             </div>
             <div class="token-row">
                 <div>
                     <div class="token-name">MockDAI</div>
                     <div class="token-hint">0xb88d...f4b6</div>
                 </div>
-                <div class="token-call">faucet()</div>
+                <span class="token-badge">faucet()</span>
             </div>
-            <p style="margin-top:.75rem;font-size:.75rem;color:var(--text-muted);line-height:1.5">
-                Mock stablecoins have a public <code style="font-family:var(--mono);background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:.7rem">faucet()</code> function. Call it from any wallet or contract to receive free test tokens.
+            <p style="margin-top:.6rem;font-size:12px;color:var(--text-secondary);line-height:1.5">
+                Mock stablecoins have a public <code style="font-family:var(--mono);background:var(--bg-200);padding:2px 6px;border-radius:4px;font-size:11px;transition:all .3s">faucet()</code> function. Call it from any wallet or contract to receive free test tokens.
             </p>
         </div>
 
@@ -292,6 +382,24 @@
     const btnText = document.getElementById('btn-text');
     const pasteBtn = document.getElementById('paste-btn');
     const connectBtn = document.getElementById('connect-btn');
+    const themeBtn = document.getElementById('themeBtn');
+    const sunIcon = document.getElementById('sunIcon');
+    const moonIcon = document.getElementById('moonIcon');
+
+    let isDark = localStorage.getItem('theme') === 'dark';
+    applyTheme();
+
+    themeBtn.addEventListener('click', () => {
+        isDark = !isDark;
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        applyTheme();
+    });
+
+    function applyTheme() {
+        document.body.classList.toggle('dark-mode', isDark);
+        sunIcon.style.display = isDark ? 'none' : 'block';
+        moonIcon.style.display = isDark ? 'block' : 'none';
+    }
 
     connectBtn.addEventListener('click', async () => {
         if (typeof window.ethereum !== 'undefined') {
@@ -327,10 +435,7 @@
     pasteBtn.addEventListener('click', async () => {
         try {
             const text = await navigator.clipboard.readText();
-            if (text && /^0x[a-fA-F0-9]{40}$/.test(text.trim())) {
-                addrInput.value = text.trim();
-                addrInput.focus();
-            } else if (text) {
+            if (text) {
                 addrInput.value = text.trim();
                 addrInput.focus();
             }
