@@ -214,20 +214,50 @@
             background:var(--bg-card);border:1px solid var(--color-border);
             border-radius:var(--radius);box-shadow:var(--shadow-sm);transition:all .3s;
         }
-        .tokens-title{font-size:14px;font-weight:600;margin-bottom:.6rem}
+        .tokens-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
+        .tokens-title{font-size:14px;font-weight:600}
+        .claim-all-btn{
+            padding:.4rem .85rem;border-radius:100px;border:none;cursor:pointer;
+            font-family:var(--font);font-size:12px;font-weight:600;
+            background:var(--gradient-primary);color:#fff;transition:all var(--transition);
+        }
+        .claim-all-btn:hover{transform:translateY(-1px);box-shadow:0 2px 12px rgba(106,47,255,.35)}
+        .claim-all-btn:disabled{opacity:.4;cursor:wait;transform:none;box-shadow:none}
         .token-row{
             display:flex;align-items:center;justify-content:space-between;
-            padding:.45rem 0;border-bottom:1px solid var(--color-border);
+            padding:.55rem 0;border-bottom:1px solid var(--color-border);
         }
         .token-row:last-child{border-bottom:none}
+        .token-left{display:flex;align-items:center;gap:.5rem;min-width:0}
+        .token-icon{
+            width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+            justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;
+            background:var(--bg-200);color:var(--color-secondary);
+        }
+        .dark-mode .token-icon{color:var(--color-accent)}
         .token-name{font-weight:600;font-size:13px}
         .token-hint{font-size:11px;color:var(--text-secondary);font-family:var(--mono)}
-        .token-badge{
-            font-size:11px;padding:.25rem .55rem;border-radius:100px;
-            background:var(--bg-200);color:var(--color-secondary);
-            border:1px solid var(--color-border);font-weight:600;font-family:var(--mono);
+        .token-actions{display:flex;align-items:center;gap:.4rem}
+        .token-claim-btn{
+            padding:.3rem .7rem;border-radius:100px;border:1px solid var(--color-border);
+            background:var(--bg-200);color:var(--color-secondary);cursor:pointer;
+            font-size:11px;font-weight:600;font-family:var(--font);
+            transition:all var(--transition);display:inline-flex;align-items:center;gap:.3rem;
         }
-        .dark-mode .token-badge{color:var(--color-accent)}
+        .token-claim-btn:hover{border-color:var(--color-main);color:var(--color-main);background:var(--bg-300)}
+        .token-claim-btn:disabled{opacity:.5;cursor:wait}
+        .dark-mode .token-claim-btn{color:var(--color-accent)}
+        .dark-mode .token-claim-btn:hover{color:#fff;border-color:var(--color-accent)}
+        .token-claim-btn .mini-spinner{
+            display:none;width:10px;height:10px;border:1.5px solid transparent;
+            border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;
+        }
+        .token-claim-btn.loading .mini-spinner{display:inline-block}
+        .token-claim-btn.loading .btn-label{display:none}
+        .token-claim-btn.success{border-color:var(--success);color:var(--success);background:var(--success-bg)}
+        .token-claim-btn.error{border-color:var(--danger);color:var(--danger);background:var(--danger-bg)}
+        .token-tx{font-size:10px;font-family:var(--mono);color:var(--text-secondary);margin-top:.15rem}
+        .token-tx a{font-size:10px}
 
         /* Links */
         .links{
@@ -331,31 +361,59 @@
         </div>
 
         <div class="tokens-section">
-            <div class="tokens-title">Need test tokens?</div>
-            <div class="token-row">
-                <div>
-                    <div class="token-name">MockUSDC</div>
-                    <div class="token-hint">0xb22f...238d</div>
-                </div>
-                <span class="token-badge">faucet()</span>
+            <div class="tokens-header">
+                <div class="tokens-title">Mock Stablecoins</div>
+                <button class="claim-all-btn" id="claimAllBtn" title="Claim all tokens in one go">Mint All Tokens</button>
             </div>
-            <div class="token-row">
-                <div>
-                    <div class="token-name">MockUSDT</div>
-                    <div class="token-hint">0x877f...5c17</div>
+            <div class="token-row" id="row-usdc">
+                <div class="token-left">
+                    <div class="token-icon">$</div>
+                    <div>
+                        <div class="token-name">MockUSDC</div>
+                        <div class="token-hint">0xb22f...238d</div>
+                        <div class="token-tx" id="tx-usdc"></div>
+                    </div>
                 </div>
-                <span class="token-badge">faucet()</span>
-            </div>
-            <div class="token-row">
-                <div>
-                    <div class="token-name">MockDAI</div>
-                    <div class="token-hint">0xb88d...f4b6</div>
+                <div class="token-actions">
+                    <button class="token-claim-btn" data-token="usdc" data-addr="0xb22f77d89122e9e3784bfd3eee9616273f38238d" data-name="USDC">
+                        <span class="mini-spinner"></span>
+                        <span class="btn-label">Claim</span>
+                    </button>
                 </div>
-                <span class="token-badge">faucet()</span>
             </div>
-            <p style="margin-top:.6rem;font-size:12px;color:var(--text-secondary);line-height:1.5">
-                Mock stablecoins have a public <code style="font-family:var(--mono);background:var(--bg-200);padding:2px 6px;border-radius:4px;font-size:11px;transition:all .3s">faucet()</code> function. Call it from any wallet or contract to receive free test tokens.
-            </p>
+            <div class="token-row" id="row-usdt">
+                <div class="token-left">
+                    <div class="token-icon">$</div>
+                    <div>
+                        <div class="token-name">MockUSDT</div>
+                        <div class="token-hint">0x877f...5c17</div>
+                        <div class="token-tx" id="tx-usdt"></div>
+                    </div>
+                </div>
+                <div class="token-actions">
+                    <button class="token-claim-btn" data-token="usdt" data-addr="0x877feca38919acd7aaf7cb81f100e0454aa95c17" data-name="USDT">
+                        <span class="mini-spinner"></span>
+                        <span class="btn-label">Claim</span>
+                    </button>
+                </div>
+            </div>
+            <div class="token-row" id="row-dai">
+                <div class="token-left">
+                    <div class="token-icon">◈</div>
+                    <div>
+                        <div class="token-name">MockDAI</div>
+                        <div class="token-hint">0xb88d...f4b6</div>
+                        <div class="token-tx" id="tx-dai"></div>
+                    </div>
+                </div>
+                <div class="token-actions">
+                    <button class="token-claim-btn" data-token="dai" data-addr="0xb88d63a65691effbf4b6808325b1588912c15cf4" data-name="DAI">
+                        <span class="mini-spinner"></span>
+                        <span class="btn-label">Claim</span>
+                    </button>
+                </div>
+            </div>
+            <div class="result" id="token-result"></div>
         </div>
 
         <div class="links">
@@ -374,6 +432,7 @@
     </footer>
 
     <script>
+    const EXPLORER_BASE = location.protocol + '//' + location.hostname;
     const form = document.getElementById('faucet-form');
     const addrInput = document.getElementById('address');
     const resultEl = document.getElementById('result');
@@ -459,7 +518,7 @@
             });
             const data = await r.json();
             if (data.success) {
-                const txUrl = '/#/tx/' + data.tx_hash;
+                const txUrl = EXPLORER_BASE + '/#/tx/' + data.tx_hash;
                 showResult('success',
                     'Sent 1,000 PRIM successfully!<br>' +
                     'Tx: <a href="' + txUrl + '" target="_blank">' + data.tx_hash.slice(0,18) + '...</a>'
@@ -484,6 +543,122 @@
         resultEl.className = 'result show ' + type;
         resultEl.innerHTML = html;
     }
+
+    // --- Mock token claiming via backend ---
+    const CHAIN_ID_HEX = '0x1EEF';
+    const claimAllBtn = document.getElementById('claimAllBtn');
+
+    function getRecipientAddress() {
+        const addr = addrInput.value.trim();
+        if (!addr || !addr.startsWith('0x') || addr.length !== 42) return null;
+        return addr;
+    }
+
+    connectBtn.addEventListener('click', async () => {
+        if (typeof window.ethereum === 'undefined') return;
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            if (!accounts || !accounts[0]) return;
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: CHAIN_ID_HEX }]
+                });
+            } catch (switchErr) {
+                if (switchErr.code === 4902) {
+                    await window.ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: CHAIN_ID_HEX,
+                            chainName: 'Prime Chain Testnet',
+                            nativeCurrency: { name: 'PRIM', symbol: 'PRIM', decimals: 18 },
+                            rpcUrls: [location.protocol + '//' + location.hostname + ':8545'],
+                            blockExplorerUrls: [EXPLORER_BASE]
+                        }]
+                    });
+                }
+            }
+            addrInput.value = accounts[0];
+            connectBtn.textContent = '✓ Connected';
+            connectBtn.style.borderColor = 'var(--success)';
+            connectBtn.style.color = 'var(--success)';
+        } catch (err) {}
+    });
+
+    async function claimToken(btn) {
+        const tokenId = btn.dataset.token;
+        const txEl = document.getElementById('tx-' + tokenId);
+
+        const address = getRecipientAddress();
+        if (!address) {
+            showResult('error', 'Enter a valid wallet address or connect MetaMask first.');
+            return false;
+        }
+
+        btn.classList.remove('success', 'error');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        txEl.innerHTML = '';
+
+        try {
+            const r = await fetch('/claim-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: address, token: tokenId })
+            });
+            const data = await r.json();
+            if (data.success) {
+                btn.classList.remove('loading');
+                btn.classList.add('success');
+                btn.querySelector('.btn-label').textContent = '✓ Claimed';
+                btn.querySelector('.btn-label').style.display = 'inline';
+                txEl.innerHTML = '<a href="' + EXPLORER_BASE + '/#/tx/' + data.tx_hash + '" target="_blank">' + data.tx_hash.slice(0, 14) + '…</a>';
+                return true;
+            } else {
+                throw new Error(data.error || 'Claim failed');
+            }
+        } catch (err) {
+            btn.classList.remove('loading');
+            btn.classList.add('error');
+            btn.querySelector('.btn-label').textContent = 'Failed';
+            btn.querySelector('.btn-label').style.display = 'inline';
+            btn.disabled = false;
+            showResult('error', 'Token claim failed: ' + err.message);
+            return false;
+        }
+    }
+
+    document.querySelectorAll('.token-claim-btn').forEach(btn => {
+        btn.addEventListener('click', () => claimToken(btn));
+    });
+
+    claimAllBtn.addEventListener('click', async () => {
+        const address = getRecipientAddress();
+        if (!address) {
+            showResult('error', 'Enter a valid wallet address or connect MetaMask first.');
+            return;
+        }
+
+        claimAllBtn.disabled = true;
+        claimAllBtn.textContent = 'Minting…';
+
+        const buttons = document.querySelectorAll('.token-claim-btn');
+        let allOk = true;
+        for (const btn of buttons) {
+            if (btn.classList.contains('success')) continue;
+            const ok = await claimToken(btn);
+            if (!ok) allOk = false;
+        }
+
+        claimAllBtn.disabled = false;
+        if (allOk) {
+            claimAllBtn.textContent = '✓ All Minted';
+            showResult('success', 'All mock stablecoins sent to your address!');
+            setTimeout(() => { claimAllBtn.textContent = 'Mint All Tokens'; }, 4000);
+        } else {
+            claimAllBtn.textContent = 'Mint All Tokens';
+        }
+    });
     </script>
 </body>
 </html>

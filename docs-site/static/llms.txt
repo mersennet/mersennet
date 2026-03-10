@@ -29,6 +29,8 @@
 ## Ecosystem
 
 - [PrimeSwap DEX](/ecosystem/primeswap): Uniswap V2-style AMM with WPRIM pairs.
+- [PrimeSwap V3](/ecosystem/primeswap-v3): Concentrated liquidity DEX (Uniswap V3).
+- [PrimeTrade](/ecosystem/primetrade): Order book trading terminal using PrimeOrders CLOB.
 - [PrimeFi Lending](/ecosystem/primefi): Lending and borrowing protocol.
 - [Primeport NFTs](/ecosystem/primeport): NFT marketplace.
 - [Deployed Contracts](/resources/contracts): All testnet contract addresses.
@@ -56,5 +58,5 @@
 - RPC: http://46.225.30.187:8545
 - WebSocket: ws://46.225.30.187:8546
 - Block Explorer: http://46.225.30.187
-- Faucet: http://46.225.30.187:8080
+- Faucet: http://46.225.30.187:4003
 - GitHub: https://github.com/PrimeNumbersLabs/prime-chain

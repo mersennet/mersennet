@@ -220,10 +220,13 @@ article h4, article h5, article h6 {
    4. Announcement Bar
    -------------------------------------------------------------------------- */
 
+.announcementBar {
+  border-bottom: 1px solid var(--prime-border);
+}
+
 [data-theme='dark'] .announcementBar {
   background: linear-gradient(90deg, rgba(148, 97, 255, 0.1) 0%, rgba(106, 47, 255, 0.06) 100%) !important;
-  border-bottom: 1px solid var(--prime-border);
-  color: #e8edf5;
+  color: #e8edf5 !important;
 }
 
 .announcementBar a {
@@ -612,7 +615,7 @@ article h4, article h5, article h6 {
 
 .ecosystem-section__cards {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
 }
 

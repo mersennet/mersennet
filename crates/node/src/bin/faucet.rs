@@ -16,10 +16,22 @@ const DEFAULT_PORT: u16 = 8080;
 const RATE_LIMIT_HOURS: u64 = 1;
 const FAUCET_AMOUNT: &str = "1000000000000000000000"; // 1000 tokens (18 decimals)
 const GAS_LIMIT: u64 = 21_000;
+const TOKEN_GAS_LIMIT: u64 = 200_000;
+const TOKEN_MINT_AMOUNT: U256 = U256::from_limbs([10_000_000_000u64, 0, 0, 0]); // 10,000 (6 decimals)
+
+const MOCK_USDC: &str = "0xb22f77d89122e9e3784bfd3eee9616273f38238d";
+const MOCK_USDT: &str = "0x877feca38919acd7aaf7cb81f100e0454aa95c17";
+const MOCK_DAI: &str = "0xb88d63a65691effbf4b6808325b1588912c15cf4";
 
 #[derive(Debug, Deserialize)]
 struct FaucetRequest {
     address: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaimTokenRequest {
+    address: String,
+    token: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -196,6 +208,19 @@ fn handle_request(
         return Ok(());
     }
 
+    if request.method() == &Method::Post && url == "/claim-token" {
+        let mut body = String::new();
+        request.as_reader().read_to_string(&mut body)?;
+
+        let resp = handle_claim_token(&body, &rpc_url, &faucet_key, chain_id);
+        let status = if resp.success { 200 } else { 500 };
+        let response = Response::from_string(serde_json::to_string(&resp)?)
+            .with_status_code(status)
+            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
+        request.respond(response)?;
+        return Ok(());
+    }
+
     let response = Response::from_string("Not Found").with_status_code(404);
     request.respond(response)?;
     Ok(())
@@ -268,6 +293,96 @@ fn send_raw_transaction(rpc_url: &str, raw_hex: &str) -> Result<String, Box<dyn 
     let result = rpc_request(rpc_url, "eth_sendRawTransaction", json!([raw_hex]))?;
     Ok(result.as_str().ok_or("tx hash not string")?.to_string())
 }
+
+fn handle_claim_token(body: &str, rpc_url: &str, faucet_key: &SigningKey, chain_id: u64) -> FaucetResponse {
+    let req: ClaimTokenRequest = match serde_json::from_str(body) {
+        Ok(r) => r,
+        Err(_) => return FaucetResponse {
+            success: false, tx_hash: None,
+            error: Some("expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}".into()),
+        },
+    };
+
+    let user_address = match parse_address(&req.address) {
+        Ok(a) => a,
+        Err(e) => return FaucetResponse {
+            success: false, tx_hash: None, error: Some(format!("invalid address: {}", e)),
+        },
+    };
+
+    let token_contract = match req.token.to_lowercase().as_str() {
+        "usdc" => parse_address(MOCK_USDC).unwrap(),
+        "usdt" => parse_address(MOCK_USDT).unwrap(),
+        "dai" => parse_address(MOCK_DAI).unwrap(),
+        _ => return FaucetResponse {
+            success: false, tx_hash: None, error: Some("unknown token: use usdc, usdt, or dai".into()),
+        },
+    };
+
+    let faucet_address = prime_chain::crypto::address_from_signing_key(faucet_key);
+    let gas_price = match fetch_gas_price(rpc_url) {
+        Ok(p) => p,
+        Err(e) => return FaucetResponse { success: false, tx_hash: None, error: Some(e.to_string()) },
+    };
+    let nonce = match fetch_nonce(rpc_url, &faucet_address) {
+        Ok(n) => n,
+        Err(e) => return FaucetResponse { success: false, tx_hash: None, error: Some(e.to_string()) },
+    };
+
+    // Step 1: Call faucet() on the token contract (mints to faucet address)
+    let mint_tx = Transaction {
+        from: faucet_address,
+        to: Some(token_contract),
+        value: U256::ZERO,
+        data: Bytes::from(hex::decode("de5f72fd").unwrap()),
+        gas_limit: TOKEN_GAS_LIMIT,
+        gas_price,
+        nonce,
+        chain_id: Some(chain_id),
+        signature: None,
+    };
+    let signed_mint = sign_transaction(&mint_tx, faucet_key);
+    let raw_mint = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_mint)));
+    if let Err(e) = send_raw_transaction(rpc_url, &raw_mint) {
+        return FaucetResponse {
+            success: false, tx_hash: None, error: Some(format!("mint failed: {}", e)),
+        };
+    }
+
+    // Step 2: Transfer tokens to user
+    let transfer_data = encode_transfer(user_address, TOKEN_MINT_AMOUNT);
+    let transfer_tx = Transaction {
+        from: faucet_address,
+        to: Some(token_contract),
+        value: U256::ZERO,
+        data: Bytes::from(transfer_data),
+        gas_limit: TOKEN_GAS_LIMIT,
+        gas_price,
+        nonce: nonce + 1,
+        chain_id: Some(chain_id),
+        signature: None,
+    };
+    let signed_transfer = sign_transaction(&transfer_tx, faucet_key);
+    let raw_transfer = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_transfer)));
+    match send_raw_transaction(rpc_url, &raw_transfer) {
+        Ok(tx_hash) => FaucetResponse { success: true, tx_hash: Some(tx_hash), error: None },
+        Err(e) => FaucetResponse {
+            success: false, tx_hash: None, error: Some(format!("transfer failed: {}", e)),
+        },
+    }
+}
+
+fn encode_transfer(to: Address, amount: U256) -> Vec<u8> {
+    // transfer(address,uint256) = 0xa9059cbb
+    let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
+    // address padded to 32 bytes
+    data.extend_from_slice(&[0u8; 12]);
+    data.extend_from_slice(to.as_slice());
+    // uint256 amount
+    data.extend_from_slice(&amount.to_be_bytes::<32>());
+    data
+}
+
 
 struct Args {
     port: u16,

@@ -29,7 +29,7 @@ Yes. Prime Chain is fully EVM compatible. You can deploy Solidity contracts with
 ### How do I get testnet tokens?
 
 1. Add Prime Chain to your wallet (see [Wallet Setup](/getting-started/wallet-setup)).
-2. Use the **Faucet** at [http://46.225.30.187:8080](http://46.225.30.187:8080) to receive testnet PRIM.
+2. Use the **Faucet** at [http://46.225.30.187:4003](http://46.225.30.187:4003) to receive testnet PRIM.
 3. For mock stablecoins (USDC, USDT, DAI), call the `faucet()` function on each contract—see [Deployed Contracts](/resources/contracts).
 
 ### What is the max supply of PRIM?

@@ -48,7 +48,7 @@ Prime Chain testnet launched with HotStuff-2 consensus.
 - 4-validator network on Hetzner VPS infrastructure
 - Chain ID 7919, EVM Shanghai compatibility
 - JSON-RPC and WebSocket endpoints live
-- Testnet faucet deployed at [http://46.225.30.187:8080](http://46.225.30.187:8080)
+- Testnet faucet deployed at [http://46.225.30.187:4003](http://46.225.30.187:4003)
 - Foundation contracts deployed: Multicall3, WPRIM, MockUSDC, MockUSDT, MockDAI
 
 ---

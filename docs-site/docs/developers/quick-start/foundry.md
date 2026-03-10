@@ -11,7 +11,7 @@ This guide explains how to build and deploy smart contracts to Prime Chain using
 ## Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) installed
-- A funded wallet (get testnet PRIM from the [faucet](http://46.225.30.187:8080))
+- A funded wallet (get testnet PRIM from the [faucet](http://46.225.30.187:4003))
 
 ## Foundry Configuration
 

@@ -66,15 +66,15 @@ const config: Config = {
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
     colorMode: {
-      defaultMode: 'dark',
-      disableSwitch: true,
-      respectPrefersColorScheme: false,
+      defaultMode: 'light',
+      disableSwitch: false,
+      respectPrefersColorScheme: true,
     },
     announcementBar: {
       id: 'testnet_live',
       content: '🟢 <b>Prime Chain Testnet is live</b> — <a href="/getting-started/faucet">Get testnet PRIM</a> · <a href="http://46.225.30.187" target="_blank">Block Explorer</a> · Chain ID: 7919',
-      backgroundColor: 'rgba(73, 1, 255, 0.08)',
-      textColor: '#e8edf5',
+      backgroundColor: '#F3EDFF',
+      textColor: '#3A334D',
       isCloseable: true,
     },
     navbar: {
@@ -122,7 +122,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'http://46.225.30.187:8080',
+          href: 'http://46.225.30.187:4003',
           label: 'Faucet',
           position: 'right',
         },
@@ -149,7 +149,7 @@ const config: Config = {
           title: 'Network',
           items: [
             { label: 'Block Explorer', href: 'http://46.225.30.187' },
-            { label: 'Faucet', href: 'http://46.225.30.187:8080' },
+            { label: 'Faucet', href: 'http://46.225.30.187:4003' },
             { label: 'Grafana', href: 'http://46.225.30.187:3000' },
             { label: 'Network Info', to: '/getting-started/network-info' },
           ],
@@ -159,6 +159,7 @@ const config: Config = {
           items: [
             { label: 'PrimeSwap V2', to: '/ecosystem/primeswap' },
             { label: 'PrimeSwap V3', to: '/ecosystem/primeswap-v3' },
+            { label: 'PrimeTrade', to: '/ecosystem/primetrade' },
             { label: 'PrimeFi Lending', to: '/ecosystem/primefi' },
             { label: 'Ecosystem Directory', to: '/ecosystem/directory' },
           ],

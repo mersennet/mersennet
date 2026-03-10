@@ -7,7 +7,7 @@
     'use strict';
 
     // ── Config ──────────────────────────────────────────────────────────
-    const RPC_URL = 'http://46.225.30.187:8545';
+    const RPC_URL = '/rpc';
     const CHAIN_ID = 7919;
     const POLL_INTERVAL = 5000;
     const BLOCKS_TO_SCAN = 200;
@@ -20,9 +20,9 @@
 
     const VALIDATOR_NAMES = {
         '0x1a09b94d7dd32cf1903d1745effffae23ce76bca': 'Validator Alpha',
-        '0xc5fec93d03c6a39ae1c8f18f7fa72befa36f1354': 'Validator Beta',
-        '0x8b86e5bfd9e2c0e6f1f01dec50a1f3c25c2e2e3c': 'Validator Gamma',
-        '0x7f5ce38fb2553e95dd8ef9182a80bc219c9a0d45': 'Validator Delta',
+        '0xd4668658dd943d90ea25883c291c789886e0b7fc': 'Validator Beta',
+        '0xccf642e03dffaf65250a9716e2aa7c51c985d72c': 'Validator Gamma',
+        '0xe7c512700ac6e4629549c642d50b7f598edf8e77': 'Validator Delta',
     };
 
     function cssVar(name) {
@@ -140,8 +140,10 @@
                 if (t2 > t1) times.push(t2 - t1);
             }
 
+            const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
             for (const block of newBlocks) {
-                const proposer = (block.proposer || block.miner || '').toLowerCase();
+                const raw = (block.proposer || block.miner || '').toLowerCase();
+                const proposer = (raw && raw !== ZERO_ADDR) ? raw : '';
                 if (proposer) {
                     producers[proposer] = (producers[proposer] || 0) + 1;
                 }

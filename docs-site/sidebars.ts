@@ -86,6 +86,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'ecosystem/primeswap',
         'ecosystem/primeswap-v3',
+        'ecosystem/primetrade',
         'ecosystem/primefi',
         'ecosystem/primeport',
         'ecosystem/wallet',

@@ -11,7 +11,7 @@ This guide walks you through setting up Hardhat and deploying a smart contract t
 ## Prerequisites
 
 - Node.js 18+ and npm
-- A funded wallet (get testnet PRIM from the [faucet](http://46.225.30.187:8080))
+- A funded wallet (get testnet PRIM from the [faucet](http://46.225.30.187:4003))
 
 ## Installation
 
@@ -111,7 +111,7 @@ main()
 export PRIVATE_KEY="0x_your_private_key_here"
 ```
 
-2. **Fund your wallet** from the [faucet](http://46.225.30.187:8080).
+2. **Fund your wallet** from the [faucet](http://46.225.30.187:4003).
 
 3. **Run the deployment**:
 
@@ -151,4 +151,4 @@ Or use the [block explorer](http://46.225.30.187) to view the transaction and co
 | `eth_feeHistory` not supported | Prime Chain does not support EIP-1559 fee history. Use `--legacy` or ensure your tooling uses legacy transactions. |
 | Gas estimation fails | Try increasing `gasLimit` in the deployment script or use a fixed value (e.g., `3000000`). |
 | Connection refused | Ensure the RPC URL `http://46.225.30.187:8545` is reachable from your network. |
-| Insufficient funds | Get testnet PRIM from the [faucet](http://46.225.30.187:8080). |
+| Insufficient funds | Get testnet PRIM from the [faucet](http://46.225.30.187:4003). |

@@ -99,6 +99,7 @@ struct BlockDto {
     state_root: String,
     receipts_root: String,
     miner: String,
+    proposer: String,
     difficulty: String,
     total_difficulty: String,
     extra_data: String,
@@ -405,8 +406,11 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>, filters: &FilterStore
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
             let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let tx_hash = tx_hash(&signed.tx);
+            // Signature was already verified during decode_raw_signed_tx
+            // (which recovers `from` from the signature). Using submit_tx_unsigned
+            // avoids re-hashing with the wrong signing scheme for Ethereum-format txs.
             engine
-                .submit_tx(signed.tx)
+                .submit_tx_unsigned(signed.tx)
                 .map_err(|err| {
                     let data = json!({ "reason": err.code() });
                     (id.clone(), rpc_error_with_data(-32005, format!("tx rejected: {}", err), data))
@@ -966,6 +970,7 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
         state_root: hex_b256(block.state_root),
         receipts_root: hex_b256(B256::ZERO),
         miner: hex_address(block.coinbase),
+        proposer: hex_address(block.proposer),
         difficulty: "0x0".to_string(),
         total_difficulty: "0x0".to_string(),
         extra_data: "0x".to_string(),

@@ -10,7 +10,7 @@ Use the Prime Chain faucet to receive testnet PRIM for development and testing.
 
 ## Web Interface
 
-1. Open the faucet: **http://46.225.30.187:8080**
+1. Open the faucet: **http://46.225.30.187:4003**
 2. Enter your wallet address (the one you'll use on Prime Chain).
 3. Click the request button to receive testnet PRIM.
 
@@ -23,7 +23,7 @@ Ensure your wallet is connected to Prime Chain (Chain ID 7919) before requesting
 You can request tokens via HTTP for scripts or CI/CD:
 
 ```bash
-curl -X POST http://46.225.30.187:8080/faucet \
+curl -X POST http://46.225.30.187:4003/faucet \
   -H "Content-Type: application/json" \
   -d '{"address": "0xYourWalletAddress"}'
 ```
