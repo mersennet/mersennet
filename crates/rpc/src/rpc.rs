@@ -350,7 +350,8 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>, filters: &FilterStore
         | "prime_getTransactionCount" | "eth_getTransactionCount"
         | "prime_call" | "eth_call"
         | "eth_estimateGas"
-        | "net_version" | "web3_clientVersion" => {
+        | "net_version" | "net_peerCount" | "net_listening"
+        | "web3_clientVersion" | "txpool_status" => {
             let params = call.params.unwrap_or(Value::Null);
             let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {

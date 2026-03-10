@@ -290,6 +290,7 @@ pub struct Engine {
     pub mainnet_guard: MainnetGuard,
     pub aa_bundler: Bundler,
     pub invariant_checker: InvariantChecker,
+    pub peer_count: std::sync::atomic::AtomicUsize,
 }
 
 impl Engine {
@@ -352,6 +353,7 @@ impl Engine {
             mainnet_guard: MainnetGuard::new(chain_id),
             aa_bundler: Bundler::new(10),
             invariant_checker: InvariantChecker::new(),
+            peer_count: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -903,7 +905,7 @@ impl Engine {
             gas_limit: self.gas_limit_per_block,
             gas_used,
             base_fee: self.base_fee,
-            coinbase: self.coinbase,
+            coinbase: consensus.proposer,
             hash,
             proposer: consensus.proposer,
             finalized: consensus.finalized,
@@ -1163,7 +1165,7 @@ impl Engine {
             gas_limit: self.gas_limit_per_block,
             gas_used,
             base_fee: self.base_fee,
-            coinbase: self.coinbase,
+            coinbase: consensus.proposer,
             hash,
             proposer: consensus.proposer,
             finalized: consensus.finalized,
@@ -1222,6 +1224,14 @@ impl Engine {
 
     pub fn mempool_is_empty(&self) -> bool {
         self.mempool.is_empty()
+    }
+
+    pub fn mempool_pending_count(&self) -> usize {
+        self.mempool.pending_count()
+    }
+
+    pub fn mempool_queued_count(&self) -> usize {
+        self.mempool.queued_count()
     }
 
     #[allow(dead_code)]

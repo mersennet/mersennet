@@ -209,7 +209,20 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             }
         }
         "net_version" => Ok(Value::String(engine.chain_id.to_string())),
+        "net_peerCount" => {
+            let count = engine.peer_count.load(std::sync::atomic::Ordering::Relaxed);
+            Ok(Value::String(format!("0x{:x}", count)))
+        }
+        "net_listening" => Ok(Value::Bool(true)),
         "web3_clientVersion" => Ok(Value::String("PrimeChain/0.1.0".to_string())),
+        "txpool_status" => {
+            let pending = engine.mempool_pending_count();
+            let queued = engine.mempool_queued_count();
+            Ok(json!({
+                "pending": format!("0x{:x}", pending),
+                "queued": format!("0x{:x}", queued)
+            }))
+        }
         _ => Err(RpcError::new(-32601, format!("method not found: {call}"))),
     }
 }
