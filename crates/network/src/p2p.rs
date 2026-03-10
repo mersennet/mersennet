@@ -449,6 +449,7 @@ impl NetworkNode {
         {
             let gossip = self.gossip.clone();
             let running = self.running.clone();
+            let engine_for_peers = engine.clone();
             std::thread::Builder::new()
                 .name("peer-discovery".into())
                 .spawn(move || {
@@ -458,7 +459,11 @@ impl NetworkNode {
                         if let Ok(mut g) = gossip.lock() {
                             let _ = g.discover_peers(2);
                             g.prune_peers();
-                            info!(peers = g.peer_count(), "peer discovery tick");
+                            let count = g.peer_count();
+                            info!(peers = count, "peer discovery tick");
+                            if let Ok(eng) = engine_for_peers.lock() {
+                                eng.peer_count.store(count, std::sync::atomic::Ordering::Relaxed);
+                            }
                         }
                     }
                 })

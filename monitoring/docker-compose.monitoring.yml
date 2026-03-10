@@ -12,7 +12,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=primechain
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana:/var/lib/grafana/dashboards
