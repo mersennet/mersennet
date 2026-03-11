@@ -34,3 +34,4 @@ pub mod cross_chain;
 pub mod mainnet;
 pub mod market_maker;
 pub mod metrics;
+pub mod chain_features;

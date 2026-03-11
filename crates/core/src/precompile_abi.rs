@@ -54,6 +54,81 @@ pub fn get_best_bid_ask_selector() -> [u8; 4] {
     selector("getBestBidAsk(uint64)")
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// STUB SELECTORS — Future chain changes. Uncomment and implement
+// when the corresponding precompile handlers are ready.
+// ═══════════════════════════════════════════════════════════════════
+
+// --- Phase 1: Zero Gas ---
+// Gas exemption for CLOB precompile calls. When enabled, order
+// placement/cancellation costs 0 gas — users only pay trading fees.
+pub const ZERO_GAS_ENABLED: bool = false;
+
+pub const GAS_PLACE_ORDER_ZERO: u64 = 0;
+pub const GAS_CANCEL_ORDER_ZERO: u64 = 0;
+
+// --- Phase 3: Native Advanced Orders ---
+// On-chain TP/SL, trailing stops, stop-limit — removes dependency
+// on client-side order monitoring.
+
+pub fn place_stop_limit_selector() -> [u8; 4] {
+    selector("placeStopLimit(uint64,bool,uint256,uint256,uint256,uint8)")
+}
+
+pub fn place_take_profit_selector() -> [u8; 4] {
+    selector("placeTakeProfit(uint64,uint256)")
+}
+
+pub fn place_stop_loss_selector() -> [u8; 4] {
+    selector("placeStopLoss(uint64,uint256)")
+}
+
+pub fn place_trailing_stop_selector() -> [u8; 4] {
+    selector("placeTrailingStop(uint64,uint256,uint256)")
+}
+
+// --- Phase 3: Spot Trading ---
+
+pub fn place_spot_order_selector() -> [u8; 4] {
+    selector("placeSpotOrder(uint64,bool,uint256,uint256)")
+}
+
+pub fn cancel_spot_order_selector() -> [u8; 4] {
+    selector("cancelSpotOrder(uint256)")
+}
+
+pub fn get_spot_balance_selector() -> [u8; 4] {
+    selector("getSpotBalance(address,uint64)")
+}
+
+pub fn get_spot_orderbook_selector() -> [u8; 4] {
+    selector("getSpotOrderBook(uint64)")
+}
+
+// --- Phase 3: On-Chain Sub-Accounts ---
+
+pub fn create_sub_account_selector() -> [u8; 4] {
+    selector("createSubAccount(string)")
+}
+
+pub fn transfer_between_sub_accounts_selector() -> [u8; 4] {
+    selector("transferBetweenSubAccounts(uint256,uint256,uint256)")
+}
+
+pub fn get_sub_accounts_selector() -> [u8; 4] {
+    selector("getSubAccounts(address)")
+}
+
+// --- Phase 2: Multi-Asset Collateral ---
+
+pub fn deposit_collateral_multi_selector() -> [u8; 4] {
+    selector("depositCollateral(address,uint256)")
+}
+
+pub fn get_collateral_multi_selector() -> [u8; 4] {
+    selector("getCollateral(address)")
+}
+
 /// Read a 32-byte ABI word at the given index (0-indexed, after the 4-byte selector).
 pub fn read_word(input: &[u8], word_index: usize) -> Option<[u8; 32]> {
     let start = 4 + word_index * 32;
