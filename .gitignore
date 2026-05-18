@@ -2,3 +2,20 @@
 
 /state
 /state-*
+testnet-state/
+genesis-output/
+
+testnet/data/
+
+# Deploy secrets (never commit)
+deploy/.genesis-output/
+deploy/.deployment-info
+deploy/nodes.conf
+
+# Dependencies
+node_modules/
+sdk/node_modules/
+
+# IDE / OS
+.DS_Store
+*.swp
