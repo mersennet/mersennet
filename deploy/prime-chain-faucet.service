@@ -1,0 +1,23 @@
+[Unit]
+Description=Prime Chain Testnet Faucet
+After=prime-chain.service
+Wants=prime-chain.service
+
+[Service]
+Type=simple
+User=primechain
+Group=primechain
+ExecStart=/opt/prime-chain/bin/faucet \
+    --port 8080 \
+    --rpc-url http://127.0.0.1:8545 \
+    --private-key /opt/prime-chain/keys/faucet-key.json
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+WorkingDirectory=/opt/prime-chain/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prime-chain-faucet
+
+[Install]
+WantedBy=multi-user.target

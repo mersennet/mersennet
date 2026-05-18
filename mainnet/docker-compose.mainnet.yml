@@ -1,0 +1,176 @@
+# Prime Chain Mainnet - Production Docker Compose
+# Usage: docker compose -f docker-compose.mainnet.yml up -d
+#
+# Prerequisites:
+# - Place genesis.json and validator config in ./config/
+# - Place validator key in ./keys/ (or mount from secure location)
+# - Configure TLS certificates for RPC (see caddy/Caddyfile)
+
+version: "3.9"
+
+services:
+  validator:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: prime-chain-validator
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./config/config.json:/etc/prime-chain/config.json:ro
+      - validator-data:/var/lib/prime-chain
+      - ./keys:/etc/prime-chain/keys:ro
+    ports:
+      - "30303:30303"   # P2P
+      - "127.0.0.1:8545:8545"   # RPC + /metrics (bind to localhost; use caddy for TLS)
+    networks:
+      - prime-mainnet
+    deploy:
+      resources:
+        limits:
+          cpus: "16"
+          memory: 64G
+        reservations:
+          cpus: "8"
+          memory: 32G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # TLS termination for RPC (expose HTTPS)
+  caddy:
+    image: caddy:2-alpine
+    container_name: prime-chain-rpc-tls
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - prime-mainnet
+    depends_on:
+      validator:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - tls
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prime-chain-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - prime-mainnet
+    depends_on:
+      validator:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: prime-chain-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-https://grafana.example.com}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - prime-mainnet
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Loki for log aggregation
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: prime-chain-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    networks:
+      - prime-mainnet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    profiles:
+      - logs
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: prime-chain-promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - prime-mainnet
+    depends_on:
+      - loki
+    restart: unless-stopped
+    profiles:
+      - logs
+
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: prime-chain-alertmanager
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - prime-mainnet
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+
+volumes:
+  validator-data:
+  prometheus-data:
+  grafana-data:
+  caddy-data:
+  caddy-config:
+  loki-data:
+
+networks:
+  prime-mainnet:
+    driver: bridge

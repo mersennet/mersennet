@@ -1,0 +1,7 @@
+# Prime Chain RPC - TLS termination
+# Replace rpc.example.com with your domain and ensure DNS points here.
+# Caddy will auto-provision Let's Encrypt certificates.
+
+rpc.example.com {
+    reverse_proxy validator:8545
+}

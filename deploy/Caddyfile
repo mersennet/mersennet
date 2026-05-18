@@ -1,0 +1,15 @@
+# Replace DOMAIN placeholders with your actual domains.
+# If no domain is set, Caddy won't be used and RPC is accessed directly on :8545.
+
+{RPC_DOMAIN} {
+    reverse_proxy localhost:8545
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type"
+    }
+}
+
+{FAUCET_DOMAIN} {
+    reverse_proxy localhost:8080
+}
