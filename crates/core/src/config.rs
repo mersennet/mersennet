@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
     pub engine: EngineConfig,
@@ -55,7 +55,7 @@ pub struct MempoolConfig {
     #[serde(default = "default_mempool_per_sender")]
     pub max_per_sender: usize,
     #[serde(default = "default_mempool_bump")]
-    pub bump_bps: u64
+    pub bump_bps: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +72,7 @@ pub struct BridgeConfig {
     pub max_queue_len: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GenesisConfig {
     #[serde(default)]
     pub accounts: Vec<GenesisAccount>,
@@ -194,24 +194,6 @@ impl Default for ZkConfig {
     }
 }
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            engine: EngineConfig::default(),
-            mempool: MempoolConfig::default(),
-            prime_orders: PrimeOrdersConfig::default(),
-            bridge: BridgeConfig::default(),
-            genesis: GenesisConfig::default(),
-            slashing: SlashingConfig::default(),
-            token_economics: TokenEconomicsConfig::default(),
-            rpc: RpcConfig::default(),
-            p2p: P2pConfig::default(),
-            ws: WsConfig::default(),
-            zk: ZkConfig::default(),
-        }
-    }
-}
-
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
@@ -248,15 +230,6 @@ impl Default for BridgeConfig {
     fn default() -> Self {
         Self {
             max_queue_len: default_bridge_max_queue_len(),
-        }
-    }
-}
-
-impl Default for GenesisConfig {
-    fn default() -> Self {
-        Self {
-            accounts: Vec::new(),
-            validators: Vec::new(),
         }
     }
 }

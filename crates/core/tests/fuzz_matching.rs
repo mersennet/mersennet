@@ -1,13 +1,13 @@
 //! Property-based fuzzing tests for Prime Chain matching engine, FBA, mempool,
 //! parallel execution, and consensus.
 
-use rand::rngs::StdRng;
-use rand::Rng;
-use rand::SeedableRng;
 use prime_chain::engine::{Engine, Transaction};
 use prime_chain::fba::{BatchAuction, BatchOrder};
 use prime_chain::mempool::Mempool;
 use prime_chain::prime_orders::{MarketId, PrimeOrdersState, Side, TimeInForce};
+use rand::Rng;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use revm::primitives::{Address, B256, Bytes, U256};
 use std::collections::HashMap;
 use tempfile::tempdir;
@@ -17,7 +17,6 @@ fn make_address(seed: u8) -> Address {
     bytes[19] = seed;
     Address::from(bytes)
 }
-
 
 #[test]
 fn fuzz_matching_conservation_of_value() {
@@ -46,7 +45,9 @@ fn fuzz_matching_conservation_of_value() {
             let owner = make_address((i % num_accounts) as u8);
             let price = U256::from((rng.r#gen::<u32>() % 1000 + 10) as u64);
             let size = U256::from((rng.r#gen::<u32>() % 50 + 1) as u64);
-            if let Ok(outcome) = state.submit_order(owner, market_id, Side::Buy, price, size, TimeInForce::Gtc) {
+            if let Ok(outcome) =
+                state.submit_order(owner, market_id, Side::Buy, price, size, TimeInForce::Gtc)
+            {
                 for t in &outcome.trades {
                     buy_fills += t.size;
                     sell_fills += t.size;
@@ -57,7 +58,9 @@ fn fuzz_matching_conservation_of_value() {
             let owner = make_address((i % num_accounts) as u8);
             let price = U256::from((rng.r#gen::<u32>() % 1000 + 10) as u64);
             let size = U256::from((rng.r#gen::<u32>() % 50 + 1) as u64);
-            if let Ok(outcome) = state.submit_order(owner, market_id, Side::Sell, price, size, TimeInForce::Gtc) {
+            if let Ok(outcome) =
+                state.submit_order(owner, market_id, Side::Sell, price, size, TimeInForce::Gtc)
+            {
                 for t in &outcome.trades {
                     buy_fills += t.size;
                     sell_fills += t.size;
@@ -65,10 +68,16 @@ fn fuzz_matching_conservation_of_value() {
             }
         }
 
-        assert_eq!(buy_fills, sell_fills, "conservation: buy fills must equal sell fills");
+        assert_eq!(
+            buy_fills, sell_fills,
+            "conservation: buy fills must equal sell fills"
+        );
 
         for (_, order) in &state.orders {
-            assert!(order.size <= U256::from(1000u64), "no order size exceeds reasonable max");
+            assert!(
+                order.size <= U256::from(1000u64),
+                "no order size exceeds reasonable max"
+            );
         }
     }
 }
@@ -92,14 +101,40 @@ fn fuzz_price_time_priority() {
         let taker1 = make_address(2);
         let taker2 = make_address(3);
 
-        state.submit_order(maker, market_id, Side::Sell, U256::from(100u64), U256::from(10u64), TimeInForce::Gtc).ok();
-        let o1 = state.submit_order(taker1, market_id, Side::Buy, U256::from(100u64), U256::from(5u64), TimeInForce::Gtc);
-        let o2 = state.submit_order(taker2, market_id, Side::Buy, U256::from(100u64), U256::from(5u64), TimeInForce::Gtc);
+        state
+            .submit_order(
+                maker,
+                market_id,
+                Side::Sell,
+                U256::from(100u64),
+                U256::from(10u64),
+                TimeInForce::Gtc,
+            )
+            .ok();
+        let o1 = state.submit_order(
+            taker1,
+            market_id,
+            Side::Buy,
+            U256::from(100u64),
+            U256::from(5u64),
+            TimeInForce::Gtc,
+        );
+        let o2 = state.submit_order(
+            taker2,
+            market_id,
+            Side::Buy,
+            U256::from(100u64),
+            U256::from(5u64),
+            TimeInForce::Gtc,
+        );
 
         if o1.is_ok() && o2.is_ok() {
             let o1_fill = o1.unwrap().filled;
             let o2_fill = o2.unwrap().filled;
-            assert!(o1_fill >= o2_fill, "first taker should fill before or equal to second (price-time)");
+            assert!(
+                o1_fill >= o2_fill,
+                "first taker should fill before or equal to second (price-time)"
+            );
         }
     }
 }
@@ -120,11 +155,15 @@ fn fuzz_parallel_determinism() {
 
         let validator = make_address(0x01);
         engine.fund_account(validator, U256::from(1000u64), 0);
-        engine.add_validator(validator, U256::from(1000u64)).unwrap();
+        engine
+            .add_validator(validator, U256::from(1000u64))
+            .unwrap();
         engine.set_token_economics(U256::ZERO, U256::ZERO, 1);
 
         engine2.fund_account(validator, U256::from(1000u64), 0);
-        engine2.add_validator(validator, U256::from(1000u64)).unwrap();
+        engine2
+            .add_validator(validator, U256::from(1000u64))
+            .unwrap();
         engine2.set_token_economics(U256::ZERO, U256::ZERO, 1);
 
         let n = (rng.r#gen::<u8>() % 8).max(2) as u8;
@@ -241,7 +280,10 @@ fn fuzz_mempool_ordering() {
                 signature: None,
             };
             let account_nonce = rng.r#gen::<u32>() % (nonce + 1);
-            if mempool.insert(tx.clone(), base_fee, account_nonce as u64).is_ok() {
+            if mempool
+                .insert(tx.clone(), base_fee, account_nonce as u64)
+                .is_ok()
+            {
                 inserted.push((tx.gas_price, tx.nonce, tx.from));
             }
         }

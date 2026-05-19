@@ -1,15 +1,15 @@
+use crate::rpc_router;
+use anyhow::{Result, anyhow};
 use prime_chain::bridge::BridgeDomain;
 use prime_chain::engine::{Block, Engine, LogEntry, Receipt, Transaction};
-use prime_chain::events::{BridgeEvent, BridgeQueueKind, DomainEvent, PrimeOrdersEvent};
 use prime_chain::errors::RpcInputError;
-use crate::rpc_router;
-use anyhow::{anyhow, Result};
+use prime_chain::events::{BridgeEvent, BridgeQueueKind, DomainEvent, PrimeOrdersEvent};
+use prime_chain::prometheus;
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use tiny_http::{Header, Method, Response, Server};
-use prime_chain::prometheus;
 use tracing::info;
 
 #[derive(Debug, Deserialize)]
@@ -146,7 +146,8 @@ fn handle_request(mut request: tiny_http::Request, engine: &Arc<Mutex<Engine>>) 
             metrics::increment_counter!("prime_chain_rpc_requests", "method" => "metrics");
             let body = handle.render();
             let response = Response::from_string(body).with_header(
-                Header::from_bytes("Content-Type", "text/plain; version=0.0.4").map_err(|_| anyhow!("invalid header"))?,
+                Header::from_bytes("Content-Type", "text/plain; version=0.0.4")
+                    .map_err(|_| anyhow!("invalid header"))?,
             );
             request.respond(response)?;
             return Ok(());
@@ -255,20 +256,31 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
     metrics::increment_counter!("prime_chain_rpc_requests", "method" => call.method.clone());
 
     let result = match call.method.as_str() {
-        "prime_chainId" | "eth_chainId"
-        | "prime_blockNumber" | "eth_blockNumber"
-        | "prime_getBalance" | "eth_getBalance"
+        "prime_chainId"
+        | "eth_chainId"
+        | "prime_blockNumber"
+        | "eth_blockNumber"
+        | "prime_getBalance"
+        | "eth_getBalance"
         | "prime_getDomainEvents"
-        | "prime_gasPrice" | "eth_gasPrice"
+        | "prime_gasPrice"
+        | "eth_gasPrice"
         | "prime_validators"
-        | "prime_getCode" | "eth_getCode"
-        | "prime_getStorageAt" | "eth_getStorageAt"
-        | "prime_getTransactionCount" | "eth_getTransactionCount"
-        | "prime_call" | "eth_call"
+        | "prime_getCode"
+        | "eth_getCode"
+        | "prime_getStorageAt"
+        | "eth_getStorageAt"
+        | "prime_getTransactionCount"
+        | "eth_getTransactionCount"
+        | "prime_call"
+        | "eth_call"
         | "eth_estimateGas"
-        | "net_version" | "web3_clientVersion" => {
+        | "net_version"
+        | "web3_clientVersion" => {
             let params = call.params.unwrap_or(Value::Null);
-            let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
                 Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
@@ -278,7 +290,9 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
             let params = call.params.unwrap_or(Value::Null);
             let (number, include_txs) = parse_block_params(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
-            let engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let block = engine.block_by_number(number);
             match block {
                 Some(block) => serde_json::to_value(block_to_dto(block, include_txs))
@@ -290,7 +304,9 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
             let params = call.params.unwrap_or(Value::Null);
             let tx_hash = parse_hash_param(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let receipt = find_receipt(&mut engine, tx_hash);
             match receipt {
                 Some(dto) => serde_json::to_value(dto)
@@ -302,7 +318,9 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
             let params = call.params.unwrap_or(Value::Null);
             let tx_hash = parse_hash_param(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let tx = find_transaction(&engine, tx_hash);
             match tx {
                 Some(tx) => serde_json::to_value(tx_to_dto(tx))
@@ -316,40 +334,45 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
             let signed = prime_chain::crypto::decode_raw_signed_tx(&raw_hex)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let tx_hash = tx_hash(&signed.tx);
-            engine
-                .submit_tx(signed.tx)
-                .map_err(|err| {
-                    let data = json!({ "reason": err.code() });
-                    (id.clone(), rpc_error_with_data(-32005, format!("tx rejected: {}", err), data))
-                })?;
+            engine.submit_tx(signed.tx).map_err(|err| {
+                let data = json!({ "reason": err.code() });
+                (
+                    id.clone(),
+                    rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
+                )
+            })?;
             Value::String(hex_b256(tx_hash))
         }
         "prime_sendTransaction" | "eth_sendTransaction" => {
             let params = call.params.unwrap_or(Value::Null);
             let tx = parse_tx_input(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let tx_hash = tx_hash(&tx);
-            engine
-                .submit_tx(tx)
-                .map_err(|err| {
-                    let data = json!({
-                        "reason": err.code(),
-                    });
-                    (
-                        id.clone(),
-                        rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
-                    )
-                })?;
+            engine.submit_tx(tx).map_err(|err| {
+                let data = json!({
+                    "reason": err.code(),
+                });
+                (
+                    id.clone(),
+                    rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
+                )
+            })?;
             Value::String(hex_b256(tx_hash))
         }
         "prime_getLogs" | "eth_getLogs" => {
             let params = call.params.unwrap_or(Value::Null);
             let filter = parse_log_filter(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
-            let engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             let logs = collect_logs(&engine, &filter);
             serde_json::to_value(logs)
                 .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?
@@ -360,7 +383,7 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
                 Value::Array(values) => values,
                 _ => return Err((id.clone(), rpc_error_invalid_params("invalid params"))),
             };
-            let hash = match array.get(0) {
+            let hash = match array.first() {
                 Some(Value::String(value)) => parse_hash(value)
                     .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?,
                 _ => return Err((id.clone(), rpc_error_invalid_params("block hash required"))),
@@ -369,31 +392,51 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>) -> Result<String, (Va
                 Some(Value::Bool(value)) => *value,
                 _ => false,
             };
-            let engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match engine.block_by_hash(hash) {
                 Some(block) => serde_json::to_value(block_to_dto(block, include_txs))
                     .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
                 None => Value::Null,
             }
         }
-        "primeorders_addMarket" | "primeorders_submitOrder" | "primeorders_cancelOrder" | "primeorders_getOrderBook" | "primeorders_getOpenOrders" | "primeorders_setMarginParams" | "primeorders_depositCollateral" | "primeorders_isLiquidatable" | "primeorders_liquidate" => {
+        "primeorders_addMarket"
+        | "primeorders_submitOrder"
+        | "primeorders_cancelOrder"
+        | "primeorders_getOrderBook"
+        | "primeorders_getOpenOrders"
+        | "primeorders_setMarginParams"
+        | "primeorders_depositCollateral"
+        | "primeorders_isLiquidatable"
+        | "primeorders_liquidate" => {
             let params = call.params.unwrap_or(Value::Null);
-            let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
                 Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
             }
         }
-        "primebridge_enqueueOrdersToEvm" | "primebridge_enqueueEvmToOrders" | "primebridge_dequeueOrdersToEvm" | "primebridge_dequeueEvmToOrders" => {
+        "primebridge_enqueueOrdersToEvm"
+        | "primebridge_enqueueEvmToOrders"
+        | "primebridge_dequeueOrdersToEvm"
+        | "primebridge_dequeueEvmToOrders" => {
             let params = call.params.unwrap_or(Value::Null);
-            let mut engine = engine.lock().map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
                 Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
             }
         }
         _ => {
-            return Err((id, rpc_error_with_code(-32601, format!("method not found: {}", call.method))));
+            return Err((
+                id,
+                rpc_error_with_code(-32601, format!("method not found: {}", call.method)),
+            ));
         }
     };
 
@@ -452,17 +495,23 @@ fn parse_block_params(
         _ => return Err((id, "invalid params".to_string())),
     };
 
-    let number = match array.get(0) {
+    let number = match array.first() {
         Some(Value::String(value)) if value == "latest" => {
-            let engine = engine.lock().map_err(|_| (id.clone(), "engine lock poisoned".to_string()))?;
+            let engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), "engine lock poisoned".to_string()))?;
             engine.latest_height()
         }
         Some(Value::String(value)) => {
             parse_hex_u64(value).map_err(|err| (id.clone(), err.to_string()))?
         }
-        Some(Value::Number(value)) => value.as_u64().ok_or((id.clone(), "invalid block number".to_string()))?,
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .ok_or((id.clone(), "invalid block number".to_string()))?,
         None => {
-            let engine = engine.lock().map_err(|_| (id.clone(), "engine lock poisoned".to_string()))?;
+            let engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), "engine lock poisoned".to_string()))?;
             engine.latest_height()
         }
         _ => return Err((id, "invalid block number".to_string())),
@@ -481,7 +530,7 @@ fn parse_raw_tx_param(params: Value) -> Result<Vec<u8>, String> {
         Value::Array(values) => values,
         _ => return Err("invalid params".to_string()),
     };
-    let hex_str = match array.get(0) {
+    let hex_str = match array.first() {
         Some(Value::String(value)) => value.as_str(),
         _ => return Err("raw tx hex required".to_string()),
     };
@@ -494,7 +543,7 @@ fn parse_hash_param(params: Value) -> Result<B256, RpcInputError> {
         Value::Array(values) => values,
         _ => return Err(RpcInputError::InvalidParams),
     };
-    let hash = match array.get(0) {
+    let hash = match array.first() {
         Some(Value::String(value)) => parse_hash(value)?,
         _ => return Err(RpcInputError::HashRequired),
     };
@@ -507,7 +556,7 @@ fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
         _ => return Err(RpcInputError::InvalidParams),
     };
     let obj = array
-        .get(0)
+        .first()
         .ok_or(RpcInputError::TransactionRequired)?
         .clone();
     let input: TxInput = serde_json::from_value(obj)
@@ -523,7 +572,7 @@ fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
         .as_deref()
         .map(parse_hex_u256)
         .transpose()?
-        .unwrap_or_else(|| U256::ZERO);
+        .unwrap_or(U256::ZERO);
     let gas_limit = input
         .gas
         .as_deref()
@@ -535,7 +584,7 @@ fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
         .as_deref()
         .map(parse_hex_u256)
         .transpose()?
-        .unwrap_or_else(|| U256::ZERO);
+        .unwrap_or(U256::ZERO);
     let nonce = input
         .nonce
         .as_deref()
@@ -572,7 +621,7 @@ fn parse_log_filter(
         Value::Null => Vec::new(),
         _ => return Err((id, "invalid params".to_string())),
     };
-    let raw = array.get(0).cloned().unwrap_or(Value::Null);
+    let raw = array.first().cloned().unwrap_or(Value::Null);
     let input: LogFilterInput = if raw.is_null() {
         LogFilterInput {
             from_block: None,
@@ -581,23 +630,28 @@ fn parse_log_filter(
             topics: None,
         }
     } else {
-        serde_json::from_value(raw)
-            .map_err(|err| (id.clone(), RpcInputError::InvalidLogFilter(err.to_string()).to_string()))?
+        serde_json::from_value(raw).map_err(|err| {
+            (
+                id.clone(),
+                RpcInputError::InvalidLogFilter(err.to_string()).to_string(),
+            )
+        })?
     };
 
     let latest = {
-        let engine = engine.lock().map_err(|_| (id.clone(), "engine lock poisoned".to_string()))?;
+        let engine = engine
+            .lock()
+            .map_err(|_| (id.clone(), "engine lock poisoned".to_string()))?;
         engine.latest_height()
     };
 
-    let from_block = parse_block_tag(input.from_block, latest)
-        .map_err(|err| (id.clone(), err.to_string()))?;
-    let to_block = parse_block_tag(input.to_block, latest)
-        .map_err(|err| (id.clone(), err.to_string()))?;
-    let addresses = parse_filter_addresses(input.address)
-        .map_err(|err| (id.clone(), err.to_string()))?;
-    let topics = parse_filter_topics(input.topics)
-        .map_err(|err| (id.clone(), err.to_string()))?;
+    let from_block =
+        parse_block_tag(input.from_block, latest).map_err(|err| (id.clone(), err.to_string()))?;
+    let to_block =
+        parse_block_tag(input.to_block, latest).map_err(|err| (id.clone(), err.to_string()))?;
+    let addresses =
+        parse_filter_addresses(input.address).map_err(|err| (id.clone(), err.to_string()))?;
+    let topics = parse_filter_topics(input.topics).map_err(|err| (id.clone(), err.to_string()))?;
 
     Ok(LogFilter {
         from_block,
@@ -608,7 +662,9 @@ fn parse_log_filter(
 }
 
 fn parse_block_tag(value: Option<Value>, latest: u64) -> Result<u64, RpcInputError> {
-    let Some(value) = value else { return Ok(latest); };
+    let Some(value) = value else {
+        return Ok(latest);
+    };
     match value {
         Value::String(tag) if tag == "latest" => Ok(latest),
         Value::String(hex) => parse_hex_u64(&hex),
@@ -619,7 +675,9 @@ fn parse_block_tag(value: Option<Value>, latest: u64) -> Result<u64, RpcInputErr
 }
 
 fn parse_filter_addresses(value: Option<Value>) -> Result<Vec<Address>, RpcInputError> {
-    let Some(value) = value else { return Ok(Vec::new()); };
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
     match value {
         Value::String(addr) => Ok(vec![parse_address(&addr)?]),
         Value::Array(values) => values
@@ -635,7 +693,9 @@ fn parse_filter_addresses(value: Option<Value>) -> Result<Vec<Address>, RpcInput
 }
 
 fn parse_filter_topics(value: Option<Vec<Value>>) -> Result<Vec<TopicFilter>, RpcInputError> {
-    let Some(values) = value else { return Ok(Vec::new()); };
+    let Some(values) = value else {
+        return Ok(Vec::new());
+    };
     let mut topics = Vec::new();
     for item in values {
         match item {
@@ -649,7 +709,7 @@ fn parse_filter_topics(value: Option<Vec<Value>>) -> Result<Vec<TopicFilter>, Rp
                 for value in inner {
                     match value {
                         Value::String(topic) => hashes.push(parse_hash(&topic)?),
-                        Value::Null => {},
+                        Value::Null => {}
                         _ => return Err(RpcInputError::InvalidTopic),
                     }
                 }
@@ -672,7 +732,7 @@ fn find_receipt(engine: &mut Engine, hash: B256) -> Option<ReceiptDto> {
     None
 }
 
-fn find_transaction<'a>(engine: &'a Engine, hash: B256) -> Option<&'a Transaction> {
+fn find_transaction(engine: &Engine, hash: B256) -> Option<&Transaction> {
     for block in &engine.chain {
         for tx in &block.transactions {
             if tx_hash(tx) == hash {
@@ -744,7 +804,12 @@ fn domain_event_to_value(event: &DomainEvent) -> Value {
 
 fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
     match event {
-        PrimeOrdersEvent::MarketAdded { market_id, symbol, tick_size, lot_size } => json!({
+        PrimeOrdersEvent::MarketAdded {
+            market_id,
+            symbol,
+            tick_size,
+            lot_size,
+        } => json!({
             "market_id": hex_u64(market_id.0),
             "symbol": symbol,
             "tick_size": hex_u256(*tick_size),
@@ -778,12 +843,23 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "filled": hex_u256(*filled),
             "remaining": hex_u256(*remaining),
         }),
-        PrimeOrdersEvent::OrderCancelled { order_id, owner, market_id } => json!({
+        PrimeOrdersEvent::OrderCancelled {
+            order_id,
+            owner,
+            market_id,
+        } => json!({
             "order_id": hex_u64(order_id.0),
             "owner": hex_address(*owner),
             "market_id": hex_u64(market_id.0),
         }),
-        PrimeOrdersEvent::Trade { taker, maker, market_id, side, price, size } => json!({
+        PrimeOrdersEvent::Trade {
+            taker,
+            maker,
+            market_id,
+            side,
+            price,
+            size,
+        } => json!({
             "taker": hex_address(*taker),
             "maker": hex_address(*maker),
             "market_id": hex_u64(market_id.0),
@@ -794,7 +870,10 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "price": hex_u256(*price),
             "size": hex_u256(*size),
         }),
-        PrimeOrdersEvent::MarginParamsUpdated { initial_bps, maintenance_bps } => json!({
+        PrimeOrdersEvent::MarginParamsUpdated {
+            initial_bps,
+            maintenance_bps,
+        } => json!({
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
@@ -855,14 +934,24 @@ fn receipt_to_dto(block: &Block, receipt: &Receipt, index: u64, hash: B256) -> R
         block_number: hex_u64(block.number),
         transaction_index: hex_u64(index),
         gas_used: hex_u64(receipt.gas_used),
-        status: if receipt.success { "0x1".to_string() } else { "0x0".to_string() },
+        status: if receipt.success {
+            "0x1".to_string()
+        } else {
+            "0x0".to_string()
+        },
         contract_address: receipt.created_address.map(hex_address),
         output: format!("0x{}", hex::encode(&receipt.output)),
         logs,
     }
 }
 
-fn log_to_dto(block: &Block, tx_hash: B256, tx_index: u64, log_index: u64, log: &LogEntry) -> LogDto {
+fn log_to_dto(
+    block: &Block,
+    tx_hash: B256,
+    tx_index: u64,
+    log_index: u64,
+    log: &LogEntry,
+) -> LogDto {
     LogDto {
         address: hex_address(log.address),
         topics: log.topics.iter().map(|topic| hex_b256(*topic)).collect(),
@@ -881,12 +970,11 @@ fn collect_logs(engine: &Engine, filter: &LogFilter) -> Vec<LogDto> {
         if block.number < filter.from_block || block.number > filter.to_block {
             continue;
         }
-        for (tx_index, (tx, receipt)) in block.transactions.iter().zip(&block.receipts).enumerate() {
+        for (tx_index, (tx, receipt)) in block.transactions.iter().zip(&block.receipts).enumerate()
+        {
             let tx_hash = tx_hash(tx);
             for (log_index, log) in receipt.logs.iter().enumerate() {
-                if !filter.addresses.is_empty()
-                    && !filter.addresses.iter().any(|addr| *addr == log.address)
-                {
+                if !filter.addresses.is_empty() && !filter.addresses.contains(&log.address) {
                     continue;
                 }
                 if !topics_match(&log.topics, &filter.topics) {
@@ -940,14 +1028,12 @@ fn tx_hash(tx: &Transaction) -> B256 {
 
 fn parse_hex_u64(input: &str) -> Result<u64, RpcInputError> {
     let stripped = input.strip_prefix("0x").unwrap_or(input);
-    u64::from_str_radix(stripped, 16)
-        .map_err(|err| RpcInputError::InvalidHex(err.to_string()))
+    u64::from_str_radix(stripped, 16).map_err(|err| RpcInputError::InvalidHex(err.to_string()))
 }
 
 fn parse_hex_u256(input: &str) -> Result<U256, RpcInputError> {
     let stripped = input.strip_prefix("0x").unwrap_or(input);
-    U256::from_str_radix(stripped, 16)
-        .map_err(|err| RpcInputError::InvalidHex(err.to_string()))
+    U256::from_str_radix(stripped, 16).map_err(|err| RpcInputError::InvalidHex(err.to_string()))
 }
 
 fn parse_hex_bytes(input: &str) -> Result<Bytes, RpcInputError> {

@@ -4,7 +4,7 @@
 //! validators. Certified batches form vertices in a DAG. The consensus layer
 //! orders vertices, not individual transactions, enabling horizontal bandwidth scaling.
 
-use revm::primitives::{keccak256, Address, B256};
+use revm::primitives::{Address, B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use thiserror::Error;
@@ -28,8 +28,8 @@ pub struct Certificate {
     pub batch_id: B256,
     pub author: Address,
     pub round: u64,
-    pub parents: Vec<B256>,                      // Certificate IDs from round-1
-    pub signatures: Vec<(Address, Vec<u8>)>,     // Validator signatures
+    pub parents: Vec<B256>,                  // Certificate IDs from round-1
+    pub signatures: Vec<(Address, Vec<u8>)>, // Validator signatures
     pub digest: B256,
 }
 
@@ -128,7 +128,12 @@ fn compute_batch_digest(transactions: &[Vec<u8>]) -> B256 {
     keccak256(&buf)
 }
 
-fn compute_certificate_digest(batch_id: B256, author: Address, round: u64, parents: &[B256]) -> B256 {
+fn compute_certificate_digest(
+    batch_id: B256,
+    author: Address,
+    round: u64,
+    parents: &[B256],
+) -> B256 {
     let mut buf = Vec::new();
     buf.extend_from_slice(batch_id.as_slice());
     buf.extend_from_slice(author.as_slice());
@@ -177,7 +182,11 @@ impl NarwhalDag {
     }
 
     /// Create a new transaction batch from pending transactions.
-    pub fn create_batch(&mut self, author: Address, transactions: Vec<Vec<u8>>) -> TransactionBatch {
+    pub fn create_batch(
+        &mut self,
+        author: Address,
+        transactions: Vec<Vec<u8>>,
+    ) -> TransactionBatch {
         let transactions = transactions
             .into_iter()
             .take(self.config.max_batch_size)
@@ -189,7 +198,7 @@ impl NarwhalDag {
             .unwrap_or_default()
             .as_millis() as u64;
         let id = keccak256(
-            &[
+            [
                 digest.as_slice(),
                 author.as_slice(),
                 &round.to_be_bytes(),
@@ -260,12 +269,7 @@ impl NarwhalDag {
                     .cloned()
                     .unwrap_or_default()
             };
-            let digest = compute_certificate_digest(
-                batch.id,
-                batch.author,
-                batch.round,
-                &parents,
-            );
+            let digest = compute_certificate_digest(batch.id, batch.author, batch.round, &parents);
             let cert = Certificate {
                 batch_id: batch.id,
                 author: batch.author,
@@ -287,12 +291,18 @@ impl NarwhalDag {
     }
 
     /// Add a certificate to the DAG.
-    pub fn add_certificate(&mut self, cert: Certificate, batch: TransactionBatch) -> Result<(), DagError> {
+    pub fn add_certificate(
+        &mut self,
+        cert: Certificate,
+        batch: TransactionBatch,
+    ) -> Result<(), DagError> {
         if self.vertices.contains_key(&cert.digest) {
             return Ok(()); // Already present
         }
         if !self.verify_certificate(&cert) {
-            return Err(DagError::InvalidCertificate("verification failed".to_string()));
+            return Err(DagError::InvalidCertificate(
+                "verification failed".to_string(),
+            ));
         }
         for parent in &cert.parents {
             if *parent != B256::ZERO && !self.vertices.contains_key(parent) {
@@ -314,10 +324,7 @@ impl NarwhalDag {
         }
 
         self.vertices.insert(cert.digest, vertex);
-        self.rounds
-            .entry(cert.round)
-            .or_default()
-            .push(cert.digest);
+        self.rounds.entry(cert.round).or_default().push(cert.digest);
         self.stats.total_certificates += 1;
         Ok(())
     }
@@ -335,7 +342,7 @@ impl NarwhalDag {
         }
         self.rounds
             .get(&(self.current_round - 1))
-            .map(|v| v.clone())
+            .cloned()
             .unwrap_or_default()
     }
 
@@ -360,7 +367,7 @@ impl NarwhalDag {
                 continue;
             }
 
-            let mut sorted: Vec<B256> = cert_ids.iter().copied().collect();
+            let mut sorted: Vec<B256> = cert_ids.to_vec();
             sorted.sort(); // Deterministic by digest
             let anchor_id = sorted[0];
 
@@ -369,13 +376,17 @@ impl NarwhalDag {
             }
 
             let next_round = round + 1;
-            let next_certs = self.rounds.get(&next_round).map(|v| v.as_slice()).unwrap_or(&[]);
+            let next_certs = self
+                .rounds
+                .get(&next_round)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
             let mut support_count = 0;
             for cid in next_certs {
-                if let Some(v) = self.vertices.get(cid) {
-                    if v.certificate.parents.contains(&anchor_id) {
-                        support_count += 1;
-                    }
+                if let Some(v) = self.vertices.get(cid)
+                    && v.certificate.parents.contains(&anchor_id)
+                {
+                    support_count += 1;
                 }
             }
 
@@ -417,9 +428,7 @@ impl NarwhalDag {
 
     /// Garbage collect old rounds.
     pub fn garbage_collect(&mut self) {
-        let gc_round = self
-            .current_round
-            .saturating_sub(self.config.gc_depth);
+        let gc_round = self.current_round.saturating_sub(self.config.gc_depth);
         let rounds_to_remove: Vec<u64> = self
             .rounds
             .keys()
@@ -441,12 +450,8 @@ impl NarwhalDag {
         if cert.signatures.len() < self.config.quorum_threshold {
             return false;
         }
-        let expected_digest = compute_certificate_digest(
-            cert.batch_id,
-            cert.author,
-            cert.round,
-            &cert.parents,
-        );
+        let expected_digest =
+            compute_certificate_digest(cert.batch_id, cert.author, cert.round, &cert.parents);
         cert.digest == expected_digest
     }
 

@@ -5,7 +5,7 @@
 //! are only computed when needed (light clients, bridges).
 
 use anyhow::Result;
-use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, U256, KECCAK_EMPTY};
+use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -93,7 +93,12 @@ impl FlatState {
         self.code.write().unwrap().insert(code_hash, code);
     }
 
-    pub fn commit_block(&self, height: u64, state_root: B256, changes: StateChangeset) -> Result<()> {
+    pub fn commit_block(
+        &self,
+        height: u64,
+        state_root: B256,
+        changes: StateChangeset,
+    ) -> Result<()> {
         let mut accounts = self.accounts.write().unwrap();
         let mut storage = self.storage.write().unwrap();
         let mut code = self.code.write().unwrap();
@@ -125,7 +130,7 @@ impl FlatState {
         } else {
             self.get_code(&account.code_hash)
                 .map(|b| Bytecode::new_raw(Bytes::from(b)))
-                .unwrap_or_else(Bytecode::new)
+                .unwrap_or_default()
         };
         Some(AccountInfo::new(
             account.balance,
@@ -222,7 +227,8 @@ impl FlatStateCache {
     }
 
     pub fn insert_account(&mut self, address: Address, account: FlatAccount) {
-        if self.hot_accounts.len() >= self.max_entries && !self.hot_accounts.contains_key(&address) {
+        if self.hot_accounts.len() >= self.max_entries && !self.hot_accounts.contains_key(&address)
+        {
             // Evict oldest (arbitrary) - in production use LRU
             if let Some(k) = self.hot_accounts.keys().next().copied() {
                 self.hot_accounts.remove(&k);
@@ -234,10 +240,9 @@ impl FlatStateCache {
     pub fn insert_storage(&mut self, address: Address, slot: U256, value: U256) {
         if self.hot_storage.len() >= self.max_entries
             && !self.hot_storage.contains_key(&(address, slot))
+            && let Some(k) = self.hot_storage.keys().next().copied()
         {
-            if let Some(k) = self.hot_storage.keys().next().copied() {
-                self.hot_storage.remove(&k);
-            }
+            self.hot_storage.remove(&k);
         }
         self.hot_storage.insert((address, slot), value);
     }
@@ -260,5 +265,9 @@ impl FlatStateCache {
 
     pub fn len(&self) -> usize {
         self.hot_accounts.len() + self.hot_storage.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.hot_accounts.is_empty() && self.hot_storage.is_empty()
     }
 }

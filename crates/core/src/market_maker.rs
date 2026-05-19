@@ -27,11 +27,11 @@ pub struct MarketMakerConfig {
     pub market_id: u64,
     pub strategy: MMStrategy,
     pub max_position: U256,
-    pub spread_bps: u64,        // Spread in basis points
-    pub order_size: U256,        // Size per order level
-    pub num_levels: u32,         // Number of price levels
-    pub min_edge_bps: u64,      // Minimum edge to quote
-    pub inventory_skew: bool,    // Adjust quotes based on inventory
+    pub spread_bps: u64,      // Spread in basis points
+    pub order_size: U256,     // Size per order level
+    pub num_levels: u32,      // Number of price levels
+    pub min_edge_bps: u64,    // Minimum edge to quote
+    pub inventory_skew: bool, // Adjust quotes based on inventory
     pub enabled: bool,
 }
 
@@ -47,7 +47,7 @@ pub enum MMStrategy {
 #[derive(Clone, Debug, Default)]
 #[allow(dead_code)]
 struct MMState {
-    position: i128,         // Signed position (positive = long)
+    position: i128, // Signed position (positive = long)
     avg_entry_price: u64,
     realized_pnl: i128,
     unrealized_pnl: i128,
@@ -78,9 +78,11 @@ pub struct MMStats {
 pub struct MMQuote {
     pub owner: Address,
     pub market_id: u64,
-    pub bids: Vec<(u64, U256)>, // (price, size)
-    pub asks: Vec<(u64, U256)>,
+    pub bids: QuoteLevels, // (price, size)
+    pub asks: QuoteLevels,
 }
+
+type QuoteLevels = Vec<(u64, U256)>;
 
 pub struct MarketMaker {
     config: MarketMakerConfig,
@@ -122,7 +124,7 @@ impl MarketMaker {
         &self.stats
     }
 
-    fn compute_grid_quotes(&self, mid_price: u64) -> (Vec<(u64, U256)>, Vec<(u64, U256)>) {
+    fn compute_grid_quotes(&self, mid_price: u64) -> (QuoteLevels, QuoteLevels) {
         let spread_bps = self.config.spread_bps as f64 / 10_000.0;
         let half_spread = (mid_price as f64 * spread_bps / 2.0) as u64;
         let tick = half_spread.max(1) / self.config.num_levels.max(1) as u64;
@@ -149,16 +151,17 @@ impl MarketMaker {
         mid_price: u64,
         volatility: f64,
         inventory: i128,
-    ) -> (Vec<(u64, U256)>, Vec<(u64, U256)>) {
+    ) -> (QuoteLevels, QuoteLevels) {
         let gamma = 0.1; // Risk aversion
-        let _k = 1.5;    // Order arrival intensity (reserved for future use)
+        let _k = 1.5; // Order arrival intensity (reserved for future use)
         let sigma = volatility.max(0.0001);
         let inv_pct = inventory as f64 / self.config.max_position.as_limbs()[0] as f64;
         let inv_pct = inv_pct.clamp(-1.0, 1.0);
 
         let reserve_spread = gamma * sigma * sigma;
         let skew = gamma * sigma * sigma * inv_pct;
-        let half_spread_bps = (self.config.spread_bps as f64 / 10_000.0 / 2.0) + reserve_spread + skew.abs();
+        let half_spread_bps =
+            (self.config.spread_bps as f64 / 10_000.0 / 2.0) + reserve_spread + skew.abs();
         let half_spread = (mid_price as f64 * half_spread_bps) as u64;
         let tick = half_spread.max(1) / self.config.num_levels.max(1) as u64;
         let tick = tick.max(1);
@@ -181,7 +184,7 @@ impl MarketMaker {
         (bids, asks)
     }
 
-    fn compute_inventory_quotes(&self, mid_price: u64) -> (Vec<(u64, U256)>, Vec<(u64, U256)>) {
+    fn compute_inventory_quotes(&self, mid_price: u64) -> (QuoteLevels, QuoteLevels) {
         let base_spread = self.config.spread_bps as f64 / 10_000.0;
         let inv = self.state.position as f64;
         let max = self.config.max_position.as_limbs()[0] as f64;
@@ -225,7 +228,7 @@ impl MarketMaker {
         (bids, asks)
     }
 
-    fn compute_quotes(&self, mid_price: u64, volatility: f64) -> (Vec<(u64, U256)>, Vec<(u64, U256)>) {
+    fn compute_quotes(&self, mid_price: u64, volatility: f64) -> (QuoteLevels, QuoteLevels) {
         match &self.config.strategy {
             MMStrategy::Grid => self.compute_grid_quotes(mid_price),
             MMStrategy::Avellaneda => {
@@ -267,7 +270,8 @@ impl MarketMakerEngine {
     pub fn unregister(&mut self, owner: Address, market_id: u64) -> Result<(), MMError> {
         let key = (owner, market_id);
         self.makers.remove(&key).ok_or(MMError::NotFound)?;
-        self.registry.retain(|c| c.owner != owner || c.market_id != market_id);
+        self.registry
+            .retain(|c| c.owner != owner || c.market_id != market_id);
         Ok(())
     }
 
@@ -325,9 +329,7 @@ impl MarketMakerEngine {
     }
 
     pub fn stats(&self, owner: &Address, market_id: u64) -> Option<&MMStats> {
-        self.makers
-            .get(&(*owner, market_id))
-            .map(|mm| mm.stats())
+        self.makers.get(&(*owner, market_id)).map(|mm| mm.stats())
     }
 
     pub fn active_makers(&self, market_id: u64) -> Vec<&MarketMakerConfig> {
