@@ -89,8 +89,8 @@ fn main() {
     // ─── Benchmark 2: Contract deployment ───
     println!("\n=== Benchmark: Contract Deployments ===");
     let creation_bytecode = Bytes::from_static(&[
-        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
-        0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a, 0x60,
+        0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
     ]);
 
     for batch_size in [50, 100, 500, 1000] {
@@ -137,7 +137,11 @@ fn main() {
 
         println!(
             "  batch={:5} | executed={:5} | exec={:8.2}ms | TPS={:10.0} | gas_used={}",
-            batch_size, tx_count, exec_elapsed.as_secs_f64() * 1000.0, tps, block.gas_used,
+            batch_size,
+            tx_count,
+            exec_elapsed.as_secs_f64() * 1000.0,
+            tps,
+            block.gas_used,
         );
     }
 
@@ -224,7 +228,7 @@ fn main() {
         // Submit 1000 transfers
         for i in 0..1000u64 {
             let sender = make_address((i % 255 + 1) as u8);
-            let nonce = (i / 255) as u64;
+            let nonce = i / 255;
             let tx = Transaction {
                 from: sender,
                 to: Some(make_address(((i + 100) % 255 + 1) as u8)),

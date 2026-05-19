@@ -159,8 +159,7 @@ impl HotStuff2 {
     }
 
     fn is_validator(&self, addr: &Address) -> bool {
-        self.validators.iter().any(|v| v.address == *addr)
-            && !self.tombstoned.contains(addr)
+        self.validators.iter().any(|v| v.address == *addr) && !self.tombstoned.contains(addr)
     }
 
     // -----------------------------------------------------------------------
@@ -302,7 +301,9 @@ impl HotStuff2 {
 
         votes.push((voter, stake));
 
-        let aggregate: U256 = votes.iter().fold(U256::ZERO, |acc, (_, s)| acc.saturating_add(*s));
+        let aggregate: U256 = votes
+            .iter()
+            .fold(U256::ZERO, |acc, (_, s)| acc.saturating_add(*s));
         let signers: Vec<Address> = votes.iter().map(|(a, _)| *a).collect();
 
         // Release the mutable borrow on `self.pending_votes` before calling has_quorum
@@ -371,7 +372,7 @@ impl HotStuff2 {
         let should_advance = self
             .locked_qc
             .as_ref()
-            .map_or(true, |cur| qc.round > cur.round);
+            .is_none_or(|cur| qc.round > cur.round);
         if should_advance {
             self.locked_qc = Some(qc.clone());
         }
@@ -418,17 +419,14 @@ impl HotStuff2 {
         timeouts.push((sender, high_qc.clone()));
 
         // Snapshot the timeout entries so we release the mutable borrow
-        let timeout_snapshot: Vec<(Address, Option<QuorumCertificate>)> =
-            timeouts.iter().cloned().collect();
+        let timeout_snapshot: Vec<(Address, Option<QuorumCertificate>)> = timeouts.to_vec();
 
         let mut best_qc: Option<QuorumCertificate> = None;
         let mut timeout_stake = U256::ZERO;
         for (addr, qc_opt) in &timeout_snapshot {
             timeout_stake = timeout_stake.saturating_add(self.stake_of(*addr));
             if let Some(qc) = qc_opt {
-                let is_higher = best_qc
-                    .as_ref()
-                    .map_or(true, |cur| qc.round > cur.round);
+                let is_higher = best_qc.as_ref().is_none_or(|cur| qc.round > cur.round);
                 if is_higher {
                     best_qc = Some(qc.clone());
                 }
@@ -470,11 +468,7 @@ impl HotStuff2 {
         // Rule 2: proposal must extend the locked QC, or bring a higher QC
         if let Some(locked) = &self.locked_qc {
             // The proposal's justify must be at least as high as our lock
-            let justify_round = proposal
-                .justify
-                .as_ref()
-                .map(|qc| qc.round)
-                .unwrap_or(0);
+            let justify_round = proposal.justify.as_ref().map(|qc| qc.round).unwrap_or(0);
             if justify_round < locked.round {
                 // Unless the proposal directly extends the locked block
                 if let Some(parent) = &proposal.parent_qc {
@@ -503,11 +497,7 @@ impl HotStuff2 {
             return;
         }
 
-        tracing::debug!(
-            from = self.current_round,
-            to = new_round,
-            "advancing round"
-        );
+        tracing::debug!(from = self.current_round, to = new_round, "advancing round");
 
         self.current_round = new_round;
 
@@ -523,10 +513,7 @@ impl HotStuff2 {
     }
 
     fn update_high_qc(&mut self, qc: &QuorumCertificate) {
-        let is_higher = self
-            .high_qc
-            .as_ref()
-            .map_or(true, |cur| qc.round > cur.round);
+        let is_higher = self.high_qc.as_ref().is_none_or(|cur| qc.round > cur.round);
 
         if is_higher {
             self.high_qc = Some(qc.clone());
@@ -644,10 +631,19 @@ mod tests {
         let mut hs = HotStuff2::new(addr(1), validators.clone());
         let hash = B256::ZERO;
 
-        assert!(hs.on_vote(validators[0].address, hash, 1, 0, U256::from(100u64)).is_none());
-        assert!(hs.on_vote(validators[1].address, hash, 1, 0, U256::from(100u64)).is_none());
+        assert!(
+            hs.on_vote(validators[0].address, hash, 1, 0, U256::from(100u64))
+                .is_none()
+        );
+        assert!(
+            hs.on_vote(validators[1].address, hash, 1, 0, U256::from(100u64))
+                .is_none()
+        );
         let qc = hs.on_vote(validators[2].address, hash, 1, 0, U256::from(100u64));
-        assert!(qc.is_some(), "QC should form at 300/400 stake (threshold 267)");
+        assert!(
+            qc.is_some(),
+            "QC should form at 300/400 stake (threshold 267)"
+        );
     }
 
     #[test]
@@ -705,11 +701,17 @@ mod tests {
         let hash = B256::with_last_byte(0x01);
         let r0 = hs.run_simulated_round(hash, 1);
         assert_eq!(r0.votes_collected, 4);
-        assert!(!r0.finalized, "first round should not commit (no 2-chain yet)");
+        assert!(
+            !r0.finalized,
+            "first round should not commit (no 2-chain yet)"
+        );
 
         let hash2 = B256::with_last_byte(0x02);
         let r1 = hs.run_simulated_round(hash2, 2);
-        assert!(r1.finalized, "second consecutive round should commit via 2-chain");
+        assert!(
+            r1.finalized,
+            "second consecutive round should commit via 2-chain"
+        );
         assert!(r1.committed.is_some());
     }
 
@@ -728,7 +730,10 @@ mod tests {
             };
             hs.on_timeout_msg(&msg);
         }
-        assert_eq!(hs.current_round, 1, "should advance after quorum of timeouts");
+        assert_eq!(
+            hs.current_round, 1,
+            "should advance after quorum of timeouts"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
-use anyhow::{bail, Result};
-use revm::primitives::{Address, B256, U256};
-use serde::{Serialize, Deserialize};
 use crate::network::{Message, NetworkSim, RoundStage};
+use anyhow::{Result, bail};
+use revm::primitives::{Address, B256, U256};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -338,7 +338,13 @@ impl Consensus {
             }
 
             let precommits = network.drain_round(block_hash, height, round, RoundStage::Precommit);
-            self.detect_double_sign(height, round, RoundStage::Precommit, &precommits, &mut evidence);
+            self.detect_double_sign(
+                height,
+                round,
+                RoundStage::Precommit,
+                &precommits,
+                &mut evidence,
+            );
             let precommit_set = precommits
                 .iter()
                 .map(|message| message.from)
@@ -360,10 +366,8 @@ impl Consensus {
                 });
             }
 
-            let all_participating: HashSet<Address> = prevote_set
-                .union(&precommit_set)
-                .copied()
-                .collect();
+            let all_participating: HashSet<Address> =
+                prevote_set.union(&precommit_set).copied().collect();
             for validator in &eligible_validators {
                 if !all_participating.contains(&validator.address) {
                     let info = self.signing_info.entry(validator.address).or_default();
@@ -377,9 +381,8 @@ impl Consensus {
                 }
             }
 
-            let finalized = !threshold.is_zero()
-                && prevote_stake >= threshold
-                && precommit_stake >= threshold;
+            let finalized =
+                !threshold.is_zero() && prevote_stake >= threshold && precommit_stake >= threshold;
 
             if finalized {
                 self.unlock();
@@ -663,7 +666,11 @@ impl Consensus {
             EvidenceKind::DoubleSign => self.double_sign_bps,
             EvidenceKind::PrecommitTimeout => self.timeout_bps,
         };
-        let offenses = self.offense_counts.get(&evidence.validator).copied().unwrap_or(0);
+        let offenses = self
+            .offense_counts
+            .get(&evidence.validator)
+            .copied()
+            .unwrap_or(0);
         let rounds = evidence.rounds_missed.max(1).saturating_sub(1);
         let escalated = base_bps
             .saturating_add(self.escalation_step_bps.saturating_mul(offenses))
@@ -698,16 +705,16 @@ impl Consensus {
     ) {
         let mut seen: HashMap<Address, B256> = HashMap::new();
         for message in messages {
-            if let Some(prev) = seen.insert(message.from, message.block_hash) {
-                if prev != message.block_hash {
-                    evidence.push(SlashingEvidence {
-                        validator: message.from,
-                        kind: EvidenceKind::DoubleSign,
-                        height,
-                        round,
-                        rounds_missed: 0,
-                    });
-                }
+            if let Some(prev) = seen.insert(message.from, message.block_hash)
+                && prev != message.block_hash
+            {
+                evidence.push(SlashingEvidence {
+                    validator: message.from,
+                    kind: EvidenceKind::DoubleSign,
+                    height,
+                    round,
+                    rounds_missed: 0,
+                });
             }
         }
     }
@@ -839,7 +846,11 @@ impl Consensus {
         let burned_reward = effective_reward.saturating_sub(total_reward);
         self.total_minted = self.total_minted.saturating_add(total_reward);
 
-        let active_count = self.validators.iter().filter(|v| self.is_eligible(&v.address)).count();
+        let active_count = self
+            .validators
+            .iter()
+            .filter(|v| self.is_eligible(&v.address))
+            .count();
         metrics::gauge!("prime_chain_validators_active", active_count as f64);
         let stake_display = total_stake
             .checked_div(U256::from(1_000_000_000_000_000_000u128))

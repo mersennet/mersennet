@@ -2,7 +2,7 @@
 //! Transactions are encrypted when submitted and only decrypted when included in a block.
 
 use anyhow::Result;
-use revm::primitives::{keccak256, Address, B256, Bytes, U256};
+use revm::primitives::{Address, B256, Bytes, U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -148,9 +148,7 @@ impl EncryptedMempool {
         if self.pending.len() + self.decrypted.len() >= self.max_size {
             return Err(EncMempoolError::MempoolFull);
         }
-        if self.pending.iter().any(|t| t.id == tx.id)
-            || self.decrypted.contains_key(&tx.id)
-        {
+        if self.pending.iter().any(|t| t.id == tx.id) || self.decrypted.contains_key(&tx.id) {
             return Err(EncMempoolError::Duplicate);
         }
         self.total_submitted += 1;
@@ -172,10 +170,7 @@ impl EncryptedMempool {
             return Err(EncMempoolError::InvalidShare);
         }
 
-        let shares = self
-            .collected_shares
-            .entry(share.tx_id)
-            .or_default();
+        let shares = self.collected_shares.entry(share.tx_id).or_default();
 
         if shares.iter().any(|s| s.validator == share.validator) {
             return Ok(None);
@@ -192,8 +187,8 @@ impl EncryptedMempool {
         };
 
         let plaintext = Self::decrypt_with_shares(&enc_tx.ciphertext, shares)?;
-        let dec_tx: DecryptedTransaction = bincode::deserialize(&plaintext)
-            .map_err(|_| EncMempoolError::DecryptionFailed)?;
+        let dec_tx: DecryptedTransaction =
+            bincode::deserialize(&plaintext).map_err(|_| EncMempoolError::DecryptionFailed)?;
 
         self.pending.retain(|t| t.id != share.tx_id);
         self.collected_shares.remove(&share.tx_id);
@@ -207,7 +202,8 @@ impl EncryptedMempool {
         plaintext: &DecryptedTransaction,
         key_id: B256,
     ) -> Result<EncryptedTransaction, EncMempoolError> {
-        let serialized = bincode::serialize(plaintext).map_err(|_| EncMempoolError::DecryptionFailed)?;
+        let serialized =
+            bincode::serialize(plaintext).map_err(|_| EncMempoolError::DecryptionFailed)?;
         let key = expand_key(key_id.as_slice(), serialized.len());
         let ciphertext = xor_bytes(&serialized, &key);
 
@@ -245,8 +241,8 @@ impl EncryptedMempool {
             if share.share_data.len() != 32 {
                 return Err(EncMempoolError::InvalidShare);
             }
-            for i in 0..32 {
-                key_id[i] ^= share.share_data[i];
+            for (i, byte) in key_id.iter_mut().enumerate() {
+                *byte ^= share.share_data[i];
             }
         }
 

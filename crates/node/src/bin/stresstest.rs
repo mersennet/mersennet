@@ -7,9 +7,11 @@ use k256::ecdsa::SigningKey;
 use prime_chain::crypto::{address_from_signing_key, encode_raw_signed_tx, sign_transaction};
 use prime_chain::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const DEFAULT_RPC: &str = "http://127.0.0.1:8545";
+
+type ScenarioFn = dyn Fn(&str, u64) -> ScenarioResult;
 
 fn main() {
     let rpc = parse_rpc_arg();
@@ -28,7 +30,7 @@ fn main() {
         }
     };
 
-    let scenarios: Vec<(&str, Box<dyn Fn(&str, u64) -> ScenarioResult>)> = vec![
+    let scenarios: Vec<(&str, Box<ScenarioFn>)> = vec![
         ("Mempool Flood", Box::new(scenario_mempool_flood)),
         ("Large Blocks", Box::new(scenario_large_blocks)),
         ("Rapid Reconnect", Box::new(scenario_rapid_reconnect)),
@@ -52,7 +54,10 @@ fn main() {
                 passed += 1;
             }
             false => {
-                println!("[RESULT] FAIL ({:.1}ms) - {}", result.duration_ms, result.detail);
+                println!(
+                    "[RESULT] FAIL ({:.1}ms) - {}",
+                    result.duration_ms, result.detail
+                );
                 failed += 1;
             }
         }
@@ -68,7 +73,12 @@ fn main() {
         println!("  [{}] {} ({:.1}ms)", status, name, result.duration_ms);
     }
     println!();
-    println!("  Total: {} passed, {} failed, {} total", passed, failed, passed + failed);
+    println!(
+        "  Total: {} passed, {} failed, {} total",
+        passed,
+        failed,
+        passed + failed
+    );
     println!("══════════════════════════════════════════════");
 
     if failed > 0 {
@@ -83,10 +93,10 @@ fn main() {
 fn parse_rpc_arg() -> String {
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
-        if arg == "--rpc" {
-            if let Some(v) = iter.next() {
-                return v;
-            }
+        if arg == "--rpc"
+            && let Some(v) = iter.next()
+        {
+            return v;
         }
         if arg == "--help" || arg == "-h" {
             println!("Usage: stresstest [OPTIONS]");
@@ -126,6 +136,7 @@ fn fund_account(rpc: &str, address: Address, chain_id: u64) {
     let _ = rpc_call(rpc, "prime_sendTransaction", json!([tx_obj]));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn send_signed_tx(
     rpc: &str,
     key: &SigningKey,
@@ -219,7 +230,9 @@ fn scenario_large_blocks(rpc: &str, chain_id: u64) -> ScenarioResult {
 
     // Simple contract with a loop that burns gas:
     // PUSH1 0xFF, PUSH1 0x00, MSTORE, PUSH1 0x00, PUSH1 0x00, RETURN
-    let heavy_data = Bytes::from(vec![0x60, 0xFF, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3]);
+    let heavy_data = Bytes::from(vec![
+        0x60, 0xFF, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3,
+    ]);
 
     let mut submitted = 0u64;
     for nonce in 0..20u64 {
@@ -556,14 +569,11 @@ fn scenario_clob_stress(rpc: &str, chain_id: u64) -> ScenarioResult {
             "quantity": 1,
             "time_in_force": "gtc"
         }]);
-        match rpc_call(rpc, "prime_submitOrder", params) {
-            Ok(val) => {
-                placed += 1;
-                if let Some(id) = val.get("order_id").and_then(|v| v.as_u64()) {
-                    order_ids.push(id);
-                }
+        if let Ok(val) = rpc_call(rpc, "prime_submitOrder", params) {
+            placed += 1;
+            if let Some(id) = val.get("order_id").and_then(|v| v.as_u64()) {
+                order_ids.push(id);
             }
-            Err(_) => {}
         }
     }
     println!("[TEST] Phase 1: Placed {} orders", placed);
@@ -571,9 +581,8 @@ fn scenario_clob_stress(rpc: &str, chain_id: u64) -> ScenarioResult {
     // Phase 2: Cancel 500 orders
     let mut cancelled = 0u64;
     for id in order_ids.iter().take(500) {
-        match rpc_call(rpc, "prime_cancelOrder", json!([*id])) {
-            Ok(_) => cancelled += 1,
-            Err(_) => {}
+        if rpc_call(rpc, "prime_cancelOrder", json!([*id])).is_ok() {
+            cancelled += 1
         }
     }
     println!("[TEST] Phase 2: Cancelled {} orders", cancelled);
@@ -634,7 +643,9 @@ fn rpc_call(rpc: &str, method: &str, params: Value) -> Result<Value, String> {
         .set("Content-Type", "application/json")
         .send_string(&body.to_string())
         .map_err(|e| format!("RPC failed: {}", e))?;
-    let text = resp.into_string().map_err(|e| format!("read body: {}", e))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("read body: {}", e))?;
     let json: Value = serde_json::from_str(&text).map_err(|e| format!("parse JSON: {}", e))?;
     if let Some(err) = json.get("error") {
         return Err(format!("RPC error: {}", err));
