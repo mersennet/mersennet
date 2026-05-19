@@ -1,7 +1,6 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use metrics;
 use revm::primitives::keccak256;
-use tracing::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -9,6 +8,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use tracing::info;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GossipPacket {
@@ -173,7 +173,12 @@ impl UdpGossip {
     pub fn new_packet(&self, topic: impl Into<String>, data: Vec<u8>, ttl: u8) -> GossipPacket {
         let topic = topic.into();
         let id = message_id(&topic, &data);
-        GossipPacket { topic, data, id, ttl }
+        GossipPacket {
+            topic,
+            data,
+            id,
+            ttl,
+        }
     }
 
     pub fn broadcast(&mut self, packet: &GossipPacket) -> Result<()> {
@@ -213,12 +218,11 @@ impl UdpGossip {
 
         self.mark_seen(packet.id.clone());
 
-        if packet.topic == self.config.peer_discovery_topic {
-            if let Ok(addr) = std::str::from_utf8(&packet.data) {
-                if let Ok(peer) = addr.parse::<SocketAddr>() {
-                    self.insert_peer(peer);
-                }
-            }
+        if packet.topic == self.config.peer_discovery_topic
+            && let Ok(addr) = std::str::from_utf8(&packet.data)
+            && let Ok(peer) = addr.parse::<SocketAddr>()
+        {
+            self.insert_peer(peer);
         }
 
         if packet.ttl > 0 {
@@ -242,8 +246,10 @@ impl UdpGossip {
                 .unwrap_or(false)
         });
         self.last_seen.retain(|peer, _| self.peers.contains(peer));
-        self.failure_counts.retain(|peer, _| self.peers.contains(peer));
-        self.backoff_until.retain(|peer, _| self.peers.contains(peer));
+        self.failure_counts
+            .retain(|peer, _| self.peers.contains(peer));
+        self.backoff_until
+            .retain(|peer, _| self.peers.contains(peer));
     }
 
     pub fn announce_self(&mut self, ttl: u8) -> Result<()> {
@@ -335,10 +341,10 @@ impl UdpGossip {
 
     fn send_to_peer(&mut self, peer: SocketAddr, payload: &[u8]) -> Result<()> {
         let now = Instant::now();
-        if let Some(until) = self.backoff_until.get(&peer) {
-            if *until > now {
-                return Ok(());
-            }
+        if let Some(until) = self.backoff_until.get(&peer)
+            && *until > now
+        {
+            return Ok(());
         }
 
         match self.socket.send_to(payload, peer) {
@@ -443,7 +449,7 @@ impl TcpSync {
         snapshot: &[u8],
         chunk_size: usize,
     ) -> Result<SnapshotHeader> {
-        let chunk_size = chunk_size.max(1024).min(512 * 1024);
+        let chunk_size = chunk_size.clamp(1024, 512 * 1024);
         let hash = keccak256(snapshot).0;
         let header = SnapshotHeader {
             total_len: snapshot.len() as u64,

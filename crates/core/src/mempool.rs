@@ -77,7 +77,7 @@ fn pool_len(pool: &SenderQueues) -> usize {
 }
 
 fn pool_clean(pool: &mut SenderQueues, sender: &Address) {
-    if pool.get(sender).map_or(false, |q| q.is_empty()) {
+    if pool.get(sender).is_some_and(|q| q.is_empty()) {
         pool.remove(sender);
     }
 }
@@ -125,7 +125,12 @@ impl Mempool {
         }
     }
 
-    pub fn update_limits(&mut self, max_total: usize, max_per_sender: usize, min_replace_bump_bps: u64) {
+    pub fn update_limits(
+        &mut self,
+        max_total: usize,
+        max_per_sender: usize,
+        min_replace_bump_bps: u64,
+    ) {
         self.max_total = max_total.max(1);
         self.max_per_sender = max_per_sender.max(1);
         self.min_replace_bump_bps = min_replace_bump_bps.min(10_000);
@@ -213,9 +218,15 @@ impl Mempool {
         if tx.nonce > effective_next {
             self.queued.entry(tx.from).or_default().insert(tx.nonce, tx);
         } else if tx.gas_price < base_fee {
-            self.base_fee_pool.entry(tx.from).or_default().insert(tx.nonce, tx);
+            self.base_fee_pool
+                .entry(tx.from)
+                .or_default()
+                .insert(tx.nonce, tx);
         } else {
-            self.pending.entry(tx.from).or_default().insert(tx.nonce, tx);
+            self.pending
+                .entry(tx.from)
+                .or_default()
+                .insert(tx.nonce, tx);
             self.fill_gaps(sender);
         }
 
@@ -242,10 +253,7 @@ impl Mempool {
         };
 
         loop {
-            let tx = self
-                .queued
-                .get_mut(&sender)
-                .and_then(|q| q.remove(&next));
+            let tx = self.queued.get_mut(&sender).and_then(|q| q.remove(&next));
             match tx {
                 Some(tx) => {
                     self.pending.entry(sender).or_default().insert(next, tx);
@@ -292,7 +300,10 @@ impl Mempool {
                 .collect();
             for nonce in to_demote {
                 if let Some(tx) = queue.remove(&nonce) {
-                    self.base_fee_pool.entry(sender).or_default().insert(nonce, tx);
+                    self.base_fee_pool
+                        .entry(sender)
+                        .or_default()
+                        .insert(nonce, tx);
                 }
             }
         }
@@ -334,7 +345,7 @@ impl Mempool {
             .values()
             .flat_map(|q| q.values().cloned())
             .collect();
-        all.sort_by(|a, b| b.gas_price.cmp(&a.gas_price));
+        all.sort_by_key(|tx| std::cmp::Reverse(tx.gas_price));
         all.truncate(max);
 
         for tx in &all {
@@ -355,10 +366,7 @@ impl Mempool {
 
         let mut next = nonce + 1;
         loop {
-            let tx = self
-                .queued
-                .get_mut(&sender)
-                .and_then(|q| q.remove(&next));
+            let tx = self.queued.get_mut(&sender).and_then(|q| q.remove(&next));
             match tx {
                 Some(tx) => {
                     self.pending.entry(sender).or_default().insert(next, tx);

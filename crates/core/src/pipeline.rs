@@ -77,8 +77,8 @@ impl PipelineStats {
         if self.blocks_produced == 0 {
             self.avg_execution_ms = ms;
         } else {
-            self.avg_execution_ms =
-                (self.avg_execution_ms * self.blocks_produced as f64 + ms) / (self.blocks_produced + 1) as f64;
+            self.avg_execution_ms = (self.avg_execution_ms * self.blocks_produced as f64 + ms)
+                / (self.blocks_produced + 1) as f64;
         }
         self.total_txs_processed += tx_count;
     }
@@ -88,8 +88,8 @@ impl PipelineStats {
         if self.blocks_produced == 0 {
             self.avg_consensus_ms = ms;
         } else {
-            self.avg_consensus_ms =
-                (self.avg_consensus_ms * self.blocks_produced as f64 + ms) / (self.blocks_produced + 1) as f64;
+            self.avg_consensus_ms = (self.avg_consensus_ms * self.blocks_produced as f64 + ms)
+                / (self.blocks_produced + 1) as f64;
         }
         self.blocks_produced += 1;
     }
@@ -141,7 +141,8 @@ impl BlockPipeline {
     pub fn pop_for_consensus(&mut self) -> Option<ExecutedBlock> {
         let block = self.pending_executions.pop_front();
         if let Some(ref b) = block {
-            self.stats.record_execution(b.execution_time, b.transactions.len() as u64);
+            self.stats
+                .record_execution(b.execution_time, b.transactions.len() as u64);
         }
         block
     }
@@ -207,10 +208,7 @@ pub struct PipelineOrchestrator {
 }
 
 impl PipelineOrchestrator {
-    pub fn start<F, G>(
-        execution_fn: F,
-        consensus_fn: G,
-    ) -> Self
+    pub fn start<F, G>(execution_fn: F, consensus_fn: G) -> Self
     where
         F: Fn() -> Option<ExecutedBlock> + Send + 'static,
         G: Fn(ExecutedBlock) -> ConsensusResult + Send + 'static,

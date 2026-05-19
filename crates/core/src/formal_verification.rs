@@ -25,27 +25,27 @@ pub struct InvariantViolation {
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Invariant {
-    ConservationOfValue,          // Sum of all balances never changes (except minting)
-    PriceTimePriority,            // Orders execute in price-time priority
-    OrderBookConsistency,         // Best bid < best ask (no crossed book)
-    NonNegativeBalances,          // No account has negative balance
-    NonceMono,                    // Nonces are strictly monotonic per account
-    StateRootDeterminism,         // Same inputs produce same state root
-    GasAccountingCorrectness,     // Gas used <= gas limit, fees calculated correctly
-    DoubleSpendPrevention,        // No transaction double-spent
-    ValidatorSetConsistency,      // Sum of stakes matches validator set
-    FBAUniformPrice,              // All fills in a batch at the same clearing price
-    CommitRevealBinding,          // Revealed tx matches committed hash
-    BridgeValueConservation,      // Bridge doesn't create or destroy value
+    ConservationOfValue,      // Sum of all balances never changes (except minting)
+    PriceTimePriority,        // Orders execute in price-time priority
+    OrderBookConsistency,     // Best bid < best ask (no crossed book)
+    NonNegativeBalances,      // No account has negative balance
+    NonceMono,                // Nonces are strictly monotonic per account
+    StateRootDeterminism,     // Same inputs produce same state root
+    GasAccountingCorrectness, // Gas used <= gas limit, fees calculated correctly
+    DoubleSpendPrevention,    // No transaction double-spent
+    ValidatorSetConsistency,  // Sum of stakes matches validator set
+    FBAUniformPrice,          // All fills in a batch at the same clearing price
+    CommitRevealBinding,      // Revealed tx matches committed hash
+    BridgeValueConservation,  // Bridge doesn't create or destroy value
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Severity {
-    Critical,  // Must halt chain
-    High,      // Must fix immediately
-    Medium,    // Should fix soon
-    Low,       // Informational
+    Critical, // Must halt chain
+    High,     // Must fix immediately
+    Medium,   // Should fix soon
+    Low,      // Informational
 }
 
 #[allow(dead_code)]
@@ -139,7 +139,11 @@ impl InvariantChecker {
     }
 
     /// Run all applicable checks on a block report and collect violations.
-    pub fn check_all(&mut self, block_height: u64, report: &BlockReport) -> Vec<InvariantViolation> {
+    pub fn check_all(
+        &mut self,
+        block_height: u64,
+        report: &BlockReport,
+    ) -> Vec<InvariantViolation> {
         self.violations.clear();
 
         // Conservation of value
@@ -154,7 +158,8 @@ impl InvariantChecker {
         } else {
             self.violations.push(InvariantViolation {
                 invariant: Invariant::ConservationOfValue,
-                description: "Sum of balances changed incorrectly (minted/burned mismatch)".to_string(),
+                description: "Sum of balances changed incorrectly (minted/burned mismatch)"
+                    .to_string(),
                 block_height,
                 severity: Severity::Critical,
             });
@@ -285,7 +290,10 @@ impl PropertyTestGenerator {
 
     /// Simple LCG for deterministic pseudo-random generation.
     fn next_u64(&mut self) -> u64 {
-        self.rng_seed = self.rng_seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.rng_seed = self
+            .rng_seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.rng_seed
     }
 
@@ -293,7 +301,11 @@ impl PropertyTestGenerator {
     pub fn generate_random_orders(&mut self, count: usize) -> Vec<TestOrder> {
         let mut orders = Vec::with_capacity(count);
         for _ in 0..count {
-            let side = if self.next_u64() % 2 == 0 { "Buy" } else { "Sell" };
+            let side = if self.next_u64().is_multiple_of(2) {
+                "Buy"
+            } else {
+                "Sell"
+            };
             orders.push(TestOrder {
                 market_id: self.next_u64() % 16,
                 side: side.to_string(),
@@ -323,11 +335,11 @@ impl PropertyTestGenerator {
     pub fn generate_adversarial_orders(&mut self, count: usize) -> Vec<TestOrder> {
         let mut orders = Vec::with_capacity(count);
         let edge_cases = [
-            (0u64, 1u64, "Buy"),   // zero price
-            (u64::MAX, 1, "Sell"), // max price
-            (100, 0, "Buy"),       // zero size
+            (0u64, 1u64, "Buy"),     // zero price
+            (u64::MAX, 1, "Sell"),   // max price
+            (100, 0, "Buy"),         // zero size
             (100, u64::MAX, "Sell"), // max size
-            (1, 1, "Buy"),         // min values
+            (1, 1, "Buy"),           // min values
         ];
         for i in 0..count {
             let (price, amount, side) = edge_cases[i % edge_cases.len()];

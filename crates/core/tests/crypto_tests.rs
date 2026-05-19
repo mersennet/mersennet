@@ -1,5 +1,5 @@
 use prime_chain::crypto::{
-    generate_keypair, recover_signer, sign_transaction, tx_signing_hash, SignedTransaction,
+    SignedTransaction, generate_keypair, recover_signer, sign_transaction, tx_signing_hash,
 };
 use prime_chain::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
@@ -57,8 +57,12 @@ fn tampered_data_breaks_recovery() {
         s: signed.s,
     };
 
-    let recovered = recover_signer(&tampered_signed).expect("recovery succeeds but address differs");
-    assert_ne!(recovered, addr, "tampered tx must not recover to original signer");
+    let recovered =
+        recover_signer(&tampered_signed).expect("recovery succeeds but address differs");
+    assert_ne!(
+        recovered, addr,
+        "tampered tx must not recover to original signer"
+    );
 }
 
 #[test]
@@ -69,7 +73,10 @@ fn chain_id_protection() {
 
     let hash_a = tx_signing_hash(&tx_chain_a);
     let hash_b = tx_signing_hash(&tx_chain_b);
-    assert_ne!(hash_a, hash_b, "different chain_id must produce different hashes");
+    assert_ne!(
+        hash_a, hash_b,
+        "different chain_id must produce different hashes"
+    );
 
     let signed_a = sign_transaction(&tx_chain_a, &key);
     let recovered_a = recover_signer(&signed_a).expect("recovery on chain A");
@@ -83,7 +90,10 @@ fn chain_id_protection() {
     };
     let recovered_cross = recover_signer(&cross_chain);
     match recovered_cross {
-        Ok(address) => assert_ne!(address, addr, "cross-chain replay must not recover original signer"),
+        Ok(address) => assert_ne!(
+            address, addr,
+            "cross-chain replay must not recover original signer"
+        ),
         Err(_) => {} // also acceptable: recovery fails entirely
     }
 }

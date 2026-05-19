@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use revm::db::InMemoryDB;
-use revm::primitives::{
-    AccountInfo, Address, Bytes, Env, ExecutionResult, SpecId, TxKind, U256,
-};
 use revm::Evm;
+use revm::db::InMemoryDB;
+use revm::primitives::{AccountInfo, Address, Bytes, Env, ExecutionResult, SpecId, TxKind, U256};
 
 use crate::engine::{LogEntry, Transaction, TxExecution};
 
@@ -37,6 +35,12 @@ pub struct MultiVersionMemory {
     versions: HashMap<Address, BTreeMap<usize, AccountInfo>>,
 }
 
+impl Default for MultiVersionMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MultiVersionMemory {
     pub fn new() -> Self {
         Self {
@@ -63,12 +67,7 @@ impl MultiVersionMemory {
 
     /// Validate that values in the read set of `tx_index` haven't been modified by a
     /// lower-indexed tx relative to the base DB state. Returns `false` on conflict.
-    pub fn validate(
-        &self,
-        tx_index: usize,
-        read_set: &TxAccessSet,
-        base_db: &InMemoryDB,
-    ) -> bool {
+    pub fn validate(&self, tx_index: usize, read_set: &TxAccessSet, base_db: &InMemoryDB) -> bool {
         for addr in &read_set.reads {
             let mv_version = self.read(*addr, tx_index);
             let base_info = base_db.accounts.get(addr).and_then(|a| a.info());
@@ -287,11 +286,7 @@ fn execute_tx_on_fork(
 /// Each group wrote to a disjoint set of addresses (except coinbase), so we take
 /// each group's version of its dirty accounts directly. Coinbase balance deltas
 /// are accumulated across all groups to produce the correct aggregate.
-fn merge_fork_dbs(
-    base: &InMemoryDB,
-    groups: &[GroupResult],
-    coinbase: Address,
-) -> InMemoryDB {
+fn merge_fork_dbs(base: &InMemoryDB, groups: &[GroupResult], coinbase: Address) -> InMemoryDB {
     let mut merged = base.clone();
 
     for group in groups {
@@ -352,6 +347,7 @@ impl ParallelExecutor {
     /// 4. Validate via MVCC that no cross-group conflicts occurred
     /// 5. On conflict, fall back to sequential re-execution
     /// 6. Merge group DB snapshots into a single result
+    #[allow(clippy::too_many_arguments)]
     pub fn execute(
         &self,
         txs: &[Transaction],
@@ -440,12 +436,10 @@ impl ParallelExecutor {
                                             addrs.push(to);
                                         }
                                         for addr in addrs {
-                                            if let Some(acct) =
-                                                fork_db.accounts.get(&addr)
+                                            if let Some(acct) = fork_db.accounts.get(&addr)
+                                                && let Some(info) = acct.info()
                                             {
-                                                if let Some(info) = acct.info() {
-                                                    mv.write(addr, tx_idx, info);
-                                                }
+                                                mv.write(addr, tx_idx, info);
                                             }
                                         }
                                     }
@@ -528,6 +522,7 @@ impl ParallelExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn execute_sequential(
         &self,
         txs: &[Transaction],

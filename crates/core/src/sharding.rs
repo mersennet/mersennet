@@ -136,10 +136,7 @@ impl ShardManager {
         let mut least_loaded: Option<(u64, usize)> = None;
         for (shard_id, shard) in &self.shards {
             let load = shard.markets.len();
-            if least_loaded
-                .map(|(_, l)| load < l)
-                .unwrap_or(true)
-            {
+            if least_loaded.map(|(_, l)| load < l).unwrap_or(true) {
                 least_loaded = Some((*shard_id, load));
             }
         }
@@ -155,17 +152,17 @@ impl ShardManager {
         Ok(ShardId(shard_id))
     }
 
-    pub fn assign_validator(&mut self, validator: Address, shard_id: u64) -> Result<(), ShardError> {
+    pub fn assign_validator(
+        &mut self,
+        validator: Address,
+        shard_id: u64,
+    ) -> Result<(), ShardError> {
         let shard = self
             .shards
             .get_mut(&shard_id)
             .ok_or(ShardError::ShardNotFound)?;
         shard.validators.insert(validator);
-        self.stats.total_validators = self
-            .shards
-            .values()
-            .map(|s| s.validators.len())
-            .sum();
+        self.stats.total_validators = self.shards.values().map(|s| s.validators.len()).sum();
         Ok(())
     }
 
@@ -192,7 +189,7 @@ impl ShardManager {
             .map(|(&id, _)| id)
             .collect();
 
-        overloaded.sort_by(|a, b| b.1.cmp(&a.1));
+        overloaded.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
         for (src_id, _) in overloaded {
             let src = self.shards.get_mut(&src_id).unwrap();
@@ -342,13 +339,9 @@ mod tests {
         for i in 0..12 {
             mgr.assign_market(i).unwrap();
         }
-        let _before: Vec<usize> = (0..4)
-            .map(|id| mgr.markets_in_shard(id).len())
-            .collect();
+        let _before: Vec<usize> = (0..4).map(|id| mgr.markets_in_shard(id).len()).collect();
         mgr.rebalance();
-        let after: Vec<usize> = (0..4)
-            .map(|id| mgr.markets_in_shard(id).len())
-            .collect();
+        let after: Vec<usize> = (0..4).map(|id| mgr.markets_in_shard(id).len()).collect();
         assert_eq!(after.iter().sum::<usize>(), 12);
         for market_id in 0..12 {
             let shard = mgr.get_shard_for_market(market_id).unwrap();

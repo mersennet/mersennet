@@ -18,8 +18,7 @@ fn ws_subscription_manager_lifecycle() {
 
     let trade_result = rx_trades.try_recv();
     assert!(
-        trade_result.is_err()
-            || matches!(trade_result, Err(std::sync::mpsc::TryRecvError::Empty))
+        trade_result.is_err() || matches!(trade_result, Err(std::sync::mpsc::TryRecvError::Empty))
     );
 
     let removed = manager.unsubscribe(id_heads);

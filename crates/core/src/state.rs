@@ -1,6 +1,6 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use revm::db::InMemoryDB;
-use revm::primitives::{keccak256, AccountInfo, Address, Bytes, Bytecode, B256, U256};
+use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -8,7 +8,10 @@ use std::sync::Mutex;
 
 use crate::bridge::{BridgeDomain, BridgeMessage, BridgeQueue, BridgeQueueSnapshot};
 use crate::engine::Block;
-use crate::prime_orders::{AccountState, Market, MarketId, MarketStatus, Order, OrderId, OrderBook, Position, PrimeOrdersState, Side, TimeInForce};
+use crate::prime_orders::{
+    AccountState, Market, MarketId, MarketStatus, Order, OrderBook, OrderId, Position,
+    PrimeOrdersState, Side, TimeInForce,
+};
 
 pub(crate) struct MerkleTree;
 
@@ -52,7 +55,10 @@ impl MerkleTree {
         leaves[0]
     }
 
-    pub(crate) fn compute_proof(leaves: &[B256], target_idx: usize) -> (Vec<B256>, Vec<bool>, B256) {
+    pub(crate) fn compute_proof(
+        leaves: &[B256],
+        target_idx: usize,
+    ) -> (Vec<B256>, Vec<bool>, B256) {
         if leaves.len() <= 1 {
             return (
                 Vec::new(),
@@ -345,7 +351,10 @@ impl PersistentState {
                         balance: info.balance.to_be_bytes(),
                         nonce: info.nonce,
                         code_hash: info.code_hash.into(),
-                        code: info.code.map(|code| code.bytes().to_vec()).unwrap_or_default(),
+                        code: info
+                            .code
+                            .map(|code| code.bytes().to_vec())
+                            .unwrap_or_default(),
                     };
                     let data = bincode::serialize(&record)?;
                     self.accounts.insert(address.as_slice(), data)?;
@@ -487,11 +496,13 @@ impl PersistentState {
             let mut book = OrderBook::default();
             for (price_bytes, orders) in record.bids {
                 let price = U256::from_be_bytes(bytes_to_u256(&price_bytes)?);
-                book.bids.insert(price, orders.into_iter().map(OrderId).collect());
+                book.bids
+                    .insert(price, orders.into_iter().map(OrderId).collect());
             }
             for (price_bytes, orders) in record.asks {
                 let price = U256::from_be_bytes(bytes_to_u256(&price_bytes)?);
-                book.asks.insert(price, orders.into_iter().map(OrderId).collect());
+                book.asks
+                    .insert(price, orders.into_iter().map(OrderId).collect());
             }
             state.books.insert(MarketId(market_id), book);
         }
@@ -562,14 +573,20 @@ impl PersistentState {
                     .bids
                     .iter()
                     .map(|(price, orders)| {
-                        (price.to_be_bytes::<32>().to_vec(), orders.iter().map(|id| id.0).collect())
+                        (
+                            price.to_be_bytes::<32>().to_vec(),
+                            orders.iter().map(|id| id.0).collect(),
+                        )
                     })
                     .collect();
                 let asks = book
                     .asks
                     .iter()
                     .map(|(price, orders)| {
-                        (price.to_be_bytes::<32>().to_vec(), orders.iter().map(|id| id.0).collect())
+                        (
+                            price.to_be_bytes::<32>().to_vec(),
+                            orders.iter().map(|id| id.0).collect(),
+                        )
                     })
                     .collect();
                 (market_id.0, OrderBookRecord { bids, asks })
@@ -723,10 +740,8 @@ impl PersistentState {
             &self.bridge_orders_to_evm,
             &self.bridge_evm_to_orders,
         ] {
-            for entry in tree.iter() {
-                if let Ok((key, value)) = entry {
-                    items.push((key.to_vec(), value.to_vec()));
-                }
+            for (key, value) in tree.iter().flatten() {
+                items.push((key.to_vec(), value.to_vec()));
             }
         }
         items
@@ -974,7 +989,14 @@ impl crate::state_trait::StateBackend for PersistentState {
         bridge_evm_to_orders: &BridgeQueue,
         height: u64,
     ) -> Result<B256> {
-        PersistentState::commit_state(self, evm_db, prime_orders, bridge_orders_to_evm, bridge_evm_to_orders, height)
+        PersistentState::commit_state(
+            self,
+            evm_db,
+            prime_orders,
+            bridge_orders_to_evm,
+            bridge_evm_to_orders,
+            height,
+        )
     }
 
     fn load_prime_orders(&self, state: &mut PrimeOrdersState) -> Result<()> {

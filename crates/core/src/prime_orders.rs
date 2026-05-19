@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use revm::primitives::{Address, U256};
-use serde::{Serialize, Deserialize};
-use std::collections::{BTreeMap, HashMap, VecDeque};
 use crate::errors::PrimeOrdersError;
+use revm::primitives::{Address, U256};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MarketId(pub u64);
@@ -24,17 +24,12 @@ pub enum TimeInForce {
     Fok,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MarketStatus {
+    #[default]
     Active,
     Halted,
     SettleOnly,
-}
-
-impl Default for MarketStatus {
-    fn default() -> Self {
-        MarketStatus::Active
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -133,7 +128,12 @@ impl PrimeOrdersState {
         Self::default()
     }
 
-    pub fn add_market(&mut self, symbol: impl Into<String>, tick_size: U256, lot_size: U256) -> MarketId {
+    pub fn add_market(
+        &mut self,
+        symbol: impl Into<String>,
+        tick_size: U256,
+        lot_size: U256,
+    ) -> MarketId {
         let id = MarketId(self.markets.len() as u64 + 1);
         let market = Market {
             id,
@@ -181,7 +181,11 @@ impl PrimeOrdersState {
         };
 
         self.orders.insert(order_id, order);
-        self.accounts.entry(owner).or_default().open_orders.push(order_id);
+        self.accounts
+            .entry(owner)
+            .or_default()
+            .open_orders
+            .push(order_id);
 
         let book = self.books.entry(market).or_default();
         match side {
@@ -257,7 +261,8 @@ impl PrimeOrdersState {
                         Side::Buy => Side::Sell,
                         Side::Sell => Side::Buy,
                     };
-                    let maker_new_size = self.projected_position_size(maker_owner, market, maker_side, fill);
+                    let maker_new_size =
+                        self.projected_position_size(maker_owner, market, maker_side, fill);
 
                     if !self.validate_fill_margin(owner, taker_new_size, market)
                         || !self.validate_fill_margin(maker_owner, maker_new_size, market)
@@ -271,7 +276,11 @@ impl PrimeOrdersState {
                     }
                     remaining = remaining.saturating_sub(fill);
 
-                    let maker_remaining = self.orders.get(&order_id).map(|o| o.size).unwrap_or(U256::ZERO);
+                    let maker_remaining = self
+                        .orders
+                        .get(&order_id)
+                        .map(|o| o.size)
+                        .unwrap_or(U256::ZERO);
 
                     let (buyer, seller) = match side {
                         Side::Buy => (owner, maker_owner),
@@ -343,8 +352,15 @@ impl PrimeOrdersState {
                 "trade executed"
             );
         }
-        metrics::gauge!("prime_chain_insurance_fund_balance", self.insurance_fund.as_limbs()[0] as f64);
-        let active_markets = self.markets.values().filter(|m| m.status == MarketStatus::Active).count();
+        metrics::gauge!(
+            "prime_chain_insurance_fund_balance",
+            self.insurance_fund.as_limbs()[0] as f64
+        );
+        let active_markets = self
+            .markets
+            .values()
+            .filter(|m| m.status == MarketStatus::Active)
+            .count();
         metrics::gauge!("prime_chain_markets_active", active_markets as f64);
 
         Ok(OrderOutcome {
@@ -377,7 +393,11 @@ impl PrimeOrdersState {
         let Some(account) = self.accounts.get(&owner) else {
             return Vec::new();
         };
-        account.positions.iter().map(|(k, v)| (*k, v.clone())).collect()
+        account
+            .positions
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
     }
 
     pub fn is_liquidatable(&self, owner: Address) -> bool {
@@ -397,8 +417,7 @@ impl PrimeOrdersState {
         if let Some(account) = self.accounts.get_mut(&owner) {
             let open_orders = account.open_orders.clone();
             account.open_orders.clear();
-            let positions: Vec<(MarketId, Position)> =
-                account.positions.drain().collect();
+            let positions: Vec<(MarketId, Position)> = account.positions.drain().collect();
             for order_id in open_orders {
                 let _ = self.cancel_order(order_id);
             }
@@ -426,20 +445,24 @@ impl PrimeOrdersState {
         let mut candidates: Vec<(Address, i128, u128)> = Vec::new();
 
         for (addr, account) in &self.accounts {
-            if let Some(pos) = account.positions.get(&market) {
-                if pos.size != 0 {
-                    let pnl = pos.size.saturating_mul(
-                        u256_to_i128(mark).saturating_sub(u256_to_i128(pos.entry_price)),
-                    );
-                    if pnl > 0 {
-                        let abs_size = pos.size.unsigned_abs();
-                        candidates.push((*addr, pos.size, (pnl as u128).checked_div(abs_size).unwrap_or(0)));
-                    }
+            if let Some(pos) = account.positions.get(&market)
+                && pos.size != 0
+            {
+                let pnl = pos.size.saturating_mul(
+                    u256_to_i128(mark).saturating_sub(u256_to_i128(pos.entry_price)),
+                );
+                if pnl > 0 {
+                    let abs_size = pos.size.unsigned_abs();
+                    candidates.push((
+                        *addr,
+                        pos.size,
+                        (pnl as u128).checked_div(abs_size).unwrap_or(0),
+                    ));
                 }
             }
         }
 
-        candidates.sort_by(|a, b| b.2.cmp(&a.2));
+        candidates.sort_by_key(|entry| std::cmp::Reverse(entry.2));
 
         let mut remaining = deficit;
         let mut deleveraged = Vec::new();
@@ -464,16 +487,16 @@ impl PrimeOrdersState {
                 0
             };
 
-            if let Some(account) = self.accounts.get_mut(addr) {
-                if let Some(pos) = account.positions.get_mut(&market) {
-                    if pos.size > 0 {
-                        pos.size = pos.size.saturating_sub(close_size);
-                    } else {
-                        pos.size = pos.size.saturating_add(close_size);
-                    }
-                    if pos.size == 0 {
-                        account.positions.remove(&market);
-                    }
+            if let Some(account) = self.accounts.get_mut(addr)
+                && let Some(pos) = account.positions.get_mut(&market)
+            {
+                if pos.size > 0 {
+                    pos.size = pos.size.saturating_sub(close_size);
+                } else {
+                    pos.size = pos.size.saturating_add(close_size);
+                }
+                if pos.size == 0 {
+                    account.positions.remove(&market);
                 }
             }
 
@@ -487,7 +510,12 @@ impl PrimeOrdersState {
         }
     }
 
-    pub fn validate_fill_margin(&self, account: Address, new_position_size: i128, market: MarketId) -> bool {
+    pub fn validate_fill_margin(
+        &self,
+        account: Address,
+        new_position_size: i128,
+        market: MarketId,
+    ) -> bool {
         if self.maintenance_margin_bps == 0 {
             return true;
         }
@@ -515,7 +543,10 @@ impl PrimeOrdersState {
         owner: Address,
         amount: U256,
     ) -> Result<(), PrimeOrdersError> {
-        let account = self.accounts.get(&owner).ok_or(PrimeOrdersError::InsufficientEquity)?;
+        let account = self
+            .accounts
+            .get(&owner)
+            .ok_or(PrimeOrdersError::InsufficientEquity)?;
         if account.collateral < amount {
             return Err(PrimeOrdersError::InsufficientEquity);
         }
@@ -524,9 +555,9 @@ impl PrimeOrdersState {
             let mut simulated_equity = u256_to_i128(new_collateral);
             for (market_id, position) in &account.positions {
                 let mark = self.mark_price(*market_id, position.entry_price);
-                let pnl = position
-                    .size
-                    .saturating_mul(u256_to_i128(mark).saturating_sub(u256_to_i128(position.entry_price)));
+                let pnl = position.size.saturating_mul(
+                    u256_to_i128(mark).saturating_sub(u256_to_i128(position.entry_price)),
+                );
                 simulated_equity = simulated_equity.saturating_add(pnl);
             }
             simulated_equity
@@ -561,7 +592,10 @@ impl PrimeOrdersState {
                         size = size.saturating_add(order.size);
                     }
                 }
-                OrderBookLevel { price: *price, size }
+                OrderBookLevel {
+                    price: *price,
+                    size,
+                }
             })
             .collect()
     }
@@ -618,20 +652,37 @@ impl PrimeOrdersState {
         total
     }
 
-    fn apply_fill(&mut self, market: MarketId, buyer: Address, seller: Address, size: U256, price: U256) {
+    fn apply_fill(
+        &mut self,
+        market: MarketId,
+        buyer: Address,
+        seller: Address,
+        size: U256,
+        price: U256,
+    ) {
         if let Some(market_data) = self.markets.get_mut(&market) {
             market_data.last_price = price;
         }
         let fill_i128 = u256_to_i128(size);
 
         Self::update_position_vwap(
-            self.accounts.entry(buyer).or_default().positions.entry(market).or_default(),
+            self.accounts
+                .entry(buyer)
+                .or_default()
+                .positions
+                .entry(market)
+                .or_default(),
             fill_i128,
             price,
         );
 
         Self::update_position_vwap(
-            self.accounts.entry(seller).or_default().positions.entry(market).or_default(),
+            self.accounts
+                .entry(seller)
+                .or_default()
+                .positions
+                .entry(market)
+                .or_default(),
             -fill_i128,
             price,
         );
@@ -677,7 +728,13 @@ impl PrimeOrdersState {
         }
     }
 
-    fn projected_position_size(&self, account: Address, market: MarketId, side: Side, fill: U256) -> i128 {
+    fn projected_position_size(
+        &self,
+        account: Address,
+        market: MarketId,
+        side: Side,
+        fill: U256,
+    ) -> i128 {
         let current = self
             .accounts
             .get(&account)
@@ -743,9 +800,9 @@ impl PrimeOrdersState {
         let mut equity = u256_to_i128(account.collateral);
         for (market_id, position) in &account.positions {
             let mark = self.mark_price(*market_id, position.entry_price);
-            let pnl = position
-                .size
-                .saturating_mul(u256_to_i128(mark).saturating_sub(u256_to_i128(position.entry_price)));
+            let pnl = position.size.saturating_mul(
+                u256_to_i128(mark).saturating_sub(u256_to_i128(position.entry_price)),
+            );
             equity = equity.saturating_add(pnl);
         }
         equity
@@ -775,7 +832,13 @@ impl PrimeOrdersState {
     fn mark_price(&self, market: MarketId, fallback: U256) -> U256 {
         self.markets
             .get(&market)
-            .map(|m| if m.last_price.is_zero() { fallback } else { m.last_price })
+            .map(|m| {
+                if m.last_price.is_zero() {
+                    fallback
+                } else {
+                    m.last_price
+                }
+            })
             .unwrap_or(fallback)
     }
 }

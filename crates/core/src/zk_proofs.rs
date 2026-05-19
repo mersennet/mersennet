@@ -4,7 +4,7 @@
 //! Supports mock prover for testing and extensible interface for future STARK/SNARK backends.
 
 use anyhow::Result;
-use revm::primitives::{keccak256, B256};
+use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -107,15 +107,10 @@ impl StateProver for MockProver {
         block_hash: B256,
         tx_count: u64,
     ) -> Result<StateTransitionProof> {
-        let proof_data = Self::compute_proof_hash(
-            prev_root,
-            new_root,
-            block_height,
-            block_hash,
-            tx_count,
-        )
-        .0
-        .to_vec();
+        let proof_data =
+            Self::compute_proof_hash(prev_root, new_root, block_height, block_hash, tx_count)
+                .0
+                .to_vec();
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -145,8 +140,8 @@ impl StateProver for MockProver {
             proof.tx_count,
         );
 
-        let valid = proof.proof_data.len() == 32
-            && proof.proof_data.as_slice() == expected.as_slice();
+        let valid =
+            proof.proof_data.len() == 32 && proof.proof_data.as_slice() == expected.as_slice();
 
         let verification_time_ms = start.elapsed().as_secs_f64() * 1000.0;
 

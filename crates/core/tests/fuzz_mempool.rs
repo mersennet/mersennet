@@ -1,7 +1,7 @@
 use prime_chain::engine::Transaction;
 use prime_chain::mempool::Mempool;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use revm::primitives::{Address, Bytes, U256};
 
 #[test]

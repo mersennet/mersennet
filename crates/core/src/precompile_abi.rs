@@ -1,4 +1,4 @@
-use revm::primitives::{keccak256, Address, U256};
+use revm::primitives::{Address, U256, keccak256};
 
 /// Precompile address: 0x0000000000000000000000000000000000000100
 pub const PRIME_ORDERS_PRECOMPILE: Address = {

@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
-use k256::ecdsa::{RecoveryId, Signature, SigningKey, VerifyingKey};
+use anyhow::{Result, anyhow};
 use k256::ecdsa::signature::hazmat::PrehashSigner;
-use revm::primitives::{keccak256, Address, B256, U256};
+use k256::ecdsa::{RecoveryId, Signature, SigningKey, VerifyingKey};
+use revm::primitives::{Address, B256, U256, keccak256};
 use sha3::{Digest, Keccak256};
 
 use crate::engine::Transaction;
@@ -70,17 +70,18 @@ pub fn recover_signer(signed_tx: &SignedTransaction) -> Result<Address> {
         .checked_sub(35 + chain_id * 2)
         .ok_or_else(|| anyhow!("invalid v value: {v_u64}"))?;
 
-    let recovery_id =
-        RecoveryId::try_from(recovery_byte as u8).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+    let recovery_id = RecoveryId::try_from(recovery_byte as u8)
+        .map_err(|e| anyhow!("invalid recovery id: {e}"))?;
 
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signed_tx.r.to_be_bytes::<32>());
     sig_bytes[32..64].copy_from_slice(&signed_tx.s.to_be_bytes::<32>());
-    let signature =
-        Signature::from_bytes((&sig_bytes).into()).map_err(|e| anyhow!("invalid signature: {e}"))?;
+    let signature = Signature::from_bytes((&sig_bytes).into())
+        .map_err(|e| anyhow!("invalid signature: {e}"))?;
 
-    let verifying_key = VerifyingKey::recover_from_prehash(hash.as_slice(), &signature, recovery_id)
-        .map_err(|e| anyhow!("ECDSA recovery failed: {e}"))?;
+    let verifying_key =
+        VerifyingKey::recover_from_prehash(hash.as_slice(), &signature, recovery_id)
+            .map_err(|e| anyhow!("ECDSA recovery failed: {e}"))?;
 
     Ok(public_key_to_address(&verifying_key))
 }
@@ -95,7 +96,7 @@ fn public_key_to_address(key: &VerifyingKey) -> Address {
 
 /// Derive the Ethereum-style address for a signing key.
 pub fn address_from_signing_key(key: &SigningKey) -> Address {
-    public_key_to_address(&key.verifying_key())
+    public_key_to_address(key.verifying_key())
 }
 
 /// Decode raw signed transaction bytes (Prime Chain format) into a SignedTransaction.
@@ -157,10 +158,7 @@ pub fn decode_raw_signed_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         s,
     };
     let from = recover_signer(&signed_temp)?;
-    let tx = Transaction {
-        from,
-        ..tx
-    };
+    let tx = Transaction { from, ..tx };
     Ok(SignedTransaction {
         tx,
         v: U256::from(v),

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use revm::primitives::{Address, U256};
 use std::collections::HashMap;
 

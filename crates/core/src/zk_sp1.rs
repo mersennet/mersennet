@@ -3,11 +3,9 @@
 //! Production-ready interface for SP1-compatible proofs. Uses a deterministic
 //! simulation in mock mode; can be swapped to real SP1 SDK when deployed.
 
+use crate::zk_proofs::{ProofType, ProofVerificationResult, StateProver, StateTransitionProof};
 use anyhow::Result;
-use crate::zk_proofs::{
-    ProofType, ProofVerificationResult, StateProver, StateTransitionProof,
-};
-use revm::primitives::{keccak256, B256};
+use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -117,13 +115,8 @@ impl SP1Prover {
         block_hash: B256,
         tx_count: u64,
     ) -> SP1Proof {
-        let proof_bytes = Self::compute_mock_proof_bytes(
-            prev_root,
-            new_root,
-            block_height,
-            block_hash,
-            tx_count,
-        );
+        let proof_bytes =
+            Self::compute_mock_proof_bytes(prev_root, new_root, block_height, block_hash, tx_count);
 
         let output = SP1ProgramOutput {
             prev_state_root: prev_root,
@@ -163,15 +156,9 @@ impl StateProver for SP1Prover {
         block_hash: B256,
         tx_count: u64,
     ) -> Result<StateTransitionProof> {
-        let sp1_proof = self.prove_mock(
-            prev_root,
-            new_root,
-            block_height,
-            block_hash,
-            tx_count,
-        );
+        let sp1_proof = self.prove_mock(prev_root, new_root, block_height, block_hash, tx_count);
 
-        let proof_data = bincode::serialize(&sp1_proof).unwrap_or_else(|_| sp1_proof.proof_bytes);
+        let proof_data = bincode::serialize(&sp1_proof).unwrap_or(sp1_proof.proof_bytes);
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -247,8 +234,7 @@ impl SP1ProofVerifier {
             expected.tx_count,
         );
 
-        sp1_proof.proof_bytes == computed
-            && sp1_proof.public_values.len() > 0
+        sp1_proof.proof_bytes == computed && !sp1_proof.public_values.is_empty()
     }
 }
 
@@ -291,22 +277,27 @@ impl SP1BatchAggregator {
         let first_output = bincode::deserialize::<SP1ProgramOutput>(&first.public_values).ok();
         let last_output = bincode::deserialize::<SP1ProgramOutput>(&last.public_values).ok();
 
-        let (prev_state_root, new_state_root, block_hash, tx_count) = match (&first_output, &last_output) {
-            (Some(f), Some(l)) => (
-                f.prev_state_root,
-                l.new_state_root,
-                l.block_hash,
-                batch.iter().filter_map(|p| {
-                    bincode::deserialize::<SP1ProgramOutput>(&p.public_values).ok()
-                }).map(|o| o.tx_count).sum(),
-            ),
-            _ => (
-                first.vkey_hash,
-                last.vkey_hash,
-                last.vkey_hash,
-                batch.len() as u64,
-            ),
-        };
+        let (prev_state_root, new_state_root, block_hash, tx_count) =
+            match (&first_output, &last_output) {
+                (Some(f), Some(l)) => (
+                    f.prev_state_root,
+                    l.new_state_root,
+                    l.block_hash,
+                    batch
+                        .iter()
+                        .filter_map(|p| {
+                            bincode::deserialize::<SP1ProgramOutput>(&p.public_values).ok()
+                        })
+                        .map(|o| o.tx_count)
+                        .sum(),
+                ),
+                _ => (
+                    first.vkey_hash,
+                    last.vkey_hash,
+                    last.vkey_hash,
+                    batch.len() as u64,
+                ),
+            };
 
         let mut combined = Vec::new();
         for p in &batch {
