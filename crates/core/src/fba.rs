@@ -168,10 +168,7 @@ impl BatchAuction {
                 })
                 .collect()
         } else {
-            eligible_buys
-                .iter()
-                .map(|o| (o.owner, o.size))
-                .collect()
+            eligible_buys.iter().map(|o| (o.owner, o.size)).collect()
         };
 
         let sell_fills: Vec<(Address, U256)> = if total_supply > total_demand {
@@ -187,10 +184,7 @@ impl BatchAuction {
                 })
                 .collect()
         } else {
-            eligible_sells
-                .iter()
-                .map(|o| (o.owner, o.size))
-                .collect()
+            eligible_sells.iter().map(|o| (o.owner, o.size)).collect()
         };
 
         // Pair buyers with sellers to produce fills
@@ -241,28 +235,29 @@ impl BatchAuction {
             .fold(U256::ZERO, |acc, f| acc.saturating_add(f.size));
 
         // Partition remaining orders into unmatched
-        let matched_buy_addrs: HashMap<Address, U256> = buy_fills
-            .iter()
-            .fold(HashMap::new(), |mut map, (addr, qty)| {
-                *map.entry(*addr).or_insert(U256::ZERO) = map
-                    .get(addr)
-                    .unwrap_or(&U256::ZERO)
-                    .saturating_add(*qty);
-                map
-            });
-        let matched_sell_addrs: HashMap<Address, U256> = sell_fills
-            .iter()
-            .fold(HashMap::new(), |mut map, (addr, qty)| {
-                *map.entry(*addr).or_insert(U256::ZERO) = map
-                    .get(addr)
-                    .unwrap_or(&U256::ZERO)
-                    .saturating_add(*qty);
-                map
-            });
+        let matched_buy_addrs: HashMap<Address, U256> =
+            buy_fills
+                .iter()
+                .fold(HashMap::new(), |mut map, (addr, qty)| {
+                    *map.entry(*addr).or_insert(U256::ZERO) =
+                        map.get(addr).unwrap_or(&U256::ZERO).saturating_add(*qty);
+                    map
+                });
+        let matched_sell_addrs: HashMap<Address, U256> =
+            sell_fills
+                .iter()
+                .fold(HashMap::new(), |mut map, (addr, qty)| {
+                    *map.entry(*addr).or_insert(U256::ZERO) =
+                        map.get(addr).unwrap_or(&U256::ZERO).saturating_add(*qty);
+                    map
+                });
 
         let mut unmatched_buys = Vec::new();
         for order in &buys {
-            let filled = matched_buy_addrs.get(&order.owner).copied().unwrap_or(U256::ZERO);
+            let filled = matched_buy_addrs
+                .get(&order.owner)
+                .copied()
+                .unwrap_or(U256::ZERO);
             if order.size > filled {
                 let mut remaining = order.clone();
                 remaining.size = order.size.saturating_sub(filled);
@@ -272,7 +267,10 @@ impl BatchAuction {
 
         let mut unmatched_sells = Vec::new();
         for order in &sells {
-            let filled = matched_sell_addrs.get(&order.owner).copied().unwrap_or(U256::ZERO);
+            let filled = matched_sell_addrs
+                .get(&order.owner)
+                .copied()
+                .unwrap_or(U256::ZERO);
             if order.size > filled {
                 let mut remaining = order.clone();
                 remaining.size = order.size.saturating_sub(filled);

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use revm::primitives::{keccak256, Address, B256, Bytes};
+use revm::primitives::{Address, B256, Bytes, keccak256};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]

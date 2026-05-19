@@ -5,7 +5,7 @@
 
 #![allow(dead_code)]
 
-use revm::primitives::{keccak256, Address, B256, Bytes, U256};
+use revm::primitives::{Address, B256, Bytes, U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -124,8 +124,8 @@ pub enum AAError {
 
 /// Standard EntryPoint address: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
 pub const ENTRY_POINT_ADDRESS: Address = Address::new([
-    0x5F, 0xF1, 0x37, 0xD4, 0xb0, 0xFD, 0xCD, 0x49, 0xDc, 0xA3, 0x0c, 0x7C, 0xF5, 0x7E, 0x57,
-    0x8a, 0x02, 0x6d, 0x27, 0x89,
+    0x5F, 0xF1, 0x37, 0xD4, 0xb0, 0xFD, 0xCD, 0x49, 0xDC, 0xA3, 0x0c, 0x7C, 0xF5, 0x7E, 0x57, 0x8a,
+    0x02, 0x6d, 0x27, 0x89,
 ]);
 
 pub struct EntryPoint {
@@ -179,10 +179,10 @@ impl EntryPoint {
         } else {
             None
         };
-        if let Some(pm) = paymaster {
-            if !self.stakes.contains_key(&pm) {
-                return Err(AAError::PaymasterNotStaked);
-            }
+        if let Some(pm) = paymaster
+            && !self.stakes.contains_key(&pm)
+        {
+            return Err(AAError::PaymasterNotStaked);
         }
 
         let pre_fund = U256::from(op.pre_verification_gas)
@@ -198,11 +198,7 @@ impl EntryPoint {
         })
     }
 
-    pub fn handle_ops(
-        &mut self,
-        ops: Vec<UserOperation>,
-        chain_id: u64,
-    ) -> Vec<UserOpResult> {
+    pub fn handle_ops(&mut self, ops: Vec<UserOperation>, chain_id: u64) -> Vec<UserOpResult> {
         let mut results = Vec::with_capacity(ops.len());
         for op in ops {
             let op_hash = op.hash(self.address, chain_id);
@@ -212,7 +208,8 @@ impl EntryPoint {
                     results.push(UserOpResult {
                         op_hash,
                         success: true,
-                        gas_used: op.pre_verification_gas
+                        gas_used: op
+                            .pre_verification_gas
                             .saturating_add(op.verification_gas_limit)
                             .saturating_add(op.call_gas_limit),
                         error: None,
@@ -311,10 +308,7 @@ impl UserOpMempool {
         self.by_hash.clear();
         self.by_sender.clear();
         for (idx, op) in self.ops.iter().enumerate() {
-            self.by_sender
-                .entry(op.sender)
-                .or_default()
-                .push(idx);
+            self.by_sender.entry(op.sender).or_default().push(idx);
         }
     }
 
@@ -324,10 +318,7 @@ impl UserOpMempool {
         self.by_hash.clear();
         self.by_sender.clear();
         for (idx, op) in self.ops.iter().enumerate() {
-            self.by_sender
-                .entry(op.sender)
-                .or_default()
-                .push(idx);
+            self.by_sender.entry(op.sender).or_default().push(idx);
         }
         drained
     }
@@ -373,25 +364,15 @@ impl Bundler {
         }
     }
 
-    pub fn submit_op(
-        &mut self,
-        op: UserOperation,
-        chain_id: u64,
-    ) -> Result<B256, AAError> {
+    pub fn submit_op(&mut self, op: UserOperation, chain_id: u64) -> Result<B256, AAError> {
         self.entry_point.validate_user_op(&op, chain_id)?;
         let op_hash = op.hash(self.entry_point.address, chain_id);
-        self.mempool
-            .add(op, self.entry_point.address, chain_id)?;
+        self.mempool.add(op, self.entry_point.address, chain_id)?;
         Ok(op_hash)
     }
 
-    pub fn create_bundle(
-        &mut self,
-        beneficiary: Address,
-    ) -> Option<BundleTransaction> {
-        let ops = self
-            .mempool
-            .drain_ready(self.max_bundle_size);
+    pub fn create_bundle(&mut self, beneficiary: Address) -> Option<BundleTransaction> {
+        let ops = self.mempool.drain_ready(self.max_bundle_size);
         if ops.is_empty() {
             return None;
         }
