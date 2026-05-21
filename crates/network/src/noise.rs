@@ -1,7 +1,7 @@
 //! Noise Protocol encryption for Prime Chain P2P networking.
 //! Uses Noise_XX_25519_ChaChaPoly_BLAKE2s (same pattern as libp2p, WireGuard).
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -102,11 +102,7 @@ impl NoiseTransport {
 
     /// Initiate Noise_XX handshake as initiator.
     #[allow(dead_code)]
-    pub fn handshake_initiator(
-        &mut self,
-        peer: SocketAddr,
-        stream: &mut TcpStream,
-    ) -> Result<()> {
+    pub fn handshake_initiator(&mut self, peer: SocketAddr, stream: &mut TcpStream) -> Result<()> {
         let mut handshake = snow::Builder::new(NOISE_PATTERN.parse().unwrap())
             .local_private_key(&self.keypair.private_key)
             .build_initiator()
@@ -146,11 +142,7 @@ impl NoiseTransport {
 
     /// Accept Noise_XX handshake as responder.
     #[allow(dead_code)]
-    pub fn handshake_responder(
-        &mut self,
-        peer: SocketAddr,
-        stream: &mut TcpStream,
-    ) -> Result<()> {
+    pub fn handshake_responder(&mut self, peer: SocketAddr, stream: &mut TcpStream) -> Result<()> {
         let mut handshake = snow::Builder::new(NOISE_PATTERN.parse().unwrap())
             .local_private_key(&self.keypair.private_key)
             .build_responder()

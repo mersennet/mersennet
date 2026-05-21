@@ -1,16 +1,16 @@
 //! Load test tool for Prime Chain.
 //! Generates transactions at configurable rates against a running node.
 
-use std::time::{Duration, Instant};
-use std::thread;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use k256::ecdsa::SigningKey;
 use prime_chain::crypto::{address_from_signing_key, encode_raw_signed_tx, sign_transaction};
 use prime_chain::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const DEFAULT_RPC: &str = "http://127.0.0.1:8545";
 const DEFAULT_RATE: u64 = 100;
@@ -32,10 +32,7 @@ fn main() {
     };
 
     let accounts = generate_accounts(args.accounts);
-    println!(
-        "[SETUP] Generated {} test accounts",
-        accounts.len()
-    );
+    println!("[SETUP] Generated {} test accounts", accounts.len());
 
     if let Err(e) = fund_accounts(&args.rpc, &accounts, chain_id) {
         eprintln!("[WARN] Account funding: {}", e);
@@ -96,11 +93,26 @@ fn parse_args() -> Args {
             }
             "--help" | "-h" => {
                 println!("Usage: loadtest [OPTIONS]");
-                println!("  --rpc URL          RPC endpoint (default: {})", DEFAULT_RPC);
-                println!("  --rate TPS         Target TPS (default: {})", DEFAULT_RATE);
-                println!("  --duration SECS    Test duration (default: {})", DEFAULT_DURATION);
-                println!("  --accounts N       Test accounts (default: {})", DEFAULT_ACCOUNTS);
-                println!("  --mode MODE        transfer|clob|mixed (default: {})", DEFAULT_MODE);
+                println!(
+                    "  --rpc URL          RPC endpoint (default: {})",
+                    DEFAULT_RPC
+                );
+                println!(
+                    "  --rate TPS         Target TPS (default: {})",
+                    DEFAULT_RATE
+                );
+                println!(
+                    "  --duration SECS    Test duration (default: {})",
+                    DEFAULT_DURATION
+                );
+                println!(
+                    "  --accounts N       Test accounts (default: {})",
+                    DEFAULT_ACCOUNTS
+                );
+                println!(
+                    "  --mode MODE        transfer|clob|mixed (default: {})",
+                    DEFAULT_MODE
+                );
                 std::process::exit(0);
             }
             _ => {}
@@ -167,7 +179,10 @@ fn generate_accounts(n: usize) -> Vec<Arc<TestAccount>> {
 }
 
 fn fund_accounts(rpc: &str, accounts: &[Arc<TestAccount>], chain_id: u64) -> Result<(), String> {
-    println!("[SETUP] Funding {} accounts via prime_sendTransaction...", accounts.len());
+    println!(
+        "[SETUP] Funding {} accounts via prime_sendTransaction...",
+        accounts.len()
+    );
     for account in accounts {
         let addr_hex = format!("0x{}", hex::encode(account.address.as_slice()));
         let tx_obj = json!({
@@ -202,17 +217,15 @@ fn run_load_test(args: &Args, accounts: &[Arc<TestAccount>], chain_id: u64) -> L
     let start_block = get_block_number(&args.rpc);
     let start = Instant::now();
     let duration = Duration::from_secs(args.duration);
-    let interval = if args.rate > 0 {
-        Duration::from_micros(1_000_000 / args.rate)
-    } else {
-        Duration::from_secs(1)
-    };
+    let interval = 1_000_000u64
+        .checked_div(args.rate)
+        .map(Duration::from_micros)
+        .unwrap_or(Duration::from_secs(1));
 
     let submitted = Arc::new(AtomicU64::new(0));
     let confirmed = Arc::new(AtomicU64::new(0));
     let failed = Arc::new(AtomicU64::new(0));
-    let latencies: Arc<std::sync::Mutex<Vec<u64>>> =
-        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let latencies: Arc<std::sync::Mutex<Vec<u64>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
 
     let progress_submitted = submitted.clone();
     let progress_confirmed = confirmed.clone();
@@ -245,7 +258,10 @@ fn run_load_test(args: &Args, accounts: &[Arc<TestAccount>], chain_id: u64) -> L
         }
     });
 
-    println!("[LOAD] Starting {} mode for {}s at {} TPS", args.mode, args.duration, args.rate);
+    println!(
+        "[LOAD] Starting {} mode for {}s at {} TPS",
+        args.mode, args.duration, args.rate
+    );
 
     let mut tx_count = 0u64;
     while start.elapsed() < duration {
@@ -351,7 +367,7 @@ fn send_clob_order(
     seq: u64,
 ) -> Result<String, String> {
     let addr_hex = format!("0x{}", hex::encode(account.address.as_slice()));
-    let side = if seq % 2 == 0 { "buy" } else { "sell" };
+    let side = if seq.is_multiple_of(2) { "buy" } else { "sell" };
     let price = 1000 + (seq % 100);
     let quantity = 1 + (seq % 10);
 
@@ -375,8 +391,8 @@ fn send_contract_deploy(
     chain_id: u64,
 ) -> Result<String, String> {
     let bytecode = vec![
-        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
-        0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a, 0x60,
+        0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
     ];
 
     let tx = Transaction {
@@ -476,7 +492,9 @@ fn rpc_call(rpc: &str, method: &str, params: Value) -> Result<Value, String> {
         .set("Content-Type", "application/json")
         .send_string(&body.to_string())
         .map_err(|e| format!("RPC request failed: {}", e))?;
-    let text = resp.into_string().map_err(|e| format!("read body: {}", e))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("read body: {}", e))?;
     let json: Value = serde_json::from_str(&text).map_err(|e| format!("parse JSON: {}", e))?;
     if let Some(err) = json.get("error") {
         return Err(format!("RPC error: {}", err));

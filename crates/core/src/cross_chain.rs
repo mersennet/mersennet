@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use revm::primitives::{keccak256, Address, B256, U256};
+use revm::primitives::{Address, B256, U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -192,10 +192,7 @@ impl CrossChainBridge {
     }
 
     pub fn add_supported_token(&mut self, chain: ChainId, config: TokenConfig) {
-        self.supported_tokens
-            .entry(chain)
-            .or_default()
-            .push(config);
+        self.supported_tokens.entry(chain).or_default().push(config);
     }
 
     pub fn add_relayer(&mut self, address: Address) {
@@ -212,7 +209,12 @@ impl CrossChainBridge {
             .and_then(|configs| configs.iter().find(|c| &c.address == token))
     }
 
-    fn validate_deposit(&self, source_chain: &ChainId, token: &Address, amount: U256) -> Result<(), BridgeError> {
+    fn validate_deposit(
+        &self,
+        source_chain: &ChainId,
+        token: &Address,
+        amount: U256,
+    ) -> Result<(), BridgeError> {
         if !self.supported_chains.contains(source_chain) {
             return Err(BridgeError::UnsupportedChain(source_chain.clone()));
         }
@@ -259,6 +261,7 @@ impl CrossChainBridge {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn initiate_deposit(
         &mut self,
         source_chain: ChainId,
@@ -274,10 +277,7 @@ impl CrossChainBridge {
             return Err(BridgeError::UnsupportedChain(dest_chain));
         }
 
-        let nonce = self
-            .next_nonce
-            .entry(source_chain.clone())
-            .or_insert(0);
+        let nonce = self.next_nonce.entry(source_chain.clone()).or_insert(0);
         let n = *nonce;
         *nonce = nonce.saturating_add(1);
 
@@ -366,10 +366,7 @@ impl CrossChainBridge {
             return Err(BridgeError::UnsupportedChain(dest_chain));
         }
 
-        let nonce = self
-            .next_nonce
-            .entry(source_chain.clone())
-            .or_insert(0);
+        let nonce = self.next_nonce.entry(source_chain.clone()).or_insert(0);
         let n = *nonce;
         *nonce = nonce.saturating_add(1);
 

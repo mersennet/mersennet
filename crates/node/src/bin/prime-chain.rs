@@ -1,19 +1,18 @@
 use k256::ecdsa::SigningKey;
-use prime_chain::config::{load_config, parse_address, parse_u256, AppConfig};
+use prime_chain::config::{AppConfig, load_config, parse_address, parse_u256};
 use prime_chain::consensus::ValidatorChange;
 use prime_chain::engine::{Engine, Transaction};
 use prime_chain::governance::{Governance, ProposalKind};
 use prime_chain::identity::load_or_create_identity;
-use prime_chain_network::net_transport::{GossipConfig, TcpSync, UdpGossip};
 use prime_chain::network::{Message, RoundStage};
-use prime_chain_network::p2p::{NetworkNode, Node, P2pMessage, P2pNetwork};
 use prime_chain::prometheus;
+use prime_chain_network::net_transport::{GossipConfig, TcpSync, UdpGossip};
+use prime_chain_network::p2p::{NetworkNode, Node, P2pMessage, P2pNetwork};
 use prime_chain_rpc::{rpc, ws};
-use revm::primitives::{keccak256, Address, Bytes, U256};
+use revm::primitives::{Address, Bytes, U256, keccak256};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::info;
-use tracing_subscriber;
 
 fn main() -> anyhow::Result<()> {
     // initialize structured tracing from env and install Prometheus metrics
@@ -200,8 +199,7 @@ fn main() -> anyhow::Result<()> {
             }
 
             if is_validator {
-                let block_time =
-                    std::time::Duration::from_millis(app_config.p2p.block_time_ms);
+                let block_time = std::time::Duration::from_millis(app_config.p2p.block_time_ms);
                 let eng = engine.clone();
                 let net = network.clone();
                 let shutdown_producer = Arc::clone(&shutdown);
@@ -444,34 +442,33 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn start_config_watcher(
-    engine: Arc<Mutex<Engine>>,
-    config_path: String,
-) -> anyhow::Result<()> {
+fn start_config_watcher(engine: Arc<Mutex<Engine>>, config_path: String) -> anyhow::Result<()> {
     let mut last_modified = std::fs::metadata(&config_path)
         .and_then(|meta| meta.modified())
         .ok();
 
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        let Ok(meta) = std::fs::metadata(&config_path) else {
-            continue;
-        };
-        let Ok(modified) = meta.modified() else {
-            continue;
-        };
-        if last_modified.map(|prev| prev >= modified).unwrap_or(false) {
-            continue;
-        }
-        last_modified = Some(modified);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let Ok(meta) = std::fs::metadata(&config_path) else {
+                continue;
+            };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
+            if last_modified.map(|prev| prev >= modified).unwrap_or(false) {
+                continue;
+            }
+            last_modified = Some(modified);
 
-        let Ok(config) = load_config(&config_path) else {
-            continue;
-        };
-        if let Ok(mut engine) = engine.lock() {
-            apply_runtime_config(&mut engine, &config);
+            let Ok(config) = load_config(&config_path) else {
+                continue;
+            };
+            if let Ok(mut engine) = engine.lock() {
+                apply_runtime_config(&mut engine, &config);
+            }
+            tracing::info!(path = %config_path, "config hot-reloaded");
         }
-        tracing::info!(path = %config_path, "config hot-reloaded");
     });
 
     Ok(())
@@ -489,10 +486,7 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
         config.engine.fee_max_change_denominator,
     );
     engine.set_round_timeout_ms(config.slashing.round_timeout_ms);
-    engine.set_slashing_bps(
-        config.slashing.double_sign_bps,
-        config.slashing.timeout_bps,
-    );
+    engine.set_slashing_bps(config.slashing.double_sign_bps, config.slashing.timeout_bps);
     engine.set_slashing_escalation(
         config.slashing.escalation_step_bps,
         config.slashing.escalation_max_bps,
@@ -552,11 +546,14 @@ fn handle_snapshot_cli(engine: &mut Engine, cli: &CliConfig) -> anyhow::Result<b
         let meta = engine.evm.state.import_snapshot_bytes(&snapshot)?;
         engine.evm.db = revm::db::InMemoryDB::default();
         engine.evm.state.load_into_db(&mut engine.evm.db)?;
-        engine.evm.state.load_prime_orders(&mut engine.orders.state)?;
         engine
             .evm
             .state
-            .load_bridge_queues(&mut engine.bridge.orders_to_evm, &mut engine.bridge.evm_to_orders)?;
+            .load_prime_orders(&mut engine.orders.state)?;
+        engine.evm.state.load_bridge_queues(
+            &mut engine.bridge.orders_to_evm,
+            &mut engine.bridge.evm_to_orders,
+        )?;
         engine.chain.clear();
         engine.block_number = meta.height.saturating_add(1);
         info!("snapshot imported at height {}", meta.height);
@@ -617,24 +614,24 @@ fn read_cli_config() -> CliConfig {
                 }
             }
             "--mempool-max" => {
-                if let Some(value) = args.next() {
-                    if let Ok(parsed) = value.parse() {
-                        config.mempool_max = Some(parsed);
-                    }
+                if let Some(value) = args.next()
+                    && let Ok(parsed) = value.parse()
+                {
+                    config.mempool_max = Some(parsed);
                 }
             }
             "--mempool-per-sender" => {
-                if let Some(value) = args.next() {
-                    if let Ok(parsed) = value.parse() {
-                        config.mempool_per_sender = Some(parsed);
-                    }
+                if let Some(value) = args.next()
+                    && let Ok(parsed) = value.parse()
+                {
+                    config.mempool_per_sender = Some(parsed);
                 }
             }
             "--mempool-bump-bps" => {
-                if let Some(value) = args.next() {
-                    if let Ok(parsed) = value.parse() {
-                        config.mempool_bump_bps = Some(parsed);
-                    }
+                if let Some(value) = args.next()
+                    && let Ok(parsed) = value.parse()
+                {
+                    config.mempool_bump_bps = Some(parsed);
                 }
             }
             "--rpc" => {
@@ -672,17 +669,17 @@ fn read_cli_config() -> CliConfig {
                 }
             }
             "--snapshot-chunk-size" => {
-                if let Some(value) = args.next() {
-                    if let Ok(parsed) = value.parse() {
-                        config.snapshot_chunk_size = Some(parsed);
-                    }
+                if let Some(value) = args.next()
+                    && let Ok(parsed) = value.parse()
+                {
+                    config.snapshot_chunk_size = Some(parsed);
                 }
             }
             "--snapshot-max-bytes" => {
-                if let Some(value) = args.next() {
-                    if let Ok(parsed) = value.parse() {
-                        config.snapshot_max_bytes = Some(parsed);
-                    }
+                if let Some(value) = args.next()
+                    && let Ok(parsed) = value.parse()
+                {
+                    config.snapshot_max_bytes = Some(parsed);
                 }
             }
             "--node-key-path" => {
@@ -812,8 +809,8 @@ fn run_devnet_demo(
     // Simple contract that returns 0x2a (42) for any call.
     // Creation bytecode: deploys runtime bytecode 0x602a60005260206000f3.
     let contract_creation = Bytes::from_static(&[
-        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
-        0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a, 0x60,
+        0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
     ]);
 
     engine.deploy_contract(
@@ -830,28 +827,38 @@ fn run_devnet_demo(
     let exec_block = engine.execute_block()?;
 
     let total_stake = engine.consensus.total_stake();
-    let tally = governance.execute(proposal_id, exec_block.number, exec_block.finalized, total_stake, |kind| match kind {
-        ProposalKind::SetFeeMarket {
-            gas_limit_per_block,
-            elasticity_multiplier,
-            max_change_denominator,
-        } => {
-            engine.set_fee_market_params(
-                *gas_limit_per_block,
-                *elasticity_multiplier,
-                *max_change_denominator,
-            );
-            Ok(())
-        }
-        ProposalKind::SetTokenEconomics {
-            max_supply,
-            initial_reward_per_block,
-            halving_interval,
-        } => {
-            engine.set_token_economics(*max_supply, *initial_reward_per_block, *halving_interval);
-            Ok(())
-        }
-    })?;
+    let tally = governance.execute(
+        proposal_id,
+        exec_block.number,
+        exec_block.finalized,
+        total_stake,
+        |kind| match kind {
+            ProposalKind::SetFeeMarket {
+                gas_limit_per_block,
+                elasticity_multiplier,
+                max_change_denominator,
+            } => {
+                engine.set_fee_market_params(
+                    *gas_limit_per_block,
+                    *elasticity_multiplier,
+                    *max_change_denominator,
+                );
+                Ok(())
+            }
+            ProposalKind::SetTokenEconomics {
+                max_supply,
+                initial_reward_per_block,
+                halving_interval,
+            } => {
+                engine.set_token_economics(
+                    *max_supply,
+                    *initial_reward_per_block,
+                    *halving_interval,
+                );
+                Ok(())
+            }
+        },
+    )?;
     info!(
         "block {}: chain_id={} txs={} gas_used={} gas_limit={} base_fee={} coinbase=0x{}",
         block.number,
@@ -865,10 +872,7 @@ fn run_devnet_demo(
     info!("state root: 0x{}", hex::encode(block.state_root));
     info!(
         "governance: yes={} no={} quorum={} passed={}",
-        tally.yes_stake,
-        tally.no_stake,
-        tally.quorum_reached,
-        tally.passed
+        tally.yes_stake, tally.no_stake, tally.quorum_reached, tally.passed
     );
     info!("governance: total_stake={}", tally.total_stake);
     if let Some(proposal) = governance.proposal(proposal_id) {
@@ -916,7 +920,10 @@ fn run_devnet_demo(
             );
         }
     }
-    info!("consensus block_hash=0x{}", hex::encode(block.consensus.block_hash));
+    info!(
+        "consensus block_hash=0x{}",
+        hex::encode(block.consensus.block_hash)
+    );
     if let Some(first_vote) = block.consensus.votes.first() {
         info!(
             "first vote: validator=0x{} block_hash=0x{} stake={}",
@@ -1099,10 +1106,14 @@ fn run_network_demo(peer_store_path: &str) -> anyhow::Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
 
-    if let Some(mut stream) = server_stream {
-        if let Some(packet) = TcpSync::recv_packet(&mut stream)? {
-            info!("tcp sync: topic={} bytes={}", packet.topic, packet.data.len());
-        }
+    if let Some(mut stream) = server_stream
+        && let Some(packet) = TcpSync::recv_packet(&mut stream)?
+    {
+        info!(
+            "tcp sync: topic={} bytes={}",
+            packet.topic,
+            packet.data.len()
+        );
     }
 
     Ok(())

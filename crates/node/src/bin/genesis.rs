@@ -24,7 +24,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n = args.validators;
     let chain_id = args.chain_id;
 
-    println!("==> Generating genesis for {} validators (chain_id={})", n, chain_id);
+    println!(
+        "==> Generating genesis for {} validators (chain_id={})",
+        n, chain_id
+    );
 
     let mut validator_addresses = Vec::new();
 
@@ -34,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(
             &key_path,
             serde_json::to_string_pretty(&serde_json::json!({
-                "private_key": format!("0x{}", hex::encode(signing_key.to_bytes().to_vec())),
+                "private_key": format!("0x{}", hex::encode(signing_key.to_bytes())),
             }))?,
         )?;
         let addr_hex = format!("0x{}", hex::encode(address.as_slice()));
@@ -68,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(
         &faucet_key_path,
         serde_json::to_string_pretty(&serde_json::json!({
-            "private_key": format!("0x{}", hex::encode(faucet_key.to_bytes().to_vec())),
+            "private_key": format!("0x{}", hex::encode(faucet_key.to_bytes())),
         }))?,
     )?;
     genesis_accounts.push(serde_json::json!({
@@ -197,7 +200,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  faucet:     {} (for testnet faucet)", faucet_addr_hex);
     println!();
     println!("To start the testnet:");
-    println!("  cd {} && docker compose up -d --build", output_dir.display());
+    println!(
+        "  cd {} && docker compose up -d --build",
+        output_dir.display()
+    );
     println!();
 
     Ok(())
@@ -234,9 +240,18 @@ fn parse_args() -> Args {
             }
             "--help" | "-h" => {
                 println!("Usage: genesis [OPTIONS]");
-                println!("  --validators N    Number of validators (default: {})", DEFAULT_VALIDATORS);
-                println!("  --chain-id ID    Chain ID (default: {})", DEFAULT_CHAIN_ID);
-                println!("  --output-dir DIR Output directory (default: {})", DEFAULT_OUTPUT_DIR);
+                println!(
+                    "  --validators N    Number of validators (default: {})",
+                    DEFAULT_VALIDATORS
+                );
+                println!(
+                    "  --chain-id ID    Chain ID (default: {})",
+                    DEFAULT_CHAIN_ID
+                );
+                println!(
+                    "  --output-dir DIR Output directory (default: {})",
+                    DEFAULT_OUTPUT_DIR
+                );
                 std::process::exit(0);
             }
             _ => {}

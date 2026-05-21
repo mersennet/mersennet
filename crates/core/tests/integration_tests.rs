@@ -7,7 +7,7 @@ use prime_chain::commit_reveal::CommitRevealError;
 use prime_chain::engine::{Engine, Transaction};
 use prime_chain::fba::BatchOrder;
 use prime_chain::prime_orders::{Side, TimeInForce};
-use revm::primitives::{keccak256, Address, B256, Bytes, U256};
+use revm::primitives::{Address, B256, Bytes, U256, keccak256};
 use std::time::Duration;
 use tempfile::tempdir;
 
@@ -33,7 +33,9 @@ fn redb_full_block_lifecycle() {
 
     engine.fund_account(alice, U256::from(1_000_000u64), 0);
     engine.fund_account(bob, U256::from(500_000u64), 0);
-    engine.add_validator(validator, U256::from(1000u64)).unwrap();
+    engine
+        .add_validator(validator, U256::from(1000u64))
+        .unwrap();
     engine.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
     engine
@@ -67,14 +69,13 @@ fn redb_prime_orders_full_cycle() {
     let taker = make_address(0x22);
     let validator = make_address(0x01);
 
-    engine.add_validator(validator, U256::from(1000u64)).unwrap();
+    engine
+        .add_validator(validator, U256::from(1000u64))
+        .unwrap();
     engine.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
-    let market_id = engine.prime_orders_add_market(
-        "PRIME-PERP",
-        U256::from(1u64),
-        U256::from(1u64),
-    );
+    let market_id =
+        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     engine.prime_orders_deposit_collateral(maker, U256::from(10_000u64));
     engine.prime_orders_deposit_collateral(taker, U256::from(10_000u64));
 
@@ -104,7 +105,9 @@ fn redb_prime_orders_full_cycle() {
     assert_eq!(outcome.filled, U256::from(3u64));
     assert_eq!(outcome.trades.len(), 1);
 
-    let book = engine.prime_orders_order_book(market_id).expect("order book");
+    let book = engine
+        .prime_orders_order_book(market_id)
+        .expect("order book");
     assert_eq!(book.asks[0].size, U256::from(2u64));
 
     let block = engine.execute_block().expect("block to persist");
@@ -125,7 +128,9 @@ fn redb_state_persistence_across_restart() {
 
         engine.fund_account(alice, U256::from(1_000_000u64), 0);
         engine.fund_account(bob, U256::from(500_000u64), 0);
-        engine.add_validator(validator, U256::from(1000u64)).unwrap();
+        engine
+            .add_validator(validator, U256::from(1000u64))
+            .unwrap();
         engine.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
         engine
@@ -158,7 +163,9 @@ fn parallel_execution_matches_sequential() {
 
     let validator = make_address(0x01);
     engine.fund_account(validator, U256::from(1000u64), 0);
-    engine.add_validator(validator, U256::from(1000u64)).unwrap();
+    engine
+        .add_validator(validator, U256::from(1000u64))
+        .unwrap();
     engine.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
     for i in 1..=10u8 {
@@ -191,7 +198,9 @@ fn parallel_execution_matches_sequential() {
     std::fs::create_dir_all(dir2.path()).ok();
     let mut engine2 = Engine::new_with_backend(7919, dir2.path(), "redb");
     engine2.fund_account(validator, U256::from(1000u64), 0);
-    engine2.add_validator(validator, U256::from(1000u64)).unwrap();
+    engine2
+        .add_validator(validator, U256::from(1000u64))
+        .unwrap();
     engine2.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
     for i in 1..=10u8 {
         engine2.fund_account(make_address(i), U256::from(10_000_000u64), 0);
@@ -296,9 +305,7 @@ fn mock_prover_roundtrip() {
 
 #[test]
 fn checkpoint_store_chain_verification() {
-    use prime_chain::zk_proofs::{
-        CheckpointStore, MockProver, ProofCheckpoint, StateProver,
-    };
+    use prime_chain::zk_proofs::{CheckpointStore, MockProver, ProofCheckpoint, StateProver};
 
     let prover = MockProver::new();
     let mut store = CheckpointStore::new(100);
@@ -372,11 +379,7 @@ fn fba_engine_full_auction_cycle() {
     std::fs::create_dir_all(dir.path()).ok();
     let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
 
-    let market_id = engine.prime_orders_add_market(
-        "BTC/USD",
-        U256::from(1u64),
-        U256::from(1u64),
-    );
+    let market_id = engine.prime_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
 
     let buyer = make_address(0x11);
     let seller = make_address(0x22);

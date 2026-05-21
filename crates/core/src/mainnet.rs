@@ -107,11 +107,7 @@ impl MainnetGuard {
     }
 
     /// Emergency halt. Only emergency contacts can halt.
-    pub fn emergency_halt(
-        &mut self,
-        reason: String,
-        caller: Address,
-    ) -> Result<(), MainnetError> {
+    pub fn emergency_halt(&mut self, reason: String, caller: Address) -> Result<(), MainnetError> {
         if !self.emergency_contacts.contains(&caller) {
             return Err(MainnetError::Unauthorized);
         }

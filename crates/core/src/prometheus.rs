@@ -56,10 +56,7 @@ impl MetricsRegistry {
             "prime_chain_base_fee_wei",
             "Current EIP-1559 base fee in wei"
         );
-        metrics::describe_gauge!(
-            "prime_chain_height",
-            "Latest committed block height"
-        );
+        metrics::describe_gauge!("prime_chain_height", "Latest committed block height");
 
         // -- Consensus --
         metrics::describe_counter!(
@@ -88,26 +85,14 @@ impl MetricsRegistry {
             "prime_chain_orders_submitted",
             "Total orders submitted to the order book"
         );
-        metrics::describe_counter!(
-            "prime_chain_orders_filled",
-            "Total orders fully filled"
-        );
-        metrics::describe_counter!(
-            "prime_chain_orders_cancelled",
-            "Total orders cancelled"
-        );
-        metrics::describe_counter!(
-            "prime_chain_trades_executed",
-            "Total trade fills executed"
-        );
+        metrics::describe_counter!("prime_chain_orders_filled", "Total orders fully filled");
+        metrics::describe_counter!("prime_chain_orders_cancelled", "Total orders cancelled");
+        metrics::describe_counter!("prime_chain_trades_executed", "Total trade fills executed");
         metrics::describe_gauge!(
             "prime_chain_insurance_fund_balance",
             "Insurance fund balance"
         );
-        metrics::describe_gauge!(
-            "prime_chain_markets_active",
-            "Number of active markets"
-        );
+        metrics::describe_gauge!("prime_chain_markets_active", "Number of active markets");
 
         // -- Mempool --
         metrics::describe_gauge!(
@@ -120,10 +105,7 @@ impl MetricsRegistry {
         );
 
         // -- RPC --
-        metrics::describe_counter!(
-            "prime_chain_rpc_requests",
-            "Total RPC requests by method"
-        );
+        metrics::describe_counter!("prime_chain_rpc_requests", "Total RPC requests by method");
         metrics::describe_counter!(
             "prime_chain_rpc_errors",
             "Total RPC errors by method and code"

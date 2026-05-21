@@ -1,7 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use revm::db::InMemoryDB;
-use revm::primitives::{keccak256, AccountInfo, Address, Bytes, Bytecode, B256, U256};
+use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, U256, keccak256};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
@@ -9,13 +9,11 @@ use std::sync::Mutex;
 use crate::bridge::BridgeQueue;
 use crate::engine::Block;
 use crate::prime_orders::{
-    AccountState, Market, MarketId, Order, OrderBook, OrderId, Position,
-    PrimeOrdersState,
+    AccountState, Market, MarketId, Order, OrderBook, OrderId, Position, PrimeOrdersState,
 };
 use crate::state::{
-    AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord,
-    MerkleTree, OrderBookRecord, OrderRecord, PositionRecord, PrimeOrdersSnapshot, SnapshotMeta,
-    SnapshotRecord, StateProof,
+    AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord, MerkleTree, OrderBookRecord,
+    OrderRecord, PositionRecord, PrimeOrdersSnapshot, SnapshotMeta, SnapshotRecord, StateProof,
     bytes_to_u256, decode_bridge_queue, decode_market_status, decode_side, decode_tif,
     encode_bridge_queue, encode_market_status, encode_side, encode_tif,
 };
@@ -80,7 +78,8 @@ impl RedbState {
                 let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
                 let keys: Vec<Vec<u8>> = {
                     let iter = accounts_table.iter()?;
-                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                        .collect()
                 };
                 for key in keys {
                     accounts_table.remove(key.as_slice())?;
@@ -90,7 +89,8 @@ impl RedbState {
                 let mut storage_table = write_txn.open_table(STORAGE)?;
                 let keys: Vec<Vec<u8>> = {
                     let iter = storage_table.iter()?;
-                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                        .collect()
                 };
                 for key in keys {
                     storage_table.remove(key.as_slice())?;
@@ -107,7 +107,10 @@ impl RedbState {
                             balance: info.balance.to_be_bytes(),
                             nonce: info.nonce,
                             code_hash: info.code_hash.into(),
-                            code: info.code.map(|code| code.bytes().to_vec()).unwrap_or_default(),
+                            code: info
+                                .code
+                                .map(|code| code.bytes().to_vec())
+                                .unwrap_or_default(),
                         };
                         let data = bincode::serialize(&record)?;
                         accounts_table.insert(address.as_slice(), data.as_slice())?;
@@ -167,8 +170,11 @@ impl RedbState {
                     };
 
                     let old_keys: Vec<Vec<u8>> = {
-                        let range = storage_table.range(range_start.as_slice()..range_end.as_slice())?;
-                        range.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                        let range =
+                            storage_table.range(range_start.as_slice()..range_end.as_slice())?;
+                        range
+                            .filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                            .collect()
                     };
                     for key in old_keys {
                         storage_table.remove(key.as_slice())?;
@@ -209,8 +215,11 @@ impl RedbState {
                     };
 
                     let old_keys: Vec<Vec<u8>> = {
-                        let range = storage_table.range(range_start.as_slice()..range_end.as_slice())?;
-                        range.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                        let range =
+                            storage_table.range(range_start.as_slice()..range_end.as_slice())?;
+                        range
+                            .filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                            .collect()
                     };
                     for key in old_keys {
                         storage_table.remove(key.as_slice())?;
@@ -230,13 +239,11 @@ impl RedbState {
         };
 
         for table_def in [ACCOUNTS, STORAGE, PRIME_ORDERS, BRIDGE_OTE, BRIDGE_ETO] {
-            if let Ok(table) = read_txn.open_table(table_def) {
-                if let Ok(iter) = table.iter() {
-                    for entry in iter {
-                        if let Ok((key, value)) = entry {
-                            items.push((key.value().to_vec(), value.value().to_vec()));
-                        }
-                    }
+            if let Ok(table) = read_txn.open_table(table_def)
+                && let Ok(iter) = table.iter()
+            {
+                for (key, value) in iter.flatten() {
+                    items.push((key.value().to_vec(), value.value().to_vec()));
                 }
             }
         }
@@ -529,7 +536,8 @@ impl StateBackend for RedbState {
             let mut ote_table = write_txn.open_table(BRIDGE_OTE)?;
             let keys: Vec<Vec<u8>> = {
                 let iter = ote_table.iter()?;
-                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
             };
             for key in keys {
                 ote_table.remove(key.as_slice())?;
@@ -543,7 +551,8 @@ impl StateBackend for RedbState {
             let mut eto_table = write_txn.open_table(BRIDGE_ETO)?;
             let keys: Vec<Vec<u8>> = {
                 let iter = eto_table.iter()?;
-                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
             };
             for key in keys {
                 eto_table.remove(key.as_slice())?;
@@ -724,23 +733,17 @@ impl StateBackend for RedbState {
 
         let prime_orders = {
             let table = read_txn.open_table(PRIME_ORDERS)?;
-            table
-                .get(b"state".as_slice())?
-                .map(|v| v.value().to_vec())
+            table.get(b"state".as_slice())?.map(|v| v.value().to_vec())
         };
 
         let bridge_orders_to_evm = {
             let table = read_txn.open_table(BRIDGE_OTE)?;
-            table
-                .get(b"queue".as_slice())?
-                .map(|v| v.value().to_vec())
+            table.get(b"queue".as_slice())?.map(|v| v.value().to_vec())
         };
 
         let bridge_evm_to_orders = {
             let table = read_txn.open_table(BRIDGE_ETO)?;
-            table
-                .get(b"queue".as_slice())?
-                .map(|v| v.value().to_vec())
+            table.get(b"queue".as_slice())?.map(|v| v.value().to_vec())
         };
 
         let snapshot = SnapshotRecord {
@@ -763,7 +766,8 @@ impl StateBackend for RedbState {
             let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
             let keys: Vec<Vec<u8>> = {
                 let iter = accounts_table.iter()?;
-                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
             };
             for key in keys {
                 accounts_table.remove(key.as_slice())?;
@@ -777,7 +781,8 @@ impl StateBackend for RedbState {
             let mut storage_table = write_txn.open_table(STORAGE)?;
             let keys: Vec<Vec<u8>> = {
                 let iter = storage_table.iter()?;
-                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec())).collect()
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
             };
             for key in keys {
                 storage_table.remove(key.as_slice())?;

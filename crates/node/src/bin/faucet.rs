@@ -6,7 +6,7 @@ use prime_chain::crypto::{encode_raw_signed_tx, sign_transaction};
 use prime_chain::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -57,11 +57,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain_id = fetch_chain_id(&rpc_url)?;
     let rate_limit: Mutex<HashMap<String, RateLimit>> = Mutex::new(HashMap::new());
 
-    let server = Server::http(format!("0.0.0.0:{}", port))
-        .map_err(|e| format!("failed to bind: {}", e))?;
+    let server =
+        Server::http(format!("0.0.0.0:{}", port)).map_err(|e| format!("failed to bind: {}", e))?;
     println!("Faucet listening on http://0.0.0.0:{}", port);
     println!("RPC: {}", rpc_url);
-    println!("Faucet address: 0x{}", hex::encode(faucet_address.as_slice()));
+    println!(
+        "Faucet address: 0x{}",
+        hex::encode(faucet_address.as_slice())
+    );
 
     for request in server.incoming_requests() {
         let rpc_url = rpc_url.clone();
@@ -136,29 +139,35 @@ fn handle_request(
         let addr_key = format!("0x{}", hex::encode(address.as_slice()));
         {
             let mut rl = rate_limit.lock().map_err(|_| "lock poisoned")?;
-            if let Some(entry) = rl.get(&addr_key) {
-                if entry.last_request.elapsed() < Duration::from_secs(RATE_LIMIT_HOURS * 3600) {
-                    let resp = FaucetResponse {
-                        success: false,
-                        tx_hash: None,
-                        error: Some(format!(
-                            "rate limited: 1 request per address per {} hour(s)",
-                            RATE_LIMIT_HOURS
-                        )),
-                    };
-                    let response = Response::from_string(serde_json::to_string(&resp)?)
-                        .with_status_code(429)
-                        .with_header(
-                            Header::from_bytes("Content-Type", "application/json").unwrap(),
-                        );
-                    request.respond(response)?;
-                    return Ok(());
-                }
+            if let Some(entry) = rl.get(&addr_key)
+                && entry.last_request.elapsed() < Duration::from_secs(RATE_LIMIT_HOURS * 3600)
+            {
+                let resp = FaucetResponse {
+                    success: false,
+                    tx_hash: None,
+                    error: Some(format!(
+                        "rate limited: 1 request per address per {} hour(s)",
+                        RATE_LIMIT_HOURS
+                    )),
+                };
+                let response = Response::from_string(serde_json::to_string(&resp)?)
+                    .with_status_code(429)
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
+                request.respond(response)?;
+                return Ok(());
             }
-            rl.insert(addr_key.clone(), RateLimit { last_request: Instant::now() });
+            rl.insert(
+                addr_key.clone(),
+                RateLimit {
+                    last_request: Instant::now(),
+                },
+            );
         }
 
-        let nonce = fetch_nonce(&rpc_url, &prime_chain::crypto::address_from_signing_key(&faucet_key))?;
+        let nonce = fetch_nonce(
+            &rpc_url,
+            &prime_chain::crypto::address_from_signing_key(&faucet_key),
+        )?;
         let gas_price = fetch_gas_price(&rpc_url)?;
 
         let tx = Transaction {
@@ -188,9 +197,7 @@ fn handle_request(
                     error: None,
                 };
                 let response = Response::from_string(serde_json::to_string(&resp)?)
-                    .with_header(
-                        Header::from_bytes("Content-Type", "application/json").unwrap(),
-                    );
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
                 request.respond(response)?;
             }
             Err(e) => {
@@ -201,9 +208,7 @@ fn handle_request(
                 };
                 let response = Response::from_string(serde_json::to_string(&resp)?)
                     .with_status_code(500)
-                    .with_header(
-                        Header::from_bytes("Content-Type", "application/json").unwrap(),
-                    );
+                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
                 request.respond(response)?;
             }
         }
@@ -249,7 +254,11 @@ fn load_faucet_key(path: &str) -> Result<SigningKey, Box<dyn std::error::Error>>
     Ok(SigningKey::from_slice(&bytes)?)
 }
 
-fn rpc_request(rpc_url: &str, method: &str, params: Value) -> Result<Value, Box<dyn std::error::Error>> {
+fn rpc_request(
+    rpc_url: &str,
+    method: &str,
+    params: Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let body = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -280,7 +289,11 @@ fn fetch_chain_id(rpc_url: &str) -> Result<u64, Box<dyn std::error::Error>> {
 
 fn fetch_nonce(rpc_url: &str, address: &Address) -> Result<u64, Box<dyn std::error::Error>> {
     let addr_hex = format!("0x{}", hex::encode(address.as_slice()));
-    let result = rpc_request(rpc_url, "eth_getTransactionCount", json!([addr_hex, "latest"]))?;
+    let result = rpc_request(
+        rpc_url,
+        "eth_getTransactionCount",
+        json!([addr_hex, "latest"]),
+    )?;
     let hex_str = result.as_str().ok_or("nonce not string")?;
     Ok(u64::from_str_radix(hex_str.trim_start_matches("0x"), 16)?)
 }
@@ -291,7 +304,10 @@ fn fetch_gas_price(rpc_url: &str) -> Result<U256, Box<dyn std::error::Error>> {
     Ok(U256::from_str_radix(hex_str.trim_start_matches("0x"), 16)?)
 }
 
-fn send_raw_transaction(rpc_url: &str, raw_hex: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn send_raw_transaction(
+    rpc_url: &str,
+    raw_hex: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let result = rpc_request(rpc_url, "eth_sendRawTransaction", json!([raw_hex]))?;
     Ok(result.as_str().ok_or("tx hash not string")?.to_string())
 }
@@ -421,9 +437,16 @@ fn parse_args() -> Args {
             }
             "--help" | "-h" => {
                 println!("Usage: faucet [OPTIONS]");
-                println!("  --port PORT         Listen port (default: {})", DEFAULT_PORT);
-                println!("  --rpc-url URL       Prime Chain RPC URL (default: http://localhost:8545)");
-                println!("  --private-key PATH  Path to faucet key JSON (default: faucet-key.json)");
+                println!(
+                    "  --port PORT         Listen port (default: {})",
+                    DEFAULT_PORT
+                );
+                println!(
+                    "  --rpc-url URL       Prime Chain RPC URL (default: http://localhost:8545)"
+                );
+                println!(
+                    "  --private-key PATH  Path to faucet key JSON (default: faucet-key.json)"
+                );
                 std::process::exit(0);
             }
             _ => {}

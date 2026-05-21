@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use revm::primitives::Bytes;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,14 +46,19 @@ impl BridgeQueue {
     }
 
     pub fn push(&mut self, from: BridgeDomain, to: BridgeDomain, payload: Bytes) -> BridgeMessage {
-        if let Some(limit) = self.max_len {
-            if self.inbound.len() >= limit {
-                self.inbound.pop_front();
-            }
+        if let Some(limit) = self.max_len
+            && self.inbound.len() >= limit
+        {
+            self.inbound.pop_front();
         }
         let nonce = self.next_nonce.saturating_add(1);
         self.next_nonce = nonce;
-        let msg = BridgeMessage { nonce, from, to, payload };
+        let msg = BridgeMessage {
+            nonce,
+            from,
+            to,
+            payload,
+        };
         self.inbound.push_back(msg.clone());
         msg
     }

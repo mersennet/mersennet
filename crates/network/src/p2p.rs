@@ -1,8 +1,8 @@
+use crate::net_transport::{GossipConfig, TcpSync, UdpGossip};
+use anyhow::Result;
 use prime_chain::consensus::Finalization;
 use prime_chain::engine::{Block, Engine, Receipt, Transaction};
-use crate::net_transport::{GossipConfig, TcpSync, UdpGossip};
 use prime_chain::network::Message as VoteMessage;
-use anyhow::Result;
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{info, warn};
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum P2pMessage {
     Tx(Transaction),
@@ -334,8 +335,7 @@ pub struct NetworkNode {
 
 impl NetworkNode {
     pub fn new(config: &GossipConfig) -> Result<Self> {
-        let mut gossip =
-            UdpGossip::bind_with_config(&config.listen_addr, config.clone())?;
+        let mut gossip = UdpGossip::bind_with_config(&config.listen_addr, config.clone())?;
         for peer in &config.bootstrap_peers {
             if let Err(e) = gossip.add_peer(peer) {
                 warn!(peer = %peer, err = %e, "failed to add bootstrap peer");
@@ -373,29 +373,21 @@ impl NetworkNode {
                         };
                         match packet.topic.as_str() {
                             "block" => {
-                                if let Ok(wire) =
-                                    serde_json::from_slice::<WireBlock>(&packet.data)
+                                if let Ok(wire) = serde_json::from_slice::<WireBlock>(&packet.data)
+                                    && let Some(block) = wire_to_block(&wire)
                                 {
-                                    if let Some(block) = wire_to_block(&wire) {
-                                        info!(
-                                            number = block.number,
-                                            "received block from network"
-                                        );
-                                        if let Ok(mut eng) = engine.lock() {
-                                            eng.import_block(block);
-                                        }
+                                    info!(number = block.number, "received block from network");
+                                    if let Ok(mut eng) = engine.lock() {
+                                        eng.import_block(block);
                                     }
                                 }
                             }
                             "tx" => {
-                                if let Ok(wire) =
-                                    serde_json::from_slice::<WireTx>(&packet.data)
+                                if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
+                                    && let Some(tx) = wire_to_tx(&wire)
+                                    && let Ok(mut eng) = engine.lock()
                                 {
-                                    if let Some(tx) = wire_to_tx(&wire) {
-                                        if let Ok(mut eng) = engine.lock() {
-                                            let _ = eng.submit_tx(tx);
-                                        }
-                                    }
+                                    let _ = eng.submit_tx(tx);
                                 }
                             }
                             _ => {}
@@ -422,28 +414,24 @@ impl NetworkNode {
                     };
                     info!(addr = %tcp_addr, "tcp snapshot listener started");
                     while running.load(Ordering::SeqCst) {
-                        if let Ok(Some(mut stream)) = tcp.accept_once() {
-                            if let Ok(Some(request)) = TcpSync::recv_packet(&mut stream) {
-                                if request.topic == "sync_request" {
-                                    if let Ok(eng) = engine.lock() {
-                                        let height = eng.latest_height();
-                                        let blocks: Vec<WireBlock> = (1..=height)
-                                            .filter_map(|n| eng.block_by_number(n))
-                                            .map(block_to_wire)
-                                            .collect();
-                                        let data =
-                                            serde_json::to_vec(&blocks).unwrap_or_default();
-                                        let gossip_pkt = crate::net_transport::GossipPacket {
-                                            topic: "sync_response".to_string(),
-                                            data,
-                                            id: String::new(),
-                                            ttl: 0,
-                                        };
-                                        let _ =
-                                            TcpSync::send_packet(&mut stream, &gossip_pkt);
-                                    }
-                                }
-                            }
+                        if let Ok(Some(mut stream)) = tcp.accept_once()
+                            && let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
+                            && request.topic == "sync_request"
+                            && let Ok(eng) = engine.lock()
+                        {
+                            let height = eng.latest_height();
+                            let blocks: Vec<WireBlock> = (1..=height)
+                                .filter_map(|n| eng.block_by_number(n))
+                                .map(block_to_wire)
+                                .collect();
+                            let data = serde_json::to_vec(&blocks).unwrap_or_default();
+                            let gossip_pkt = crate::net_transport::GossipPacket {
+                                topic: "sync_response".to_string(),
+                                data,
+                                id: String::new(),
+                                ttl: 0,
+                            };
+                            let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
                         }
                         std::thread::sleep(Duration::from_millis(100));
                     }
@@ -503,11 +491,11 @@ impl NetworkNode {
 }
 
 fn derive_tcp_addr(udp_addr: &str) -> String {
-    if let Some(colon) = udp_addr.rfind(':') {
-        if let Ok(port) = udp_addr[colon + 1..].parse::<u16>() {
-            let host = &udp_addr[..colon];
-            return format!("{host}:{}", port.wrapping_add(1000));
-        }
+    if let Some(colon) = udp_addr.rfind(':')
+        && let Ok(port) = udp_addr[colon + 1..].parse::<u16>()
+    {
+        let host = &udp_addr[..colon];
+        return format!("{host}:{}", port.wrapping_add(1000));
     }
     format!("{udp_addr}_tcp")
 }

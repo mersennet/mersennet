@@ -1,5 +1,5 @@
-use revm::primitives::{Address, B256};
 use metrics;
+use revm::primitives::{Address, B256};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RoundStage {
