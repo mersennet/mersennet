@@ -286,6 +286,60 @@ fn main() -> anyhow::Result<()> {
                     })?;
             }
 
+            // Block-watcher thread: polls for new blocks and notifies WS subscribers.
+            // This enables WS events on full nodes that receive blocks via gossip
+            // (not just validators that produce blocks).
+            if app_config.ws.enabled {
+                let eng_watcher = engine.clone();
+                let ws_mgr_watcher = ws_manager.clone();
+                std::thread::Builder::new()
+                    .name("ws-block-watcher".into())
+                    .spawn(move || {
+                        let mut last_height: u64 = eng_watcher
+                            .lock()
+                            .map(|e| e.latest_height())
+                            .unwrap_or(0);
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            let current_height = {
+                                let Ok(eng) = eng_watcher.lock() else { break };
+                                eng.latest_height()
+                            };
+                            if current_height <= last_height {
+                                continue;
+                            }
+                            for n in (last_height + 1)..=current_height {
+                                let block = {
+                                    let Ok(eng) = eng_watcher.lock() else { break };
+                                    eng.block_by_number(n).cloned()
+                                };
+                                let Some(block) = block else { continue };
+                                if let Ok(mut mgr) = ws_mgr_watcher.lock() {
+                                    let block_json = serde_json::json!({
+                                        "number": format!("0x{:x}", block.number),
+                                        "hash": format!("{}", block.hash),
+                                        "parentHash": format!("0x{:064x}", block.number.saturating_sub(1)),
+                                        "timestamp": format!("0x{:x}", block.timestamp),
+                                        "gasLimit": format!("0x{:x}", block.gas_limit),
+                                        "gasUsed": format!("0x{:x}", block.gas_used),
+                                        "baseFeePerGas": format!("0x{:x}", block.base_fee),
+                                        "stateRoot": format!("{}", block.state_root),
+                                        "miner": format!("{}", block.proposer),
+                                        "nonce": "0x0000000000000000",
+                                        "difficulty": "0x0",
+                                    });
+                                    mgr.notify_new_block(&block_json);
+                                    for tx in &block.transactions {
+                                        let hash = prime_chain::crypto::tx_signing_hash(tx);
+                                        mgr.notify_new_tx(&format!("{}", hash));
+                                    }
+                                }
+                            }
+                            last_height = current_height;
+                        }
+                    })?;
+            }
+
             if let Some(path) = cli.config_path.clone() {
                 start_config_watcher(engine.clone(), path)?;
             }

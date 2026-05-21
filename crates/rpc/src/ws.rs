@@ -356,7 +356,14 @@ fn handle_json_rpc(
             }).to_string());
             result_unsub = Some(id);
         }
-        _ => {}
+        other => {
+            let err_response = json!({
+                "jsonrpc": "2.0",
+                "id": req.id,
+                "error": { "code": -32601, "message": format!("WS: method not supported: {other}. Use eth_subscribe/eth_unsubscribe for subscriptions.") }
+            });
+            response = Some(err_response.to_string());
+        }
     }
 
     Ok((response, result_sub, result_unsub))
