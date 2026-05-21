@@ -1,13 +1,26 @@
 # Prime Chain
 
-High-performance EVM-compatible L1 blockchain with a native on-chain order matching engine (PrimeOrders), built in Rust.
+Privacy-first L1 blockchain with a native on-chain order matching engine
+(PrimeOrders) and EVM compatibility, built in Rust.
 
 **Chain ID:** 7919 (1000th prime number)
+
+> **In progress: ZK privacy redesign.** The chain is being upgraded from a
+> transparent EVM+CLOB L1 to a privacy-first L1 with shielded accounts,
+> ZK-proved risk checks, sealed-bid liquidation auctions, and SP1 state
+> proofs for light clients. See
+> [docs/internal/zk-privacy-plan.md](docs/internal/zk-privacy-plan.md) and
+> [CONTRIBUTING.md](CONTRIBUTING.md). Active integration branch:
+> `feat/zk-privacy`.
 
 ## Features
 
 - EVM execution (revm) with block production and receipts
 - PrimeOrders CLOB matching engine with margin checks and liquidation hooks
+- Threshold-encrypted mempool + commit-reveal + frequent batch auctions
+  (Phase 1 work to wire real cryptography is in progress)
+- ZK state-transition proofs scaffolded for SP1; mock prover today, real
+  prover in Phase 5
 - Domain events indexed per block and queryable via RPC
 - Snapshot export/import with TCP chunked sync + hash verification
 - Structured RPC errors, metrics, and health endpoint
@@ -55,10 +68,12 @@ cargo test
 
 ```
 crates/
-├── core/       — Engine, state, orders, consensus, crypto
+├── core/       — Engine, state, orders, consensus, crypto, shielded state
 ├── network/    — P2P transport layer
-├── rpc/        — JSON-RPC server + router
-└── node/       — CLI entrypoint and faucet
+├── rpc/        — JSON-RPC + WebSocket server
+├── node/       — CLI entrypoint and faucet
+└── zkp/        — ZK primitives: Noir circuits, prover, verifier, params
+                  (added in Phase 1 of the privacy redesign)
 
 contracts/      — Solidity contracts (Foundry)
 ├── src/dex/         — PrimeSwap factory, pair, router
@@ -67,13 +82,20 @@ contracts/      — Solidity contracts (Foundry)
 └── src/interfaces/  — IPrimeOrders
 
 deploy/         — Testnet deployment configs
-docs/           — Whitepaper, fundraising, roadmaps
+docs/           — Whitepaper, ADRs, fundraising, roadmaps
+docs/internal/  — Internal plans (ZK privacy plan, etc.)
 docs-site/      — Docusaurus documentation (docs.primechain.xyz)
 sdk/            — TypeScript SDK
 sdk-go/         — Go SDK
 sdk-python/     — Python SDK
 testnet/        — Testnet configuration
 ```
+
+## Branch policy
+
+Trunk-based with one long-lived integration branch (`feat/zk-privacy`) for
+the privacy redesign. See [CONTRIBUTING.md](CONTRIBUTING.md). Retired
+branches are preserved as `archive/*` tags and can be recovered any time.
 
 ## Ecosystem Repos
 

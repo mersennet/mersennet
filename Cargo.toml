@@ -4,6 +4,7 @@ members = [
     "crates/network",
     "crates/rpc",
     "crates/node",
+    "crates/zkp",
 ]
 resolver = "2"
 
