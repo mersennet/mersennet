@@ -1038,9 +1038,18 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
         domain_events: block
             .domain_events
             .iter()
+            .filter(|event| block_domain_event_is_visible(block, event))
             .map(domain_event_to_value)
             .collect(),
     }
+}
+
+fn block_domain_event_is_visible(block: &Block, event: &DomainEvent) -> bool {
+    if block.shielded_state_root == B256::ZERO {
+        return true;
+    }
+
+    event.is_privacy_safe_after_activation()
 }
 
 #[allow(dead_code)]
@@ -1111,6 +1120,14 @@ fn domain_event_to_value(event: &DomainEvent) -> Value {
 }
 
 fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
+    if !event.is_privacy_safe_after_activation() {
+        return json!({
+            "redacted": true,
+            "reason": "privacy_mode_sensitive_event",
+            "kind": event.kind(),
+        });
+    }
+
     match event {
         PrimeOrdersEvent::MarketAdded {
             market_id,
@@ -1185,14 +1202,9 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
-        PrimeOrdersEvent::CollateralDeposited { owner, amount } => json!({
-            "owner": hex_address(*owner),
-            "amount": hex_u256(*amount),
-        }),
-        PrimeOrdersEvent::Liquidation { owner, liquidated } => json!({
-            "owner": hex_address(*owner),
-            "liquidated": liquidated,
-        }),
+        _ => {
+            unreachable!("privacy-sensitive PrimeOrders events should be redacted above")
+        }
     }
 }
 
@@ -1318,6 +1330,65 @@ fn topics_match(log_topics: &[B256], filters: &[TopicFilter]) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prime_chain::engine::Engine;
+    use prime_chain::events::{DomainEvent, PrimeOrdersEvent};
+    use prime_chain::prime_orders::{Side, TimeInForce};
+    use tempfile::TempDir;
+
+    #[test]
+    fn block_dto_hides_sensitive_primeorders_events_after_privacy_activation() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let mut engine = Engine::new_with_state(1, temp_dir.path());
+        engine.activate_privacy_mode();
+
+        let market_id =
+            engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        let trader = Address::from_slice(&[0x44; 20]);
+        engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+        let _ = engine
+            .prime_orders_submit_order(
+                trader,
+                market_id,
+                Side::Buy,
+                U256::from(100u64),
+                U256::from(1u64),
+                TimeInForce::Gtc,
+            )
+            .expect("order accepted");
+
+        let block = engine.execute_block().expect("block executed");
+        let dto = block_to_dto(&block, false);
+
+        assert!(dto.domain_events.iter().any(|event| {
+            event.get("kind").and_then(|v| v.as_str()) == Some("market_added")
+        }));
+        assert!(dto.domain_events.iter().all(|event| {
+            !matches!(
+                event.get("kind").and_then(|v| v.as_str()),
+                Some("order_submitted")
+                    | Some("order_cancelled")
+                    | Some("trade")
+                    | Some("collateral_deposited")
+                    | Some("liquidation")
+            )
+        }));
+
+        assert!(block.domain_events.iter().all(|event| !matches!(
+            event,
+            DomainEvent::PrimeOrders(
+                PrimeOrdersEvent::OrderSubmitted { .. }
+                    | PrimeOrdersEvent::OrderCancelled { .. }
+                    | PrimeOrdersEvent::Trade { .. }
+                    | PrimeOrdersEvent::CollateralDeposited { .. }
+                    | PrimeOrdersEvent::Liquidation { .. }
+            )
+        )));
+    }
 }
 
 fn tx_hash(tx: &Transaction) -> B256 {

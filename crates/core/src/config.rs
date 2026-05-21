@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub engine: EngineConfig,

@@ -178,3 +178,62 @@ fn rpc_primeorders_submit_and_get_order_book() {
         "remaining ask size = 2, got {remaining_size}"
     );
 }
+
+#[test]
+fn rpc_transparent_primeorders_methods_disabled_after_privacy_activation() {
+    let (mut engine, _dir) = setup_engine(1);
+    engine.activate_privacy_mode();
+
+    let err = route("primeorders_getOrderBook", json!(["0x1"]), &mut engine)
+        .expect_err("transparent RPC should be disabled");
+
+    assert_eq!(err.code, -32605);
+    assert!(err.message.contains("disabled after privacy activation"));
+}
+
+#[test]
+fn rpc_domain_events_hide_sensitive_primeorders_events_after_privacy_activation() {
+    let (mut engine, _dir) = setup_engine(1);
+    engine.activate_privacy_mode();
+
+    let market_id = engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let trader = addr(0x55);
+    engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+    let _ = engine
+        .prime_orders_submit_order(
+            trader,
+            market_id,
+            prime_chain::prime_orders::Side::Buy,
+            U256::from(100u64),
+            U256::from(1u64),
+            prime_chain::prime_orders::TimeInForce::Gtc,
+        )
+        .expect("order accepted");
+    engine.execute_block().expect("block executed");
+
+    let result = route(
+        "prime_getDomainEvents",
+        json!([{
+            "fromBlock": "0x0",
+            "toBlock": "latest",
+            "domain": "primeorders"
+        }]),
+        &mut engine,
+    )
+    .expect("domain events rpc ok");
+
+    let events = result.as_array().expect("events array");
+    assert!(events.iter().any(|event| {
+        event.get("kind").and_then(|v| v.as_str()) == Some("market_added")
+    }));
+    assert!(events.iter().all(|event| {
+        !matches!(
+            event.get("kind").and_then(|v| v.as_str()),
+            Some("order_submitted")
+                | Some("order_cancelled")
+                | Some("trade")
+                | Some("collateral_deposited")
+                | Some("liquidation")
+        )
+    }));
+}

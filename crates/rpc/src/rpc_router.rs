@@ -27,6 +27,17 @@ impl RpcError {
     }
 }
 
+fn require_transparent_prime_orders_enabled(engine: &Engine) -> RpcResult<()> {
+    if engine.privacy_mode_activated() {
+        Err(RpcError::new(
+            -32605,
+            "transparent PrimeOrders RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value> {
     // Try the Phase 6 shielded-mode dispatcher first. Returns
     // `Ok(None)` if the method is not a shielded method; the main
@@ -60,16 +71,19 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             );
             let events: Vec<Value> = records
                 .into_iter()
+                .filter(|record| !hide_post_privacy_sensitive_domain_event(record, engine))
                 .map(domain_event_record_to_value)
                 .collect();
             Ok(Value::Array(events))
         }
         "primeorders_addMarket" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let (symbol, tick_size, lot_size) = parse_market_input(params)?;
             let market_id = engine.prime_orders_add_market(symbol, tick_size, lot_size);
             Ok(Value::String(hex_u64(market_id.0)))
         }
         "primeorders_submitOrder" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let input = parse_prime_order_input(params)?;
             let owner = parse_address(&input.owner)?;
             let side = parse_side(&input.side)?;
@@ -90,6 +104,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
         "primeorders_cancelOrder" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let order_id = parse_order_id(params)?;
             let cancelled = engine
                 .prime_orders_cancel_order(prime_chain::prime_orders::OrderId(order_id))
@@ -97,6 +112,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::Bool(cancelled))
         }
         "primeorders_getOrderBook" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let market_id = parse_market_id(params)?;
             let book =
                 engine.prime_orders_order_book(prime_chain::prime_orders::MarketId(market_id));
@@ -107,26 +123,31 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             }
         }
         "primeorders_getOpenOrders" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
             let orders = engine.prime_orders_open_orders(owner);
             let dtos: Vec<PrimeOrderDto> = orders.into_iter().map(order_to_dto).collect();
             Ok(serde_json::to_value(dtos).map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
         "primeorders_setMarginParams" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let (initial_bps, maintenance_bps) = parse_margin_params(params)?;
             engine.prime_orders_set_margin_params(initial_bps, maintenance_bps);
             Ok(Value::Bool(true))
         }
         "primeorders_depositCollateral" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let (owner, amount) = parse_collateral_input(params)?;
             engine.prime_orders_deposit_collateral(owner, amount);
             Ok(Value::Bool(true))
         }
         "primeorders_isLiquidatable" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
             Ok(Value::Bool(engine.prime_orders_is_liquidatable(owner)))
         }
         "primeorders_liquidate" => {
+            require_transparent_prime_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
             Ok(Value::Bool(engine.prime_orders_liquidate(owner)))
         }
@@ -655,6 +676,19 @@ fn domain_event_record_to_value(record: DomainEventRecord) -> Value {
     serde_json::to_value(dto).unwrap_or(Value::Null)
 }
 
+fn hide_post_privacy_sensitive_domain_event(record: &DomainEventRecord, engine: &Engine) -> bool {
+    if !engine.privacy_mode_activated() {
+        return false;
+    }
+
+    if record.event.is_privacy_safe_after_activation() {
+        return false;
+    }
+
+    let activation_height = engine.privacy_activation_height.unwrap_or(0);
+    record.block_number >= activation_height
+}
+
 fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value) {
     match event {
         DomainEvent::PrimeOrders(event) => (
@@ -720,6 +754,14 @@ fn shielded_event_to_value(event: &prime_chain::events::ShieldedEvent) -> Value 
 }
 
 fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
+    if !event.is_privacy_safe_after_activation() {
+        return json!({
+            "redacted": true,
+            "reason": "privacy_mode_sensitive_event",
+            "kind": event.kind(),
+        });
+    }
+
     match event {
         PrimeOrdersEvent::MarketAdded {
             market_id,
@@ -794,14 +836,9 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
-        PrimeOrdersEvent::CollateralDeposited { owner, amount } => json!({
-            "owner": hex_address(*owner),
-            "amount": hex_u256(*amount),
-        }),
-        PrimeOrdersEvent::Liquidation { owner, liquidated } => json!({
-            "owner": hex_address(*owner),
-            "liquidated": liquidated,
-        }),
+        _ => {
+            unreachable!("privacy-sensitive PrimeOrders events should be redacted above")
+        }
     }
 }
 

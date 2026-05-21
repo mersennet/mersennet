@@ -1,12 +1,17 @@
-use prime_chain_rpc::ws::{SubscriptionKind, WsSubscriptionManager};
+use prime_chain_rpc::ws::{SubscriptionKind, WsSubscriptionManager, set_privacy_mode_activated};
 
 #[test]
 fn ws_subscription_manager_lifecycle() {
+    set_privacy_mode_activated(false);
     let mut manager = WsSubscriptionManager::new();
 
-    let (id_heads, rx_heads) = manager.subscribe(SubscriptionKind::NewHeads);
+    let (id_heads, rx_heads) = manager
+        .subscribe(SubscriptionKind::NewHeads)
+        .expect("subscribe newHeads");
     let (id_trades, rx_trades) =
-        manager.subscribe(SubscriptionKind::PrimeOrdersTrades { market: None });
+        manager
+            .subscribe(SubscriptionKind::PrimeOrdersTrades { market: None })
+            .expect("subscribe trades");
 
     assert_eq!(manager.active_count(), 2);
 
@@ -28,4 +33,13 @@ fn ws_subscription_manager_lifecycle() {
     let removed = manager.unsubscribe(id_trades);
     assert!(removed);
     assert_eq!(manager.active_count(), 0);
+
+    set_privacy_mode_activated(true);
+    assert!(manager
+        .subscribe(SubscriptionKind::PrimeOrdersBook { market: 1 })
+        .is_err());
+    manager
+        .subscribe(SubscriptionKind::NewShieldedRoot)
+        .expect("shielded subscription should remain enabled");
+    set_privacy_mode_activated(false);
 }

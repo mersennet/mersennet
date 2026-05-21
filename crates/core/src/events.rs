@@ -152,6 +152,13 @@ impl DomainEvent {
             DomainEvent::Shielded(event) => event.kind(),
         }
     }
+
+    pub fn is_privacy_safe_after_activation(&self) -> bool {
+        match self {
+            DomainEvent::PrimeOrders(event) => event.is_privacy_safe_after_activation(),
+            DomainEvent::Bridge(_) | DomainEvent::Shielded(_) => true,
+        }
+    }
 }
 
 impl PrimeOrdersEvent {
@@ -165,6 +172,13 @@ impl PrimeOrdersEvent {
             PrimeOrdersEvent::CollateralDeposited { .. } => "collateral_deposited",
             PrimeOrdersEvent::Liquidation { .. } => "liquidation",
         }
+    }
+
+    pub fn is_privacy_safe_after_activation(&self) -> bool {
+        matches!(
+            self,
+            PrimeOrdersEvent::MarketAdded { .. } | PrimeOrdersEvent::MarginParamsUpdated { .. }
+        )
     }
 }
 
