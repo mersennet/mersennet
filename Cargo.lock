@@ -1983,6 +1983,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "once_cell",
+ "prime-zkp",
  "rand 0.8.5",
  "redb",
  "revm",
