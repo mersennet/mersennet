@@ -8,6 +8,56 @@ pub const PRIME_ORDERS_PRECOMPILE: Address = {
     Address::new(addr)
 };
 
+/// Shielded transfer precompile: 0x0000000000000000000000000000000000000200.
+/// Handles spend/output/join-split operations on the shielded note pool.
+/// Phase 4 of the privacy redesign.
+pub const SHIELDED_TRANSFER_PRECOMPILE: Address = {
+    let mut addr = [0u8; 20];
+    addr[18] = 0x02;
+    Address::new(addr)
+};
+
+/// Shield / unshield precompile: 0x0000000000000000000000000000000000000201.
+/// Bridges between transparent EVM balances and the shielded note pool.
+/// Phase 4 of the privacy redesign.
+pub const SHIELD_BRIDGE_PRECOMPILE: Address = {
+    let mut addr = [0u8; 20];
+    addr[18] = 0x02;
+    addr[19] = 0x01;
+    Address::new(addr)
+};
+
+/// State-transition proof verifier: 0x0000000000000000000000000000000000000300.
+/// Verifies SP1-produced block proofs for light clients and bridge
+/// consumption. Phase 5 of the privacy redesign.
+pub const STATE_PROOF_VERIFIER_PRECOMPILE: Address = {
+    let mut addr = [0u8; 20];
+    addr[18] = 0x03;
+    Address::new(addr)
+};
+
+// --- Phase 4: Shielded EVM ---
+pub const GAS_SHIELDED_TRANSFER: u64 = 80_000;
+pub const GAS_SHIELD: u64 = 60_000;
+pub const GAS_UNSHIELD: u64 = 60_000;
+pub const GAS_STATE_PROOF_VERIFY: u64 = 250_000;
+
+pub fn shielded_transfer_selector() -> [u8; 4] {
+    selector("shieldedTransfer(bytes)")
+}
+
+pub fn shield_selector() -> [u8; 4] {
+    selector("shield(uint256,bytes)")
+}
+
+pub fn unshield_selector() -> [u8; 4] {
+    selector("unshield(bytes)")
+}
+
+pub fn verify_state_proof_selector() -> [u8; 4] {
+    selector("verifyStateProof(bytes)")
+}
+
 pub const GAS_PLACE_ORDER: u64 = 50_000;
 pub const GAS_CANCEL_ORDER: u64 = 20_000;
 pub const GAS_DEPOSIT_COLLATERAL: u64 = 25_000;
