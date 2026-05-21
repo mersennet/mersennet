@@ -18,6 +18,30 @@ use std::time::Duration;
 use tungstenite::Message;
 use tungstenite::accept;
 
+static PRIVACY_MODE_ACTIVATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_privacy_mode_activated(active: bool) {
+    PRIVACY_MODE_ACTIVATED.store(active, Ordering::SeqCst);
+}
+
+fn privacy_mode_activated() -> bool {
+    PRIVACY_MODE_ACTIVATED.load(Ordering::SeqCst)
+}
+
+fn is_transparent_prime_orders_subscription(kind: &SubscriptionKind) -> bool {
+    matches!(
+        kind,
+        SubscriptionKind::PrimeOrdersTrades { .. }
+            | SubscriptionKind::PrimeOrdersBook { .. }
+            | SubscriptionKind::BatchAuctionResults { .. }
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubscriptionError {
+    TransparentPrimeOrdersDisabled,
+}
+
 /// Unique identifier for a subscription.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubscriptionId(pub u64);
@@ -76,7 +100,14 @@ impl WsSubscriptionManager {
     }
 
     /// Creates a new subscription. Returns the subscription ID and a receiver for JSON messages.
-    pub fn subscribe(&mut self, kind: SubscriptionKind) -> (SubscriptionId, Receiver<String>) {
+    pub fn subscribe(
+        &mut self,
+        kind: SubscriptionKind,
+    ) -> Result<(SubscriptionId, Receiver<String>), SubscriptionError> {
+        if privacy_mode_activated() && is_transparent_prime_orders_subscription(&kind) {
+            return Err(SubscriptionError::TransparentPrimeOrdersDisabled);
+        }
+
         let id = SubscriptionId(self.next_id.fetch_add(1, Ordering::SeqCst));
         let (tx, rx) = channel();
         self.subscribers.insert(
@@ -86,7 +117,7 @@ impl WsSubscriptionManager {
                 sender: tx,
             },
         );
-        (id, rx)
+        Ok((id, rx))
     }
 
     /// Removes a subscription. Returns true if it existed.
@@ -233,6 +264,11 @@ impl WsSubscriptionManager {
         self.subscribers.len()
     }
 
+    pub fn purge_transparent_subscriptions(&mut self) {
+        self.subscribers
+            .retain(|_, info| !is_transparent_prime_orders_subscription(&info.kind));
+    }
+
     fn send_to_matching<F>(&mut self, pred: F, payload: &Value)
     where
         F: Fn(&SubscriptionKind) -> bool,
@@ -372,7 +408,7 @@ fn handle_json_rpc(
     (),
 > {
     let req: JsonRpcRequest = serde_json::from_str(text).map_err(|_| ())?;
-    let mut response = None;
+    let response;
     let mut result_sub = None;
     let mut result_unsub = None;
 
@@ -382,16 +418,32 @@ fn handle_json_rpc(
             let sub_type = params.first().and_then(|v| v.as_str()).ok_or(())?;
             let kind = parse_eth_subscription(sub_type, params.get(1))?;
             let mut m = manager.lock().unwrap();
-            let (id, rx) = m.subscribe(kind);
-            response = Some(
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": req.id,
-                    "result": format!("0x{:x}", id.0)
-                })
-                .to_string(),
-            );
-            result_sub = Some((id, rx));
+            match m.subscribe(kind) {
+                Ok((id, rx)) => {
+                    response = Some(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "result": format!("0x{:x}", id.0)
+                        })
+                        .to_string(),
+                    );
+                    result_sub = Some((id, rx));
+                }
+                Err(SubscriptionError::TransparentPrimeOrdersDisabled) => {
+                    response = Some(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "error": {
+                                "code": -32605,
+                                "message": "transparent PrimeOrders subscriptions disabled after privacy activation"
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
+            }
         }
         "eth_unsubscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
@@ -413,16 +465,32 @@ fn handle_json_rpc(
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
             let kind = parse_prime_subscription(params)?;
             let mut m = manager.lock().unwrap();
-            let (id, rx) = m.subscribe(kind);
-            response = Some(
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": req.id,
-                    "result": format!("0x{:x}", id.0)
-                })
-                .to_string(),
-            );
-            result_sub = Some((id, rx));
+            match m.subscribe(kind) {
+                Ok((id, rx)) => {
+                    response = Some(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "result": format!("0x{:x}", id.0)
+                        })
+                        .to_string(),
+                    );
+                    result_sub = Some((id, rx));
+                }
+                Err(SubscriptionError::TransparentPrimeOrdersDisabled) => {
+                    response = Some(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "error": {
+                                "code": -32605,
+                                "message": "transparent PrimeOrders subscriptions disabled after privacy activation"
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
+            }
         }
         "prime_unsubscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
@@ -561,4 +629,26 @@ fn parse_subscription_id(v: &Value) -> Result<SubscriptionId, ()> {
         return Ok(SubscriptionId(n));
     }
     Err(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manager_rejects_transparent_prime_orders_subscriptions_after_privacy_activation() {
+        set_privacy_mode_activated(true);
+
+        let mut manager = WsSubscriptionManager::new();
+        let err = manager
+            .subscribe(SubscriptionKind::PrimeOrdersTrades { market: None })
+            .expect_err("transparent subscription should be rejected");
+        assert_eq!(err, SubscriptionError::TransparentPrimeOrdersDisabled);
+
+        manager
+            .subscribe(SubscriptionKind::NewShieldedRoot)
+            .expect("shielded subscription should remain available");
+
+        set_privacy_mode_activated(false);
+    }
 }

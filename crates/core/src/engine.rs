@@ -682,6 +682,9 @@ impl Engine {
     }
 
     fn record_event(&mut self, event: DomainEvent) {
+        if self.privacy_mode_activated && !event.is_privacy_safe_after_activation() {
+            return;
+        }
         self.pending_events.push(event);
     }
 
@@ -991,6 +994,7 @@ impl Engine {
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_prime_orders_context(shared_orders.clone());
+        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
 
         // Generate market maker quotes and submit to orders engine
         let mm_markets: Vec<u64> = {
@@ -1110,6 +1114,7 @@ impl Engine {
         }
 
         precompiles::clear_prime_orders_context();
+        precompiles::set_transparent_prime_orders_enabled(true);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
@@ -1784,6 +1789,7 @@ impl Engine {
 
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
         precompiles::set_prime_orders_context(shared_orders);
+        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
 
         // Privacy-redesign Phase 4 — install shielded EVM context.
         // Take ownership for the duration of the tx, restore after.
@@ -1801,6 +1807,7 @@ impl Engine {
 
         let result = evm.transact_preverified()?;
         precompiles::clear_prime_orders_context();
+        precompiles::set_transparent_prime_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
@@ -1899,6 +1906,7 @@ impl Engine {
 
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
         precompiles::set_prime_orders_context(shared_orders);
+        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
 
         let shielded_evm = std::mem::take(&mut self.shielded_evm);
         let shared_shielded = Arc::new(Mutex::new(shielded_evm));
@@ -1914,6 +1922,7 @@ impl Engine {
 
         let result = evm.transact_preverified()?;
         precompiles::clear_prime_orders_context();
+        precompiles::set_transparent_prime_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
@@ -2380,8 +2389,10 @@ impl Engine {
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
+        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
         let result = evm.transact_commit()?;
         self.evm.db = std::mem::take(&mut evm.context.evm.db);
+        precompiles::set_transparent_prime_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)

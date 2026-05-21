@@ -185,6 +185,9 @@ fn main() -> anyhow::Result<()> {
             network.start_networking(engine.clone(), &gossip_config);
 
             let ws_manager = Arc::new(Mutex::new(ws::WsSubscriptionManager::new()));
+            if let Ok(engine_guard) = engine.lock() {
+                ws::set_privacy_mode_activated(engine_guard.privacy_mode_activated());
+            }
 
             if app_config.ws.enabled {
                 let ws_addr = app_config.ws.addr.clone();
@@ -224,7 +227,10 @@ fn main() -> anyhow::Result<()> {
                                     Err(_) => break,
                                 };
                                 match e.execute_block() {
-                                    Ok(b) => b,
+                                    Ok(b) => {
+                                        ws::set_privacy_mode_activated(e.privacy_mode_activated());
+                                        b
+                                    }
                                     Err(err) => {
                                         tracing::warn!(%err, "block production error");
                                         continue;
@@ -238,6 +244,7 @@ fn main() -> anyhow::Result<()> {
                             );
 
                             if let Ok(mut mgr) = ws_mgr_producer.lock() {
+                                mgr.purge_transparent_subscriptions();
                                 let block_json = serde_json::json!({
                                     "number": format!("0x{:x}", block.number),
                                     "hash": format!("{}", block.hash),
@@ -384,6 +391,7 @@ fn main() -> anyhow::Result<()> {
                             std::thread::sleep(std::time::Duration::from_millis(200));
                             let current_height = {
                                 let Ok(eng) = eng_watcher.lock() else { break };
+                                ws::set_privacy_mode_activated(eng.privacy_mode_activated());
                                 eng.latest_height()
                             };
                             if current_height <= last_height {
@@ -396,6 +404,7 @@ fn main() -> anyhow::Result<()> {
                                 };
                                 let Some(block) = block else { continue };
                                 if let Ok(mut mgr) = ws_mgr_watcher.lock() {
+                                    mgr.purge_transparent_subscriptions();
                                     let block_json = serde_json::json!({
                                         "number": format!("0x{:x}", block.number),
                                         "hash": format!("{}", block.hash),

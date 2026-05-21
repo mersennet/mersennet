@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use once_cell::sync::Lazy;
 use revm::ContextPrecompile;
@@ -22,12 +23,22 @@ use crate::zk_proofs::StateTransitionProof;
 static PRIME_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<PrimeOrdersState>>>>> =
     Lazy::new(|| Mutex::new(None));
 
+static TRANSPARENT_PRIME_ORDERS_ENABLED: AtomicBool = AtomicBool::new(true);
+
 pub fn set_prime_orders_context(state: Arc<Mutex<PrimeOrdersState>>) {
     *PRIME_ORDERS_CTX.lock().unwrap() = Some(state);
 }
 
 pub fn clear_prime_orders_context() {
     *PRIME_ORDERS_CTX.lock().unwrap() = None;
+}
+
+pub fn set_transparent_prime_orders_enabled(enabled: bool) {
+    TRANSPARENT_PRIME_ORDERS_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub fn transparent_prime_orders_enabled() -> bool {
+    TRANSPARENT_PRIME_ORDERS_ENABLED.load(Ordering::SeqCst)
 }
 
 fn with_orders<F, R>(f: F) -> Result<R, PrecompileErrors>
@@ -276,6 +287,13 @@ fn abi_decode_bytes_at(input: &Bytes, slot: usize) -> Result<Vec<u8>, Precompile
 // ---------------------------------------------------------------------------
 
 fn prime_orders_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> PrecompileResult {
+    if !transparent_prime_orders_enabled() {
+        return Err(PrecompileError::other(
+            "transparent PrimeOrders precompile disabled after privacy activation",
+        )
+        .into());
+    }
+
     if input.len() < 4 {
         return Err(PrecompileError::other("input too short for function selector").into());
     }
@@ -510,4 +528,26 @@ fn handle_get_best_bid_ask(input: &Bytes, gas_limit: u64) -> PrecompileResult {
         GAS_GET_BEST_BID_ASK,
         Bytes::from(out),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transparent_prime_orders_precompile_rejects_when_disabled() {
+        set_transparent_prime_orders_enabled(false);
+
+        let input = Bytes::from(get_collateral_selector().to_vec());
+        let env = Env::default();
+        let err = prime_orders_precompile(&input, GAS_GET_COLLATERAL, &env)
+            .expect_err("transparent precompile should be disabled");
+
+        assert!(
+            format!("{err:?}").contains("disabled after privacy activation"),
+            "unexpected error: {err:?}"
+        );
+
+        set_transparent_prime_orders_enabled(true);
+    }
 }

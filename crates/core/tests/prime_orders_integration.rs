@@ -247,3 +247,44 @@ fn prime_orders_deterministic_matching_across_nodes() {
         assert_eq!(a.size, b.size);
     }
 }
+
+#[test]
+fn prime_orders_sensitive_domain_events_suppressed_after_privacy_activation() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let mut engine = Engine::new_with_state(1, temp_dir.path());
+    engine.activate_privacy_mode();
+
+    let market_id =
+        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let trader = Address::from_slice(&[0x88; 20]);
+
+    engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+    let _ = engine
+        .prime_orders_submit_order(
+            trader,
+            market_id,
+            Side::Buy,
+            U256::from(100u64),
+            U256::from(1u64),
+            TimeInForce::Gtc,
+        )
+        .expect("order accepted");
+
+    let block = engine.execute_block().expect("block executed");
+
+    assert!(block.domain_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::PrimeOrders(PrimeOrdersEvent::MarketAdded { market_id: id, .. }) if *id == market_id
+    )));
+
+    assert!(block.domain_events.iter().all(|event| !matches!(
+        event,
+        DomainEvent::PrimeOrders(
+            PrimeOrdersEvent::OrderSubmitted { .. }
+                | PrimeOrdersEvent::OrderCancelled { .. }
+                | PrimeOrdersEvent::Trade { .. }
+                | PrimeOrdersEvent::CollateralDeposited { .. }
+                | PrimeOrdersEvent::Liquidation { .. }
+        )
+    )));
+}
