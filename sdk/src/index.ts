@@ -50,3 +50,20 @@ export type {
   SubscriptionEvent,
   BookUpdate,
 } from './types';
+
+// Shielded SDK (Phase 6 of the privacy redesign). Use this when
+// connecting to a chain that has activated the ZK privacy hard fork.
+export {
+  ShieldedClient,
+  ViewingKeyHelpers,
+} from './shielded';
+export type {
+  Note,
+  EncryptedNote,
+  ShieldedBalance,
+  ViewingKey,
+  OrderPlacePublicInputs,
+  ZkProver,
+  ShieldedClientOptions,
+} from './shielded';
+export type { Fr } from './shielded';

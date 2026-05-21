@@ -23,6 +23,16 @@ impl RpcError {
 }
 
 pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value> {
+    // Try the Phase 6 shielded-mode dispatcher first. Returns
+    // `Ok(None)` if the method is not a shielded method; the main
+    // match below then takes over. Returns an `Err`-shaped value when
+    // the method is structurally valid but the privacy hard fork has
+    // not yet activated.
+    match crate::rpc_shielded::try_dispatch(call, params.clone()) {
+        Ok(Some(v)) => return Ok(v),
+        Err(e) => return Err(RpcError::new(e.code, e.message)),
+        Ok(None) => {}
+    }
     match call {
         "prime_chainId" | "eth_chainId" => Ok(Value::String(hex_u64(engine.chain_id))),
         "prime_blockNumber" | "eth_blockNumber" => Ok(Value::String(hex_u64(engine.latest_height()))),

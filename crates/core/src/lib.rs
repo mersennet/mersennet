@@ -37,3 +37,7 @@ pub mod metrics;
 pub mod chain_features;
 pub mod shielded_state;
 pub mod threshold_mempool;
+pub mod shielded_orders;
+pub mod liquidation_auction;
+pub mod shielded_evm;
+pub mod state_proof;

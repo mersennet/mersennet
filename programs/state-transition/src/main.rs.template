@@ -1,0 +1,31 @@
+// Phase 5 — uncomment and rename to src/main.rs when sp1_sdk lands.
+//
+// #![no_main]
+// sp1_zkvm::entrypoint!(main);
+//
+// use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput};
+//
+// pub fn main() {
+//     let input_bytes = sp1_zkvm::io::read_vec();
+//     let input: BlockProgramInput =
+//         bincode::deserialize(&input_bytes).expect("BlockProgramInput");
+//
+//     // 1. Initialize shielded state from prev roots.
+//     // 2. For each tx, decode envelope and re-verify the inner Noir
+//     //    proof + insert nullifiers + insert commitments.
+//     // 3. Re-run FBA matching for each market.
+//     // 4. Produce BlockProgramOutput.
+//
+//     let output = BlockProgramOutput {
+//         prev_state_root: input.prev_state_root,
+//         new_state_root: /* recomputed */ input.prev_state_root,
+//         prev_nullifier_root: input.prev_nullifier_root,
+//         new_nullifier_root: input.prev_nullifier_root,
+//         block_number: input.block_number,
+//         block_hash: [0u8; 32],
+//         new_market_state_hash: [0u8; 32],
+//         tx_count: input.txs.len() as u64,
+//     };
+//
+//     sp1_zkvm::io::commit(&bincode::serialize(&output).expect("commit"));
+// }
