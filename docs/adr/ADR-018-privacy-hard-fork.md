@@ -1,7 +1,13 @@
 # ADR-018: Privacy Hard Fork
 
-**Status:** Proposed (scheduled — block height TBD)
-**Date:** 2026-05-21
+**Status:** Proposed — **testnet ready** on chain 7920.
+**Date:** 2026-05-21 (last revised after H1–H7 land on `feat/zk-privacy`).
+**Related:** [ADR-014](ADR-014-shielded-notes.md),
+[ADR-015](ADR-015-threshold-encrypted-mempool.md),
+[ADR-016](ADR-016-liquidation-auctions.md),
+[ADR-017](ADR-017-sp1-state-proofs.md).
+**Spec:** [`../security/cryptography-spec.md`](../security/cryptography-spec.md).
+**Runbook:** [`../runbooks/privacy-testnet-bootstrap.md`](../runbooks/privacy-testnet-bootstrap.md).
 
 ## Context
 
@@ -77,15 +83,29 @@ mode and the next activation attempt is scheduled `>=1 week` later.
   retained for one quarter post-fork.
 - Block headers grow by 64 bytes. Acceptable.
 
-## Pre-fork runbook (lives in `docs/runbooks/zk-fork-activation.md` — to be written)
+## Pre-fork runbook
 
-Sketch:
+Two runbooks now exist:
 
-1. T-8w: testnet activation.
-2. T-7w through T-1w: bug-bash sprints, every subsystem.
-3. T-1w: signed announcement, exact `H` published.
-4. T-24h: validators upgrade.
-5. T-1h: final dry-run on testnet.
-6. T: activation.
-7. T+1h: post-activation smoke (every RPC method, every precompile).
-8. T+24h: post-mortem if needed.
+1. **[`../runbooks/privacy-testnet-bootstrap.md`](../runbooks/privacy-testnet-bootstrap.md)** —
+   bring up chain 7920 (the privacy testnet) from a fresh host. This
+   is the one operators use today.
+2. **[`../runbooks/zk-fork-activation.md`](../runbooks/zk-fork-activation.md)** —
+   T-8w through T+24h checklist for the mainnet activation. Drafted
+   now, gated on D5/D6/E completion + audit.
+
+### Implementation status
+
+| Workstream | Status | Notes |
+|---|---|---|
+| State + snapshot extension (A8) | ✅ | `PZS1` envelope wraps the legacy snapshot with the shielded subsystems |
+| Migration tool (H1) | ✅ | `cargo run --bin migrate-genesis` |
+| 5-of-7 DKG configs (H2) | ✅ | `testnet/configs/privacy/validator-{1..7}.json` |
+| Docker-compose bring-up (H3) | ✅ | `testnet/docker-compose.privacy.yml` |
+| Synthetic load (H4) + chaos drill (H5) | ✅ | `testnet/scripts/` |
+| Privacy metrics + Grafana dashboard (H7) | ✅ | `deploy/monitoring/grafana-privacy-dashboard.json` |
+| CI privacy invariants (K2) | ✅ | `scripts/ci/check-privacy-invariants.sh` |
+| Barretenberg verifier (D5), Noir compilation (D6), SP1 program (E) | 🔒 | Gated on `nargo` / `barretenberg-sys` / `sp1up` install |
+| Third-party audit (I) | 🔒 | Gated on D5/D6/E completion |
+
+See [`../STATUS.md`](../STATUS.md) for the full live tracker.
