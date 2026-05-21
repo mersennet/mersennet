@@ -132,5 +132,87 @@ impl MetricsRegistry {
             "prime_chain_rpc_duration_seconds",
             "RPC request duration in seconds by method"
         );
+
+        // -- Privacy (Workstream H7) ------------------------------
+        //
+        // CI invariant K2 forbids address-labeled metrics. Every
+        // metric here is either a chain-global aggregate or labeled
+        // only by market_id / proof_kind / epoch — never by EOA.
+        metrics::describe_gauge!(
+            "prime_chain_privacy_mode_active",
+            "1 iff privacy hard fork is active, 0 otherwise"
+        );
+        metrics::describe_counter!(
+            "prime_chain_shielded_root_advanced_total",
+            "Total times the shielded note tree root advanced"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_shielded_notes_total",
+            "Number of notes in the shielded tree"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_shielded_nullifiers_total",
+            "Number of spent nullifiers (chain-wide aggregate)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_threshold_mempool_admitted_total",
+            "Total threshold-encrypted intents admitted"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_threshold_mempool_pending",
+            "Number of intents pending threshold decryption"
+        );
+        metrics::describe_histogram!(
+            "prime_chain_threshold_decryption_seconds",
+            "Latency to recover plaintext via Lagrange interpolation"
+        );
+        metrics::describe_counter!(
+            "prime_chain_fba_cleared_total",
+            "Total FBA tick clearings (labeled by market_id, no addresses)"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_fba_clearing_price",
+            "Most recent clearing price per market (labeled by market_id)"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_fba_matched_size",
+            "Matched size at last FBA tick (labeled by market_id)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_liquidation_claims_received_total",
+            "Liquidation claims submitted (chain-wide aggregate)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_liquidation_auctions_settled_total",
+            "Liquidation auctions settled (chain-wide aggregate)"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_liquidator_count",
+            "Number of bonded liquidators (no per-bond labels)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_dkg_ceremonies_started_total",
+            "DKG ceremonies started (labeled by epoch)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_dkg_ceremonies_completed_total",
+            "DKG ceremonies completed (labeled by epoch)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_dkg_complaints_total",
+            "DKG slashing complaints raised (labeled by epoch)"
+        );
+        metrics::describe_counter!(
+            "prime_chain_state_proofs_attached_total",
+            "State-transition proofs attached to blocks"
+        );
+        metrics::describe_histogram!(
+            "prime_chain_state_proof_generation_seconds",
+            "Wall-clock time to generate a state-transition proof"
+        );
+        metrics::describe_gauge!(
+            "prime_chain_privacy_activation_height",
+            "Configured activation height for privacy mode (0 if unset)"
+        );
     }
 }

@@ -27,8 +27,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
     // `Ok(None)` if the method is not a shielded method; the main
     // match below then takes over. Returns an `Err`-shaped value when
     // the method is structurally valid but the privacy hard fork has
-    // not yet activated.
-    match crate::rpc_shielded::try_dispatch(call, params.clone()) {
+    // not yet activated, or when params are malformed.
+    match crate::rpc_shielded::try_dispatch(call, params.clone(), engine) {
         Ok(Some(v)) => return Ok(v),
         Err(e) => return Err(RpcError::new(e.code, e.message)),
         Ok(None) => {}
@@ -643,6 +643,55 @@ fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value
             event.kind(),
             bridge_event_to_value(event),
         ),
+        DomainEvent::Shielded(event) => (
+            "shielded",
+            event.kind(),
+            shielded_event_to_value(event),
+        ),
+    }
+}
+
+fn shielded_event_to_value(event: &prime_chain::events::ShieldedEvent) -> Value {
+    use prime_chain::events::ShieldedEvent;
+    match event {
+        ShieldedEvent::FbaCleared {
+            market_id,
+            clearing_price,
+            matched_size,
+            intent_count,
+        } => json!({
+            "market_id": hex_u64(market_id.0),
+            "clearing_price": hex_u256(*clearing_price),
+            "matched_size": hex_u256(*matched_size),
+            "intent_count": hex_u64(*intent_count),
+        }),
+        ShieldedEvent::MempoolBatchAdmitted {
+            block_number,
+            intent_count,
+        } => json!({
+            "block_number": hex_u64(*block_number),
+            "intent_count": hex_u64(*intent_count),
+        }),
+        ShieldedEvent::LiquidationSettled {
+            market_id,
+            winner_bond_commitment,
+            winning_bid,
+        } => json!({
+            "market_id": hex_u64(market_id.0),
+            "winner_bond_commitment": format!("0x{}", hex::encode(winner_bond_commitment)),
+            "winning_bid": hex_u256(*winning_bid),
+        }),
+        ShieldedEvent::ShieldedRootAdvanced {
+            block_number,
+            new_root,
+            notes_added,
+            nullifiers_added,
+        } => json!({
+            "block_number": hex_u64(*block_number),
+            "new_root": format!("0x{}", hex::encode(new_root)),
+            "notes_added": hex_u64(*notes_added),
+            "nullifiers_added": hex_u64(*nullifiers_added),
+        }),
     }
 }
 

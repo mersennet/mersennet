@@ -26,6 +26,55 @@ pub struct AppConfig {
     pub ws: WsConfig,
     #[serde(default)]
     pub zk: ZkConfig,
+    #[serde(default)]
+    pub privacy: PrivacyConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivacyConfig {
+    /// `true` activates the shielded subsystems immediately at boot.
+    /// In normal operation, leave `false` and let the engine flip
+    /// the switch when `block_number >= activation_height`.
+    #[serde(default)]
+    pub mode_activated: bool,
+    /// Block height at which privacy mode auto-activates. `None`
+    /// disables auto-activation; governance must call
+    /// `prime_activatePrivacy` explicitly.
+    #[serde(default)]
+    pub activation_height: Option<u64>,
+    /// DKG epoch length in blocks.
+    #[serde(default = "default_dkg_epoch_length")]
+    pub dkg_epoch_length_blocks: u64,
+    /// Threshold k-of-n for the encrypted mempool.
+    #[serde(default = "default_threshold_k")]
+    pub threshold_k: u32,
+    /// Total validator count n for the encrypted mempool.
+    #[serde(default = "default_threshold_n")]
+    pub threshold_n: u32,
+}
+
+fn default_dkg_epoch_length() -> u64 {
+    18_000
+}
+
+fn default_threshold_k() -> u32 {
+    2
+}
+
+fn default_threshold_n() -> u32 {
+    3
+}
+
+impl Default for PrivacyConfig {
+    fn default() -> Self {
+        Self {
+            mode_activated: false,
+            activation_height: None,
+            dkg_epoch_length_blocks: default_dkg_epoch_length(),
+            threshold_k: default_threshold_k(),
+            threshold_n: default_threshold_n(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,6 +254,7 @@ impl Default for AppConfig {
             slashing: SlashingConfig::default(),
             token_economics: TokenEconomicsConfig::default(),
             rpc: RpcConfig::default(),
+            privacy: PrivacyConfig::default(),
             p2p: P2pConfig::default(),
             ws: WsConfig::default(),
             zk: ZkConfig::default(),
@@ -312,6 +362,64 @@ pub fn load_config(path: &str) -> Result<AppConfig> {
     let config: AppConfig = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse config file {path}"))?;
     Ok(config)
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn privacy_section_defaults_when_omitted() {
+        let cfg: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(!cfg.privacy.mode_activated);
+        assert!(cfg.privacy.activation_height.is_none());
+        assert_eq!(cfg.privacy.threshold_k, 2);
+        assert_eq!(cfg.privacy.threshold_n, 3);
+    }
+
+    #[test]
+    fn privacy_testnet_5_of_7_parses() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "engine": { "chain_id": 7920, "storage_backend": "redb" },
+                "privacy": {
+                    "mode_activated": false,
+                    "activation_height": 100,
+                    "dkg_epoch_length_blocks": 1800,
+                    "threshold_k": 5,
+                    "threshold_n": 7
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.engine.chain_id, 7920);
+        assert_eq!(cfg.privacy.activation_height, Some(100));
+        assert_eq!(cfg.privacy.dkg_epoch_length_blocks, 1800);
+        assert_eq!(cfg.privacy.threshold_k, 5);
+        assert_eq!(cfg.privacy.threshold_n, 7);
+    }
+
+    #[test]
+    fn shipped_privacy_testnet_config_parses() {
+        // Sanity-check that the bundled testnet config loads as
+        // an AppConfig (catches schema drift between code +
+        // operator-facing JSON).
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let path = std::path::PathBuf::from(manifest_dir)
+            .join("..")
+            .join("..")
+            .join("testnet")
+            .join("configs")
+            .join("privacy")
+            .join("validator-1.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let cfg: AppConfig = serde_json::from_str(&raw).unwrap();
+        assert_eq!(cfg.engine.chain_id, 7920);
+        assert_eq!(cfg.privacy.threshold_k, 5);
+        assert_eq!(cfg.privacy.threshold_n, 7);
+        assert!(cfg.privacy.activation_height.is_some());
+    }
 }
 
 pub fn parse_u256(value: &str) -> Result<U256> {

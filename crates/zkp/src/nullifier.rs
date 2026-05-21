@@ -45,6 +45,12 @@ impl NullifierSet {
     pub fn is_empty(&self) -> bool {
         self.set.is_empty()
     }
+
+    /// Iterate the spent nullifiers in arbitrary order. Used by
+    /// persistence layers to snapshot the set.
+    pub fn iter(&self) -> impl Iterator<Item = &Nullifier> {
+        self.set.iter()
+    }
 }
 
 #[cfg(test)]

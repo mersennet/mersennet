@@ -41,6 +41,8 @@ fn main() {
                 nonce: 0,
                 chain_id: Some(7919),
                 signature: None,
+                tx_type: 0,
+                shielded_payload: None,
             };
             let _ = eng.submit_tx_unsigned(tx);
         }
@@ -66,6 +68,8 @@ fn main() {
                 nonce: 0,
                 chain_id: Some(7919),
                 signature: None,
+                tx_type: 0,
+                shielded_payload: None,
             };
             let _ = eng2.submit_tx_unsigned(tx);
         }
@@ -178,6 +182,8 @@ fn main() {
                     nonce: (i / 255) as u64,
                     chain_id: Some(7919),
                     signature: None,
+                    tx_type: 0,
+                    shielded_payload: None,
                 };
                 let _ = eng.submit_tx_unsigned(tx);
             }

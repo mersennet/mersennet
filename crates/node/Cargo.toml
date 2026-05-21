@@ -24,6 +24,10 @@ path = "src/bin/loadtest.rs"
 name = "stresstest"
 path = "src/bin/stresstest.rs"
 
+[[bin]]
+name = "migrate-genesis"
+path = "src/bin/migrate_genesis.rs"
+
 [dependencies]
 prime-chain = { path = "../core" }
 prime-chain-network = { path = "../network" }
@@ -41,3 +45,6 @@ ctrlc = "3.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 metrics = "0.19"
+tempfile = "3.10"
+sha3 = "0.10"
+prime-zkp = { path = "../zkp" }

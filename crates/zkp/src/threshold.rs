@@ -59,12 +59,23 @@ pub struct KeyShare {
 
 /// Single-validator decryption share contributing to recovering one
 /// ciphertext.
+///
+/// `material` is opaque bytes whose interpretation depends on the
+/// provider:
+///
+/// - [`DummyThreshold`] uses a 32-byte XOR mask share.
+/// - [`crate::bls_threshold::BlsThreshold`] uses a compressed BLS12-381
+///   `G1` element (48 bytes) representing `c1 * sk_i`.
+///
+/// Keeping this as `Vec<u8>` lets the same `DecryptionShare` type
+/// travel through HotStuff-2 vote messages, RPC, and disk without
+/// the trait surface caring which threshold provider is active.
 #[derive(Clone, Debug)]
 pub struct DecryptionShare {
     pub validator_index: u32,
     pub epoch: u64,
     pub ciphertext_id: [u8; 32],
-    pub material: [u8; 32],
+    pub material: Vec<u8>,
 }
 
 /// The reconstructed ciphertext-specific key, used in tests and in the
@@ -182,7 +193,7 @@ impl ThresholdElGamal for DummyThreshold {
         // Recover the XOR mask.
         let mut mask = [0u8; 32];
         for s in shares.iter() {
-            for (i, b) in s.material.iter().enumerate() {
+            for (i, b) in s.material.iter().take(32).enumerate() {
                 mask[i] ^= b;
             }
         }
@@ -245,13 +256,13 @@ mod tests {
             validator_index: 0,
             epoch: 7,
             ciphertext_id: id,
-            material: share_a,
+            material: share_a.to_vec(),
         };
         let s2 = DecryptionShare {
             validator_index: 1,
             epoch: 7,
             ciphertext_id: id,
-            material: share_b,
+            material: share_b.to_vec(),
         };
 
         assert!(t.submit_share(s1).unwrap().is_none()); // 1 share: below threshold
@@ -266,7 +277,7 @@ mod tests {
             validator_index: 0,
             epoch: 8,
             ciphertext_id: [0u8; 32],
-            material: [0u8; 32],
+            material: vec![0u8; 32],
         };
         assert!(matches!(
             t.submit_share(s),

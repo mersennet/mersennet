@@ -172,6 +172,8 @@ fn handle_request(
             nonce,
             chain_id: Some(chain_id),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         };
 
         let signed = sign_transaction(&tx, &faucet_key);
@@ -340,6 +342,8 @@ fn handle_claim_token(body: &str, rpc_url: &str, faucet_key: &SigningKey, chain_
         nonce,
         chain_id: Some(chain_id),
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     };
     let signed_mint = sign_transaction(&mint_tx, faucet_key);
     let raw_mint = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_mint)));
@@ -361,6 +365,8 @@ fn handle_claim_token(body: &str, rpc_url: &str, faucet_key: &SigningKey, chain_
         nonce: nonce + 1,
         chain_id: Some(chain_id),
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     };
     let signed_transfer = sign_transaction(&transfer_tx, faucet_key);
     let raw_transfer = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_transfer)));

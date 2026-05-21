@@ -54,6 +54,25 @@ pub struct Finalization {
     pub remaining_supply: U256,
 }
 
+impl Default for Finalization {
+    fn default() -> Self {
+        Self {
+            block_hash: B256::ZERO,
+            proposer: Address::ZERO,
+            total_stake: U256::ZERO,
+            committed_stake: U256::ZERO,
+            threshold: U256::ZERO,
+            votes: Vec::new(),
+            finalized: false,
+            rewards: Vec::new(),
+            total_reward: U256::ZERO,
+            burned_reward: U256::ZERO,
+            scheduled_reward: U256::ZERO,
+            remaining_supply: U256::ZERO,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoundResult {
     pub round: u64,

@@ -16,6 +16,22 @@ rand_chacha = "0.3"
 sha3 = "0.10"
 subtle = "2.5"
 
+# Real BN254 curve arithmetic for the Pedersen commitment. The
+# top-level [`prover`] feature gates the real impl; without it, the
+# Poseidon stand-in is used.
+ark-bn254 = { version = "0.4", default-features = false, features = ["curve"], optional = true }
+ark-ec = { version = "0.4", default-features = false, optional = true }
+ark-ff = { version = "0.4", default-features = false, optional = true }
+ark-serialize = { version = "0.4", default-features = false, optional = true }
+ark-std = { version = "0.4", default-features = false, optional = true }
+
+# Real BLS12-381 threshold ElGamal. KEM in G1, share-combine via
+# Lagrange interpolation in G1, AEAD body via ChaCha20-Poly1305.
+blstrs = { version = "0.7", optional = true }
+group = { version = "0.13", optional = true }
+ff = { version = "0.13", optional = true }
+chacha20poly1305 = { version = "0.10", optional = true }
+
 [dev-dependencies]
 proptest = "1.4"
 
@@ -25,7 +41,17 @@ default = []
 # works for hash-tree / Pedersen / threshold-encryption operations and
 # uses a deterministic mock for Noir-circuit proof envelopes so the rest
 # of the workspace can compile and test in CI without the proving stack.
-prover = []
+prover = [
+    "dep:ark-bn254",
+    "dep:ark-ec",
+    "dep:ark-ff",
+    "dep:ark-serialize",
+    "dep:ark-std",
+    "dep:blstrs",
+    "dep:group",
+    "dep:ff",
+    "dep:chacha20poly1305",
+]
 # Real sp1_sdk::ProverClient. When off, the SP1 verifier path uses the
 # existing mock in crates/core/src/zk_sp1.rs.
 sp1 = []

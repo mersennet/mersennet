@@ -24,6 +24,8 @@ fn mempool_randomized_inserts_do_not_exceed_limits() {
             nonce: rng.gen_range(0u64..100u64),
             chain_id: Some(7919),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         };
         let _ = mempool.insert(tx, base_fee, 0);
         assert!(mempool.len() <= max_total);

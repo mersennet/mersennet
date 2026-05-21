@@ -178,6 +178,8 @@ fn parallel_execution_matches_sequential() {
             nonce: 0,
             chain_id: Some(7919),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         };
         engine.submit_tx_unsigned(tx).expect("submit");
     }
@@ -207,6 +209,8 @@ fn parallel_execution_matches_sequential() {
             nonce: 0,
             chain_id: Some(7919),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         };
         engine2.submit_tx_unsigned(tx).expect("submit");
     }

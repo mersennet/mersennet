@@ -104,6 +104,28 @@ fn main() -> anyhow::Result<()> {
         initial_reward,
         app_config.token_economics.halving_interval,
     );
+    // ───── Privacy hard-fork wiring (Workstream H) ─────
+    //
+    // Apply the operator-supplied privacy config. The defaults
+    // leave the privacy subsystem inactive; chain-7920 (privacy
+    // testnet) configs set `mode_activated: true` or stamp an
+    // activation height.
+    engine.set_dkg_epoch_length(app_config.privacy.dkg_epoch_length_blocks);
+    if let Some(h) = app_config.privacy.activation_height {
+        engine.set_privacy_activation_height(h);
+        info!(activation_height = h, "privacy activation height configured");
+    }
+    if app_config.privacy.mode_activated {
+        engine.activate_privacy_mode();
+    }
+    info!(
+        privacy_mode_activated = engine.privacy_mode_activated(),
+        dkg_epoch_length_blocks = app_config.privacy.dkg_epoch_length_blocks,
+        threshold_k = app_config.privacy.threshold_k,
+        threshold_n = app_config.privacy.threshold_n,
+        "privacy subsystem configured"
+    );
+
     if handle_snapshot_cli(&mut engine, &cli)? {
         return Ok(());
     }
@@ -262,6 +284,67 @@ fn main() -> anyhow::Result<()> {
                                             &log.topics,
                                         );
                                     }
+                                }
+
+                                // ───── Shielded WS dispatch (C3) ─────
+                                //
+                                // Walk this block's domain events and
+                                // fan them out to the privacy-mode WS
+                                // subscriptions. Each payload is
+                                // address-free by construction (the
+                                // shielded events only carry roots,
+                                // commitments, and market-level
+                                // aggregates; CI K2 enforces that).
+                                for ev in &block.domain_events {
+                                    if let prime_chain::events::DomainEvent::Shielded(sev) = ev {
+                                        match sev {
+                                            prime_chain::events::ShieldedEvent::ShieldedRootAdvanced { block_number, new_root, notes_added, nullifiers_added } => {
+                                                let payload = serde_json::json!({
+                                                    "blockNumber": format!("0x{:x}", block_number),
+                                                    "newRoot":     format!("0x{}", hex::encode(new_root)),
+                                                    "notesAdded":  format!("0x{:x}", notes_added),
+                                                    "nullifiersAdded": format!("0x{:x}", nullifiers_added),
+                                                });
+                                                mgr.notify_shielded_root(&payload);
+                                            }
+                                            prime_chain::events::ShieldedEvent::FbaCleared { market_id, clearing_price, matched_size, intent_count } => {
+                                                let payload = serde_json::json!({
+                                                    "marketId":      format!("0x{:x}", market_id.0),
+                                                    "clearingPrice": format!("0x{:x}", clearing_price),
+                                                    "matchedSize":   format!("0x{:x}", matched_size),
+                                                    "intentCount":   format!("0x{:x}", intent_count),
+                                                });
+                                                mgr.notify_clearing_price(&payload, market_id.0);
+                                            }
+                                            prime_chain::events::ShieldedEvent::LiquidationSettled { market_id, winner_bond_commitment, winning_bid } => {
+                                                let payload = serde_json::json!({
+                                                    "marketId":              format!("0x{:x}", market_id.0),
+                                                    "winnerBondCommitment":  format!("0x{}", hex::encode(winner_bond_commitment)),
+                                                    "winningBid":            format!("0x{:x}", winning_bid),
+                                                });
+                                                mgr.notify_auction_settled(&payload, market_id.0);
+                                            }
+                                            prime_chain::events::ShieldedEvent::MempoolBatchAdmitted { .. } => {
+                                                // Not a public-facing WS topic — keep it
+                                                // in domain_events for indexing only.
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // State-proof WS dispatch (C3+C4):
+                                // fire `newStateProof` whenever the
+                                // block carries one.
+                                if let Some(proof) = &block.state_proof {
+                                    let payload = serde_json::json!({
+                                        "blockNumber":   format!("0x{:x}", proof.block_height),
+                                        "prevStateRoot": format!("0x{}", hex::encode(proof.prev_state_root.as_slice())),
+                                        "newStateRoot":  format!("0x{}", hex::encode(proof.new_state_root.as_slice())),
+                                        "blockHash":     format!("0x{}", hex::encode(proof.block_hash.as_slice())),
+                                        "txCount":       format!("0x{:x}", proof.tx_count),
+                                        "proofType":     format!("{:?}", proof.proof_type),
+                                    });
+                                    mgr.notify_state_proof(&payload);
                                 }
                             }
 
@@ -940,6 +1023,8 @@ fn run_p2p_demo() -> anyhow::Result<()> {
             nonce: 0,
             chain_id: Some(7919),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         }),
     );
     network.broadcast(
