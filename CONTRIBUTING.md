@@ -70,39 +70,81 @@ A trailing `Made-with: Cursor` line is fine when applicable.
 
 ### CI gates
 
-- `cargo build --workspace`
-- `cargo test --workspace`
-- `cargo clippy --workspace -- -D warnings`
-- `cargo fmt --check`
-- (When circuits land) `nargo test` for Noir circuits
-- (When ZK is real) `cargo test -p zkp --features prover` for proof
-  round-trips against pinned KZG SRS.
+Run locally before opening a PR; all of these are also enforced by
+`.github/workflows/ci.yml`:
+
+```bash
+cargo check --workspace                                   # fast type-check
+cargo build --workspace                                   # default features
+cargo test --workspace --lib --tests                      # ~5 min, 286+ tests
+cargo test -p prime-zkp --features prover                 # real crypto path (43 tests)
+cargo clippy --workspace -- -D warnings
+cargo fmt --check
+bash scripts/ci/check-privacy-invariants.sh               # CI K2 grep, 7 rules
+```
+
+Additional jobs run in CI:
+
+- **`sdk_typecheck`** — `tsc --noEmit` over `sdk/`
+- **`contracts`** — `forge build --sizes && forge test -vvv` in `contracts/`
+- **`audit`** — `cargo audit`
+- (Coming) `nargo test` for Noir circuits in `crates/zkp/circuits/`
 
 ---
 
 ## ZK-privacy redesign workflow
 
-The privacy redesign is structured as a series of gated phases. See
-`docs/internal/zk-privacy-plan.md` (added in Phase 0) for the full plan.
+The privacy redesign is structured as a series of gated phases and
+parallel workstreams (A–K). The phase view tracks the original plan;
+the workstream view tracks the current granular tasks. See
+[`docs/STATUS.md`](docs/STATUS.md) for live status and
+[`docs/internal/zk-privacy-plan.md`](docs/internal/zk-privacy-plan.md)
+for the full plan.
 
-| Phase | Branch | Status |
+### Phases
+
+| Phase | Status |
+|---|---|
+| 0. Repo consolidation | **Done** |
+| 1. ZK primitives + threshold mempool | **Done** |
+| 2. Shielded CLOB | **Done** |
+| 3. Liquidation auctions | **Done** |
+| 4. Shielded EVM accounts | **Done** |
+| 5. Real SP1 state proofs | In progress (mock today, sp1up integration tracked in E1–E5) |
+| 6. SDK / RPC / wallet | In progress (Rust RPC done, wallet/SDK tracked in F1–F6) |
+| 7. Hard fork + testnet bake | **Testnet ready** (8-week bake gated on D5/D6/E completion) |
+
+### Workstreams (granular)
+
+| Code | Workstream | Status |
 |---|---|---|
-| 0. Repo consolidation | `feat/zk-privacy` (initial) | In progress |
-| 1. ZK primitives + threshold mempool | `feat/zk-privacy` | In progress |
-| 2. Shielded CLOB | `feat/zk-privacy` | Gated |
-| 3. Liquidation auctions | `feat/zk-privacy` | Gated |
-| 4. Shielded EVM accounts | `feat/zk-privacy` | Gated |
-| 5. Real SP1 state proofs | `feat/zk-privacy` | Gated |
-| 6. SDK / RPC / wallet | `feat/zk-privacy` | Gated |
-| 7. Hard fork + testnet bake | `release/zk-fork` | Gated |
+| A | State + snapshot | **Done** |
+| B | Shielded subsystems | **Done** |
+| C | RPC + WS | **Done** |
+| D1–D4 | Crypto primitives + DKG | **Done** |
+| D5 | Barretenberg verifier bindings | Pending nargo install |
+| D6 | Noir circuit compilation | Pending nargo install |
+| D7 | Cryptography spec for auditor | **Done** ([here](docs/security/cryptography-spec.md)) |
+| E1–E5 | SP1 toolchain + program body | Pending sp1up install |
+| F1–F6 | WASM Noir prover + UI + SDKs | Tracked separately |
+| G1–G4 | Solidity bridge + Foundry tests | Tracked separately |
+| H1–H7 | Testnet bring-up | **Done** ([runbook](docs/runbooks/privacy-testnet-bootstrap.md)) |
+| I1–I6 | Third-party audit | Awaiting D5/D6/E |
+| J1–J6 | Governance activation | Awaiting audit |
+| K1–K5 | CI / coverage / dev container | **K1–K2 done**, K3–K5 pending |
 
 At each phase boundary, `feat/zk-privacy` is merged into `main` and tagged
 `zk-phase-<n>-rc.<x>`.
 
-### Privacy ground rules
+### Privacy ground rules (CI-enforced)
 
-- **No address-keyed state for trader balances or positions** anywhere in
-  `crates/core/src/prime_orders.rs` or its successor modules.
+These are non-negotiable. The CI job `privacy_invariants` greps for
+violations on every PR. See
+[`docs/security/privacy-invariants.md`](docs/security/privacy-invariants.md)
+for the full rule set.
+
+- **No address-keyed state for trader balances or positions** anywhere
+  inside `crates/core/src/shielded_*` or `crates/zkp/`.
 - **No address fields in events** for shielded transactions or trades.
 - **No plaintext addresses in metrics labels**. Use aggregates only.
 - **No `panic!` in proof verification code paths**. Proof failures must
@@ -110,6 +152,34 @@ At each phase boundary, `feat/zk-privacy` is merged into `main` and tagged
 - **All shielded state writes go through the nullifier set**. A nullifier
   that already exists in the set is a fatal validation error for the
   containing transaction.
+
+If you need to cross the transparent/shielded boundary on purpose
+(e.g. the migration tool, the shield/unshield bridge), add a
+`// privacy-allow: <reason>` comment. The grep respects that.
+
+### Privacy testnet quick reference
+
+```bash
+# Bring up a local 7-validator privacy testnet (chain 7920)
+cd testnet
+./scripts/bootstrap-privacy-genesis.sh
+docker compose -f docker-compose.privacy.yml up -d --build
+
+# Synthetic load
+./scripts/privacy-load.sh
+
+# Chaos drill — kill a random validator, verify liveness + recovery
+./scripts/chaos-kill-validator.sh
+
+# Generate a privacy-fork genesis from a pre-fork snapshot
+cargo run --release --bin migrate-genesis -- \
+    --in  ./prefork-snapshot.bin \
+    --out ./postfork-snapshot.bin \
+    --chain-id 7920 \
+    --activation-height 100
+```
+
+Full runbook: [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/privacy-testnet-bootstrap.md).
 
 ---
 
@@ -126,6 +196,18 @@ Solidity contracts:
 
 ```bash
 cd contracts && forge build && forge test
+```
+
+TypeScript SDK:
+
+```bash
+cd sdk && npm install && npx tsc --noEmit
+```
+
+Privacy CI grep (catches regressions before pushing):
+
+```bash
+bash scripts/ci/check-privacy-invariants.sh
 ```
 
 ---

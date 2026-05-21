@@ -1,6 +1,69 @@
-# Prime Chain Public Testnet
+# Prime Chain Testnets
 
-This directory contains tooling to run a Prime Chain public testnet with multiple validators, an RPC node, a faucet, and monitoring.
+This directory contains tooling to bring up two distinct Prime Chain
+networks:
+
+| Compose file | Chain ID | Purpose |
+|---|---|---|
+| `docker-compose.testnet.yml` | **7919** | Transparent public testnet — EVM + PrimeOrders CLOB |
+| `docker-compose.privacy.yml` | **7920** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
+
+Both compose files run a multi-validator stack plus an RPC observer,
+faucet, Prometheus, and Grafana.
+
+---
+
+## A. Privacy testnet (chain 7920) — recommended starting point
+
+Full operator runbook:
+[`../docs/runbooks/privacy-testnet-bootstrap.md`](../docs/runbooks/privacy-testnet-bootstrap.md).
+
+```bash
+# Build + generate keys + (optionally) migrate a pre-fork snapshot
+./scripts/bootstrap-privacy-genesis.sh
+
+# Bring up 7 validators + RPC observer + faucet + monitoring
+docker compose -f docker-compose.privacy.yml up -d --build
+```
+
+After ~60s:
+
+| Service | URL |
+|---|---|
+| RPC observer (HTTP + WS) | http://localhost:8545 / ws://localhost:8546 |
+| Faucet | http://localhost:8081 |
+| Grafana (privacy dashboard auto-loaded) | http://localhost:3001 |
+| Prometheus | http://localhost:9100 |
+| Validator RPCs | http://localhost:18545..18551 |
+
+Sanity check:
+
+```bash
+curl -s http://localhost:8545/health
+curl -s -X POST -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"prime_getChainConfig","params":[]}' \
+  http://localhost:8545
+```
+
+Synthetic load + chaos drill:
+
+```bash
+./scripts/privacy-load.sh             # ~10 min synthetic order flow
+./scripts/chaos-kill-validator.sh     # kill-recover liveness test
+```
+
+Tear down (wipes volumes):
+
+```bash
+docker compose -f docker-compose.privacy.yml down -v
+```
+
+---
+
+## B. Transparent testnet (chain 7919)
+
+This is the original public testnet — same network as
+`https://rpc.primechain.xyz` runs.
 
 ## Quick Start
 
@@ -108,3 +171,12 @@ docker compose -f docker-compose.testnet.yml down -v
 - **faucet-key.json** holds the faucet’s private key. Do not commit it or expose it.
 - Validator keys in `genesis-output/keys/` are for testnet only.
 - For production, use proper key management and secure genesis ceremonies.
+
+---
+
+## See also
+
+- [`docs/runbooks/privacy-testnet-bootstrap.md`](../docs/runbooks/privacy-testnet-bootstrap.md) — full privacy-testnet bring-up.
+- [`docs/runbooks/zk-fork-activation.md`](../docs/runbooks/zk-fork-activation.md) — mainnet hard-fork checklist.
+- [`docs/DEVELOPER_GUIDE.md`](../docs/DEVELOPER_GUIDE.md) — repo-wide developer entry point.
+- [`docs/STATUS.md`](../docs/STATUS.md) — workstream tracker.
