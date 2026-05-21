@@ -1,31 +1,35 @@
-use anyhow::Result;
-use revm::db::InMemoryDB;
-use serde::{Serialize, Deserialize};
-use crate::consensus::{
-    EvidenceKind, Finalization, Consensus, Reward, RoundResult, Slashing, SlashingEvidence,
-    Unbonding, Validator, ValidatorChange,
-};
-use crate::hotstuff2::{HotStuff2, HotStuff2Result};
 use crate::bridge::{BridgeDomain, BridgeMessage, BridgeQueue};
 use crate::commit_reveal::{CommitRevealError, CommitRevealPool, TxCommitment, TxReveal};
+use crate::consensus::{
+    Consensus, EvidenceKind, Finalization, Reward, RoundResult, Slashing, SlashingEvidence,
+    Unbonding, Validator, ValidatorChange,
+};
 use crate::crypto::{self, SignedTransaction};
-use crate::events::{BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent};
 use crate::errors::PrimeOrdersError;
-use crate::parallel::ParallelExecutor;
+use crate::events::{
+    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
+};
 use crate::fba::{AuctionResult, BatchOrder, FBAEngine};
+use crate::hotstuff2::{HotStuff2, HotStuff2Result};
 use crate::mempool::{Mempool, TxRejection};
 use crate::network::NetworkSim;
+use crate::parallel::ParallelExecutor;
 use crate::precompiles;
-use crate::prime_orders::{MarketId, Order, OrderBookView, OrderId, OrderOutcome, PrimeOrdersState, Side, TimeInForce};
+use crate::prime_orders::{
+    MarketId, Order, OrderBookView, OrderId, OrderOutcome, PrimeOrdersState, Side, TimeInForce,
+};
 use crate::state::PersistentState;
 use crate::state::SnapshotMeta;
 use crate::state_redb::RedbState;
 use crate::state_trait::StateBackend;
+use anyhow::Result;
+use revm::db::InMemoryDB;
 use revm::primitives::{
-    keccak256, AccountInfo, Address, B256, Bytes, Bytecode, Env, ExecutionResult, SpecId, TxKind,
-    U256, KECCAK_EMPTY,
+    AccountInfo, Address, B256, Bytecode, Bytes, Env, ExecutionResult, KECCAK_EMPTY, SpecId,
+    TxKind, U256, keccak256,
 };
 use revm::{Database, Evm};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -39,18 +43,18 @@ fn f64_from_u256(v: U256) -> f64 {
     lo as f64
 }
 
-use crate::flat_state::{FlatState, FlatAccount, StateChangeset};
-use crate::market_maker::MarketMakerEngine;
-use crate::intents::IntentEngine;
-use crate::encrypted_mempool::EncryptedMempool;
-use crate::mainnet::MainnetGuard;
 use crate::account_abstraction::Bundler;
+use crate::encrypted_mempool::EncryptedMempool;
+use crate::flat_state::{FlatAccount, FlatState, StateChangeset};
 use crate::formal_verification::InvariantChecker;
 use crate::liquidation_auction::LiquidationAuction;
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
 use crate::shielded_orders::ShieldedOrdersEngine;
 use crate::shielded_persistence::ShieldedPersistence;
 use crate::threshold_mempool::ThresholdMempool;
+use crate::intents::IntentEngine;
+use crate::mainnet::MainnetGuard;
+use crate::market_maker::MarketMakerEngine;
 
 /// Synthetic execution result returned by `apply_shielded_tx` when
 /// the shielded path is unavailable (e.g. pre-fork, missing payload).
@@ -342,7 +346,8 @@ impl ConsensusEngine {
         evidence: &SlashingEvidence,
         current_height: u64,
     ) -> U256 {
-        self.inner.slash_amount_for_evidence(evidence, current_height)
+        self.inner
+            .slash_amount_for_evidence(evidence, current_height)
     }
 
     pub fn record_offense(&mut self, validator: Address) {
@@ -366,7 +371,10 @@ impl ConsensusEngine {
     pub fn run_hotstuff2_round(&mut self, block_hash: B256, height: u64) -> HotStuff2Result {
         let hs = self.hotstuff2.get_or_insert_with(|| {
             let validators = self.inner.validators().to_vec();
-            let proposer = validators.first().map(|v| v.address).unwrap_or(Address::ZERO);
+            let proposer = validators
+                .first()
+                .map(|v| v.address)
+                .unwrap_or(Address::ZERO);
             HotStuff2::new(proposer, validators)
         });
         hs.run_simulated_round(block_hash, height)
@@ -446,7 +454,11 @@ impl Engine {
         Self::new_with_backend(chain_id, path, "sled")
     }
 
-    pub fn new_with_backend(chain_id: u64, path: impl AsRef<std::path::Path>, backend: &str) -> Self {
+    pub fn new_with_backend(
+        chain_id: u64,
+        path: impl AsRef<std::path::Path>,
+        backend: &str,
+    ) -> Self {
         let path_buf = path.as_ref().to_path_buf();
         let state: Box<dyn StateBackend> = match backend {
             "redb" => {
@@ -489,7 +501,9 @@ impl Engine {
         let mut db = InMemoryDB::default();
         state.load_into_db(&mut db).expect("state DB load");
         let mut prime_orders = PrimeOrdersState::new();
-        state.load_prime_orders(&mut prime_orders).expect("prime orders load");
+        state
+            .load_prime_orders(&mut prime_orders)
+            .expect("prime orders load");
         let mut bridge_orders_to_evm = BridgeQueue::new();
         let mut bridge_evm_to_orders = BridgeQueue::new();
         state
@@ -513,7 +527,9 @@ impl Engine {
             fee_target_gas: 15_000_000,
             evm: EvmEngine { state, db },
             chain: Vec::new(),
-            orders: OrdersEngine { state: prime_orders },
+            orders: OrdersEngine {
+                state: prime_orders,
+            },
             bridge: BridgeEngine {
                 orders_to_evm: bridge_orders_to_evm,
                 evm_to_orders: bridge_evm_to_orders,
@@ -633,7 +649,8 @@ impl Engine {
     }
 
     pub fn set_slashing_bps(&mut self, double_sign_bps: u64, timeout_bps: u64) {
-        self.consensus.set_slashing_bps(double_sign_bps, timeout_bps);
+        self.consensus
+            .set_slashing_bps(double_sign_bps, timeout_bps);
     }
 
     pub fn set_slashing_escalation(&mut self, step_bps: u64, max_bps: u64) {
@@ -655,7 +672,8 @@ impl Engine {
     }
 
     pub fn set_mempool_limits(&mut self, max_total: usize, max_per_sender: usize, bump_bps: u64) {
-        self.mempool.update_limits(max_total, max_per_sender, bump_bps);
+        self.mempool
+            .update_limits(max_total, max_per_sender, bump_bps);
     }
 
     pub fn set_bridge_limits(&mut self, max_queue_len: Option<usize>) {
@@ -680,15 +698,15 @@ impl Engine {
                 continue;
             }
             for (index, event) in block.domain_events.iter().enumerate() {
-                if let Some(domain) = domain {
-                    if event.domain() != domain {
-                        continue;
-                    }
+                if let Some(domain) = domain
+                    && event.domain() != domain
+                {
+                    continue;
                 }
-                if let Some(kind) = kind {
-                    if event.kind() != kind {
-                        continue;
-                    }
+                if let Some(kind) = kind
+                    && event.kind() != kind
+                {
+                    continue;
                 }
                 records.push(DomainEventRecord {
                     block_number: block.number,
@@ -707,15 +725,16 @@ impl Engine {
         lot_size: U256,
     ) -> MarketId {
         let symbol = symbol.into();
-        let market_id = self.orders.state.add_market(symbol.clone(), tick_size, lot_size);
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::MarketAdded {
-                market_id,
-                symbol,
-                tick_size,
-                lot_size,
-            },
-        ));
+        let market_id = self
+            .orders
+            .state
+            .add_market(symbol.clone(), tick_size, lot_size);
+        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::MarketAdded {
+            market_id,
+            symbol,
+            tick_size,
+            lot_size,
+        }));
         market_id
     }
 
@@ -732,19 +751,17 @@ impl Engine {
             .orders
             .state
             .submit_order(owner, market, side, price, size, tif)?;
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::OrderSubmitted {
-                order_id: outcome.order_id,
-                owner,
-                market_id: market,
-                side,
-                price,
-                size,
-                tif,
-                filled: outcome.filled,
-                remaining: outcome.remaining,
-            },
-        ));
+        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderSubmitted {
+            order_id: outcome.order_id,
+            owner,
+            market_id: market,
+            side,
+            price,
+            size,
+            tif,
+            filled: outcome.filled,
+            remaining: outcome.remaining,
+        }));
         for trade in &outcome.trades {
             self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::Trade {
                 taker: trade.taker,
@@ -761,20 +778,20 @@ impl Engine {
     pub fn prime_orders_cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
         let order = self.orders.state.cancel_order(order_id);
         if let Some(order) = &order {
-            self.record_event(DomainEvent::PrimeOrders(
-                PrimeOrdersEvent::OrderCancelled {
-                    order_id: order.id,
-                    owner: order.owner,
-                    market_id: order.market,
-                },
-            ));
+            self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderCancelled {
+                order_id: order.id,
+                owner: order.owner,
+                market_id: order.market,
+            }));
         }
         order
     }
 
     #[allow(dead_code)]
     pub fn prime_orders_set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
-        self.orders.state.set_margin_params(initial_bps, maintenance_bps);
+        self.orders
+            .state
+            .set_margin_params(initial_bps, maintenance_bps);
         self.record_event(DomainEvent::PrimeOrders(
             PrimeOrdersEvent::MarginParamsUpdated {
                 initial_bps,
@@ -799,9 +816,10 @@ impl Engine {
     #[allow(dead_code)]
     pub fn prime_orders_liquidate(&mut self, owner: Address) -> bool {
         let liquidated = self.orders.state.liquidate(owner);
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::Liquidation { owner, liquidated },
-        ));
+        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::Liquidation {
+            owner,
+            liquidated,
+        }));
         liquidated
     }
 
@@ -815,10 +833,11 @@ impl Engine {
 
     #[allow(dead_code)]
     pub fn bridge_enqueue_orders_to_evm(&mut self, payload: Bytes) -> BridgeMessage {
-        let msg = self
-            .bridge
-            .orders_to_evm
-            .push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, payload);
+        let msg = self.bridge.orders_to_evm.push(
+            BridgeDomain::PrimeOrders,
+            BridgeDomain::PrimeEvm,
+            payload,
+        );
         self.record_event(DomainEvent::Bridge(BridgeEvent::Enqueued {
             queue: BridgeQueueKind::OrdersToEvm,
             message: msg.clone(),
@@ -828,10 +847,11 @@ impl Engine {
 
     #[allow(dead_code)]
     pub fn bridge_enqueue_evm_to_orders(&mut self, payload: Bytes) -> BridgeMessage {
-        let msg = self
-            .bridge
-            .evm_to_orders
-            .push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, payload);
+        let msg = self.bridge.evm_to_orders.push(
+            BridgeDomain::PrimeEvm,
+            BridgeDomain::PrimeOrders,
+            payload,
+        );
         self.record_event(DomainEvent::Bridge(BridgeEvent::Enqueued {
             queue: BridgeQueueKind::EvmToOrders,
             message: msg.clone(),
@@ -915,7 +935,10 @@ impl Engine {
             .map_err(|_| TxRejection::DatabaseError)?
             .unwrap_or_default();
 
-        match self.mempool.validate(&tx, self.base_fee, account.nonce, account.balance) {
+        match self
+            .mempool
+            .validate(&tx, self.base_fee, account.nonce, account.balance)
+        {
             Ok(()) => {}
             Err(TxRejection::FutureNonce) => {}
             Err(TxRejection::GasPriceTooLow) => {}
@@ -1005,13 +1028,16 @@ impl Engine {
         self.intent_engine.expire_intents(self.block_number);
 
         // Execute ready intents
-        let pending_intent_ids: Vec<B256> = self.intent_engine
+        let pending_intent_ids: Vec<B256> = self
+            .intent_engine
             .pending_intents()
             .iter()
             .map(|i| i.id)
             .collect();
         for intent_id in pending_intent_ids {
-            let _ = self.intent_engine.execute_intent(intent_id, self.block_number);
+            let _ = self
+                .intent_engine
+                .execute_intent(intent_id, self.block_number);
         }
 
         // Process Account Abstraction bundles
@@ -1110,7 +1136,8 @@ impl Engine {
         );
         let applied_validator_changes = self.consensus.apply_pending_changes(self.block_number);
         let (finality_rounds, slashing_evidence) =
-            self.consensus.run_finality_rounds(hash, self.block_number, 2);
+            self.consensus
+                .run_finality_rounds(hash, self.block_number, 2);
         for evidence in &slashing_evidence {
             let amount = self
                 .consensus
@@ -1149,19 +1176,24 @@ impl Engine {
         {
             let mut account_changes = Vec::new();
             for (addr, info) in self.evm.db.accounts.iter() {
-                account_changes.push((*addr, FlatAccount {
-                    balance: info.info.balance,
-                    nonce: info.info.nonce,
-                    code_hash: info.info.code_hash,
-                    storage_root: B256::ZERO,
-                }));
+                account_changes.push((
+                    *addr,
+                    FlatAccount {
+                        balance: info.info.balance,
+                        nonce: info.info.nonce,
+                        code_hash: info.info.code_hash,
+                        storage_root: B256::ZERO,
+                    },
+                ));
             }
             let changeset = StateChangeset {
                 account_changes,
                 storage_changes: Vec::new(),
                 code_changes: Vec::new(),
             };
-            let _ = self.flat_state.commit_block(self.block_number, state_root, changeset);
+            let _ = self
+                .flat_state
+                .commit_block(self.block_number, state_root, changeset);
         }
 
         let mut bridge_orders_to_evm = Vec::new();
@@ -1277,10 +1309,16 @@ impl Engine {
         self.base_fee = self.next_base_fee(gas_used);
         self.mempool.promote(self.base_fee);
         self.mempool.demote(self.base_fee);
-        metrics::gauge!("prime_chain_base_fee_wei", self.base_fee.as_limbs()[0] as f64);
+        metrics::gauge!(
+            "prime_chain_base_fee_wei",
+            self.base_fee.as_limbs()[0] as f64
+        );
 
         self.block_number += 1;
-        metrics::histogram!("prime_chain_block_execution_seconds", start.elapsed().as_secs_f64());
+        metrics::histogram!(
+            "prime_chain_block_execution_seconds",
+            start.elapsed().as_secs_f64()
+        );
 
         // Post-block mainnet checks
         if let Err(e) = self.mainnet_guard.post_block_checks(
@@ -1442,7 +1480,8 @@ impl Engine {
         );
         let applied_validator_changes = self.consensus.apply_pending_changes(self.block_number);
         let (finality_rounds, slashing_evidence) =
-            self.consensus.run_finality_rounds(hash, self.block_number, 2);
+            self.consensus
+                .run_finality_rounds(hash, self.block_number, 2);
         for evidence in &slashing_evidence {
             let amount = self
                 .consensus
@@ -1557,10 +1596,16 @@ impl Engine {
         self.base_fee = self.next_base_fee(gas_used);
         self.mempool.promote(self.base_fee);
         self.mempool.demote(self.base_fee);
-        metrics::gauge!("prime_chain_base_fee_wei", self.base_fee.as_limbs()[0] as f64);
+        metrics::gauge!(
+            "prime_chain_base_fee_wei",
+            self.base_fee.as_limbs()[0] as f64
+        );
 
         self.block_number += 1;
-        metrics::histogram!("prime_chain_block_execution_seconds", start.elapsed().as_secs_f64());
+        metrics::histogram!(
+            "prime_chain_block_execution_seconds",
+            start.elapsed().as_secs_f64()
+        );
         Ok(block)
     }
 
@@ -1672,13 +1717,18 @@ impl Engine {
             self.privacy_activation_height = Some(h);
         }
 
+        self.evm.state.load_bridge_queues(
+            &mut self.bridge.orders_to_evm,
+            &mut self.bridge.evm_to_orders,
+        )?;
         self.block_number = meta.height.saturating_add(1);
         Ok(meta)
     }
 
     pub fn get_balance(&mut self, address: Address) -> Result<U256> {
         Ok(self
-            .evm.db
+            .evm
+            .db
             .basic(address)?
             .map(|info| info.balance)
             .unwrap_or_default())
@@ -1686,7 +1736,8 @@ impl Engine {
 
     pub fn get_account_nonce(&mut self, address: Address) -> Result<u64> {
         Ok(self
-            .evm.db
+            .evm
+            .db
             .basic(address)?
             .map(|info| info.nonce)
             .unwrap_or_default())
@@ -1758,7 +1809,12 @@ impl Engine {
             .expect("shielded_evm mutex not poisoned");
 
         match result.result {
-            ExecutionResult::Success { gas_used, output, logs, .. } => {
+            ExecutionResult::Success {
+                gas_used,
+                output,
+                logs,
+                ..
+            } => {
                 let created_address = output.address().cloned();
                 Ok(TxExecution {
                     success: true,
@@ -1935,10 +1991,10 @@ impl Engine {
         if tx.gas_limit > self.gas_limit_per_block {
             return Err(TxRejection::GasLimitTooHigh);
         }
-        if let Some(chain_id) = tx.chain_id {
-            if chain_id != self.chain_id {
-                return Err(TxRejection::InvalidChainId);
-            }
+        if let Some(chain_id) = tx.chain_id
+            && chain_id != self.chain_id
+        {
+            return Err(TxRejection::InvalidChainId);
         }
         Ok(())
     }
@@ -1972,7 +2028,8 @@ impl Engine {
     #[allow(dead_code)]
     fn validate_tx_state(&mut self, tx: &Transaction) -> Result<(), TxRejection> {
         let account = self
-            .evm.db
+            .evm
+            .db
             .basic(tx.from)
             .map_err(|_| TxRejection::DatabaseError)?
             .unwrap_or_default();
@@ -2337,7 +2394,12 @@ impl Engine {
         }
         self.evm.state.mark_dirty(self.coinbase);
         let execution = match result {
-            ExecutionResult::Success { gas_used, output, logs, .. } => TxExecution {
+            ExecutionResult::Success {
+                gas_used,
+                output,
+                logs,
+                ..
+            } => TxExecution {
                 success: true,
                 gas_used,
                 output: output.clone().into_data(),
@@ -2374,6 +2436,7 @@ impl Engine {
         Ok(execution)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_block_hash(
         &self,
         number: u64,

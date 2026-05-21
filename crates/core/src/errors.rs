@@ -24,10 +24,14 @@ impl PrimeOrdersError {
             PrimeOrdersError::UnknownMarket => "unknown market",
             PrimeOrdersError::InvalidSize => "size must be > 0",
             PrimeOrdersError::FokNotFillable => "fok not fillable",
-            PrimeOrdersError::InsufficientCollateral => "insufficient collateral for initial margin",
+            PrimeOrdersError::InsufficientCollateral => {
+                "insufficient collateral for initial margin"
+            }
             PrimeOrdersError::InsufficientEquity => "insufficient equity",
             PrimeOrdersError::MarketHalted => "market is halted",
-            PrimeOrdersError::WithdrawalExceedsEquity => "withdrawal would bring equity below maintenance margin",
+            PrimeOrdersError::WithdrawalExceedsEquity => {
+                "withdrawal would bring equity below maintenance margin"
+            }
         }
     }
 }

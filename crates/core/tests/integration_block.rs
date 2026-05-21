@@ -12,16 +12,30 @@ fn block_execution_produces_receipts() {
     engine.fund_account(alice, U256::from(2_000_000u64), 0);
 
     engine
-        .transfer(alice, bob, U256::from(1_000u64), 21_000, U256::from(1u64), 0)
+        .transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
         .expect("transfer");
 
     let contract_creation = Bytes::from_static(&[
-        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
-        0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a, 0x60,
+        0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
     ]);
 
     engine
-        .deploy_contract(alice, contract_creation, 1_000_000, U256::from(1u64), 1, U256::ZERO)
+        .deploy_contract(
+            alice,
+            contract_creation,
+            1_000_000,
+            U256::from(1u64),
+            1,
+            U256::ZERO,
+        )
         .expect("deploy");
 
     let block = engine.execute_block().expect("execute block");

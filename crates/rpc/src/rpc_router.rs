@@ -1,11 +1,13 @@
 use prime_chain::bridge::{BridgeDomain, BridgeMessage};
 use prime_chain::engine::Engine;
-use prime_chain::events::{BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent};
 use prime_chain::errors::PrimeOrdersError;
+use prime_chain::events::{
+    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
+};
 use prime_chain::prime_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
 use revm::primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub type RpcResult<T> = Result<T, RpcError>;
 
@@ -18,7 +20,10 @@ pub struct RpcError {
 
 impl RpcError {
     pub fn new(code: i64, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -35,7 +40,9 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
     }
     match call {
         "prime_chainId" | "eth_chainId" => Ok(Value::String(hex_u64(engine.chain_id))),
-        "prime_blockNumber" | "eth_blockNumber" => Ok(Value::String(hex_u64(engine.latest_height()))),
+        "prime_blockNumber" | "eth_blockNumber" => {
+            Ok(Value::String(hex_u64(engine.latest_height())))
+        }
         "prime_getBalance" | "eth_getBalance" => {
             let (address, _) = parse_balance_params(params)?;
             let balance = engine
@@ -91,7 +98,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         }
         "primeorders_getOrderBook" => {
             let market_id = parse_market_id(params)?;
-            let book = engine.prime_orders_order_book(prime_chain::prime_orders::MarketId(market_id));
+            let book =
+                engine.prime_orders_order_book(prime_chain::prime_orders::MarketId(market_id));
             match book {
                 Some(book) => Ok(serde_json::to_value(order_book_to_dto(book))
                     .map_err(|err| RpcError::new(-32000, err.to_string()))?),
@@ -150,9 +158,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
-        "prime_gasPrice" | "eth_gasPrice" => {
-            Ok(Value::String(hex_u256(engine.base_fee)))
-        }
+        "prime_gasPrice" | "eth_gasPrice" => Ok(Value::String(hex_u256(engine.base_fee))),
         "prime_validators" => {
             let validators: Vec<Value> = engine
                 .consensus
@@ -179,7 +185,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 Value::Array(values) => values,
                 _ => return Err(RpcError::new(-32602, "invalid params")),
             };
-            let address = match array.get(0) {
+            let address = match array.first() {
                 Some(Value::String(value)) => parse_address(value)?,
                 _ => return Err(RpcError::new(-32602, "address required")),
             };
@@ -201,7 +207,9 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         }
         "prime_call" | "eth_call" => {
             let input = parse_call_input(params)?;
-            let to = input.to.ok_or_else(|| RpcError::new(-32602, "to address required for eth_call"))?;
+            let to = input
+                .to
+                .ok_or_else(|| RpcError::new(-32602, "to address required for eth_call"))?;
             let output = engine
                 .call_contract(input.from, to, input.data, input.gas_limit, input.value)
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
@@ -213,7 +221,13 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 Ok(Value::String(hex_u64(21000)))
             } else {
                 let exec = engine
-                    .simulate_call(input.from, input.to, input.data, input.gas_limit, input.value)
+                    .simulate_call(
+                        input.from,
+                        input.to,
+                        input.data,
+                        input.gas_limit,
+                        input.value,
+                    )
                     .map_err(|err| RpcError::new(-32000, err.to_string()))?;
                 Ok(Value::String(hex_u64(exec.gas_used)))
             }
@@ -327,7 +341,7 @@ fn parse_owner_param(params: Value) -> RpcResult<Address> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    match array.get(0) {
+    match array.first() {
         Some(Value::String(value)) => parse_address(value),
         _ => Err(RpcError::new(-32602, "owner required")),
     }
@@ -339,7 +353,7 @@ fn parse_balance_params(params: Value) -> RpcResult<(Address, Value)> {
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
 
-    let address = match array.get(0) {
+    let address = match array.first() {
         Some(Value::String(value)) => parse_address(value)?,
         _ => return Err(RpcError::new(-32602, "address required")),
     };
@@ -353,7 +367,7 @@ fn parse_market_input(params: Value) -> RpcResult<(String, U256, U256)> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    let symbol = match array.get(0) {
+    let symbol = match array.first() {
         Some(Value::String(value)) => value.clone(),
         _ => return Err(RpcError::new(-32602, "symbol required")),
     };
@@ -374,7 +388,7 @@ fn parse_prime_order_input(params: Value) -> RpcResult<PrimeOrderInput> {
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
     let obj = array
-        .get(0)
+        .first()
         .ok_or_else(|| RpcError::new(-32602, "order object required"))?
         .clone();
     serde_json::from_value(obj).map_err(|err| RpcError::new(-32602, err.to_string()))
@@ -385,7 +399,7 @@ fn parse_order_id(params: Value) -> RpcResult<u64> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    match array.get(0) {
+    match array.first() {
         Some(Value::String(value)) => parse_hex_u64(value),
         Some(Value::Number(value)) => value
             .as_u64()
@@ -399,7 +413,7 @@ fn parse_market_id(params: Value) -> RpcResult<u64> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    match array.get(0) {
+    match array.first() {
         Some(Value::String(value)) => parse_hex_u64(value),
         Some(Value::Number(value)) => value
             .as_u64()
@@ -413,13 +427,17 @@ fn parse_margin_params(params: Value) -> RpcResult<(u64, u64)> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    let initial = match array.get(0) {
-        Some(Value::Number(value)) => value.as_u64().ok_or_else(|| RpcError::new(-32602, "invalid initial_bps"))?,
+    let initial = match array.first() {
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .ok_or_else(|| RpcError::new(-32602, "invalid initial_bps"))?,
         Some(Value::String(value)) => parse_hex_u64(value)?,
         _ => return Err(RpcError::new(-32602, "initial_bps required")),
     };
     let maintenance = match array.get(1) {
-        Some(Value::Number(value)) => value.as_u64().ok_or_else(|| RpcError::new(-32602, "invalid maintenance_bps"))?,
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .ok_or_else(|| RpcError::new(-32602, "invalid maintenance_bps"))?,
         Some(Value::String(value)) => parse_hex_u64(value)?,
         _ => return Err(RpcError::new(-32602, "maintenance_bps required")),
     };
@@ -431,13 +449,17 @@ fn parse_collateral_input(params: Value) -> RpcResult<(Address, U256)> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    let owner = match array.get(0) {
+    let owner = match array.first() {
         Some(Value::String(value)) => parse_address(value)?,
         _ => return Err(RpcError::new(-32602, "owner required")),
     };
     let amount = match array.get(1) {
         Some(Value::String(value)) => parse_hex_u256(value)?,
-        Some(Value::Number(value)) => U256::from(value.as_u64().ok_or_else(|| RpcError::new(-32602, "invalid amount"))?),
+        Some(Value::Number(value)) => U256::from(
+            value
+                .as_u64()
+                .ok_or_else(|| RpcError::new(-32602, "invalid amount"))?,
+        ),
         _ => return Err(RpcError::new(-32602, "amount required")),
     };
     Ok((owner, amount))
@@ -448,7 +470,7 @@ fn parse_payload(params: Value) -> RpcResult<Bytes> {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
-    match array.get(0) {
+    match array.first() {
         Some(Value::String(value)) => parse_hex_bytes(value),
         _ => Err(RpcError::new(-32602, "payload required")),
     }
@@ -457,7 +479,7 @@ fn parse_payload(params: Value) -> RpcResult<Bytes> {
 fn parse_domain_event_filter(params: Value, engine: &Engine) -> RpcResult<DomainEventFilter> {
     let latest = engine.latest_height();
     let raw = match params {
-        Value::Array(values) => values.get(0).cloned().unwrap_or(Value::Null),
+        Value::Array(values) => values.first().cloned().unwrap_or(Value::Null),
         Value::Null => Value::Null,
         value => value,
     };
@@ -494,7 +516,9 @@ fn parse_block_bound(value: &Value, latest: u64, fallback: u64) -> RpcResult<u64
         Value::Null => Ok(fallback),
         Value::String(tag) if tag == "latest" => Ok(latest),
         Value::String(tag) => parse_hex_u64(tag),
-        Value::Number(num) => num.as_u64().ok_or_else(|| RpcError::new(-32602, "invalid block number")),
+        Value::Number(num) => num
+            .as_u64()
+            .ok_or_else(|| RpcError::new(-32602, "invalid block number")),
         _ => Err(RpcError::new(-32602, "invalid block number")),
     }
 }
@@ -697,7 +721,12 @@ fn shielded_event_to_value(event: &prime_chain::events::ShieldedEvent) -> Value 
 
 fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
     match event {
-        PrimeOrdersEvent::MarketAdded { market_id, symbol, tick_size, lot_size } => json!({
+        PrimeOrdersEvent::MarketAdded {
+            market_id,
+            symbol,
+            tick_size,
+            lot_size,
+        } => json!({
             "market_id": hex_u64(market_id.0),
             "symbol": symbol,
             "tick_size": hex_u256(*tick_size),
@@ -731,12 +760,23 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "filled": hex_u256(*filled),
             "remaining": hex_u256(*remaining),
         }),
-        PrimeOrdersEvent::OrderCancelled { order_id, owner, market_id } => json!({
+        PrimeOrdersEvent::OrderCancelled {
+            order_id,
+            owner,
+            market_id,
+        } => json!({
             "order_id": hex_u64(order_id.0),
             "owner": hex_address(*owner),
             "market_id": hex_u64(market_id.0),
         }),
-        PrimeOrdersEvent::Trade { taker, maker, market_id, side, price, size } => json!({
+        PrimeOrdersEvent::Trade {
+            taker,
+            maker,
+            market_id,
+            side,
+            price,
+            size,
+        } => json!({
             "taker": hex_address(*taker),
             "maker": hex_address(*maker),
             "market_id": hex_u64(market_id.0),
@@ -747,7 +787,10 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "price": hex_u256(*price),
             "size": hex_u256(*size),
         }),
-        PrimeOrdersEvent::MarginParamsUpdated { initial_bps, maintenance_bps } => json!({
+        PrimeOrdersEvent::MarginParamsUpdated {
+            initial_bps,
+            maintenance_bps,
+        } => json!({
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
@@ -831,7 +874,7 @@ fn parse_call_input(params: Value) -> RpcResult<CallInput> {
         _ => return Err(RpcError::new(-32602, "invalid params")),
     };
     let obj = array
-        .get(0)
+        .first()
         .ok_or_else(|| RpcError::new(-32602, "call object required"))?
         .clone();
 
@@ -870,7 +913,13 @@ fn parse_call_input(params: Value) -> RpcResult<CallInput> {
         None => 30_000_000,
     };
 
-    Ok(CallInput { from, to, data, gas_limit, value })
+    Ok(CallInput {
+        from,
+        to,
+        data,
+        gas_limit,
+        value,
+    })
 }
 
 fn parse_hex_bytes(input: &str) -> RpcResult<Bytes> {

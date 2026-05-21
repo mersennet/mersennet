@@ -69,7 +69,10 @@ fn finality_all_voting() {
 
     let hash = B256::from_slice(&[0xAA; 32]);
     let finalization = consensus.finalize(hash, 1);
-    assert!(finalization.finalized, "3/3 validators voting should finalize");
+    assert!(
+        finalization.finalized,
+        "3/3 validators voting should finalize"
+    );
     assert_eq!(finalization.committed_stake, U256::from(30u64));
 }
 
@@ -139,7 +142,10 @@ fn tombstoned_validator_cannot_rejoin() {
     consensus.stake(bob, U256::from(100u64)).unwrap();
 
     assert!(!consensus.is_tombstoned(alice));
-    assert!(consensus.stake(alice, U256::from(50u64)).is_ok(), "non-tombstoned can add stake");
+    assert!(
+        consensus.stake(alice, U256::from(50u64)).is_ok(),
+        "non-tombstoned can add stake"
+    );
 
     // Unjailing a non-jailed validator should fail
     assert!(consensus.unjail(alice, 100).is_err());
@@ -175,10 +181,15 @@ fn unbonding_period_locks_funds() {
     consensus.stake(alice, U256::from(100u64)).unwrap();
     consensus.set_unbonding_period(10);
 
-    consensus.begin_unbonding(alice, U256::from(50u64), 5).unwrap();
+    consensus
+        .begin_unbonding(alice, U256::from(50u64), 5)
+        .unwrap();
 
     let released = consensus.process_unbonding(10);
-    assert!(released.is_empty(), "funds should still be locked at height 10");
+    assert!(
+        released.is_empty(),
+        "funds should still be locked at height 10"
+    );
 
     let released = consensus.process_unbonding(15);
     assert_eq!(released.len(), 1, "funds should be released at height 15");
@@ -188,11 +199,7 @@ fn unbonding_period_locks_funds() {
 #[test]
 fn block_rewards_halving() {
     let mut consensus = Consensus::default();
-    consensus.set_token_economics(
-        U256::from(1_000_000u64),
-        U256::from(100u64),
-        10,
-    );
+    consensus.set_token_economics(U256::from(1_000_000u64), U256::from(100u64), 10);
 
     let reward_h1 = consensus.reward_per_block(1);
     let reward_h10 = consensus.reward_per_block(10);
@@ -212,11 +219,7 @@ fn reward_distribution_proportional_to_stake() {
     consensus.stake(alice, U256::from(75u64)).unwrap();
     consensus.stake(bob, U256::from(25u64)).unwrap();
 
-    consensus.set_token_economics(
-        U256::from(1_000_000u64),
-        U256::from(100u64),
-        1_000,
-    );
+    consensus.set_token_economics(U256::from(1_000_000u64), U256::from(100u64), 1_000);
 
     let hash = B256::from_slice(&[0xEE; 32]);
     let finalization = consensus.finalize(hash, 1);
@@ -234,6 +237,14 @@ fn reward_distribution_proportional_to_stake() {
         .map(|r| r.amount)
         .unwrap_or(U256::ZERO);
 
-    assert_eq!(alice_reward, U256::from(75u64), "alice (75%) should get 75 of 100");
-    assert_eq!(bob_reward, U256::from(25u64), "bob (25%) should get 25 of 100");
+    assert_eq!(
+        alice_reward,
+        U256::from(75u64),
+        "alice (75%) should get 75 of 100"
+    );
+    assert_eq!(
+        bob_reward,
+        U256::from(25u64),
+        "bob (25%) should get 25 of 100"
+    );
 }

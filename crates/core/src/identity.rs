@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use k256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
-use revm::primitives::{keccak256, Address};
+use revm::primitives::{Address, keccak256};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -27,7 +27,10 @@ pub fn load_or_create_identity(path: impl AsRef<Path>) -> Result<NodeIdentity> {
             .context("invalid node key hex")?;
         let signing_key = SigningKey::from_slice(&key_bytes).context("invalid node key bytes")?;
         let address = signing_key_to_address(&signing_key);
-        return Ok(NodeIdentity { signing_key, address });
+        return Ok(NodeIdentity {
+            signing_key,
+            address,
+        });
     }
 
     if let Some(parent) = path.parent() {
@@ -40,7 +43,10 @@ pub fn load_or_create_identity(path: impl AsRef<Path>) -> Result<NodeIdentity> {
     };
     let data = serde_json::to_string_pretty(&record)?;
     fs::write(path, data)?;
-    Ok(NodeIdentity { signing_key, address })
+    Ok(NodeIdentity {
+        signing_key,
+        address,
+    })
 }
 
 fn signing_key_to_address(signing_key: &SigningKey) -> Address {

@@ -1,7 +1,7 @@
 use crate::bridge::BridgeMessage;
 use crate::prime_orders::{MarketId, OrderId, Side, TimeInForce};
 use revm::primitives::{Address, U256};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DomainEvent {

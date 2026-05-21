@@ -39,9 +39,21 @@ fn enqueue_dequeue_fifo_ordering() {
 #[test]
 fn nonce_sequencing() {
     let mut queue = BridgeQueue::new();
-    let msg1 = queue.push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, Bytes::from(vec![1]));
-    let msg2 = queue.push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, Bytes::from(vec![2]));
-    let msg3 = queue.push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, Bytes::from(vec![3]));
+    let msg1 = queue.push(
+        BridgeDomain::PrimeEvm,
+        BridgeDomain::PrimeOrders,
+        Bytes::from(vec![1]),
+    );
+    let msg2 = queue.push(
+        BridgeDomain::PrimeEvm,
+        BridgeDomain::PrimeOrders,
+        Bytes::from(vec![2]),
+    );
+    let msg3 = queue.push(
+        BridgeDomain::PrimeEvm,
+        BridgeDomain::PrimeOrders,
+        Bytes::from(vec![3]),
+    );
 
     assert_eq!(msg1.nonce, 1);
     assert_eq!(msg2.nonce, 2);
@@ -55,9 +67,21 @@ fn queue_limits_fifo_eviction() {
     let mut queue = BridgeQueue::new();
     queue.set_max_len(Some(2));
 
-    let _msg1 = queue.push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, Bytes::from(vec![1]));
-    let msg2 = queue.push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, Bytes::from(vec![2]));
-    let msg3 = queue.push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, Bytes::from(vec![3]));
+    let _msg1 = queue.push(
+        BridgeDomain::PrimeOrders,
+        BridgeDomain::PrimeEvm,
+        Bytes::from(vec![1]),
+    );
+    let msg2 = queue.push(
+        BridgeDomain::PrimeOrders,
+        BridgeDomain::PrimeEvm,
+        Bytes::from(vec![2]),
+    );
+    let msg3 = queue.push(
+        BridgeDomain::PrimeOrders,
+        BridgeDomain::PrimeEvm,
+        Bytes::from(vec![3]),
+    );
 
     assert_eq!(queue.len(), 2, "queue should not exceed max_len");
 
@@ -82,8 +106,14 @@ fn bridge_messages_included_in_block() {
 
     assert_eq!(block.bridge_orders_to_evm.len(), 1);
     assert_eq!(block.bridge_evm_to_orders.len(), 1);
-    assert_eq!(block.bridge_orders_to_evm[0].payload.as_ref(), payload_a.as_ref());
-    assert_eq!(block.bridge_evm_to_orders[0].payload.as_ref(), payload_b.as_ref());
+    assert_eq!(
+        block.bridge_orders_to_evm[0].payload.as_ref(),
+        payload_a.as_ref()
+    );
+    assert_eq!(
+        block.bridge_evm_to_orders[0].payload.as_ref(),
+        payload_b.as_ref()
+    );
 }
 
 #[test]
@@ -105,5 +135,8 @@ fn bridge_events_emitted_correctly() {
             })
         )
     });
-    assert!(bridge_enqueued, "bridge enqueue event should be in block domain events");
+    assert!(
+        bridge_enqueued,
+        "bridge enqueue event should be in block domain events"
+    );
 }

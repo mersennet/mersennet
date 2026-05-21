@@ -1,12 +1,12 @@
+use prime_chain::bridge::{BridgeDomain, BridgeQueue};
+use prime_chain::prime_orders::PrimeOrdersState;
 use prime_chain::state::PersistentState;
 use prime_chain::state_redb::RedbState;
 use prime_chain::state_trait::StateBackend;
-use prime_chain::prime_orders::PrimeOrdersState;
-use prime_chain::bridge::{BridgeDomain, BridgeQueue};
-use revm::db::InMemoryDB;
-use revm::primitives::{AccountInfo, Address, Bytecode, B256, U256, KECCAK_EMPTY};
-use revm::primitives::Bytes;
 use revm::Database;
+use revm::db::InMemoryDB;
+use revm::primitives::Bytes;
+use revm::primitives::{AccountInfo, Address, B256, Bytecode, KECCAK_EMPTY, U256};
 use tempfile::tempdir;
 
 #[test]
@@ -20,10 +20,17 @@ fn persistent_state_roundtrip() {
     db.insert_account_info(address, info);
     let slot = U256::from(9u64);
     let value = U256::from(4242u64);
-    db.insert_account_storage(address, slot, value).expect("storage");
+    db.insert_account_storage(address, slot, value)
+        .expect("storage");
 
     let root_before = state
-        .commit_state(&db, &PrimeOrdersState::new(), &BridgeQueue::new(), &BridgeQueue::new(), 1)
+        .commit_state(
+            &db,
+            &PrimeOrdersState::new(),
+            &BridgeQueue::new(),
+            &BridgeQueue::new(),
+            1,
+        )
         .expect("commit");
 
     let mut db2 = InMemoryDB::default();
@@ -62,15 +69,25 @@ fn prime_orders_and_bridge_persistence() {
     let mut orders_to_evm = BridgeQueue::new();
     let mut evm_to_orders = BridgeQueue::new();
     let payload = Bytes::from(vec![1, 2, 3, 4]);
-    let msg = orders_to_evm.push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, payload.clone());
-    let _ = evm_to_orders.push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, Bytes::from(vec![9]));
+    let msg = orders_to_evm.push(
+        BridgeDomain::PrimeOrders,
+        BridgeDomain::PrimeEvm,
+        payload.clone(),
+    );
+    let _ = evm_to_orders.push(
+        BridgeDomain::PrimeEvm,
+        BridgeDomain::PrimeOrders,
+        Bytes::from(vec![9]),
+    );
 
     let root_before = state
         .commit_state(&db, &prime_orders, &orders_to_evm, &evm_to_orders, 1)
         .expect("commit");
 
     let mut loaded_orders = PrimeOrdersState::new();
-    state.load_prime_orders(&mut loaded_orders).expect("load prime orders");
+    state
+        .load_prime_orders(&mut loaded_orders)
+        .expect("load prime orders");
     let mut loaded_orders_to_evm = BridgeQueue::new();
     let mut loaded_evm_to_orders = BridgeQueue::new();
     state
@@ -102,8 +119,16 @@ fn bridge_queue_persistence_roundtrip() {
     let mut evm_to_orders = BridgeQueue::new();
     let payload_a = Bytes::from(vec![10, 11, 12]);
     let payload_b = Bytes::from(vec![200, 201]);
-    let msg_a = orders_to_evm.push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, payload_a.clone());
-    let msg_b = evm_to_orders.push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, payload_b.clone());
+    let msg_a = orders_to_evm.push(
+        BridgeDomain::PrimeOrders,
+        BridgeDomain::PrimeEvm,
+        payload_a.clone(),
+    );
+    let msg_b = evm_to_orders.push(
+        BridgeDomain::PrimeEvm,
+        BridgeDomain::PrimeOrders,
+        payload_b.clone(),
+    );
 
     state
         .commit_state(&db, &empty_orders, &orders_to_evm, &evm_to_orders, 1)
@@ -137,10 +162,17 @@ fn redb_state_roundtrip() {
     db.insert_account_info(address, info);
     let slot = U256::from(9u64);
     let value = U256::from(4242u64);
-    db.insert_account_storage(address, slot, value).expect("storage");
+    db.insert_account_storage(address, slot, value)
+        .expect("storage");
 
     let root_before = state
-        .commit_state(&db, &PrimeOrdersState::new(), &BridgeQueue::new(), &BridgeQueue::new(), 1)
+        .commit_state(
+            &db,
+            &PrimeOrdersState::new(),
+            &BridgeQueue::new(),
+            &BridgeQueue::new(),
+            1,
+        )
         .expect("commit");
 
     let mut db2 = InMemoryDB::default();
@@ -179,15 +211,25 @@ fn redb_prime_orders_persistence() {
     let mut orders_to_evm = BridgeQueue::new();
     let mut evm_to_orders = BridgeQueue::new();
     let payload = Bytes::from(vec![1, 2, 3, 4]);
-    let msg = orders_to_evm.push(BridgeDomain::PrimeOrders, BridgeDomain::PrimeEvm, payload.clone());
-    let _ = evm_to_orders.push(BridgeDomain::PrimeEvm, BridgeDomain::PrimeOrders, Bytes::from(vec![9]));
+    let msg = orders_to_evm.push(
+        BridgeDomain::PrimeOrders,
+        BridgeDomain::PrimeEvm,
+        payload.clone(),
+    );
+    let _ = evm_to_orders.push(
+        BridgeDomain::PrimeEvm,
+        BridgeDomain::PrimeOrders,
+        Bytes::from(vec![9]),
+    );
 
     let root_before = state
         .commit_state(&db, &prime_orders, &orders_to_evm, &evm_to_orders, 1)
         .expect("commit");
 
     let mut loaded_orders = PrimeOrdersState::new();
-    state.load_prime_orders(&mut loaded_orders).expect("load prime orders");
+    state
+        .load_prime_orders(&mut loaded_orders)
+        .expect("load prime orders");
     let mut loaded_orders_to_evm = BridgeQueue::new();
     let mut loaded_evm_to_orders = BridgeQueue::new();
     state
@@ -215,12 +257,19 @@ fn redb_block_storage_via_engine() {
 
     let alice = Address::from_slice(&[0xCC; 20]);
     engine.fund_account(alice, U256::from(10_000_000u64), 0);
-    engine.add_validator(alice, U256::from(100u64)).expect("add validator");
+    engine
+        .add_validator(alice, U256::from(100u64))
+        .expect("add validator");
 
     let block = engine.execute_block().expect("execute empty block");
     assert_eq!(block.number, 1);
 
-    let loaded = engine.evm.state.load_block(1).expect("load").expect("block exists");
+    let loaded = engine
+        .evm
+        .state
+        .load_block(1)
+        .expect("load")
+        .expect("block exists");
     assert_eq!(loaded.number, 1);
     assert_eq!(loaded.chain_id, 7919);
 }
@@ -234,9 +283,13 @@ fn redb_engine_integration() {
     let alice = Address::from_slice(&[0xAA; 20]);
     let bob = Address::from_slice(&[0xBB; 20]);
     engine.fund_account(alice, U256::from(10_000_000u64), 0);
-    engine.add_validator(alice, U256::from(100u64)).expect("add validator");
+    engine
+        .add_validator(alice, U256::from(100u64))
+        .expect("add validator");
 
-    engine.transfer(alice, bob, U256::from(1000u64), 21000, U256::from(1u64), 0).expect("transfer");
+    engine
+        .transfer(alice, bob, U256::from(1000u64), 21000, U256::from(1u64), 0)
+        .expect("transfer");
     let block = engine.execute_block().expect("execute block");
 
     assert_eq!(block.number, 1);

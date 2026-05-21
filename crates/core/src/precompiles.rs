@@ -1,11 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use once_cell::sync::Lazy;
+use revm::ContextPrecompile;
 use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
 use revm::precompile::Precompile;
-use revm::primitives::{Address, Bytes, Env, PrecompileError, PrecompileErrors, PrecompileOutput, PrecompileResult, U256};
-use revm::ContextPrecompile;
+use revm::primitives::{
+    Address, Bytes, Env, PrecompileError, PrecompileErrors, PrecompileOutput, PrecompileResult,
+    U256,
+};
 
 use crate::precompile_abi::*;
 use crate::prime_orders::{MarketId, OrderId, PrimeOrdersState, Side, TimeInForce};
@@ -31,9 +34,11 @@ fn with_orders<F, R>(f: F) -> Result<R, PrecompileErrors>
 where
     F: FnOnce(&mut PrimeOrdersState) -> R,
 {
-    let guard = PRIME_ORDERS_CTX.lock().map_err(|_| PrecompileErrors::Fatal {
-        msg: "prime orders context lock poisoned".into(),
-    })?;
+    let guard = PRIME_ORDERS_CTX
+        .lock()
+        .map_err(|_| PrecompileErrors::Fatal {
+            msg: "prime orders context lock poisoned".into(),
+        })?;
     let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
         msg: "prime orders context not set".into(),
     })?;
@@ -47,6 +52,7 @@ where
 // Handler register — plugs the precompile into an EVM builder.
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::arc_with_non_send_sync)]
 pub fn register_prime_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
     let prev_load = handler.pre_execution.load_precompiles.clone();
     handler.pre_execution.load_precompiles = Arc::new(move || {
@@ -318,14 +324,19 @@ fn check_gas(gas_limit: u64, required: u64) -> Result<(), PrecompileErrors> {
 fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
     check_gas(gas_limit, GAS_PLACE_ORDER)?;
 
-    let market_id_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing marketId"))?;
+    let market_id_w =
+        read_word(input, 0).ok_or_else(|| PrecompileError::other("missing marketId"))?;
     let is_buy_w = read_word(input, 1).ok_or_else(|| PrecompileError::other("missing isBuy"))?;
     let price_w = read_word(input, 2).ok_or_else(|| PrecompileError::other("missing price"))?;
     let size_w = read_word(input, 3).ok_or_else(|| PrecompileError::other("missing size"))?;
     let tif_w = read_word(input, 4).ok_or_else(|| PrecompileError::other("missing tif"))?;
 
     let market_id = MarketId(decode_u64(market_id_w));
-    let side = if decode_bool(is_buy_w) { Side::Buy } else { Side::Sell };
+    let side = if decode_bool(is_buy_w) {
+        Side::Buy
+    } else {
+        Side::Sell
+    };
     let price = decode_u256(price_w);
     let size = decode_u256(size_w);
     let tif = match decode_u8(tif_w) {
@@ -335,9 +346,8 @@ fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precomp
         _ => return Err(PrecompileError::other("invalid TimeInForce value").into()),
     };
 
-    let outcome = with_orders(|state| {
-        state.submit_order(caller, market_id, side, price, size, tif)
-    })?;
+    let outcome =
+        with_orders(|state| state.submit_order(caller, market_id, side, price, size, tif))?;
 
     let outcome = outcome.map_err(|e| PrecompileError::other(e.to_string()))?;
 
@@ -366,7 +376,10 @@ fn handle_cancel_order(input: &Bytes, gas_limit: u64) -> PrecompileResult {
 
     let success = with_orders(|state| state.cancel_order(order_id).is_some())?;
 
-    Ok(PrecompileOutput::new(GAS_CANCEL_ORDER, Bytes::from(encode_bool(success).to_vec())))
+    Ok(PrecompileOutput::new(
+        GAS_CANCEL_ORDER,
+        Bytes::from(encode_bool(success).to_vec()),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -480,20 +493,21 @@ fn handle_get_best_bid_ask(input: &Bytes, gas_limit: u64) -> PrecompileResult {
     let mid_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing marketId"))?;
     let market_id = MarketId(decode_u64(mid_w));
 
-    let (best_bid, best_ask) = with_orders(|state| {
-        match state.order_book(market_id) {
-            Some(view) => {
-                let bid = view.bids.last().map(|l| l.price).unwrap_or(U256::ZERO);
-                let ask = view.asks.first().map(|l| l.price).unwrap_or(U256::ZERO);
-                (bid, ask)
-            }
-            None => (U256::ZERO, U256::ZERO),
+    let (best_bid, best_ask) = with_orders(|state| match state.order_book(market_id) {
+        Some(view) => {
+            let bid = view.bids.last().map(|l| l.price).unwrap_or(U256::ZERO);
+            let ask = view.asks.first().map(|l| l.price).unwrap_or(U256::ZERO);
+            (bid, ask)
         }
+        None => (U256::ZERO, U256::ZERO),
     })?;
 
     let mut out = Vec::with_capacity(64);
     out.extend_from_slice(&encode_u256(best_bid));
     out.extend_from_slice(&encode_u256(best_ask));
 
-    Ok(PrecompileOutput::new(GAS_GET_BEST_BID_ASK, Bytes::from(out)))
+    Ok(PrecompileOutput::new(
+        GAS_GET_BEST_BID_ASK,
+        Bytes::from(out),
+    ))
 }

@@ -7,16 +7,16 @@
 
 use revm::primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tungstenite::accept;
 use tungstenite::Message;
+use tungstenite::accept;
 
 /// Unique identifier for a subscription.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -117,10 +117,10 @@ impl WsSubscriptionManager {
                 address: filter_addr,
             } = &info.kind
             {
-                if let Some(addr) = filter_addr {
-                    if *addr != address {
-                        continue;
-                    }
+                if let Some(addr) = filter_addr
+                    && *addr != address
+                {
+                    continue;
                 }
                 if !filter_topics.is_empty() {
                     let matches = filter_topics
@@ -146,7 +146,7 @@ impl WsSubscriptionManager {
         self.send_to_matching(
             |kind| match kind {
                 SubscriptionKind::PrimeOrdersTrades { market: m } => {
-                    m.map_or(true, |mm| mm == market)
+                    m.is_none_or(|mm| mm == market)
                 }
                 _ => false,
             },
@@ -170,7 +170,7 @@ impl WsSubscriptionManager {
         self.send_to_matching(
             |kind| match kind {
                 SubscriptionKind::BatchAuctionResults { market: m } => {
-                    m.map_or(true, |mm| mm == market)
+                    m.is_none_or(|mm| mm == market)
                 }
                 _ => false,
             },
@@ -355,15 +355,19 @@ struct JsonRpcRequest {
     params: Option<Value>,
 }
 
+type JsonRpcResponse = Option<String>;
+type SubscriptionRegistration = Option<(SubscriptionId, Receiver<String>)>;
+type SubscriptionRemoval = Option<SubscriptionId>;
+
 /// Returns (response_json, new_subscription, unsub_id).
 fn handle_json_rpc(
     text: &str,
     manager: &Arc<Mutex<WsSubscriptionManager>>,
 ) -> Result<
     (
-        Option<String>,
-        Option<(SubscriptionId, Receiver<String>)>,
-        Option<SubscriptionId>,
+        JsonRpcResponse,
+        SubscriptionRegistration,
+        SubscriptionRemoval,
     ),
     (),
 > {
@@ -375,28 +379,34 @@ fn handle_json_rpc(
     match req.method.as_str() {
         "eth_subscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
-            let sub_type = params.get(0).and_then(|v| v.as_str()).ok_or(())?;
+            let sub_type = params.first().and_then(|v| v.as_str()).ok_or(())?;
             let kind = parse_eth_subscription(sub_type, params.get(1))?;
             let mut m = manager.lock().unwrap();
             let (id, rx) = m.subscribe(kind);
-            response = Some(json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "result": format!("0x{:x}", id.0)
-            }).to_string());
+            response = Some(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": req.id,
+                    "result": format!("0x{:x}", id.0)
+                })
+                .to_string(),
+            );
             result_sub = Some((id, rx));
         }
         "eth_unsubscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
-            let id_val = params.get(0).ok_or(())?;
+            let id_val = params.first().ok_or(())?;
             let id = parse_subscription_id(id_val)?;
             let mut m = manager.lock().unwrap();
             let ok = m.unsubscribe(id);
-            response = Some(json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "result": ok
-            }).to_string());
+            response = Some(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": req.id,
+                    "result": ok
+                })
+                .to_string(),
+            );
             result_unsub = Some(id);
         }
         "prime_subscribe" => {
@@ -404,24 +414,30 @@ fn handle_json_rpc(
             let kind = parse_prime_subscription(params)?;
             let mut m = manager.lock().unwrap();
             let (id, rx) = m.subscribe(kind);
-            response = Some(json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "result": format!("0x{:x}", id.0)
-            }).to_string());
+            response = Some(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": req.id,
+                    "result": format!("0x{:x}", id.0)
+                })
+                .to_string(),
+            );
             result_sub = Some((id, rx));
         }
         "prime_unsubscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
-            let id_val = params.get(0).ok_or(())?;
+            let id_val = params.first().ok_or(())?;
             let id = parse_subscription_id(id_val)?;
             let mut m = manager.lock().unwrap();
             let ok = m.unsubscribe(id);
-            response = Some(json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "result": ok
-            }).to_string());
+            response = Some(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": req.id,
+                    "result": ok
+                })
+                .to_string(),
+            );
             result_unsub = Some(id);
         }
         other => {
@@ -457,20 +473,20 @@ fn parse_log_filter(filter: Option<&Value>) -> (Vec<B256>, Option<Address>) {
         if let Some(addr) = f.get("address") {
             if let Some(s) = addr.as_str() {
                 address = parse_address_opt(s);
-            } else if let Some(arr) = addr.as_array() {
-                if let Some(first) = arr.first().and_then(|v| v.as_str()) {
-                    address = parse_address_opt(first);
-                }
+            } else if let Some(arr) = addr.as_array()
+                && let Some(first) = arr.first().and_then(|v| v.as_str())
+            {
+                address = parse_address_opt(first);
             }
         }
-        if let Some(t) = f.get("topics") {
-            if let Some(arr) = t.as_array() {
-                for v in arr {
-                    if let Some(s) = v.as_str() {
-                        if let Some(b) = parse_b256(s) {
-                            topics.push(b);
-                        }
-                    }
+        if let Some(t) = f.get("topics")
+            && let Some(arr) = t.as_array()
+        {
+            for v in arr {
+                if let Some(s) = v.as_str()
+                    && let Some(b) = parse_b256(s)
+                {
+                    topics.push(b);
                 }
             }
         }
@@ -500,7 +516,7 @@ fn parse_b256(s: &str) -> Option<B256> {
 }
 
 fn parse_prime_subscription(params: &[Value]) -> Result<SubscriptionKind, ()> {
-    let sub_type = params.get(0).and_then(|v| v.as_str()).ok_or(())?;
+    let sub_type = params.first().and_then(|v| v.as_str()).ok_or(())?;
     let market_from_param = |v: &Value| v.as_u64().or_else(|| v.as_str().and_then(parse_hex_u64));
     match sub_type {
         "PrimeOrdersTrades" => {
@@ -539,10 +555,10 @@ fn parse_subscription_id(v: &Value) -> Result<SubscriptionId, ()> {
     if let Some(n) = v.as_u64() {
         return Ok(SubscriptionId(n));
     }
-    if let Some(s) = v.as_str() {
-        if let Some(n) = parse_hex_u64(s) {
-            return Ok(SubscriptionId(n));
-        }
+    if let Some(s) = v.as_str()
+        && let Some(n) = parse_hex_u64(s)
+    {
+        return Ok(SubscriptionId(n));
     }
     Err(())
 }

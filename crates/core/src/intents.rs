@@ -221,7 +221,10 @@ impl IntentEngine {
     }
 
     pub fn cancel_intent(&mut self, intent_id: B256, user: Address) -> Result<(), IntentError> {
-        let intent = self.intents.get(&intent_id).ok_or(IntentError::IntentNotFound)?;
+        let intent = self
+            .intents
+            .get(&intent_id)
+            .ok_or(IntentError::IntentNotFound)?;
         if intent.user != user {
             return Err(IntentError::Unauthorized);
         }
@@ -265,7 +268,10 @@ impl IntentEngine {
     }
 
     pub fn select_best_solution(&self, intent_id: &B256) -> Option<&Solution> {
-        self.solutions.get(intent_id)?.iter().max_by_key(|s| s.score)
+        self.solutions
+            .get(intent_id)?
+            .iter()
+            .max_by_key(|s| s.score)
     }
 
     pub fn execute_intent(
@@ -273,7 +279,10 @@ impl IntentEngine {
         intent_id: B256,
         current_block: u64,
     ) -> Result<IntentResult, IntentError> {
-        let intent = self.intents.get(&intent_id).ok_or(IntentError::IntentNotFound)?;
+        let intent = self
+            .intents
+            .get(&intent_id)
+            .ok_or(IntentError::IntentNotFound)?;
         if intent.deadline < current_block {
             return Err(IntentError::IntentExpired);
         }
@@ -319,7 +328,8 @@ impl IntentEngine {
     pub fn expire_intents(&mut self, current_block: u64) {
         for intent in self.intents.values_mut() {
             if intent.deadline < current_block
-                && (intent.status == IntentStatus::Pending || intent.status == IntentStatus::Solving)
+                && (intent.status == IntentStatus::Pending
+                    || intent.status == IntentStatus::Solving)
             {
                 intent.status = IntentStatus::Expired;
                 self.total_expired += 1;
@@ -330,9 +340,7 @@ impl IntentEngine {
     pub fn pending_intents(&self) -> Vec<&Intent> {
         self.intents
             .values()
-            .filter(|i| {
-                i.status == IntentStatus::Pending || i.status == IntentStatus::Solving
-            })
+            .filter(|i| i.status == IntentStatus::Pending || i.status == IntentStatus::Solving)
             .collect()
     }
 
@@ -344,9 +352,7 @@ impl IntentEngine {
         let pending = self
             .intents
             .values()
-            .filter(|i| {
-                i.status == IntentStatus::Pending || i.status == IntentStatus::Solving
-            })
+            .filter(|i| i.status == IntentStatus::Pending || i.status == IntentStatus::Solving)
             .count();
         IntentStats {
             total_intents: self.total_intents,
