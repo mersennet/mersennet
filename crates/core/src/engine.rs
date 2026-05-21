@@ -30,6 +30,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+/// Best-effort conversion of a `U256` to `f64` for Prometheus
+/// gauges. Saturates at `u128::MAX` worth of precision; that's
+/// fine for monitoring (no integer correctness depends on it).
+#[inline]
+fn f64_from_u256(v: U256) -> f64 {
+    let lo: u128 = v.try_into().unwrap_or(u128::MAX);
+    lo as f64
+}
+
 use crate::flat_state::{FlatState, FlatAccount, StateChangeset};
 use crate::market_maker::MarketMakerEngine;
 use crate::intents::IntentEngine;
@@ -37,6 +46,28 @@ use crate::encrypted_mempool::EncryptedMempool;
 use crate::mainnet::MainnetGuard;
 use crate::account_abstraction::Bundler;
 use crate::formal_verification::InvariantChecker;
+use crate::liquidation_auction::LiquidationAuction;
+use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
+use crate::shielded_orders::ShieldedOrdersEngine;
+use crate::shielded_persistence::ShieldedPersistence;
+use crate::threshold_mempool::ThresholdMempool;
+
+/// Synthetic execution result returned by `apply_shielded_tx` when
+/// the shielded path is unavailable (e.g. pre-fork, missing payload).
+fn shielded_failed_execution(reason: &str) -> TxExecution {
+    let topic = B256::from(keccak256(b"ShieldedTxRejected(string)"));
+    TxExecution {
+        success: false,
+        gas_used: 0,
+        output: Bytes::new(),
+        created_address: None,
+        logs: vec![LogEntry {
+            address: Address::ZERO,
+            topics: vec![topic],
+            data: Bytes::from(reason.as_bytes().to_vec()),
+        }],
+    }
+}
 
 pub mod abi {
     use super::*;
@@ -70,6 +101,34 @@ pub struct Transaction {
     pub chain_id: Option<u64>,
     /// ECDSA signature (r, s, v). None means unsigned (legacy/backward-compat).
     pub signature: Option<(U256, U256, u64)>,
+    /// EIP-2718 typed-transaction type byte. `0x00` = legacy /
+    /// pre-2718, `0x02` = EIP-1559, `0x7E` = shielded
+    /// (privacy-redesign Phase 4). Default zero for backward compat.
+    #[serde(default)]
+    pub tx_type: u8,
+    /// Body of a `0x7E` shielded transaction. `None` for legacy /
+    /// EIP-1559 txs. The discriminated union of variants lives in
+    /// [`crate::shielded_evm::ShieldedEnvelope`].
+    #[serde(default)]
+    pub shielded_payload: Option<crate::shielded_evm::ShieldedEnvelope>,
+}
+
+impl Default for Transaction {
+    fn default() -> Self {
+        Self {
+            from: Address::ZERO,
+            to: None,
+            value: U256::ZERO,
+            data: Bytes::new(),
+            gas_limit: 0,
+            gas_price: U256::ZERO,
+            nonce: 0,
+            chain_id: None,
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,6 +185,59 @@ pub struct Block {
     pub bridge_orders_to_evm: Vec<BridgeMessage>,
     pub bridge_evm_to_orders: Vec<BridgeMessage>,
     pub domain_events: Vec<DomainEvent>,
+    /// Root of the shielded note commitment tree at end-of-block.
+    /// `B256::ZERO` for pre-privacy-fork blocks. Privacy-redesign
+    /// Phase 4.
+    #[serde(default)]
+    pub shielded_state_root: B256,
+    /// Root of the nullifier set at end-of-block.
+    /// `B256::ZERO` for pre-fork blocks.
+    #[serde(default)]
+    pub nullifier_root: B256,
+    /// Root of public market-aggregate state (clearing prices,
+    /// bucketed depth, auction stats). `B256::ZERO` pre-fork.
+    #[serde(default)]
+    pub shielded_event_root: B256,
+    /// SP1 state-transition proof for this block.
+    /// `None` until Workstream E delivers the real prover.
+    #[serde(default)]
+    pub state_proof: Option<crate::zk_proofs::StateTransitionProof>,
+}
+
+impl Default for Block {
+    fn default() -> Self {
+        Self {
+            number: 0,
+            chain_id: 0,
+            timestamp: 0,
+            gas_limit: 0,
+            gas_used: 0,
+            base_fee: U256::ZERO,
+            coinbase: Address::ZERO,
+            hash: B256::ZERO,
+            proposer: Address::ZERO,
+            finalized: false,
+            consensus: Finalization::default(),
+            unbonded: Vec::new(),
+            applied_validator_changes: Vec::new(),
+            slashes: Vec::new(),
+            finality_rounds: Vec::new(),
+            slashing_evidence: Vec::new(),
+            rewards: Vec::new(),
+            total_reward: U256::ZERO,
+            burned_reward: U256::ZERO,
+            state_root: B256::ZERO,
+            transactions: Vec::new(),
+            receipts: Vec::new(),
+            bridge_orders_to_evm: Vec::new(),
+            bridge_evm_to_orders: Vec::new(),
+            domain_events: Vec::new(),
+            shielded_state_root: B256::ZERO,
+            nullifier_root: B256::ZERO,
+            shielded_event_root: B256::ZERO,
+            state_proof: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -291,6 +403,42 @@ pub struct Engine {
     pub aa_bundler: Bundler,
     pub invariant_checker: InvariantChecker,
     pub peer_count: std::sync::atomic::AtomicUsize,
+
+    // ───── Privacy redesign (Phase 4 wiring) ─────
+    /// Master switch — gates `apply_shielded_tx`, the FBA tick, the
+    /// SP1 prover hook, and the 0x7E EIP-2718 type-byte path.
+    /// `false` until the hard fork activates (see ADR-018).
+    pub privacy_mode_activated: bool,
+    /// Activation height for the privacy hard fork, set by genesis
+    /// or governance. When `Some(h)` and `block_number >= h`, the
+    /// engine auto-flips `privacy_mode_activated` to `true` at the
+    /// start of the block-production loop.
+    pub privacy_activation_height: Option<u64>,
+    /// Discrete-time uniform-price auction state per shielded
+    /// market.
+    pub shielded_orders: ShieldedOrdersEngine,
+    /// Sealed-bid liquidation auctions (replaces address-keyed
+    /// liquidation searches).
+    pub liquidation_auction: LiquidationAuction,
+    /// Shielded EVM envelope state: transparent balances, shielded
+    /// transfers, shield/unshield bridge. Its `state` field
+    /// (`ShieldedState`) is the **canonical** shielded note tree —
+    /// every shielded subsystem mutates this single store via
+    /// `&mut self.shielded_evm.state` to avoid double-bookkeeping.
+    pub shielded_evm: ShieldedEvm,
+    /// Threshold-encrypted mempool. Production builds inject a BLS
+    /// provider via [`ThresholdMempool::with_provider`].
+    pub threshold_mempool: ThresholdMempool,
+    /// Disk-backed persistence for shielded subsystems. `None` if the
+    /// engine was constructed in pure-memory mode (tests, benches).
+    /// Writes happen at end-of-block when `privacy_mode_activated`.
+    pub shielded_persistence: Option<ShieldedPersistence>,
+    /// Distributed key generation coordinator for the threshold
+    /// mempool. Tracks per-epoch ceremony status and produces the
+    /// inputs the HotStuff-2 sub-round needs to drive the protocol.
+    /// Lives on every node — non-validators observe + audit but do
+    /// not contribute shares.
+    pub dkg: crate::dkg::DkgCoordinator,
 }
 
 impl Engine {
@@ -299,16 +447,44 @@ impl Engine {
     }
 
     pub fn new_with_backend(chain_id: u64, path: impl AsRef<std::path::Path>, backend: &str) -> Self {
+        let path_buf = path.as_ref().to_path_buf();
         let state: Box<dyn StateBackend> = match backend {
             "redb" => {
                 tracing::info!("initializing redb storage backend (ACID, pure-Rust)");
-                Box::new(RedbState::open(&path).expect("redb state DB open"))
+                Box::new(RedbState::open(&path_buf).expect("redb state DB open"))
             }
             _ => {
                 tracing::info!("initializing sled storage backend");
-                Box::new(PersistentState::open(&path).expect("sled state DB open"))
+                Box::new(PersistentState::open(&path_buf).expect("sled state DB open"))
             }
         };
+
+        // Open the shielded persistence DB next to the EVM DB. It's
+        // always present — pre-fork it stays empty.
+        let shielded_persistence = ShieldedPersistence::open(&path_buf)
+            .map_err(|e| {
+                tracing::warn!(error = ?e, "shielded persistence open failed, continuing without disk-backed shielded state");
+                e
+            })
+            .ok();
+
+        let mut shielded_evm = ShieldedEvm::new();
+        if let Some(p) = &shielded_persistence {
+            match p.load_shielded_state() {
+                Ok(Some(restored)) => {
+                    tracing::info!("restored shielded state from disk");
+                    shielded_evm.state = restored;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(error = ?e, "shielded state restore failed");
+                }
+            }
+            match p.load_transparent_balances() {
+                Ok(balances) => shielded_evm.transparent_balances = balances,
+                Err(e) => tracing::warn!(error = ?e, "transparent-balance restore failed"),
+            }
+        }
 
         let mut db = InMemoryDB::default();
         state.load_into_db(&mut db).expect("state DB load");
@@ -354,7 +530,78 @@ impl Engine {
             aa_bundler: Bundler::new(10),
             invariant_checker: InvariantChecker::new(),
             peer_count: std::sync::atomic::AtomicUsize::new(0),
+
+            // Privacy-redesign Phase 4 — off until the hard fork
+            // flips the master switch (ADR-018). All subsystems live
+            // in-memory; persistence is wired in Workstream A7.
+            privacy_mode_activated: false,
+            privacy_activation_height: None,
+            shielded_orders: ShieldedOrdersEngine::new(),
+            liquidation_auction: LiquidationAuction::new(),
+            shielded_evm,
+            // 2-of-3 threshold by default; node operators override
+            // the provider when joining a real committee (Workstream
+            // D3).
+            threshold_mempool: ThresholdMempool::new(2, 3, 10_000),
+            shielded_persistence,
+            // DKG coordinator with the production-default epoch
+            // length. Operators override at boot via
+            // `set_dkg_epoch_length` to match their chain's
+            // block-time × desired-rotation cadence.
+            dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
         }
+    }
+
+    /// Flip the privacy hard-fork switch. Called at the activation
+    /// block height (see ADR-018) after the node has synced past the
+    /// genesis-of-privacy snapshot. Once `true`, the engine accepts
+    /// `tx_type = 0x7E` transactions and runs the shielded subsystems
+    /// inside `execute_block`.
+    pub fn activate_privacy_mode(&mut self) {
+        self.privacy_mode_activated = true;
+        tracing::warn!(
+            block = self.block_number,
+            "Prime Chain privacy hard fork activated — shielded tx type 0x7E now accepted"
+        );
+    }
+
+    /// Block-level convenience: are shielded paths live?
+    pub fn privacy_mode_activated(&self) -> bool {
+        self.privacy_mode_activated
+    }
+
+    /// Set the scheduled activation height for the privacy hard
+    /// fork. Genesis migration and governance both call this. Once
+    /// `block_number >= height`, the engine auto-flips the master
+    /// switch on the next `execute_block`.
+    pub fn set_privacy_activation_height(&mut self, height: u64) {
+        self.privacy_activation_height = Some(height);
+        tracing::info!(activation_height = height, "privacy activation height scheduled");
+    }
+
+    /// Configure the DKG epoch length, in blocks. The privacy
+    /// testnet ships with a 1800-block (~6 min @ 200 ms blocks)
+    /// epoch for faster rotation testing; mainnet uses
+    /// [`crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS`].
+    pub fn set_dkg_epoch_length(&mut self, blocks: u64) {
+        self.dkg.epoch_length_blocks = blocks;
+        tracing::info!(epoch_length_blocks = blocks, "DKG epoch length configured");
+    }
+
+    /// Internal: called from the block-production loop to honour the
+    /// scheduled activation height. Returns `true` iff the master
+    /// switch was just flipped on this call.
+    pub(crate) fn auto_activate_privacy_if_scheduled(&mut self) -> bool {
+        if self.privacy_mode_activated {
+            return false;
+        }
+        if let Some(h) = self.privacy_activation_height {
+            if self.block_number >= h {
+                self.activate_privacy_mode();
+                return true;
+            }
+        }
+        false
     }
 
     pub fn latest_height(&self) -> u64 {
@@ -686,6 +933,31 @@ impl Engine {
             return Err(anyhow::anyhow!("mainnet guard: {}", e));
         }
 
+        // Auto-flip the privacy hard-fork switch if the scheduled
+        // activation height has been reached. This must happen
+        // *before* any tx is processed so the dispatch tables are
+        // consistent for the whole block.
+        let _flipped = self.auto_activate_privacy_if_scheduled();
+
+        // DKG epoch boundary hook. Returns Some(new_epoch) iff a
+        // new ceremony just started; in that case the consensus
+        // layer will include DKG inputs in this block's HotStuff-2
+        // sub-round.
+        if self.privacy_mode_activated {
+            if let Some(new_epoch) = self.dkg.on_block(self.block_number) {
+                metrics::counter!(
+                    "prime_chain_dkg_ceremonies_started_total",
+                    1,
+                    "epoch" => new_epoch.to_string()
+                );
+                tracing::info!(
+                    block = self.block_number,
+                    epoch = new_epoch,
+                    "DKG ceremony started for new epoch"
+                );
+            }
+        }
+
         let start = Instant::now();
         let mut gas_used = 0u64;
         let mut receipts = Vec::new();
@@ -789,7 +1061,11 @@ impl Engine {
                     continue;
                 };
 
-                let execution = self.execute_tx(&tx)?;
+                let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+                    self.apply_shielded_tx(&tx)
+                } else {
+                    self.execute_tx(&tx)?
+                };
                 gas_used = gas_used.saturating_add(execution.gas_used);
                 if let Some(nonce) = nonce_cache.get_mut(&tx.from) {
                     *nonce = nonce.saturating_add(1);
@@ -812,6 +1088,12 @@ impl Engine {
             .expect("no other Arc references")
             .into_inner()
             .expect("mutex not poisoned");
+
+        // Privacy-redesign Phase 4 — discrete-time auction + sealed-
+        // bid liquidation tick. No-op pre-fork.
+        if self.privacy_mode_activated {
+            self.run_shielded_tick();
+        }
 
         for tx in &transactions {
             self.mempool.remove_mined(tx.from, tx.nonce);
@@ -898,6 +1180,13 @@ impl Engine {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+
+        // Privacy-redesign Phase 4 — compute shielded roots + the SP1
+        // state-transition proof. Pre-fork the roots stay
+        // `B256::ZERO` and no proof is generated.
+        let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
+            self.shielded_block_header(&transactions, &domain_events, hash);
+
         let block = Block {
             number: self.block_number,
             chain_id: self.chain_id,
@@ -924,10 +1213,25 @@ impl Engine {
             bridge_orders_to_evm,
             bridge_evm_to_orders,
             domain_events,
+            shielded_state_root,
+            nullifier_root,
+            shielded_event_root,
+            state_proof,
         };
 
         self.chain.push(block.clone());
         self.evm.state.store_block(&block)?;
+
+        // Privacy-redesign Phase 4 — persist shielded state at end of
+        // block. No-op pre-fork (the subsystems are still in their
+        // initial state and saving an empty snapshot is harmless).
+        if self.privacy_mode_activated {
+            if let Some(p) = &self.shielded_persistence {
+                if let Err(e) = p.save_shielded_evm(&self.shielded_evm, block.number) {
+                    tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed");
+                }
+            }
+        }
 
         // Run formal verification invariant checks
         {
@@ -1052,13 +1356,22 @@ impl Engine {
             }
         }
 
-        // Phase 2: Execute via ParallelExecutor
+        // Phase 2a: Split shielded txs out — they don't traverse the
+        // EVM, so they can't go through ParallelExecutor. They mutate
+        // dedicated subsystems (shielded_evm, shielded_orders,
+        // liquidation_auction) and are applied sequentially below.
+        let (evm_txs, shielded_txs): (Vec<Transaction>, Vec<Transaction>) = collected_txs
+            .iter()
+            .cloned()
+            .partition(|t| t.tx_type != crate::shielded_evm::SHIELDED_TX_TYPE);
+
+        // Phase 2b: Execute non-shielded txs via ParallelExecutor.
         let num_threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
         let executor = ParallelExecutor::new(num_threads, 3);
         let par_result = executor.execute(
-            &collected_txs,
+            &evm_txs,
             &self.evm.db,
             self.chain_id,
             self.block_number,
@@ -1088,7 +1401,29 @@ impl Engine {
                 error: None,
                 logs: exec.logs.clone(),
             });
-            transactions.push(collected_txs[idx].clone());
+            transactions.push(evm_txs[idx].clone());
+        }
+
+        // Phase 3b: Sequentially apply shielded txs to the privacy
+        // subsystems. They never touch revm state, so applying them
+        // after the parallel phase preserves determinism.
+        for tx in shielded_txs {
+            let execution = self.apply_shielded_tx(&tx);
+            gas_used = gas_used.saturating_add(execution.gas_used);
+            receipts.push(Receipt {
+                success: execution.success,
+                gas_used: execution.gas_used,
+                output: execution.output.clone(),
+                created_address: execution.created_address,
+                error: None,
+                logs: execution.logs.clone(),
+            });
+            transactions.push(tx);
+        }
+
+        // Phase 3c: Shielded tick (FBA + liquidation auctions).
+        if self.privacy_mode_activated {
+            self.run_shielded_tick();
         }
 
         for tx in &transactions {
@@ -1158,6 +1493,10 @@ impl Engine {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+
+        let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
+            self.shielded_block_header(&transactions, &domain_events, hash);
+
         let block = Block {
             number: self.block_number,
             chain_id: self.chain_id,
@@ -1184,10 +1523,23 @@ impl Engine {
             bridge_orders_to_evm,
             bridge_evm_to_orders,
             domain_events,
+            shielded_state_root,
+            nullifier_root,
+            shielded_event_root,
+            state_proof,
         };
 
         self.chain.push(block.clone());
         self.evm.state.store_block(&block)?;
+
+        // Privacy-redesign Phase 4 — persist shielded state.
+        if self.privacy_mode_activated {
+            if let Some(p) = &self.shielded_persistence {
+                if let Err(e) = p.save_shielded_evm(&self.shielded_evm, block.number) {
+                    tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed (parallel)");
+                }
+            }
+        }
 
         metrics::increment_counter!("prime_chain_blocks_produced_total");
         metrics::gauge!("prime_chain_height", self.block_number as f64);
@@ -1244,8 +1596,35 @@ impl Engine {
             self.block_number.saturating_sub(1),
         )?;
         let height = self.block_number.saturating_sub(1);
-        let data = self.evm.state.export_snapshot_bytes(height, root)?;
-        std::fs::write(path, data)?;
+        let evm_snapshot = self.evm.state.export_snapshot_bytes(height, root)?;
+
+        // Phase 4 — bundle the shielded subsystems into the same
+        // snapshot. The envelope is forward-compatible: legacy
+        // (pre-fork) snapshots still decode via
+        // `EngineSnapshotEnvelope::decode` thanks to the magic
+        // prefix detection.
+        let shielded_data = crate::engine_snapshot::ShieldedSnapshotData {
+            state: self.shielded_evm.state.snapshot(),
+            auction: self.liquidation_auction.snapshot(),
+            transparent_balances: crate::engine_snapshot::encode_transparent_balances(
+                &self.shielded_evm.transparent_balances,
+            ),
+            // The migration flag is true once a non-empty shielded
+            // state exists (the migration tool has run); otherwise
+            // false.
+            migration_plan_applied: !self.shielded_evm.state.snapshot().leaves.is_empty(),
+        };
+
+        let envelope = crate::engine_snapshot::EngineSnapshotEnvelope {
+            height,
+            chain_id: self.chain_id,
+            privacy_mode_activated: self.privacy_mode_activated,
+            privacy_activation_height: None, // unset on a regular export; the migration tool stamps this
+            evm_snapshot,
+            shielded: Some(shielded_data),
+        };
+        let bytes = envelope.encode()?;
+        std::fs::write(path, bytes)?;
         Ok(root)
     }
 
@@ -1255,13 +1634,44 @@ impl Engine {
         path: impl AsRef<std::path::Path>,
     ) -> Result<SnapshotMeta> {
         let data = std::fs::read(path)?;
-        let meta = self.evm.state.import_snapshot_bytes(&data)?;
+        let envelope = crate::engine_snapshot::EngineSnapshotEnvelope::decode(&data)?;
+
+        if envelope.chain_id != 0 && envelope.chain_id != self.chain_id {
+            return Err(anyhow::anyhow!(
+                "snapshot chain_id {} does not match local chain_id {}",
+                envelope.chain_id,
+                self.chain_id
+            ));
+        }
+
+        // EVM side first.
+        let meta = self
+            .evm
+            .state
+            .import_snapshot_bytes(&envelope.evm_snapshot)?;
         self.evm.db = InMemoryDB::default();
         self.evm.state.load_into_db(&mut self.evm.db)?;
         self.evm.state.load_prime_orders(&mut self.orders.state)?;
         self.evm
             .state
             .load_bridge_queues(&mut self.bridge.orders_to_evm, &mut self.bridge.evm_to_orders)?;
+
+        // Shielded side.
+        if let Some(shielded) = envelope.shielded {
+            self.shielded_evm.state =
+                crate::shielded_state::ShieldedState::restore(&shielded.state);
+            self.liquidation_auction =
+                crate::liquidation_auction::LiquidationAuction::restore(shielded.auction);
+            self.shielded_evm.transparent_balances =
+                crate::engine_snapshot::decode_transparent_balances(&shielded.transparent_balances);
+        }
+
+        // Privacy-mode flags.
+        self.privacy_mode_activated = envelope.privacy_mode_activated;
+        if let Some(h) = envelope.privacy_activation_height {
+            self.privacy_activation_height = Some(h);
+        }
+
         self.block_number = meta.height.saturating_add(1);
         Ok(meta)
     }
@@ -1324,15 +1734,28 @@ impl Engine {
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
         precompiles::set_prime_orders_context(shared_orders);
 
+        // Privacy-redesign Phase 4 — install shielded EVM context.
+        // Take ownership for the duration of the tx, restore after.
+        let shielded_evm = std::mem::take(&mut self.shielded_evm);
+        let shared_shielded = Arc::new(Mutex::new(shielded_evm));
+        precompiles::set_shielded_evm_context(shared_shielded.clone());
+
         let mut evm = Evm::builder()
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
             .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_preverified()?;
         precompiles::clear_prime_orders_context();
+        precompiles::clear_shielded_evm_context();
+        drop(evm);
+        self.shielded_evm = Arc::try_unwrap(shared_shielded)
+            .expect("no other Arc references to shielded_evm")
+            .into_inner()
+            .expect("shielded_evm mutex not poisoned");
 
         match result.result {
             ExecutionResult::Success { gas_used, output, logs, .. } => {
@@ -1388,6 +1811,8 @@ impl Engine {
             nonce,
             chain_id: Some(self.chain_id),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -1419,15 +1844,26 @@ impl Engine {
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
         precompiles::set_prime_orders_context(shared_orders);
 
+        let shielded_evm = std::mem::take(&mut self.shielded_evm);
+        let shared_shielded = Arc::new(Mutex::new(shielded_evm));
+        precompiles::set_shielded_evm_context(shared_shielded.clone());
+
         let mut evm = Evm::builder()
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
             .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_preverified()?;
         precompiles::clear_prime_orders_context();
+        precompiles::clear_shielded_evm_context();
+        drop(evm);
+        self.shielded_evm = Arc::try_unwrap(shared_shielded)
+            .expect("no other Arc references to shielded_evm")
+            .into_inner()
+            .expect("shielded_evm mutex not poisoned");
 
         Ok(result.result.output().cloned().unwrap_or_default())
     }
@@ -1464,6 +1900,8 @@ impl Engine {
             nonce,
             chain_id: Some(self.chain_id),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -1555,6 +1993,304 @@ impl Engine {
         Ok(())
     }
 
+    /// Dispatch a shielded (`tx_type == 0x7E`) transaction to the
+    /// appropriate subsystem. Returns a synthetic [`TxExecution`] so
+    /// the receipt list keeps a consistent shape with EVM-side txs.
+    ///
+    /// **Pre-fork behaviour**: if `privacy_mode_activated == false`,
+    /// the tx is recorded as a failed execution with a deterministic
+    /// error log. This is the safe default for chains pinned to the
+    /// pre-privacy fork. See ADR-018.
+    pub fn apply_shielded_tx(&mut self, tx: &Transaction) -> TxExecution {
+        if !self.privacy_mode_activated {
+            return shielded_failed_execution("privacy_mode_inactive");
+        }
+        let Some(envelope) = tx.shielded_payload.as_ref() else {
+            return shielded_failed_execution("shielded_tx_missing_payload");
+        };
+
+        let outcome = match envelope {
+            ShieldedEnvelope::Transfer(t) => self
+                .shielded_evm
+                .apply_shielded_transfer(t)
+                .map(|_| ())
+                .map_err(|e| format!("shielded_transfer:{e:?}")),
+            ShieldedEnvelope::Shield(t) => self
+                .shielded_evm
+                .apply_shield(t)
+                .map(|_| ())
+                .map_err(|e| format!("shield:{e:?}")),
+            ShieldedEnvelope::Unshield(t) => self
+                .shielded_evm
+                .apply_unshield(t)
+                .map(|_| ())
+                .map_err(|e| format!("unshield:{e:?}")),
+            ShieldedEnvelope::Order(_) | ShieldedEnvelope::LiquidationClaim(_) => {
+                // Shielded order admission happens through the
+                // threshold-mempool drain at the FBA tick (A5), not
+                // the per-tx path; liquidation claims arrive through
+                // their own sealed-bid path. Either is a usage error
+                // when seen as a 0x7E tx.
+                Err("shielded_order_or_claim_via_evm_tx_path".to_string())
+            }
+            ShieldedEnvelope::LiquidationExecute(exec) => self
+                .liquidation_auction
+                .execute(&mut self.shielded_evm.state, (**exec).clone())
+                .map(|_| ())
+                .map_err(|e| format!("liquidation_execute:{e:?}")),
+        };
+
+        let success = outcome.is_ok();
+        let mut logs = Vec::new();
+        let topic = if success {
+            B256::from(keccak256(b"ShieldedTxApplied(uint8)"))
+        } else {
+            B256::from(keccak256(b"ShieldedTxRejected(uint8,string)"))
+        };
+        logs.push(LogEntry {
+            address: Address::ZERO,
+            topics: vec![topic, B256::from_slice(&{
+                let mut padded = [0u8; 32];
+                padded[31] = envelope.discriminant();
+                padded
+            })],
+            data: outcome
+                .as_ref()
+                .err()
+                .map(|s| Bytes::from(s.clone().into_bytes()))
+                .unwrap_or_default(),
+        });
+
+        TxExecution {
+            success,
+            // Fixed shielded gas charge; refined in Workstream B
+            // when the precompile-gas table goes live.
+            gas_used: 50_000,
+            output: Bytes::new(),
+            created_address: None,
+            logs,
+        }
+    }
+
+    /// Compute the shielded portion of the block header. Returns a
+    /// 4-tuple `(shielded_state_root, nullifier_root,
+    /// shielded_event_root, state_proof)`.
+    ///
+    /// Pre-fork, every component is the canonical zero value and the
+    /// SP1 prover is not invoked. Post-fork, the digests are taken
+    /// from the live shielded subsystems and the proof is generated
+    /// via [`crate::state_proof::prove_block`] (mock prover today,
+    /// real SP1 once `prime-zkp/sp1` is enabled in Workstream E).
+    fn shielded_block_header(
+        &self,
+        transactions: &[Transaction],
+        domain_events: &[crate::events::DomainEvent],
+        block_hash: B256,
+    ) -> (
+        B256,
+        B256,
+        B256,
+        Option<crate::zk_proofs::StateTransitionProof>,
+    ) {
+        if !self.privacy_mode_activated {
+            return (B256::ZERO, B256::ZERO, B256::ZERO, None);
+        }
+
+        let shielded_state_root = B256::from(self.shielded_evm.state.current_root().to_bytes());
+        // Cheap nullifier-root digest: a real SMT lives in
+        // ShieldedState (Workstream A7 persistence) — for header
+        // commitment purposes we hash the canonical count.
+        let mut nbuf = Vec::with_capacity(16);
+        nbuf.extend_from_slice(
+            &(self.shielded_evm.state.nullifier_count() as u64).to_le_bytes(),
+        );
+        let nullifier_root = keccak256(&nbuf);
+
+        // Shielded event root: keccak of bincode-serialised
+        // `ShieldedEvent` records, in block-emission order. Light
+        // clients re-derive this from the public event stream.
+        let mut ebuf = Vec::new();
+        for ev in domain_events.iter().filter(|e| {
+            matches!(e, crate::events::DomainEvent::Shielded(_))
+        }) {
+            if let Ok(bytes) = bincode::serialize(ev) {
+                ebuf.extend_from_slice(&bytes);
+            }
+        }
+        let shielded_event_root = if ebuf.is_empty() {
+            B256::ZERO
+        } else {
+            keccak256(&ebuf)
+        };
+
+        // Drive the (mock) SP1 prover. Returns `None` when proving
+        // fails — the block is still produced, but it won't pass the
+        // light-client gate. Real validators will gate finalisation
+        // on `state_proof.is_some()` post-fork.
+        let request = crate::state_proof::BlockProofRequest {
+            block_number: self.block_number,
+            timestamp: 0,
+            prev_state_root: self
+                .chain
+                .last()
+                .map(|b| b.shielded_state_root)
+                .unwrap_or(B256::ZERO),
+            prev_nullifier_root: self
+                .chain
+                .last()
+                .map(|b| b.nullifier_root)
+                .unwrap_or(B256::ZERO),
+            txs: transactions
+                .iter()
+                .filter(|t| t.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE)
+                .filter_map(|t| bincode::serialize(&t.shielded_payload).ok())
+                .collect(),
+            prev_market_state: Vec::new(),
+            block_hash,
+        };
+        let state_proof = crate::state_proof::prove_block(
+            &request,
+            &self.shielded_evm.state,
+            shielded_event_root,
+        )
+        .ok();
+
+        (
+            shielded_state_root,
+            nullifier_root,
+            shielded_event_root,
+            state_proof,
+        )
+    }
+
+    /// Run the per-block shielded tick:
+    ///
+    /// 1. Drain decrypted intents from the threshold-encrypted
+    ///    mempool (a no-op until the BLS provider in D3 is wired).
+    /// 2. Iterate every shielded market and run its uniform-price
+    ///    auction. Emit one [`ShieldedEvent::FbaCleared`] per market
+    ///    that traded a non-zero clearing volume.
+    /// 3. Settle the block's sealed-bid liquidation auctions. Emit
+    ///    one [`ShieldedEvent::LiquidationSettled`] per winner.
+    /// 4. Emit a [`ShieldedEvent::ShieldedRootAdvanced`] summarising
+    ///    the post-tick canonical state. Light clients sync off this.
+    fn run_shielded_tick(&mut self) {
+        use crate::events::{DomainEvent, ShieldedEvent};
+
+        // Step 1 — drain decrypted intents. The plaintext routing
+        // into `shielded_orders.admit_intent` is deferred to D3 once
+        // the threshold-decryption pipe is real; we still flush so
+        // the bookkeeping stays consistent.
+        let drained = self.threshold_mempool.drain_decrypted(usize::MAX);
+        if !drained.is_empty() {
+            metrics::counter!(
+                "prime_chain_threshold_mempool_admitted_total",
+                drained.len() as u64
+            );
+            self.pending_events
+                .push(DomainEvent::Shielded(ShieldedEvent::MempoolBatchAdmitted {
+                    block_number: self.block_number,
+                    intent_count: drained.len() as u64,
+                }));
+        }
+        metrics::gauge!(
+            "prime_chain_threshold_mempool_pending",
+            self.threshold_mempool.pending_count() as f64
+        );
+
+        // Step 2 — uniform-price auction per market.
+        let market_ids: Vec<crate::prime_orders::MarketId> =
+            self.shielded_orders.aggregates.keys().copied().collect();
+        for market_id in market_ids {
+            match self.shielded_orders.run_fba(market_id) {
+                Ok(result) => {
+                    if !result.matched_size.is_zero() {
+                        metrics::counter!(
+                            "prime_chain_fba_cleared_total",
+                            1,
+                            "market_id" => market_id.0.to_string()
+                        );
+                        // Gauges carry only market-level aggregates;
+                        // no per-trader labels (CI K2).
+                        metrics::gauge!(
+                            "prime_chain_fba_clearing_price",
+                            f64_from_u256(result.clearing_price),
+                            "market_id" => market_id.0.to_string()
+                        );
+                        metrics::gauge!(
+                            "prime_chain_fba_matched_size",
+                            f64_from_u256(result.matched_size),
+                            "market_id" => market_id.0.to_string()
+                        );
+                        self.pending_events.push(DomainEvent::Shielded(
+                            ShieldedEvent::FbaCleared {
+                                market_id,
+                                clearing_price: result.clearing_price,
+                                matched_size: result.matched_size,
+                                intent_count: result.fills.len() as u64,
+                            },
+                        ));
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(market = %market_id.0, error = ?err, "shielded FBA failed");
+                }
+            }
+        }
+
+        // Step 3 — settle sealed-bid liquidations. `settle_block`
+        // returns (claim_tag, liquidator_id, winning_bid) for every
+        // tag that received bids. `claim_tag` is
+        // `Poseidon(victim_commitment, oracle_price)`, so it doesn't
+        // re-link to a market or trader; `liquidator_id` is the
+        // bond commitment (no address leak either).
+        let winners = self
+            .liquidation_auction
+            .settle_block(self.block_number);
+        for (_claim_tag, bond_commitment, winning_bid) in winners {
+            metrics::counter!("prime_chain_liquidation_auctions_settled_total", 1);
+            self.pending_events
+                .push(DomainEvent::Shielded(ShieldedEvent::LiquidationSettled {
+                    market_id: crate::prime_orders::MarketId(0), // see ADR-016: market is unbound at settle time
+                    winner_bond_commitment: bond_commitment.to_bytes(),
+                    winning_bid,
+                }));
+        }
+        metrics::gauge!(
+            "prime_chain_liquidator_count",
+            self.liquidation_auction.liquidators.len() as f64
+        );
+
+        // Step 4 — emit the new shielded-state root for light clients.
+        let new_root = self.shielded_evm.state.current_root().to_bytes();
+        metrics::counter!("prime_chain_shielded_root_advanced_total", 1);
+        let snap = self.shielded_evm.state.snapshot();
+        metrics::gauge!(
+            "prime_chain_shielded_notes_total",
+            snap.leaves.len() as f64
+        );
+        metrics::gauge!(
+            "prime_chain_shielded_nullifiers_total",
+            snap.nullifiers.len() as f64
+        );
+        metrics::gauge!(
+            "prime_chain_privacy_mode_active",
+            if self.privacy_mode_activated { 1.0 } else { 0.0 }
+        );
+        metrics::gauge!(
+            "prime_chain_privacy_activation_height",
+            self.privacy_activation_height.unwrap_or(0) as f64
+        );
+        self.pending_events
+            .push(DomainEvent::Shielded(ShieldedEvent::ShieldedRootAdvanced {
+                block_number: self.block_number,
+                new_root,
+                notes_added: 0,
+                nullifiers_added: 0,
+            }));
+    }
+
+
     fn execute_tx(&mut self, tx: &Transaction) -> Result<TxExecution> {
         let mut env = Env::default();
         env.cfg.chain_id = self.chain_id;
@@ -1574,15 +2310,27 @@ impl Engine {
             None => TxKind::Create,
         };
 
+        // Privacy-redesign Phase 4 — install shielded EVM context.
+        let shielded_evm = std::mem::take(&mut self.shielded_evm);
+        let shared_shielded = Arc::new(Mutex::new(shielded_evm));
+        precompiles::set_shielded_evm_context(shared_shielded.clone());
+
         let mut evm = Evm::builder()
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
             .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_commit()?;
         self.evm.db = std::mem::take(&mut evm.context.evm.db);
+        precompiles::clear_shielded_evm_context();
+        drop(evm);
+        self.shielded_evm = Arc::try_unwrap(shared_shielded)
+            .expect("no other Arc references to shielded_evm")
+            .into_inner()
+            .expect("shielded_evm mutex not poisoned");
         self.evm.state.mark_dirty(tx.from);
         if let Some(to) = tx.to {
             self.evm.state.mark_dirty(to);

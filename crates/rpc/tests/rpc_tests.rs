@@ -64,6 +64,8 @@ fn rpc_prime_send_transaction_adds_to_mempool() {
         nonce: 0,
         chain_id: Some(7919),
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     };
 
     assert!(engine.mempool_is_empty(), "mempool starts empty");

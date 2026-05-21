@@ -147,6 +147,8 @@ fn fuzz_parallel_determinism() {
                 nonce: i as u64,
                 chain_id: Some(chain_id),
                 signature: None,
+                tx_type: 0,
+                shielded_payload: None,
             };
             txs.push(tx);
         }
@@ -239,6 +241,8 @@ fn fuzz_mempool_ordering() {
                 nonce: nonce as u64,
                 chain_id: Some(1),
                 signature: None,
+                tx_type: 0,
+                shielded_payload: None,
             };
             let account_nonce = rng.r#gen::<u32>() % (nonce + 1);
             if mempool.insert(tx.clone(), base_fee, account_nonce as u64).is_ok() {

@@ -1,0 +1,203 @@
+# Prime Chain Privacy Testnet (chain ID 7920)
+#
+# 7 validators (5-of-7 DKG threshold), 1 RPC observer, faucet,
+# Prometheus, Grafana. Built from the privacy hard-fork branch.
+#
+# Bootstrap:
+#   1. `cd testnet && ./scripts/bootstrap-privacy-genesis.sh`
+#   2. `docker compose -f docker-compose.privacy.yml up -d --build`
+#   3. Verify with `curl http://localhost:8545/health`
+#
+# See docs/runbooks/privacy-testnet-bootstrap.md for the full
+# operator runbook.
+
+version: "3.9"
+
+x-validator-defaults: &validator-defaults
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  networks:
+    - privacy-testnet
+  healthcheck:
+    test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 30s
+  restart: unless-stopped
+  environment:
+    - RUST_LOG=info,prime_chain::dkg=debug,prime_chain::threshold_mempool=debug
+
+services:
+  privacy-validator-1:
+    <<: *validator-defaults
+    container_name: privacy-validator-1
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-1.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-1.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-1-data:/data
+    ports:
+      - "18545:8545"
+      - "19090:9090"
+
+  privacy-validator-2:
+    <<: *validator-defaults
+    container_name: privacy-validator-2
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-2.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-2.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-2-data:/data
+    ports:
+      - "18546:8545"
+      - "19091:9090"
+
+  privacy-validator-3:
+    <<: *validator-defaults
+    container_name: privacy-validator-3
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-3.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-3.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-3-data:/data
+    ports:
+      - "18547:8545"
+      - "19092:9090"
+
+  privacy-validator-4:
+    <<: *validator-defaults
+    container_name: privacy-validator-4
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-4.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-4.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-4-data:/data
+    ports:
+      - "18548:8545"
+      - "19093:9090"
+
+  privacy-validator-5:
+    <<: *validator-defaults
+    container_name: privacy-validator-5
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-5.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-5.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-5-data:/data
+    ports:
+      - "18549:8545"
+      - "19094:9090"
+
+  privacy-validator-6:
+    <<: *validator-defaults
+    container_name: privacy-validator-6
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-6.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-6.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-6-data:/data
+    ports:
+      - "18550:8545"
+      - "19095:9090"
+
+  privacy-validator-7:
+    <<: *validator-defaults
+    container_name: privacy-validator-7
+    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    volumes:
+      - ./configs/privacy/validator-7.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/keys/validator-7.json:/data/node_key.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-validator-7-data:/data
+    ports:
+      - "18551:8545"
+      - "19096:9090"
+
+  privacy-rpc-node:
+    <<: *validator-defaults
+    container_name: privacy-rpc-node
+    command: ["--config", "/etc/prime-chain/config.json", "--mode", "full", "--rpc"]
+    volumes:
+      - ./configs/privacy/rpc-node.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
+      - privacy-rpc-node-data:/data
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    depends_on:
+      - privacy-validator-1
+      - privacy-validator-2
+      - privacy-validator-3
+      - privacy-validator-4
+      - privacy-validator-5
+
+  privacy-faucet:
+    build:
+      context: ..
+      dockerfile: Dockerfile.faucet
+    container_name: privacy-faucet
+    command:
+      ["--port", "8080", "--rpc-url", "http://privacy-rpc-node:8545", "--private-key", "/etc/faucet/faucet-key.json"]
+    volumes:
+      - ./genesis-output/privacy/keys/faucet-key.json:/etc/faucet/faucet-key.json:ro
+    ports:
+      - "8081:8080"
+    networks:
+      - privacy-testnet
+    depends_on:
+      - privacy-rpc-node
+    restart: unless-stopped
+
+  privacy-prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: privacy-prometheus
+    ports:
+      - "9100:9090"
+    volumes:
+      - ./prometheus.privacy.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - privacy-testnet
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped
+
+  privacy-grafana:
+    image: grafana/grafana:10.2.0
+    container_name: privacy-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - privacy-grafana-data:/var/lib/grafana
+      - ../deploy/monitoring/grafana-privacy-dashboard.json:/var/lib/grafana/dashboards/privacy.json:ro
+    networks:
+      - privacy-testnet
+    depends_on:
+      - privacy-prometheus
+    restart: unless-stopped
+
+volumes:
+  privacy-validator-1-data:
+  privacy-validator-2-data:
+  privacy-validator-3-data:
+  privacy-validator-4-data:
+  privacy-validator-5-data:
+  privacy-validator-6-data:
+  privacy-validator-7-data:
+  privacy-rpc-node-data:
+  privacy-grafana-data:
+
+networks:
+  privacy-testnet:
+    driver: bridge

@@ -128,6 +128,13 @@ impl MerkleTree {
         self.empty[level]
     }
 
+    /// Read the leaf at `index`. Returns the empty-leaf
+    /// (`Fr::ZERO`-hashed-up) value for indices past `next_index`.
+    /// Used by persistence layers to snapshot the dense leaf range.
+    pub fn leaf_at(&self, index: u64) -> Fr {
+        self.node(0, index)
+    }
+
     fn set_leaf(&mut self, index: u64, leaf: Fr) {
         self.nodes.insert((0, index), leaf);
         let mut idx = index;

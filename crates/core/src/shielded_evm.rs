@@ -46,6 +46,36 @@ use thiserror::Error;
 /// EIP-2718 type byte for shielded transactions.
 pub const SHIELDED_TX_TYPE: u8 = 0x7E;
 
+/// Discriminated union of every shielded-transaction body type the
+/// chain accepts inside a `0x7E` envelope. Carried as
+/// [`crate::engine::Transaction::shielded_payload`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ShieldedEnvelope {
+    Transfer(ShieldedTransferTx),
+    Order(Box<crate::shielded_orders::ShieldedOrderTx>),
+    Shield(ShieldTx),
+    Unshield(UnshieldTx),
+    LiquidationClaim(Box<crate::liquidation_auction::LiquidationClaim>),
+    LiquidationExecute(Box<crate::liquidation_auction::LiquidationExecute>),
+}
+
+impl ShieldedEnvelope {
+    /// Discriminant byte used inside the envelope's serialized
+    /// preamble (independent from the EIP-2718 type byte). Stable
+    /// across `bincode` versions because we don't rely on enum
+    /// ordering — we re-derive on each serialize.
+    pub fn discriminant(&self) -> u8 {
+        match self {
+            ShieldedEnvelope::Transfer(_) => 0x01,
+            ShieldedEnvelope::Order(_) => 0x02,
+            ShieldedEnvelope::Shield(_) => 0x03,
+            ShieldedEnvelope::Unshield(_) => 0x04,
+            ShieldedEnvelope::LiquidationClaim(_) => 0x05,
+            ShieldedEnvelope::LiquidationExecute(_) => 0x06,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ShieldedEvmError {
     #[error("zk proof verification failed: {0}")]
@@ -79,7 +109,7 @@ pub struct ShieldedTransferTx {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShieldTx {
     /// The transparent EOA being debited. `tx.origin` must equal this.
-    pub from: Address,
+    pub from: Address, // privacy-allow: shield bridge requires the transparent source EOA
     /// Amount being debited from the transparent balance and minted
     /// as a shielded note.
     pub amount: U256,
@@ -103,7 +133,7 @@ pub struct UnshieldTx {
     /// Transparent destination. **This is the only place a shielded
     /// flow links to a transparent address.** Required for the
     /// out-of-pool semantics; cannot be hidden.
-    pub to: Address,
+    pub to: Address, // privacy-allow: unshield bridge requires the transparent destination EOA
     /// Change-note commitment (may be `Fr::ZERO` for a full unshield).
     pub change_commitment: Fr,
     pub encrypted_change: Vec<u8>,
@@ -122,7 +152,7 @@ pub struct ShieldedEvm {
     /// revm's DB requires the EVM context to be live; in the
     /// final wiring this becomes a thin adapter over revm's account
     /// API.
-    pub transparent_balances: HashMap<Address, U256>,
+    pub transparent_balances: HashMap<Address, U256>, // privacy-allow: explicit transparent-side mirror at the privacy boundary
     pub verifier: Box<dyn Verifier>,
 }
 
@@ -318,7 +348,7 @@ impl MigrationPlan {
     }
 }
 
-fn derive_migration_rho(owner: Address, height: u64) -> Fr {
+fn derive_migration_rho(owner: Address, height: u64) -> Fr { // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
     h.update(b"PrimeChain-MigrationRho");
@@ -328,7 +358,7 @@ fn derive_migration_rho(owner: Address, height: u64) -> Fr {
     Fr::from_bytes_reduce(&bytes)
 }
 
-fn derive_migration_psi(owner: Address, height: u64) -> Fr {
+fn derive_migration_psi(owner: Address, height: u64) -> Fr { // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
     h.update(b"PrimeChain-MigrationPsi");

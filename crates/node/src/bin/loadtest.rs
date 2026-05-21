@@ -332,6 +332,8 @@ fn send_transfer(
         nonce,
         chain_id: Some(chain_id),
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     };
 
     let signed = sign_transaction(&tx, &from.key);
@@ -387,6 +389,8 @@ fn send_contract_deploy(
         nonce,
         chain_id: Some(chain_id),
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     };
 
     let signed = sign_transaction(&tx, &from.key);

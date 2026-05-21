@@ -40,4 +40,7 @@ pub mod threshold_mempool;
 pub mod shielded_orders;
 pub mod liquidation_auction;
 pub mod shielded_evm;
+pub mod shielded_persistence;
+pub mod engine_snapshot;
 pub mod state_proof;
+pub mod dkg;

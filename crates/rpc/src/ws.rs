@@ -34,6 +34,24 @@ pub enum SubscriptionKind {
     PrimeOrdersTrades { market: Option<u64> },
     PrimeOrdersBook { market: u64 },
     BatchAuctionResults { market: Option<u64> },
+
+    // ───── Shielded-mode subscriptions (Workstream C3) ─────
+    //
+    // Each kind below carries *no* address-identifying data — they
+    // describe market-level aggregates only. CI guard K2 enforces
+    // this at the source-grep layer.
+    /// Fires every block once the shielded note-commitment tree
+    /// root advances.
+    NewShieldedRoot,
+    /// Fires after each frequent-batch-auction tick completes, with
+    /// the per-market clearing price + matched size.
+    NewClearingPrice { market: Option<u64> },
+    /// Fires when a liquidation auction settles — the winning bond
+    /// commitment + bid are public, the victim isn't.
+    NewAuctionSettled { market: Option<u64> },
+    /// Fires when a fresh `StateTransitionProof` is attached to a
+    /// block by the SP1 prover.
+    NewStateProof,
 }
 
 /// Per-subscriber state.
@@ -157,6 +175,56 @@ impl WsSubscriptionManager {
                 _ => false,
             },
             result,
+        );
+    }
+
+    // ───── Shielded-mode notifiers (C3) ─────
+
+    /// Notify `newShieldedRoot` subscribers. The `payload` must
+    /// contain only block-level / aggregate fields:
+    /// `block_number`, `new_root`, `notes_added`, `nullifiers_added`.
+    /// CI K2 enforces address-free payloads at the source.
+    pub fn notify_shielded_root(&mut self, payload: &Value) {
+        self.send_to_matching(
+            |kind| matches!(kind, SubscriptionKind::NewShieldedRoot),
+            payload,
+        );
+    }
+
+    /// Notify `newClearingPrice` subscribers. `payload` carries
+    /// `market_id`, `clearing_price`, `matched_size`, `intent_count`.
+    pub fn notify_clearing_price(&mut self, payload: &Value, market: u64) {
+        self.send_to_matching(
+            |kind| match kind {
+                SubscriptionKind::NewClearingPrice { market: m } => {
+                    m.map_or(true, |mm| mm == market)
+                }
+                _ => false,
+            },
+            payload,
+        );
+    }
+
+    /// Notify `newAuctionSettled` subscribers. `payload` carries
+    /// `market_id`, `winner_bond_commitment`, `winning_bid`.
+    pub fn notify_auction_settled(&mut self, payload: &Value, market: u64) {
+        self.send_to_matching(
+            |kind| match kind {
+                SubscriptionKind::NewAuctionSettled { market: m } => {
+                    m.map_or(true, |mm| mm == market)
+                }
+                _ => false,
+            },
+            payload,
+        );
+    }
+
+    /// Notify `newStateProof` subscribers. `payload` carries
+    /// `block_number`, `state_root`, `proof_bytes_hex`.
+    pub fn notify_state_proof(&mut self, payload: &Value) {
+        self.send_to_matching(
+            |kind| matches!(kind, SubscriptionKind::NewStateProof),
+            payload,
         );
     }
 
@@ -447,6 +515,17 @@ fn parse_prime_subscription(params: &[Value]) -> Result<SubscriptionKind, ()> {
             let market = params.get(1).and_then(market_from_param);
             Ok(SubscriptionKind::BatchAuctionResults { market })
         }
+        // ───── Shielded-mode subscriptions (C3) ─────
+        "newShieldedRoot" => Ok(SubscriptionKind::NewShieldedRoot),
+        "newClearingPrice" => {
+            let market = params.get(1).and_then(market_from_param);
+            Ok(SubscriptionKind::NewClearingPrice { market })
+        }
+        "newAuctionSettled" => {
+            let market = params.get(1).and_then(market_from_param);
+            Ok(SubscriptionKind::NewAuctionSettled { market })
+        }
+        "newStateProof" => Ok(SubscriptionKind::NewStateProof),
         _ => Err(()),
     }
 }

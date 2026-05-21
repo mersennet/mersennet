@@ -7,6 +7,9 @@ use serde::{Serialize, Deserialize};
 pub enum DomainEvent {
     PrimeOrders(PrimeOrdersEvent),
     Bridge(BridgeEvent),
+    /// Privacy-redesign Phase 4 events: market-level public data
+    /// emitted by shielded subsystems. **No account-level fields.**
+    Shielded(ShieldedEvent),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +58,59 @@ pub enum PrimeOrdersEvent {
     },
 }
 
+/// Public, market-aggregate-only events emitted by the shielded
+/// subsystems. CRITICAL: every field here MUST be aggregate or
+/// scrubbed. Address fields, traders' positions, or anything that
+/// re-links a trader to a market are forbidden. The CI privacy-grep
+/// check (Workstream K2) enforces this.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ShieldedEvent {
+    /// One discrete-time uniform-price auction cleared for `market_id`.
+    FbaCleared {
+        market_id: MarketId,
+        clearing_price: U256,
+        matched_size: U256,
+        /// Number of intents that participated (aggregate count, no
+        /// per-intent metadata).
+        intent_count: u64,
+    },
+    /// Threshold-encrypted mempool admitted a batch of intents into
+    /// the current block (the encrypted ciphertext list, not the
+    /// plaintext).
+    MempoolBatchAdmitted {
+        block_number: u64,
+        intent_count: u64,
+    },
+    /// Sealed-bid liquidation auction settled for `market_id`. The
+    /// winner is identified solely by their `winner_bond_commitment`
+    /// (a Poseidon commitment to the liquidator's bond, not their
+    /// address).
+    LiquidationSettled {
+        market_id: MarketId,
+        winner_bond_commitment: [u8; 32],
+        winning_bid: U256,
+    },
+    /// New shielded-state root after the block's shielded txs were
+    /// applied. Light clients use this to advance.
+    ShieldedRootAdvanced {
+        block_number: u64,
+        new_root: [u8; 32],
+        notes_added: u64,
+        nullifiers_added: u64,
+    },
+}
+
+impl ShieldedEvent {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ShieldedEvent::FbaCleared { .. } => "shielded_fba_cleared",
+            ShieldedEvent::MempoolBatchAdmitted { .. } => "shielded_mempool_batch_admitted",
+            ShieldedEvent::LiquidationSettled { .. } => "shielded_liquidation_settled",
+            ShieldedEvent::ShieldedRootAdvanced { .. } => "shielded_root_advanced",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BridgeEvent {
     Enqueued {
@@ -85,6 +141,7 @@ impl DomainEvent {
         match self {
             DomainEvent::PrimeOrders(_) => "primeorders",
             DomainEvent::Bridge(_) => "bridge",
+            DomainEvent::Shielded(_) => "shielded",
         }
     }
 
@@ -92,6 +149,7 @@ impl DomainEvent {
         match self {
             DomainEvent::PrimeOrders(event) => event.kind(),
             DomainEvent::Bridge(event) => event.kind(),
+            DomainEvent::Shielded(event) => event.kind(),
         }
     }
 }

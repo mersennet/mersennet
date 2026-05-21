@@ -21,9 +21,20 @@ pub struct SignedTransaction {
 
 /// Compute the deterministic hash of a transaction for signing (EIP-155 inspired).
 ///
-/// Format: keccak256(chain_id || nonce || gas_price || gas_limit || to || value || data)
-/// All integer fields are big-endian. `to` is the 20-byte address or 20 zero bytes.
+/// For legacy / EIP-2930 / EIP-1559 (tx_type 0..=2), the hash domain
+/// is `chain_id || nonce || gas_price || gas_limit || to || value || data`.
+///
+/// For shielded (tx_type 0x7E), the hash domain is:
+///   `"PRIME_SHIELDED_V1" || chain_id || nonce || from
+///    || keccak256(bincode(shielded_payload))`
+/// — gas fields are intentionally omitted because shielded txs are
+/// paid by the prover's bond / sponsoring relayer, not by `tx.from`.
+/// All integer fields are big-endian. `to` is the 20-byte address or
+/// 20 zero bytes.
 pub fn tx_signing_hash(tx: &Transaction) -> B256 {
+    if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+        return shielded_signing_hash(tx);
+    }
     let chain_id = tx.chain_id.unwrap_or(0);
     let mut buf = Vec::with_capacity(8 + 8 + 32 + 8 + 20 + 32 + tx.data.len());
     buf.extend_from_slice(&chain_id.to_be_bytes());
@@ -39,6 +50,30 @@ pub fn tx_signing_hash(tx: &Transaction) -> B256 {
     keccak256(buf)
 }
 
+/// Signing hash for a `tx_type == 0x7E` shielded transaction.
+/// Returns `B256::ZERO` when the payload is missing — the verifier
+/// will then reject the signature because the zero hash never
+/// matches an honestly produced signature.
+fn shielded_signing_hash(tx: &Transaction) -> B256 {
+    const DOMAIN: &[u8] = b"PRIME_SHIELDED_V1";
+    let Some(payload) = &tx.shielded_payload else {
+        return B256::ZERO;
+    };
+    let payload_bytes = match bincode::serialize(payload) {
+        Ok(b) => b,
+        Err(_) => return B256::ZERO,
+    };
+    let payload_digest = keccak256(&payload_bytes);
+    let chain_id = tx.chain_id.unwrap_or(0);
+    let mut buf = Vec::with_capacity(DOMAIN.len() + 8 + 8 + 20 + 32);
+    buf.extend_from_slice(DOMAIN);
+    buf.extend_from_slice(&chain_id.to_be_bytes());
+    buf.extend_from_slice(&tx.nonce.to_be_bytes());
+    buf.extend_from_slice(tx.from.as_slice());
+    buf.extend_from_slice(payload_digest.as_slice());
+    keccak256(buf)
+}
+
 /// Sign a transaction with a secp256k1 private key, producing a `SignedTransaction`.
 pub fn sign_transaction(tx: &Transaction, private_key: &SigningKey) -> SignedTransaction {
     let hash = tx_signing_hash(tx);
@@ -50,8 +85,14 @@ pub fn sign_transaction(tx: &Transaction, private_key: &SigningKey) -> SignedTra
     let r = U256::from_be_slice(&sig_bytes[..32]);
     let s = U256::from_be_slice(&sig_bytes[32..64]);
 
-    let chain_id = tx.chain_id.unwrap_or(0);
-    let v = U256::from(recovery_id.to_byte() as u64 + 35 + chain_id * 2);
+    // Shielded txs use raw y-parity (0/1) — they don't follow EIP-155
+    // because they don't traverse the EVM signing path.
+    let v = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+        U256::from(recovery_id.to_byte() as u64)
+    } else {
+        let chain_id = tx.chain_id.unwrap_or(0);
+        U256::from(recovery_id.to_byte() as u64 + 35 + chain_id * 2)
+    };
 
     let mut signed_tx = tx.clone();
     signed_tx.signature = Some((r, s, v.to::<u64>()));
@@ -61,7 +102,7 @@ pub fn sign_transaction(tx: &Transaction, private_key: &SigningKey) -> SignedTra
         v,
         r,
         s,
-        tx_type: 0,
+        tx_type: tx.tx_type,
     }
 }
 
@@ -69,14 +110,22 @@ pub fn sign_transaction(tx: &Transaction, private_key: &SigningKey) -> SignedTra
 pub fn recover_signer(signed_tx: &SignedTransaction) -> Result<Address> {
     let hash = tx_signing_hash(&signed_tx.tx);
 
-    let chain_id = signed_tx.tx.chain_id.unwrap_or(0);
     let v_u64 = signed_tx.v.to::<u64>();
-    let recovery_byte = v_u64
-        .checked_sub(35 + chain_id * 2)
-        .ok_or_else(|| anyhow!("invalid v value: {v_u64}"))?;
+    let recovery_byte = if signed_tx.tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+        // Raw y-parity, see `sign_transaction`.
+        if v_u64 > 1 {
+            return Err(anyhow!("invalid shielded v value: {v_u64}"));
+        }
+        v_u64 as u8
+    } else {
+        let chain_id = signed_tx.tx.chain_id.unwrap_or(0);
+        v_u64
+            .checked_sub(35 + chain_id * 2)
+            .ok_or_else(|| anyhow!("invalid v value: {v_u64}"))? as u8
+    };
 
     let recovery_id =
-        RecoveryId::try_from(recovery_byte as u8).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+        RecoveryId::try_from(recovery_byte).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
 
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signed_tx.r.to_be_bytes::<32>());
@@ -166,6 +215,8 @@ fn decode_prime_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         nonce,
         chain_id: Some(chain_id),
         signature: Some((r, s, v)),
+        tx_type: 0,
+        shielded_payload: None,
     };
     let signed_temp = SignedTransaction {
         tx: tx.clone(),
@@ -189,8 +240,17 @@ fn decode_prime_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
 }
 
 /// Encode a signed transaction to raw bytes (Prime Chain format).
+///
+/// For `tx_type == 0x7E` (shielded), encodes as the EIP-2718 envelope
+/// `0x7E || bincode(SerdeShielded)`. The serde wrapper carries the
+/// (chain_id, nonce, from, envelope, r, s, v) tuple so that a
+/// roundtrip through `decode_raw_signed_tx` reproduces the original
+/// `SignedTransaction`.
 pub fn encode_raw_signed_tx(signed: &SignedTransaction) -> Vec<u8> {
     let tx = &signed.tx;
+    if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+        return encode_raw_shielded_tx(signed);
+    }
     let chain_id = tx.chain_id.unwrap_or(0);
     let mut out = Vec::new();
     out.extend_from_slice(&chain_id.to_be_bytes());
@@ -207,6 +267,97 @@ pub fn encode_raw_signed_tx(signed: &SignedTransaction) -> Vec<u8> {
     out.extend_from_slice(&signed.r.to_be_bytes::<32>());
     out.extend_from_slice(&signed.s.to_be_bytes::<32>());
     out.extend_from_slice(&signed.v.to::<u64>().to_be_bytes());
+    out
+}
+
+fn encode_raw_shielded_tx(signed: &SignedTransaction) -> Vec<u8> {
+    let tx = &signed.tx;
+    let payload = tx
+        .shielded_payload
+        .as_ref()
+        .expect("shielded tx must have payload");
+    let payload_bytes = bincode::serialize(payload).expect("shielded payload serialize");
+
+    // 7-item RLP list: [chain_id, nonce, from, payload, y_parity, r, s]
+    let chain_id = tx.chain_id.unwrap_or(0);
+    let v_u64 = signed.v.to::<u64>();
+    let items: Vec<Vec<u8>> = vec![
+        u64_to_be_bytes(chain_id),
+        u64_to_be_bytes(tx.nonce),
+        tx.from.as_slice().to_vec(),
+        payload_bytes,
+        vec![v_u64 as u8],
+        u256_to_be_bytes(&signed.r),
+        u256_to_be_bytes(&signed.s),
+    ];
+    let inner_rlp = rlp_encode_list_minimal(&items);
+    let mut out = Vec::with_capacity(1 + inner_rlp.len());
+    out.push(crate::shielded_evm::SHIELDED_TX_TYPE);
+    out.extend_from_slice(&inner_rlp);
+    out
+}
+
+fn u64_to_be_bytes(n: u64) -> Vec<u8> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let bytes = n.to_be_bytes();
+    bytes[bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len() - 1)..].to_vec()
+}
+
+fn u256_to_be_bytes(u: &U256) -> Vec<u8> {
+    let bytes = u.to_be_bytes::<32>();
+    let leading = bytes.iter().take_while(|&&b| b == 0).count();
+    if leading == 32 {
+        Vec::new()
+    } else {
+        bytes[leading..].to_vec()
+    }
+}
+
+/// Minimal RLP-list encoder for `Vec<Vec<u8>>` of "atomic" items.
+/// Each inner `Vec<u8>` is interpreted as a single string; the list
+/// is concatenated and wrapped per RLP rules. We re-implement here
+/// rather than depend on `rlp` because the rlp_decode module is
+/// hand-rolled too.
+fn rlp_encode_list_minimal(items: &[Vec<u8>]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for item in items {
+        payload.extend_from_slice(&rlp_encode_string(item));
+    }
+    let len = payload.len();
+    let mut out = Vec::with_capacity(payload.len() + 9);
+    if len <= 55 {
+        out.push(0xc0 + len as u8);
+    } else {
+        let mut len_bytes = (len as u64).to_be_bytes().to_vec();
+        while len_bytes.first() == Some(&0) {
+            len_bytes.remove(0);
+        }
+        out.push(0xf7 + len_bytes.len() as u8);
+        out.extend_from_slice(&len_bytes);
+    }
+    out.extend_from_slice(&payload);
+    out
+}
+
+fn rlp_encode_string(s: &[u8]) -> Vec<u8> {
+    if s.len() == 1 && s[0] < 0x80 {
+        return s.to_vec();
+    }
+    let mut out = Vec::with_capacity(s.len() + 9);
+    let len = s.len();
+    if len < 56 {
+        out.push(0x80 + len as u8);
+    } else {
+        let mut len_bytes = (len as u64).to_be_bytes().to_vec();
+        while len_bytes.first() == Some(&0) {
+            len_bytes.remove(0);
+        }
+        out.push(0xb7 + len_bytes.len() as u8);
+        out.extend_from_slice(&len_bytes);
+    }
+    out.extend_from_slice(s);
     out
 }
 
@@ -233,6 +384,8 @@ mod tests {
             nonce: 0,
             chain_id: Some(7919),
             signature: None,
+            tx_type: 0,
+            shielded_payload: None,
         }
     }
 
@@ -260,5 +413,71 @@ mod tests {
         let signed = sign_transaction(&tx, &key_a);
         let recovered = recover_signer(&signed).unwrap();
         assert_ne!(recovered, addr_b);
+    }
+
+    fn dummy_shield_tx(addr: Address) -> crate::shielded_evm::ShieldTx {
+        use prime_zkp::field::Fr;
+        use prime_zkp::noir::{Circuit, CircuitProof};
+        crate::shielded_evm::ShieldTx {
+            from: addr,
+            amount: U256::from(42u64),
+            output_commitment: Fr::ZERO,
+            encrypted_output: vec![0u8; 8],
+            proof: CircuitProof {
+                circuit: Circuit::Output,
+                public_inputs: vec![Fr::ZERO; 1],
+                proof_bytes: vec![0u8; 32],
+                vk_hash: [0u8; 32],
+            },
+        }
+    }
+
+    #[test]
+    fn shielded_signing_hash_domain_separates() {
+        let (_, addr) = generate_keypair();
+        let legacy = sample_tx(addr);
+        let mut shielded = legacy.clone();
+        shielded.tx_type = crate::shielded_evm::SHIELDED_TX_TYPE;
+        shielded.shielded_payload = Some(crate::shielded_evm::ShieldedEnvelope::Shield(
+            dummy_shield_tx(addr),
+        ));
+        // With a payload set, the shielded hash MUST differ from the
+        // legacy hash for the same nonce/sender — otherwise a
+        // signature could be replayed across tx types.
+        assert_ne!(tx_signing_hash(&legacy), tx_signing_hash(&shielded));
+    }
+
+    #[test]
+    fn shielded_signing_hash_missing_payload_is_zero() {
+        let (_, addr) = generate_keypair();
+        let mut tx = sample_tx(addr);
+        tx.tx_type = crate::shielded_evm::SHIELDED_TX_TYPE;
+        tx.shielded_payload = None;
+        assert_eq!(tx_signing_hash(&tx), revm::primitives::B256::ZERO);
+    }
+
+    #[test]
+    fn shielded_encode_decode_roundtrip() {
+        let (key, addr) = generate_keypair();
+        let envelope =
+            crate::shielded_evm::ShieldedEnvelope::Shield(dummy_shield_tx(addr));
+        let mut tx = sample_tx(addr);
+        tx.tx_type = crate::shielded_evm::SHIELDED_TX_TYPE;
+        tx.shielded_payload = Some(envelope);
+
+        let signed = sign_transaction(&tx, &key);
+        let raw = encode_raw_signed_tx(&signed);
+        assert_eq!(raw[0], crate::shielded_evm::SHIELDED_TX_TYPE);
+
+        let decoded = decode_raw_signed_tx(&raw).expect("decode shielded");
+        assert_eq!(decoded.tx.tx_type, crate::shielded_evm::SHIELDED_TX_TYPE);
+        assert_eq!(decoded.tx.from, addr);
+        assert_eq!(decoded.tx.nonce, tx.nonce);
+        assert!(matches!(
+            decoded.tx.shielded_payload,
+            Some(crate::shielded_evm::ShieldedEnvelope::Shield(_))
+        ));
+        let recovered = recover_signer(&decoded).expect("shielded recover");
+        assert_eq!(recovered, addr);
     }
 }

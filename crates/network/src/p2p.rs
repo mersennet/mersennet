@@ -216,6 +216,8 @@ pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
         nonce: wire.nonce,
         chain_id: wire.chain_id,
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     })
 }
 
@@ -313,6 +315,10 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         bridge_orders_to_evm: Vec::new(),
         bridge_evm_to_orders: Vec::new(),
         domain_events: Vec::new(),
+        shielded_state_root: revm::primitives::B256::ZERO,
+        nullifier_root: revm::primitives::B256::ZERO,
+        shielded_event_root: revm::primitives::B256::ZERO,
+        state_proof: None,
     })
 }
 

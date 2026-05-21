@@ -1,0 +1,238 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Prime Chain privacy testnet (chain ID 7920) — operator dashboard. All panels obey CI K2: no address labels.",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "title": "Privacy Mode",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_privacy_mode_active",
+          "legendFormat": "active",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "title": "Block Height",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_height",
+          "legendFormat": "height",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 }
+    },
+    {
+      "title": "Active Validators",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_validators_active",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 }
+    },
+    {
+      "title": "Activation Height",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_privacy_activation_height",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 }
+    },
+    {
+      "title": "Pending threshold-mempool intents",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_threshold_mempool_pending",
+          "legendFormat": "pending",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+    },
+    {
+      "title": "Shielded notes vs nullifiers",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_shielded_notes_total",
+          "legendFormat": "notes",
+          "refId": "A"
+        },
+        {
+          "expr": "prime_chain_shielded_nullifiers_total",
+          "legendFormat": "nullifiers",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+    },
+    {
+      "title": "Shielded root advancement rate",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(prime_chain_shielded_root_advanced_total[1m])",
+          "legendFormat": "roots/sec",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+    },
+    {
+      "title": "Threshold decryption latency (p50/p95/p99)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(prime_chain_threshold_decryption_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(prime_chain_threshold_decryption_seconds_bucket[5m]))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(prime_chain_threshold_decryption_seconds_bucket[5m]))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+    },
+    {
+      "title": "FBA clearings per market",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(prime_chain_fba_cleared_total[1m])",
+          "legendFormat": "market {{market_id}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 }
+    },
+    {
+      "title": "Last FBA clearing price",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "prime_chain_fba_clearing_price",
+          "legendFormat": "market {{market_id}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }
+    },
+    {
+      "title": "Liquidation auctions: claims vs settlements",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(prime_chain_liquidation_claims_received_total[5m])",
+          "legendFormat": "claims/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(prime_chain_liquidation_auctions_settled_total[5m])",
+          "legendFormat": "settlements/s",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }
+    },
+    {
+      "title": "DKG ceremony rate",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(prime_chain_dkg_ceremonies_started_total[5m])",
+          "legendFormat": "started/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(prime_chain_dkg_ceremonies_completed_total[5m])",
+          "legendFormat": "completed/s",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(prime_chain_dkg_complaints_total[5m])",
+          "legendFormat": "complaints/s",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
+    },
+    {
+      "title": "State-proof generation latency (p50/p95)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(prime_chain_state_proof_generation_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(prime_chain_state_proof_generation_seconds_bucket[5m]))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 }
+    },
+    {
+      "title": "State proofs attached / minute",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "increase(prime_chain_state_proofs_attached_total[1m])",
+          "legendFormat": "proofs",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["prime-chain", "privacy", "testnet", "chain-7920"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Prime Chain — Privacy Testnet",
+  "version": 1
+}

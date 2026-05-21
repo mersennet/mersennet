@@ -807,6 +807,8 @@ fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
         nonce,
         chain_id: input.chain_id,
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     })
 }
 
@@ -1046,6 +1048,14 @@ fn domain_event_to_value(event: &DomainEvent) -> Value {
             "domain": "bridge",
             "kind": evt.kind(),
             "data": bridge_event_data(evt),
+        }),
+        DomainEvent::Shielded(evt) => json!({
+            "domain": "shielded",
+            "kind": evt.kind(),
+            // Shielded events serialize cleanly via serde — no
+            // address fields, no leakage. CI privacy-grep (K2)
+            // enforces this.
+            "data": serde_json::to_value(evt).unwrap_or(Value::Null),
         }),
     }
 }

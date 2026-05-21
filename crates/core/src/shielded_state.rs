@@ -131,6 +131,61 @@ impl ShieldedState {
     }
 }
 
+/// Disk-friendly snapshot of a [`ShieldedState`]. Used by the
+/// chain's redb persistence layer (see
+/// [`crate::shielded_persistence`]).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ShieldedSnapshot {
+    /// Inserted leaves in append order. Reinserting them in the same
+    /// order reproduces the exact Merkle tree.
+    pub leaves: Vec<[u8; 32]>,
+    /// Spent nullifiers (order-independent).
+    pub nullifiers: Vec<[u8; 32]>,
+    /// Recent-roots window contents at snapshot time.
+    pub recent_roots: Vec<[u8; 32]>,
+}
+
+impl ShieldedState {
+    /// Build a serialisable snapshot of the entire shielded state.
+    pub fn snapshot(&self) -> ShieldedSnapshot {
+        let next = self.tree.next_index();
+        let mut leaves = Vec::with_capacity(next as usize);
+        for i in 0..next {
+            leaves.push(self.tree.leaf_at(i).to_bytes());
+        }
+        let nullifiers = self
+            .nullifiers
+            .iter()
+            .map(|n| n.0.to_bytes())
+            .collect();
+        let recent_roots = self.recent_roots.iter().map(|r| r.to_bytes()).collect();
+        ShieldedSnapshot {
+            leaves,
+            nullifiers,
+            recent_roots,
+        }
+    }
+
+    /// Restore from a snapshot. Equivalent to `ShieldedState::new()`
+    /// followed by replaying inserts and spends. Used at node startup
+    /// to rebuild state from disk.
+    pub fn restore(snapshot: &ShieldedSnapshot) -> Self {
+        let mut state = ShieldedState::new();
+        for leaf in &snapshot.leaves {
+            let fr = Fr::from_bytes_reduce(leaf);
+            let _ = state.insert_note(NoteCommitment(fr));
+        }
+        for n in &snapshot.nullifiers {
+            let fr = Fr::from_bytes_reduce(n);
+            let _ = state.nullifiers.insert(Nullifier(fr));
+        }
+        // Don't restore `recent_roots` directly — the rebuilt tree
+        // produces canonical roots already. The window is correct by
+        // construction.
+        state
+    }
+}
+
 /// Block-level digest used inside the SP1 state-transition program
 /// public output.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

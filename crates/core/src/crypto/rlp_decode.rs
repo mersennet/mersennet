@@ -17,9 +17,65 @@ pub fn decode_ethereum_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     match bytes[0] {
         0x01 => decode_eip2930(&bytes[1..]),
         0x02 => decode_eip1559(&bytes[1..]),
+        // Prime Chain shielded transaction (EIP-2718 type byte 0x7E).
+        // See ADR-018 + `shielded_evm::SHIELDED_TX_TYPE`.
+        0x7E => decode_shielded(&bytes[1..]),
         b if b >= 0xc0 => decode_legacy(bytes),
         _ => Err(anyhow!("unknown transaction type: 0x{:02x}", bytes[0])),
     }
+}
+
+/// Decode a Prime-Chain shielded transaction. Format:
+///   `0x7E || RLP([chain_id, nonce, from, payload_bytes, y_parity, r, s])`
+/// where `payload_bytes` is the bincode-serialized
+/// [`crate::shielded_evm::ShieldedEnvelope`]. Gas fields are absent:
+/// shielded txs are bond-sponsored.
+fn decode_shielded(payload: &[u8]) -> Result<SignedTransaction> {
+    let items = rlp_decode_list(payload)?;
+    if items.len() != 7 {
+        return Err(anyhow!(
+            "shielded tx expects 7 RLP items, got {}",
+            items.len()
+        ));
+    }
+
+    let chain_id = rlp_to_u64(&items[0])?;
+    let nonce = rlp_to_u64(&items[1])?;
+    if items[2].len() != 20 {
+        return Err(anyhow!(
+            "shielded tx: invalid from address length: {}",
+            items[2].len()
+        ));
+    }
+    let from = Address::from_slice(&items[2]);
+    let envelope_bytes = items[3].clone();
+    let envelope: crate::shielded_evm::ShieldedEnvelope = bincode::deserialize(&envelope_bytes)
+        .map_err(|e| anyhow!("shielded tx: invalid payload encoding: {e}"))?;
+    let y_parity = rlp_to_u64(&items[4])? as u8;
+    let r = rlp_to_u256(&items[5]);
+    let s = rlp_to_u256(&items[6]);
+
+    let tx = Transaction {
+        from,
+        to: None,
+        value: U256::ZERO,
+        data: Bytes::new(),
+        gas_limit: 0,
+        gas_price: U256::ZERO,
+        nonce,
+        chain_id: Some(chain_id),
+        signature: Some((r, s, y_parity as u64)),
+        tx_type: 0x7E,
+        shielded_payload: Some(envelope),
+    };
+
+    Ok(SignedTransaction {
+        tx,
+        v: U256::from(y_parity as u64),
+        r,
+        s,
+        tx_type: 0x7E,
+    })
 }
 
 /// Decode a legacy (type 0) RLP-encoded signed transaction.
@@ -76,6 +132,8 @@ fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
         nonce,
         chain_id,
         signature: Some((r, s, v_raw)),
+        tx_type: 0,
+        shielded_payload: None,
     };
 
     Ok(SignedTransaction {
@@ -126,6 +184,8 @@ fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
         nonce,
         chain_id: Some(chain_id),
         signature: Some((r, s, v_val)),
+        tx_type: 1,
+        shielded_payload: None,
     };
 
     Ok(SignedTransaction {
@@ -178,6 +238,8 @@ fn decode_eip1559(payload: &[u8]) -> Result<SignedTransaction> {
         nonce,
         chain_id: Some(chain_id),
         signature: Some((r, s, v_val)),
+        tx_type: 2,
+        shielded_payload: None,
     };
 
     Ok(SignedTransaction {

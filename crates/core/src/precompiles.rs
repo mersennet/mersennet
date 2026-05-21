@@ -9,6 +9,8 @@ use revm::ContextPrecompile;
 
 use crate::precompile_abi::*;
 use crate::prime_orders::{MarketId, OrderId, PrimeOrdersState, Side, TimeInForce};
+use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
+use crate::zk_proofs::StateTransitionProof;
 
 // ---------------------------------------------------------------------------
 // Global PrimeOrders context — set before block execution, cleared after.
@@ -55,6 +57,212 @@ pub fn register_prime_orders_precompile(handler: &mut EvmHandler<'_, (), InMemor
         )]);
         precompiles
     });
+}
+
+// ---------------------------------------------------------------------------
+// Shielded precompiles — Phase 4 of the privacy redesign.
+//
+// 0x0200 → shieldedTransfer(bytes) — bincode(ShieldedTransferTx)
+// 0x0201 → shield(uint256,bytes) / unshield(bytes) bridge
+// 0x0300 → verifyStateProof(bytes) — SP1 light-client gate
+//
+// All three share the global ShieldedEvm context. See ADR-014,
+// ADR-017, ADR-018.
+// ---------------------------------------------------------------------------
+
+static SHIELDED_EVM_CTX: Lazy<Mutex<Option<Arc<Mutex<ShieldedEvm>>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+pub fn set_shielded_evm_context(evm: Arc<Mutex<ShieldedEvm>>) {
+    *SHIELDED_EVM_CTX.lock().unwrap() = Some(evm);
+}
+
+pub fn clear_shielded_evm_context() {
+    *SHIELDED_EVM_CTX.lock().unwrap() = None;
+}
+
+fn with_shielded_evm<F, R>(f: F) -> Result<R, PrecompileErrors>
+where
+    F: FnOnce(&mut ShieldedEvm) -> R,
+{
+    let guard = SHIELDED_EVM_CTX.lock().map_err(|_| PrecompileErrors::Fatal {
+        msg: "shielded evm context lock poisoned".into(),
+    })?;
+    let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
+        msg: "shielded evm context not set (call set_shielded_evm_context first)".into(),
+    })?;
+    let mut state = arc.lock().map_err(|_| PrecompileErrors::Fatal {
+        msg: "shielded evm state lock poisoned".into(),
+    })?;
+    Ok(f(&mut state))
+}
+
+pub fn register_shielded_precompiles(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
+    let prev_load = handler.pre_execution.load_precompiles.clone();
+    handler.pre_execution.load_precompiles = Arc::new(move || {
+        let mut precompiles = prev_load();
+        precompiles.extend([
+            (
+                SHIELDED_TRANSFER_PRECOMPILE,
+                ContextPrecompile::Ordinary(Precompile::Env(shielded_transfer_precompile)),
+            ),
+            (
+                SHIELD_BRIDGE_PRECOMPILE,
+                ContextPrecompile::Ordinary(Precompile::Env(shield_bridge_precompile)),
+            ),
+            (
+                STATE_PROOF_VERIFIER_PRECOMPILE,
+                ContextPrecompile::Ordinary(Precompile::Env(state_proof_verifier_precompile)),
+            ),
+        ]);
+        precompiles
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 0x0200 — shieldedTransfer(bytes)
+// Input: 4-byte selector || ABI-encoded bytes(payload)
+//        payload = bincode(ShieldedEnvelope::Transfer(ShieldedTransferTx))
+// Output: 32-byte bool (success).
+// ---------------------------------------------------------------------------
+
+fn shielded_transfer_precompile(input: &Bytes, gas_limit: u64, _env: &Env) -> PrecompileResult {
+    check_gas(gas_limit, GAS_SHIELDED_TRANSFER)?;
+    let payload = abi_decode_bytes(input)?;
+    let envelope: ShieldedEnvelope = bincode::deserialize(&payload)
+        .map_err(|e| PrecompileError::other(format!("shieldedTransfer: invalid bincode: {e}")))?;
+
+    let success = match envelope {
+        ShieldedEnvelope::Transfer(t) => with_shielded_evm(|evm| evm.apply_shielded_transfer(&t))?.is_ok(),
+        _ => return Err(PrecompileError::other("shieldedTransfer: wrong envelope variant").into()),
+    };
+
+    Ok(PrecompileOutput::new(
+        GAS_SHIELDED_TRANSFER,
+        Bytes::from(encode_bool(success).to_vec()),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// 0x0201 — shield(uint256 amount, bytes payload) / unshield(bytes payload)
+// Dispatches on the 4-byte selector.
+// ---------------------------------------------------------------------------
+
+fn shield_bridge_precompile(input: &Bytes, gas_limit: u64, _env: &Env) -> PrecompileResult {
+    if input.len() < 4 {
+        return Err(PrecompileError::other("shield_bridge: input too short").into());
+    }
+    let sel = [input[0], input[1], input[2], input[3]];
+
+    if sel == shield_selector() {
+        check_gas(gas_limit, GAS_SHIELD)?;
+        // shield(uint256,bytes) — amount lives in word 0, the
+        // bytes-offset in word 1, then the bytes blob. We only
+        // consume the bytes blob; the amount must match the inner
+        // ShieldTx (the inner amount is the source of truth, so we
+        // reject any mismatch).
+        let amount_word = read_word(input, 0)
+            .ok_or_else(|| PrecompileError::other("shield: missing amount"))?;
+        let amount = decode_u256(amount_word);
+        let payload = abi_decode_bytes_at(input, 1)?;
+        let envelope: ShieldedEnvelope = bincode::deserialize(&payload)
+            .map_err(|e| PrecompileError::other(format!("shield: invalid bincode: {e}")))?;
+        let tx = match envelope {
+            ShieldedEnvelope::Shield(t) => t,
+            _ => return Err(PrecompileError::other("shield: wrong envelope variant").into()),
+        };
+        if tx.amount != amount {
+            return Err(PrecompileError::other("shield: amount mismatch with envelope").into());
+        }
+        let ok = with_shielded_evm(|evm| evm.apply_shield(&tx))?.is_ok();
+        return Ok(PrecompileOutput::new(
+            GAS_SHIELD,
+            Bytes::from(encode_bool(ok).to_vec()),
+        ));
+    }
+
+    if sel == unshield_selector() {
+        check_gas(gas_limit, GAS_UNSHIELD)?;
+        let payload = abi_decode_bytes(input)?;
+        let envelope: ShieldedEnvelope = bincode::deserialize(&payload)
+            .map_err(|e| PrecompileError::other(format!("unshield: invalid bincode: {e}")))?;
+        let tx = match envelope {
+            ShieldedEnvelope::Unshield(t) => t,
+            _ => return Err(PrecompileError::other("unshield: wrong envelope variant").into()),
+        };
+        let ok = with_shielded_evm(|evm| evm.apply_unshield(&tx))?.is_ok();
+        return Ok(PrecompileOutput::new(
+            GAS_UNSHIELD,
+            Bytes::from(encode_bool(ok).to_vec()),
+        ));
+    }
+
+    Err(PrecompileError::other("shield_bridge: unknown selector").into())
+}
+
+// ---------------------------------------------------------------------------
+// 0x0300 — verifyStateProof(bytes proof_bincode) → (bool)
+// Light-client / bridge gate. Verifies a StateTransitionProof
+// produced by `state_proof::prove_block`.
+// ---------------------------------------------------------------------------
+
+fn state_proof_verifier_precompile(
+    input: &Bytes,
+    gas_limit: u64,
+    _env: &Env,
+) -> PrecompileResult {
+    check_gas(gas_limit, GAS_STATE_PROOF_VERIFY)?;
+    let payload = abi_decode_bytes(input)?;
+    let proof: StateTransitionProof = bincode::deserialize(&payload).map_err(|e| {
+        PrecompileError::other(format!("verifyStateProof: invalid bincode: {e}"))
+    })?;
+    let ok = crate::state_proof::verify_block_proof(&proof);
+    Ok(PrecompileOutput::new(
+        GAS_STATE_PROOF_VERIFY,
+        Bytes::from(encode_bool(ok).to_vec()),
+    ))
+}
+
+/// Decode `bytes` argument that lives in slot 0 (head = offset @ 0,
+/// then length || data). For minimal-shape calls we treat the input
+/// as just `selector || raw_payload` and skip the 4-byte selector.
+fn abi_decode_bytes(input: &Bytes) -> Result<Vec<u8>, PrecompileErrors> {
+    if input.len() < 4 {
+        return Err(PrecompileError::other("abi_decode_bytes: input < 4").into());
+    }
+    abi_decode_bytes_at(input, 0)
+}
+
+/// Decode `bytes` at parameter slot `slot` (0-indexed after the
+/// 4-byte selector).
+fn abi_decode_bytes_at(input: &Bytes, slot: usize) -> Result<Vec<u8>, PrecompileErrors> {
+    if input.len() < 4 {
+        return Err(PrecompileError::other("abi: input < 4").into());
+    }
+    let head_word = read_word(input, slot)
+        .ok_or_else(|| PrecompileError::other("abi: missing head word"))?;
+    // Offset is relative to the start of the parameter area
+    // (i.e. byte 4 of the input).
+    let offset_u = U256::from_be_bytes(head_word);
+    let offset: usize = offset_u
+        .try_into()
+        .map_err(|_| PrecompileError::other("abi: offset too large"))?;
+    let start = 4usize
+        .checked_add(offset)
+        .ok_or_else(|| PrecompileError::other("abi: bad offset"))?;
+    if input.len() < start + 32 {
+        return Err(PrecompileError::other("abi: truncated len word").into());
+    }
+    let mut len_bytes = [0u8; 32];
+    len_bytes.copy_from_slice(&input[start..start + 32]);
+    let len: usize = U256::from_be_bytes(len_bytes)
+        .try_into()
+        .map_err(|_| PrecompileError::other("abi: length too large"))?;
+    let data_start = start + 32;
+    if input.len() < data_start + len {
+        return Err(PrecompileError::other("abi: truncated data").into());
+    }
+    Ok(input[data_start..data_start + len].to_vec())
 }
 
 // ---------------------------------------------------------------------------

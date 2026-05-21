@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: privacy-validators
+    static_configs:
+      - targets:
+          - "privacy-validator-1:8545"
+          - "privacy-validator-2:8545"
+          - "privacy-validator-3:8545"
+          - "privacy-validator-4:8545"
+          - "privacy-validator-5:8545"
+          - "privacy-validator-6:8545"
+          - "privacy-validator-7:8545"
+        labels:
+          chain_id: "7920"
+          role: "validator"
+    metrics_path: /metrics
+
+  - job_name: privacy-rpc
+    static_configs:
+      - targets:
+          - "privacy-rpc-node:8545"
+        labels:
+          chain_id: "7920"
+          role: "rpc"
+    metrics_path: /metrics

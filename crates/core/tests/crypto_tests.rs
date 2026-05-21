@@ -15,6 +15,8 @@ fn sample_tx(from: Address, chain_id: u64) -> Transaction {
         nonce: 0,
         chain_id: Some(chain_id),
         signature: None,
+        tx_type: 0,
+        shielded_payload: None,
     }
 }
 

@@ -2,31 +2,71 @@ name: CI
 
 on: [push, pull_request]
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
 jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Rust workspace — default features
+  # ────────────────────────────────────────────────────────────────
   check:
+    name: cargo check (default)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check --all-targets
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets
 
   test:
+    name: cargo test (default)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --all
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-targets
 
+  # ────────────────────────────────────────────────────────────────
+  # Rust workspace — `prover` feature (real Pedersen, real BLS
+  # threshold, real Poseidon). Heavier than the default lane because
+  # it pulls arkworks + blstrs + chacha20poly1305.
+  # ────────────────────────────────────────────────────────────────
+  check_prover:
+    name: cargo check (--features prover)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p prime-zkp --features prover --all-targets
+
+  test_prover:
+    name: cargo test (--features prover)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p prime-zkp --features prover --all-targets
+
+  # ────────────────────────────────────────────────────────────────
+  # Clippy + rustfmt
+  # ────────────────────────────────────────────────────────────────
   clippy:
+    name: cargo clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy -- -D warnings
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   fmt:
+    name: cargo fmt --check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,3 +74,85 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  # ────────────────────────────────────────────────────────────────
+  # SDK TypeScript build + typecheck.
+  # ────────────────────────────────────────────────────────────────
+  sdk_typecheck:
+    name: sdk tsc --noEmit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: sdk/package-lock.json
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Typecheck (tsc --noEmit)
+        run: npx --yes tsc --noEmit
+
+  # ────────────────────────────────────────────────────────────────
+  # Solidity contracts — Foundry build + test.
+  # ────────────────────────────────────────────────────────────────
+  contracts:
+    name: forge build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      - name: Show forge version
+        run: forge --version
+      - name: forge build
+        run: forge build --sizes
+      - name: forge test
+        run: forge test -vvv
+
+  # ────────────────────────────────────────────────────────────────
+  # cargo-audit — advisory DB scan.
+  # ────────────────────────────────────────────────────────────────
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: cargo audit
+        run: cargo audit
+
+  # ────────────────────────────────────────────────────────────────
+  # K2 — Privacy-invariant grep checks. These are the
+  # non-negotiable rules from `docs/security/privacy-invariants.md`.
+  # Any pattern below appearing in `crates/core/src/shielded_*.rs`
+  # or `crates/zkp/src/` (outside its allow-list) is a hard CI fail
+  # because it would mean an address or amount has leaked into a
+  # shielded data path.
+  #
+  # Run the same script locally:
+  #
+  #   bash scripts/ci/check-privacy-invariants.sh
+  #
+  # ────────────────────────────────────────────────────────────────
+  privacy_invariants:
+    name: privacy invariants (grep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Run privacy-invariant checks
+        run: bash scripts/ci/check-privacy-invariants.sh

@@ -72,7 +72,7 @@ pub enum LiquidationError {
 
 /// A liquidator's registration record. Identified by their bond
 /// commitment (not address — even the liquidators are pseudonymous).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Liquidator {
     /// Commitment of the liquidator's bond note.
     pub bond_commitment: Fr,
@@ -121,13 +121,24 @@ pub struct LiquidationExecute {
     pub proof: CircuitProof,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AuctionStats {
     pub claims_received: u64,
     pub claims_rejected: u64,
     pub auctions_settled: u64,
     pub total_bounty_paid: U256,
     pub total_insurance_funded: U256,
+}
+
+/// Persistable view of [`LiquidationAuction`] — only the
+/// deterministic, post-block-boundary state. In-flight bid + claim
+/// queues are not snapshotted; they're reconstructed from the
+/// threshold-mempool and the next block's tick.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct LiquidationAuctionSnapshot {
+    pub liquidators: Vec<Liquidator>,
+    pub insurance_fund: U256,
+    pub stats: AuctionStats,
 }
 
 /// Per-claim-tag auction state at the current block.
@@ -171,6 +182,31 @@ impl Default for LiquidationAuction {
 impl LiquidationAuction {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Serialize the auction's deterministic state for snapshot
+    /// export. Only the liquidator registry, insurance fund balance,
+    /// and statistics are persisted; in-flight `auctions` /
+    /// `pending_revelation` are recomputed on the next block tick.
+    pub fn snapshot(&self) -> LiquidationAuctionSnapshot {
+        LiquidationAuctionSnapshot {
+            liquidators: self.liquidators.values().cloned().collect(),
+            insurance_fund: self.insurance_fund,
+            stats: self.stats.clone(),
+        }
+    }
+
+    /// Rebuild the auction state from a [`LiquidationAuctionSnapshot`].
+    /// The verifier + poseidon are taken from the existing instance
+    /// (they're not part of the snapshot — they're configuration).
+    pub fn restore(snapshot: LiquidationAuctionSnapshot) -> Self {
+        let mut a = Self::new();
+        for liq in snapshot.liquidators {
+            a.liquidators.insert(liq.bond_commitment, liq);
+        }
+        a.insurance_fund = snapshot.insurance_fund;
+        a.stats = snapshot.stats;
+        a
     }
 
     /// Register a new bonded liquidator.
