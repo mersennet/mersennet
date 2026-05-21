@@ -53,6 +53,7 @@ pub mod merkle;
 pub mod nullifier;
 pub mod note;
 pub mod threshold;
+pub mod bls_threshold;
 pub mod noir;
 pub mod sp1;
 
