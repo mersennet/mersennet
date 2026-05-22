@@ -112,7 +112,10 @@ fn main() -> anyhow::Result<()> {
     engine.set_dkg_epoch_length(app_config.privacy.dkg_epoch_length_blocks);
     if let Some(h) = app_config.privacy.activation_height {
         engine.set_privacy_activation_height(h);
-        info!(activation_height = h, "privacy activation height configured");
+        info!(
+            activation_height = h,
+            "privacy activation height configured"
+        );
     }
     if app_config.privacy.mode_activated {
         engine.activate_privacy_mode();

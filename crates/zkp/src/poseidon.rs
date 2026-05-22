@@ -50,17 +50,12 @@ const PARAMS_VERSION: u8 = 0x01;
 /// used by Aztec / Noir's `std::hash::poseidon2::Bn254` so that
 /// circuits using `poseidon2_permutation` on the circuit side and
 /// `Poseidon::hash_two` on the Rust side produce equal field elements.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PoseidonConfig {
     /// Reference: Aztec / Noir Poseidon-2 over BN254, width = 3.
     /// Capacity = 1, rate = 2, full rounds = 8, partial rounds = 56.
+    #[default]
     AztecBn254Width3,
-}
-
-impl Default for PoseidonConfig {
-    fn default() -> Self {
-        PoseidonConfig::AztecBn254Width3
-    }
 }
 
 impl PoseidonConfig {
@@ -164,12 +159,12 @@ fn decode_pinned_params(cfg: PoseidonConfig, bytes: &[u8]) -> Result<PinnedParam
         constants.push(Fr::from_bytes_reduce(&buf));
     }
     let mut mds = vec![vec![Fr::ZERO; width]; width];
-    for i in 0..width {
-        for j in 0..width {
+    for row in mds.iter_mut().take(width) {
+        for cell in row.iter_mut().take(width) {
             let mut buf = [0u8; 32];
             buf.copy_from_slice(&bytes[cursor..cursor + 32]);
             cursor += 32;
-            mds[i][j] = Fr::from_bytes_reduce(&buf);
+            *cell = Fr::from_bytes_reduce(&buf);
         }
     }
     Ok(PinnedParams { constants, mds })
@@ -188,7 +183,11 @@ fn encode_pinned_params(cfg: PoseidonConfig, params: &PinnedParams) -> Vec<u8> {
     let const_count = (full_rounds + partial_rounds) * width;
     let mds_count = width * width;
 
-    assert_eq!(params.constants.len(), const_count, "constants length mismatch");
+    assert_eq!(
+        params.constants.len(),
+        const_count,
+        "constants length mismatch"
+    );
     assert_eq!(params.mds.len(), width, "mds rows mismatch");
     for row in &params.mds {
         assert_eq!(row.len(), width, "mds cols mismatch");
@@ -245,10 +244,11 @@ fn synthesize_round_constants(cfg: PoseidonConfig) -> Vec<Fr> {
 fn synthesize_mds_matrix(cfg: PoseidonConfig) -> Vec<Vec<Fr>> {
     let w = cfg.width();
     let mut m = vec![vec![Fr::ZERO; w]; w];
-    for i in 0..w {
-        for j in 0..w {
-            let denom = Fr::from_u64((i as u64) + 1).add(&Fr::from_u64((w as u64) + (j as u64) + 1));
-            m[i][j] = canonicalize(invert(&denom));
+    for (i, row) in m.iter_mut().enumerate().take(w) {
+        for (j, cell) in row.iter_mut().enumerate().take(w) {
+            let denom =
+                Fr::from_u64((i as u64) + 1).add(&Fr::from_u64((w as u64) + (j as u64) + 1));
+            *cell = canonicalize(invert(&denom));
         }
     }
     m
@@ -344,8 +344,8 @@ impl Poseidon {
 
     fn add_round_constants(&self, state: &mut [Fr], round_idx: &mut usize) {
         let w = self.cfg.width();
-        for i in 0..w {
-            state[i] = state[i].add(&self.constants[*round_idx + i]);
+        for (i, state_cell) in state.iter_mut().enumerate().take(w) {
+            *state_cell = state_cell.add(&self.constants[*round_idx + i]);
         }
         *round_idx += w;
     }
@@ -363,12 +363,12 @@ impl Poseidon {
     fn apply_mds(&self, state: &mut [Fr]) {
         let w = self.cfg.width();
         let mut out = vec![Fr::ZERO; w];
-        for i in 0..w {
-            for j in 0..w {
-                out[i] = out[i].add(&self.mds[i][j].mul(&state[j]));
+        for (i, out_cell) in out.iter_mut().enumerate().take(w) {
+            for (j, state_cell) in state.iter().enumerate().take(w) {
+                *out_cell = out_cell.add(&self.mds[i][j].mul(state_cell));
             }
         }
-        for (s, o) in state.iter_mut().zip(out.into_iter()) {
+        for (s, o) in state.iter_mut().zip(out) {
             *s = o;
         }
     }
@@ -489,13 +489,7 @@ mod tests {
         // (i.e., what a fresh-checkout-no-blob build produces). When
         // the blob is swapped for the real Aztec params, these
         // values WILL change — that is the entire point of the test.
-        for (a_u64, b_u64) in &[
-            (0u64, 0u64),
-            (1, 0),
-            (0, 1),
-            (1, 1),
-            (12345, 67890),
-        ] {
+        for (a_u64, b_u64) in &[(0u64, 0u64), (1, 0), (0, 1), (1, 1), (12345, 67890)] {
             let h = p.hash_two(&Fr::from_u64(*a_u64), &Fr::from_u64(*b_u64));
             // Self-consistency: hashing the same pair twice must
             // produce the same field element.

@@ -82,8 +82,12 @@ fn rpc_transparent_account_state_methods_disabled_after_privacy_activation() {
     engine.fund_account(alice, U256::from(5_000u64), 7);
     engine.activate_privacy_mode();
 
-    let balance_err = route("prime_getBalance", json!([hex_addr(alice), "latest"]), &mut engine)
-        .expect_err("transparent balance RPC should be disabled");
+    let balance_err = route(
+        "prime_getBalance",
+        json!([hex_addr(alice), "latest"]),
+        &mut engine,
+    )
+    .expect_err("transparent balance RPC should be disabled");
     assert_eq!(balance_err.code, -32605);
     assert!(balance_err.message.contains("account-state RPC disabled"));
 
@@ -102,13 +106,13 @@ fn rpc_transparent_simulation_methods_disabled_after_privacy_activation() {
     let (mut engine, _dir) = setup_engine(1);
     engine.activate_privacy_mode();
 
-    let prime_call_err = route("prime_call", Value::Null, &mut engine)
-        .expect_err("prime_call should be disabled");
+    let prime_call_err =
+        route("prime_call", Value::Null, &mut engine).expect_err("prime_call should be disabled");
     assert_eq!(prime_call_err.code, -32605);
     assert!(prime_call_err.message.contains("simulation RPC disabled"));
 
-    let eth_call_err = route("eth_call", Value::Null, &mut engine)
-        .expect_err("eth_call should be disabled");
+    let eth_call_err =
+        route("eth_call", Value::Null, &mut engine).expect_err("eth_call should be disabled");
     assert_eq!(eth_call_err.code, -32605);
     assert!(eth_call_err.message.contains("simulation RPC disabled"));
 
@@ -127,8 +131,8 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     engine.fund_account(stranger, U256::from(2_000_000u64), 0);
 
     let contract_creation = Bytes::from_static(&[
-        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
-        0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a, 0x60,
+        0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
     ]);
 
     engine
@@ -152,9 +156,17 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
 
     engine.activate_privacy_mode();
 
-    let unpublished = route("prime_getCodeHash", json!([hex_addr(contract), "latest"]), &mut engine)
-        .expect("code hash rpc ok");
-    assert_eq!(unpublished, Value::Null, "unpublished contracts stay hidden");
+    let unpublished = route(
+        "prime_getCodeHash",
+        json!([hex_addr(contract), "latest"]),
+        &mut engine,
+    )
+    .expect("code hash rpc ok");
+    assert_eq!(
+        unpublished,
+        Value::Null,
+        "unpublished contracts stay hidden"
+    );
 
     engine
         .submit_tx_unsigned(prime_chain::engine::Transaction {
@@ -171,12 +183,25 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
             shielded_payload: None,
         })
         .expect("unauthorized publish tx accepted into mempool");
-    let failed_publish_block = engine.execute_block().expect("unauthorized publish block executed");
-    assert!(!failed_publish_block.receipts[0].success, "non-deployer publish must fail");
+    let failed_publish_block = engine
+        .execute_block()
+        .expect("unauthorized publish block executed");
+    assert!(
+        !failed_publish_block.receipts[0].success,
+        "non-deployer publish must fail"
+    );
 
-    let still_unpublished = route("prime_getCodeHash", json!([hex_addr(contract), "latest"]), &mut engine)
-        .expect("code hash rpc ok");
-    assert_eq!(still_unpublished, Value::Null, "failed publish must not expose hash");
+    let still_unpublished = route(
+        "prime_getCodeHash",
+        json!([hex_addr(contract), "latest"]),
+        &mut engine,
+    )
+    .expect("code hash rpc ok");
+    assert_eq!(
+        still_unpublished,
+        Value::Null,
+        "failed publish must not expose hash"
+    );
 
     engine
         .submit_tx_unsigned(prime_chain::engine::Transaction {
@@ -193,11 +218,20 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
             shielded_payload: None,
         })
         .expect("authorized publish tx accepted into mempool");
-    let publish_block = engine.execute_block().expect("authorized publish block executed");
-    assert!(publish_block.receipts[0].success, "deployer publish must succeed");
+    let publish_block = engine
+        .execute_block()
+        .expect("authorized publish block executed");
+    assert!(
+        publish_block.receipts[0].success,
+        "deployer publish must succeed"
+    );
 
-    let code_hash = route("prime_getCodeHash", json!([hex_addr(contract), "latest"]), &mut engine)
-        .expect("code hash rpc ok");
+    let code_hash = route(
+        "prime_getCodeHash",
+        json!([hex_addr(contract), "latest"]),
+        &mut engine,
+    )
+    .expect("code hash rpc ok");
     assert_eq!(code_hash, Value::String(expected_hash));
 
     let attestation = route(
@@ -215,8 +249,12 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
         Some("ipfs://vaultstrategy-build")
     );
 
-    let code_err = route("prime_getCode", json!([hex_addr(contract), "latest"]), &mut engine)
-        .expect_err("raw bytecode should be disabled");
+    let code_err = route(
+        "prime_getCode",
+        json!([hex_addr(contract), "latest"]),
+        &mut engine,
+    )
+    .expect_err("raw bytecode should be disabled");
     assert_eq!(code_err.code, -32605);
     assert!(code_err.message.contains("contract-state RPC disabled"));
 
@@ -371,7 +409,8 @@ fn rpc_domain_events_hide_sensitive_primeorders_events_after_privacy_activation(
     let (mut engine, _dir) = setup_engine(1);
     engine.activate_privacy_mode();
 
-    let market_id = engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let market_id =
+        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     let trader = addr(0x55);
     engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
     let _ = engine
@@ -398,9 +437,11 @@ fn rpc_domain_events_hide_sensitive_primeorders_events_after_privacy_activation(
     .expect("domain events rpc ok");
 
     let events = result.as_array().expect("events array");
-    assert!(events.iter().any(|event| {
-        event.get("kind").and_then(|v| v.as_str()) == Some("market_added")
-    }));
+    assert!(
+        events
+            .iter()
+            .any(|event| { event.get("kind").and_then(|v| v.as_str()) == Some("market_added") })
+    );
     assert!(events.iter().all(|event| {
         !matches!(
             event.get("kind").and_then(|v| v.as_str()),

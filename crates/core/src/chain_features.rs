@@ -2,7 +2,6 @@
 ///
 /// Controls activation of new chain-level features.
 /// Each flag should be toggled via governance or config once the feature is production-ready.
-
 /// Phase 1: Zero Gas for CLOB Operations
 /// When enabled, transactions to the CLOB precompile (placeOrder, cancelOrder)
 /// are gas-exempt. Users only pay trading fees.

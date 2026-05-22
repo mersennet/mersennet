@@ -73,7 +73,7 @@ fn fuzz_matching_conservation_of_value() {
             "conservation: buy fills must equal sell fills"
         );
 
-        for (_, order) in &state.orders {
+        for order in state.orders.values() {
             assert!(
                 order.size <= U256::from(1000u64),
                 "no order size exceeds reasonable max"
@@ -128,9 +128,9 @@ fn fuzz_price_time_priority() {
             TimeInForce::Gtc,
         );
 
-        if o1.is_ok() && o2.is_ok() {
-            let o1_fill = o1.unwrap().filled;
-            let o2_fill = o2.unwrap().filled;
+        if let (Ok(o1_result), Ok(o2_result)) = (o1, o2) {
+            let o1_fill = o1_result.filled;
+            let o2_fill = o2_result.filled;
             assert!(
                 o1_fill >= o2_fill,
                 "first taker should fill before or equal to second (price-time)"
@@ -166,7 +166,7 @@ fn fuzz_parallel_determinism() {
             .unwrap();
         engine2.set_token_economics(U256::ZERO, U256::ZERO, 1);
 
-        let n = (rng.r#gen::<u8>() % 8).max(2) as u8;
+        let n = (rng.r#gen::<u8>() % 8).max(2);
         for i in 1..=n {
             engine.fund_account(make_address(i), U256::from(10_000_000u64), 0);
             engine2.fund_account(make_address(i), U256::from(10_000_000u64), 0);
@@ -174,8 +174,8 @@ fn fuzz_parallel_determinism() {
 
         let mut txs = Vec::new();
         for i in 0..n {
-            let from = make_address((i % n + 1) as u8);
-            let to = make_address(((i + 1) % n + 1) as u8);
+            let from = make_address(i % n + 1);
+            let to = make_address((i + 1) % n + 1);
             let tx = Transaction {
                 from,
                 to: Some(to),
@@ -297,10 +297,10 @@ fn fuzz_mempool_ordering() {
         for tx in &drained {
             by_sender_nonce.entry(tx.from).or_default().push(tx.nonce);
         }
-        for (_, nonces) in &mut by_sender_nonce {
+        for nonces in by_sender_nonce.values_mut() {
             nonces.sort();
         }
-        for (_, nonces) in &by_sender_nonce {
+        for nonces in by_sender_nonce.values() {
             let mut prev = 0u64;
             for &n in nonces {
                 assert!(n >= prev, "nonces must be increasing per sender");
@@ -327,7 +327,7 @@ fn fuzz_consensus_no_conflicting_commits() {
         let height = rng.r#gen::<u64>() % 100;
         let mut hash_input = [0u8; 40];
         hash_input[0..8].copy_from_slice(&height.to_be_bytes());
-        let block_hash = revm::primitives::keccak256(&hash_input);
+        let block_hash = revm::primitives::keccak256(hash_input);
 
         if let Some(prev) = finalized.get(&height) {
             assert_eq!(*prev, block_hash, "no two different blocks at same height");

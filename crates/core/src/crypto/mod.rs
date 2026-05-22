@@ -126,7 +126,7 @@ pub fn recover_signer(signed_tx: &SignedTransaction) -> Result<Address> {
 
     let recovery_id = RecoveryId::try_from(recovery_byte as u8)
         .map_err(|e| anyhow!("invalid recovery id: {e}"))?;
-    
+
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signed_tx.r.to_be_bytes::<32>());
     sig_bytes[32..64].copy_from_slice(&signed_tx.s.to_be_bytes::<32>());
@@ -300,7 +300,11 @@ fn u64_to_be_bytes(n: u64) -> Vec<u8> {
         return Vec::new();
     }
     let bytes = n.to_be_bytes();
-    bytes[bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len() - 1)..].to_vec()
+    bytes[bytes
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(bytes.len() - 1)..]
+        .to_vec()
 }
 
 fn u256_to_be_bytes(u: &U256) -> Vec<u8> {
@@ -457,8 +461,7 @@ mod tests {
     #[test]
     fn shielded_encode_decode_roundtrip() {
         let (key, addr) = generate_keypair();
-        let envelope =
-            crate::shielded_evm::ShieldedEnvelope::Shield(dummy_shield_tx(addr));
+        let envelope = crate::shielded_evm::ShieldedEnvelope::Shield(dummy_shield_tx(addr));
         let mut tx = sample_tx(addr);
         tx.tx_type = crate::shielded_evm::SHIELDED_TX_TYPE;
         tx.shielded_payload = Some(envelope);

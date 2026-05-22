@@ -15,7 +15,7 @@
 
 use prime_chain::engine::Engine;
 use prime_chain::engine_snapshot::{
-    encode_transparent_balances, EngineSnapshotEnvelope, ShieldedSnapshotData,
+    EngineSnapshotEnvelope, ShieldedSnapshotData, encode_transparent_balances,
 };
 use prime_chain::liquidation_auction::LiquidationAuction;
 use prime_chain::shielded_evm::{MigrationPlan, ShieldedEvm};
@@ -70,6 +70,7 @@ fn migration_envelope_round_trip_through_engine() {
             auction: LiquidationAuction::new().snapshot(),
             transparent_balances: encode_transparent_balances(&shielded_evm.transparent_balances),
             migration_plan_applied: true,
+            code_publication_registry: Default::default(),
         }),
     };
     let migrated_bytes = migrated_envelope.encode().unwrap();

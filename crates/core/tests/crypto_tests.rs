@@ -93,11 +93,10 @@ fn chain_id_protection() {
         tx_type: 0,
     };
     let recovered_cross = recover_signer(&cross_chain);
-    match recovered_cross {
-        Ok(address) => assert_ne!(
+    if let Ok(address) = recovered_cross {
+        assert_ne!(
             address, addr,
             "cross-chain replay must not recover original signer"
-        ),
-        Err(_) => {} // also acceptable: recovery fails entirely
+        );
     }
 }

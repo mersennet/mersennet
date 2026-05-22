@@ -153,11 +153,7 @@ impl ShieldedState {
         for i in 0..next {
             leaves.push(self.tree.leaf_at(i).to_bytes());
         }
-        let nullifiers = self
-            .nullifiers
-            .iter()
-            .map(|n| n.0.to_bytes())
-            .collect();
+        let nullifiers = self.nullifiers.iter().map(|n| n.0.to_bytes()).collect();
         let recent_roots = self.recent_roots.iter().map(|r| r.to_bytes()).collect();
         ShieldedSnapshot {
             leaves,

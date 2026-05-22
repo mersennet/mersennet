@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
-use revm::primitives::{keccak256, Address, B256, U256};
+use revm::primitives::{Address, B256, U256, keccak256};
 use sha3::{Digest, Keccak256};
 
 use crate::engine::Transaction;
@@ -83,7 +83,10 @@ fn decode_shielded(payload: &[u8]) -> Result<SignedTransaction> {
 fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
     let items = rlp_decode_list(bytes)?;
     if items.len() != 9 {
-        return Err(anyhow!("legacy tx expects 9 RLP items, got {}", items.len()));
+        return Err(anyhow!(
+            "legacy tx expects 9 RLP items, got {}",
+            items.len()
+        ));
     }
 
     let nonce = rlp_to_u64(&items[0])?;
@@ -117,7 +120,7 @@ fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
         keccak256(rlp_encode_list(&sign_items))
     } else {
         // Pre-EIP-155: hash just the 6 fields
-        keccak256(rlp_encode_list(&items[..6].to_vec()))
+        keccak256(rlp_encode_list(&items[..6]))
     };
 
     let from = recover_from_hash(signing_hash, r, s, recovery_byte)?;
@@ -150,7 +153,10 @@ fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
 fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
     let items = rlp_decode_list(payload)?;
     if items.len() != 11 {
-        return Err(anyhow!("EIP-2930 tx expects 11 RLP items, got {}", items.len()));
+        return Err(anyhow!(
+            "EIP-2930 tx expects 11 RLP items, got {}",
+            items.len()
+        ));
     }
 
     let chain_id = rlp_to_u64(&items[0])?;
@@ -166,7 +172,7 @@ fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
     let s = rlp_to_u256(&items[10]);
 
     // Signing hash: keccak256(0x01 || RLP([chainId, nonce, gasPrice, gasLimit, to, value, data, accessList]))
-    let inner_rlp = rlp_encode_list(&items[..8].to_vec());
+    let inner_rlp = rlp_encode_list(&items[..8]);
     let mut sign_payload = vec![0x01u8];
     sign_payload.extend_from_slice(&inner_rlp);
     let signing_hash = keccak256(sign_payload);
@@ -202,7 +208,10 @@ fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
 fn decode_eip1559(payload: &[u8]) -> Result<SignedTransaction> {
     let items = rlp_decode_list(payload)?;
     if items.len() != 12 {
-        return Err(anyhow!("EIP-1559 tx expects 12 RLP items, got {}", items.len()));
+        return Err(anyhow!(
+            "EIP-1559 tx expects 12 RLP items, got {}",
+            items.len()
+        ));
     }
 
     let chain_id = rlp_to_u64(&items[0])?;
@@ -219,7 +228,7 @@ fn decode_eip1559(payload: &[u8]) -> Result<SignedTransaction> {
     let s = rlp_to_u256(&items[11]);
 
     // Signing hash: keccak256(0x02 || RLP([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList]))
-    let inner_rlp = rlp_encode_list(&items[..9].to_vec());
+    let inner_rlp = rlp_encode_list(&items[..9]);
     let mut sign_payload = vec![0x02u8];
     sign_payload.extend_from_slice(&inner_rlp);
     let signing_hash = keccak256(sign_payload);
@@ -261,8 +270,9 @@ fn recover_from_hash(hash: B256, r: U256, s: U256, recovery_byte: u8) -> Result<
     let signature = Signature::from_bytes((&sig_bytes).into())
         .map_err(|e| anyhow!("invalid signature: {e}"))?;
 
-    let verifying_key = VerifyingKey::recover_from_prehash(hash.as_slice(), &signature, recovery_id)
-        .map_err(|e| anyhow!("ECDSA recovery failed: {e}"))?;
+    let verifying_key =
+        VerifyingKey::recover_from_prehash(hash.as_slice(), &signature, recovery_id)
+            .map_err(|e| anyhow!("ECDSA recovery failed: {e}"))?;
 
     let uncompressed = verifying_key.to_encoded_point(false);
     let pub_bytes = &uncompressed.as_bytes()[1..];
@@ -286,7 +296,10 @@ fn rlp_decode_list(input: &[u8]) -> Result<Vec<Vec<u8>>> {
     // The first byte should indicate a list
     let first = input[0];
     if first < 0xc0 {
-        return Err(anyhow!("expected RLP list, got string prefix 0x{:02x}", first));
+        return Err(anyhow!(
+            "expected RLP list, got string prefix 0x{:02x}",
+            first
+        ));
     }
 
     // Now decode items within the list payload
@@ -368,7 +381,10 @@ fn decode_rlp_item(input: &[u8]) -> Result<(Vec<u8>, usize)> {
         if input.len() < 1 + len_bytes + len {
             return Err(anyhow!("RLP long string data truncated"));
         }
-        Ok((input[1 + len_bytes..1 + len_bytes + len].to_vec(), 1 + len_bytes + len))
+        Ok((
+            input[1 + len_bytes..1 + len_bytes + len].to_vec(),
+            1 + len_bytes + len,
+        ))
     } else if b <= 0xf7 {
         let len = (b - 0xc0) as usize;
         if input.len() < 1 + len {
@@ -384,7 +400,10 @@ fn decode_rlp_item(input: &[u8]) -> Result<(Vec<u8>, usize)> {
         if input.len() < 1 + len_bytes + len {
             return Err(anyhow!("RLP long list data truncated"));
         }
-        Ok((input[1 + len_bytes..1 + len_bytes + len].to_vec(), 1 + len_bytes + len))
+        Ok((
+            input[1 + len_bytes..1 + len_bytes + len].to_vec(),
+            1 + len_bytes + len,
+        ))
     }
 }
 
@@ -445,7 +464,10 @@ fn be_bytes_to_usize(bytes: &[u8]) -> usize {
 
 fn usize_to_min_be_bytes(val: usize) -> Vec<u8> {
     let bytes = val.to_be_bytes();
-    let start = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len() - 1);
+    let start = bytes
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(bytes.len() - 1);
     bytes[start..].to_vec()
 }
 
@@ -454,7 +476,10 @@ fn rlp_to_u64(bytes: &[u8]) -> Result<u64> {
         return Ok(0);
     }
     if bytes.len() > 8 {
-        return Err(anyhow!("RLP value too large for u64: {} bytes", bytes.len()));
+        return Err(anyhow!(
+            "RLP value too large for u64: {} bytes",
+            bytes.len()
+        ));
     }
     let mut padded = [0u8; 8];
     padded[8 - bytes.len()..].copy_from_slice(bytes);
@@ -486,15 +511,15 @@ mod tests {
     #[test]
     fn test_rlp_encode_decode_roundtrip() {
         let items: Vec<Vec<u8>> = vec![
-            vec![],                    // nonce=0
-            vec![0x01],                // gasPrice=1
-            vec![0x52, 0x08],          // gasLimit=21000
-            vec![0xBB; 20],            // to
-            vec![0x03, 0xe8],          // value=1000
-            vec![],                    // data
-            vec![0x1e, 0xef],          // chainId=7919
-            vec![],                    // 0
-            vec![],                    // 0
+            vec![],           // nonce=0
+            vec![0x01],       // gasPrice=1
+            vec![0x52, 0x08], // gasLimit=21000
+            vec![0xBB; 20],   // to
+            vec![0x03, 0xe8], // value=1000
+            vec![],           // data
+            vec![0x1e, 0xef], // chainId=7919
+            vec![],           // 0
+            vec![],           // 0
         ];
         let encoded = rlp_encode_list(&items);
         let decoded = rlp_decode_list(&encoded).unwrap();

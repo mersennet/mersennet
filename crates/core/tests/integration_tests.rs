@@ -141,7 +141,7 @@ fn redb_state_persistence_across_restart() {
         assert_eq!(block.number, 1);
     }
 
-    let mut engine = Engine::new_with_backend(7919, &path, "redb");
+    let mut engine = Engine::new_with_backend(7919, path, "redb");
     let alice = make_address(0x11);
     let bob = make_address(0x22);
 
@@ -174,7 +174,7 @@ fn parallel_execution_matches_sequential() {
 
     for i in 1..=10u8 {
         let sender = make_address(i);
-        let receiver = make_address((i % 10 + 1) as u8);
+        let receiver = make_address(i % 10 + 1);
         let tx = Transaction {
             from: sender,
             to: Some(receiver),
@@ -207,7 +207,7 @@ fn parallel_execution_matches_sequential() {
     }
     for i in 1..=10u8 {
         let sender = make_address(i);
-        let receiver = make_address((i % 10 + 1) as u8);
+        let receiver = make_address(i % 10 + 1);
         let tx = Transaction {
             from: sender,
             to: Some(receiver),
@@ -241,8 +241,10 @@ fn parallel_execution_matches_sequential() {
 fn pipeline_buffer_and_drain() {
     use prime_chain::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
 
-    let mut config = PipelineConfig::default();
-    config.pipeline_depth = 2;
+    let config = PipelineConfig {
+        pipeline_depth: 2,
+        ..Default::default()
+    };
 
     let mut pipeline = BlockPipeline::new(config);
 
@@ -313,9 +315,9 @@ fn checkpoint_store_chain_verification() {
     let mut prev_root = B256::from([0u8; 32]);
     for h in 1..=5u64 {
         let new_root = B256::from([h as u8; 32]);
-        let block_hash = keccak256(&h.to_be_bytes());
+        let block_hash = keccak256(h.to_be_bytes());
         let proof = prover
-            .prove_state_transition(prev_root, new_root, h, block_hash.into(), 1)
+            .prove_state_transition(prev_root, new_root, h, block_hash, 1)
             .expect("prove");
         store.add(ProofCheckpoint {
             height: h,
@@ -351,9 +353,9 @@ fn batch_proof_aggregation() {
     let mut prev_root = B256::from([0u8; 32]);
     for h in 1..=3u64 {
         let new_root = B256::from([h as u8; 32]);
-        let block_hash = keccak256(&h.to_be_bytes());
+        let block_hash = keccak256(h.to_be_bytes());
         let proof = prover
-            .prove_state_transition(prev_root, new_root, h, block_hash.into(), 1)
+            .prove_state_transition(prev_root, new_root, h, block_hash, 1)
             .expect("prove");
         aggregator.add_proof(proof);
         prev_root = new_root;

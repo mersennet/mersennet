@@ -312,39 +312,67 @@ fn send_raw_transaction(
     Ok(result.as_str().ok_or("tx hash not string")?.to_string())
 }
 
-fn handle_claim_token(body: &str, rpc_url: &str, faucet_key: &SigningKey, chain_id: u64) -> FaucetResponse {
+fn handle_claim_token(
+    body: &str,
+    rpc_url: &str,
+    faucet_key: &SigningKey,
+    chain_id: u64,
+) -> FaucetResponse {
     let req: ClaimTokenRequest = match serde_json::from_str(body) {
         Ok(r) => r,
-        Err(_) => return FaucetResponse {
-            success: false, tx_hash: None,
-            error: Some("expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}".into()),
-        },
+        Err(_) => {
+            return FaucetResponse {
+                success: false,
+                tx_hash: None,
+                error: Some("expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}".into()),
+            };
+        }
     };
 
     let user_address = match parse_address(&req.address) {
         Ok(a) => a,
-        Err(e) => return FaucetResponse {
-            success: false, tx_hash: None, error: Some(format!("invalid address: {}", e)),
-        },
+        Err(e) => {
+            return FaucetResponse {
+                success: false,
+                tx_hash: None,
+                error: Some(format!("invalid address: {}", e)),
+            };
+        }
     };
 
     let token_contract = match req.token.to_lowercase().as_str() {
         "usdc" => parse_address(MOCK_USDC).unwrap(),
         "usdt" => parse_address(MOCK_USDT).unwrap(),
         "dai" => parse_address(MOCK_DAI).unwrap(),
-        _ => return FaucetResponse {
-            success: false, tx_hash: None, error: Some("unknown token: use usdc, usdt, or dai".into()),
-        },
+        _ => {
+            return FaucetResponse {
+                success: false,
+                tx_hash: None,
+                error: Some("unknown token: use usdc, usdt, or dai".into()),
+            };
+        }
     };
 
     let faucet_address = prime_chain::crypto::address_from_signing_key(faucet_key);
     let gas_price = match fetch_gas_price(rpc_url) {
         Ok(p) => p,
-        Err(e) => return FaucetResponse { success: false, tx_hash: None, error: Some(e.to_string()) },
+        Err(e) => {
+            return FaucetResponse {
+                success: false,
+                tx_hash: None,
+                error: Some(e.to_string()),
+            };
+        }
     };
     let nonce = match fetch_nonce(rpc_url, &faucet_address) {
         Ok(n) => n,
-        Err(e) => return FaucetResponse { success: false, tx_hash: None, error: Some(e.to_string()) },
+        Err(e) => {
+            return FaucetResponse {
+                success: false,
+                tx_hash: None,
+                error: Some(e.to_string()),
+            };
+        }
     };
 
     // Step 1: Call faucet() on the token contract (mints to faucet address)
@@ -365,7 +393,9 @@ fn handle_claim_token(body: &str, rpc_url: &str, faucet_key: &SigningKey, chain_
     let raw_mint = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_mint)));
     if let Err(e) = send_raw_transaction(rpc_url, &raw_mint) {
         return FaucetResponse {
-            success: false, tx_hash: None, error: Some(format!("mint failed: {}", e)),
+            success: false,
+            tx_hash: None,
+            error: Some(format!("mint failed: {}", e)),
         };
     }
 
@@ -387,9 +417,15 @@ fn handle_claim_token(body: &str, rpc_url: &str, faucet_key: &SigningKey, chain_
     let signed_transfer = sign_transaction(&transfer_tx, faucet_key);
     let raw_transfer = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_transfer)));
     match send_raw_transaction(rpc_url, &raw_transfer) {
-        Ok(tx_hash) => FaucetResponse { success: true, tx_hash: Some(tx_hash), error: None },
+        Ok(tx_hash) => FaucetResponse {
+            success: true,
+            tx_hash: Some(tx_hash),
+            error: None,
+        },
         Err(e) => FaucetResponse {
-            success: false, tx_hash: None, error: Some(format!("transfer failed: {}", e)),
+            success: false,
+            tx_hash: None,
+            error: Some(format!("transfer failed: {}", e)),
         },
     }
 }
@@ -404,7 +440,6 @@ fn encode_transfer(to: Address, amount: U256) -> Vec<u8> {
     data.extend_from_slice(&amount.to_be_bytes::<32>());
     data
 }
-
 
 struct Args {
     port: u16,

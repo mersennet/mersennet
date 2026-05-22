@@ -27,8 +27,7 @@ use crate::shielded_evm::ShieldedEvm;
 use crate::shielded_state::{ShieldedSnapshot, ShieldedState};
 
 const SHIELDED_LEAVES: TableDefinition<u64, &[u8]> = TableDefinition::new("shielded_leaves");
-const SHIELDED_NULLIFIERS: TableDefinition<&[u8], ()> =
-    TableDefinition::new("shielded_nullifiers");
+const SHIELDED_NULLIFIERS: TableDefinition<&[u8], ()> = TableDefinition::new("shielded_nullifiers");
 const TRANSPARENT_BALANCES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("transparent_balances");
 const AUCTION_STATE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("auction_state");
@@ -51,8 +50,8 @@ impl std::fmt::Debug for ShieldedPersistence {
 impl ShieldedPersistence {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let db_path = path.as_ref().join("prime_chain_shielded.redb");
-        let db = Database::create(&db_path)
-            .with_context(|| format!("opening {}", db_path.display()))?;
+        let db =
+            Database::create(&db_path).with_context(|| format!("opening {}", db_path.display()))?;
 
         {
             let write_txn = db.begin_write()?;
@@ -70,11 +69,7 @@ impl ShieldedPersistence {
     /// Persist the entire shielded EVM state and the canonical
     /// shielded-state snapshot. Called at end-of-block when
     /// `privacy_mode_activated`. Idempotent.
-    pub fn save_shielded_evm(
-        &self,
-        evm: &ShieldedEvm,
-        block_height: u64,
-    ) -> Result<()> {
+    pub fn save_shielded_evm(&self, evm: &ShieldedEvm, block_height: u64) -> Result<()> {
         let snapshot = evm.state.snapshot();
         self.save_shielded_state_snapshot(&snapshot, block_height)?;
         self.save_transparent_balances(&evm.transparent_balances)?;
@@ -180,7 +175,8 @@ impl ShieldedPersistence {
     }
 
     /// Reload transparent balances. Used at startup.
-    pub fn load_transparent_balances(&self) -> Result<HashMap<Address, U256>> { // privacy-allow: transparent-side mirror reload
+    pub fn load_transparent_balances(&self) -> Result<HashMap<Address, U256>> {
+        // privacy-allow: transparent-side mirror reload
         let read_txn = self.db.begin_read()?;
         let bal_t = read_txn.open_table(TRANSPARENT_BALANCES)?;
         let mut out = HashMap::new();
@@ -232,7 +228,8 @@ mod tests {
         state.spend(Nullifier(Fr::from_u64(42))).unwrap();
         let original_root = state.current_root();
 
-        p.save_shielded_state_snapshot(&state.snapshot(), 7).unwrap();
+        p.save_shielded_state_snapshot(&state.snapshot(), 7)
+            .unwrap();
 
         let loaded = p.load_shielded_state().unwrap().expect("snapshot exists");
         assert_eq!(loaded.current_root(), original_root);

@@ -56,7 +56,9 @@ impl Default for Fr {
 
 impl Fr {
     pub const ZERO: Fr = Fr { limbs: [0; 4] };
-    pub const ONE: Fr = Fr { limbs: [1, 0, 0, 0] };
+    pub const ONE: Fr = Fr {
+        limbs: [1, 0, 0, 0],
+    };
 
     /// Build from raw limbs. Reduces if needed.
     pub fn from_limbs(limbs: [u64; 4]) -> Self {
@@ -67,7 +69,9 @@ impl Fr {
 
     /// Build from a `u64`.
     pub const fn from_u64(x: u64) -> Self {
-        Fr { limbs: [x, 0, 0, 0] }
+        Fr {
+            limbs: [x, 0, 0, 0],
+        }
     }
 
     /// Convert from canonical 32-byte little-endian. Returns `None` if

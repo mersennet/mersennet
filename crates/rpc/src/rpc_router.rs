@@ -759,16 +759,8 @@ fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value
             event.kind(),
             prime_orders_event_to_value(event),
         ),
-        DomainEvent::Bridge(event) => (
-            "bridge",
-            event.kind(),
-            bridge_event_to_value(event),
-        ),
-        DomainEvent::Shielded(event) => (
-            "shielded",
-            event.kind(),
-            shielded_event_to_value(event),
-        ),
+        DomainEvent::Bridge(event) => ("bridge", event.kind(), bridge_event_to_value(event)),
+        DomainEvent::Shielded(event) => ("shielded", event.kind(), shielded_event_to_value(event)),
     }
 }
 

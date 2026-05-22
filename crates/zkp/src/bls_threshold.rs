@@ -38,9 +38,7 @@
 
 #[cfg(feature = "prover")]
 use crate::field::Fr;
-use crate::threshold::{
-    DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError,
-};
+use crate::threshold::{DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError};
 
 #[derive(Debug)]
 pub struct BlsThreshold {
@@ -113,10 +111,7 @@ impl ThresholdElGamal for BlsThreshold {
     fn encrypt(&self, plaintext: &[u8], epoch: u64) -> EncryptedPayload {
         self.inner.encrypt(plaintext, epoch)
     }
-    fn submit_share(
-        &mut self,
-        share: DecryptionShare,
-    ) -> Result<Option<Vec<u8>>, ThresholdError> {
+    fn submit_share(&mut self, share: DecryptionShare) -> Result<Option<Vec<u8>>, ThresholdError> {
         if share.epoch != self.epoch {
             return Err(ThresholdError::EpochMismatch);
         }
@@ -146,10 +141,7 @@ impl ThresholdElGamal for BlsThreshold {
             ephemeral: crate::Fr::ZERO,
         }
     }
-    fn submit_share(
-        &mut self,
-        _share: DecryptionShare,
-    ) -> Result<Option<Vec<u8>>, ThresholdError> {
+    fn submit_share(&mut self, _share: DecryptionShare) -> Result<Option<Vec<u8>>, ThresholdError> {
         Err(ThresholdError::AuthenticityFailure)
     }
     fn threshold(&self) -> u32 {
@@ -222,8 +214,7 @@ mod real {
         pub fn with_simulated_dkg(threshold: u32, total: u32, seed: &[u8; 32]) -> Self {
             let mut rng = ChaCha20Rng::from_seed(*seed);
             // Random polynomial of degree (threshold - 1).
-            let coeffs: Vec<Scalar> =
-                (0..threshold).map(|_| Scalar::random(&mut rng)).collect();
+            let coeffs: Vec<Scalar> = (0..threshold).map(|_| Scalar::random(&mut rng)).collect();
             // sk = polynomial(0) = coeffs[0]
             let sk = coeffs[0];
             let group_pk = G1Projective::generator() * sk;
@@ -275,7 +266,8 @@ mod real {
             // Pack: [c1 (48)] [nonce (12)] [aead_body]
             let c1_aff: G1Affine = c1.to_affine();
             let c1_bytes = c1_aff.to_compressed();
-            let mut ciphertext = Vec::with_capacity(G1_COMPRESSED_LEN + NONCE_LEN + aead_body.len());
+            let mut ciphertext =
+                Vec::with_capacity(G1_COMPRESSED_LEN + NONCE_LEN + aead_body.len());
             ciphertext.extend_from_slice(&c1_bytes);
             ciphertext.extend_from_slice(&nonce_bytes);
             ciphertext.extend_from_slice(&aead_body);
@@ -434,7 +426,9 @@ mod real {
             num *= -xj;
             den *= xi - xj;
         }
-        num * den.invert().expect("xi != xj for distinct validator indices")
+        num * den
+            .invert()
+            .expect("xi != xj for distinct validator indices")
     }
 
     fn parse_g1_compressed(bytes: &[u8]) -> Option<G1Affine> {
@@ -495,7 +489,10 @@ mod tests {
 
         let s1 = t.make_decryption_share(1, &payload);
         let s2 = t.make_decryption_share(2, &payload);
-        let recovered = t.inner.decrypt_payload(&payload, &[s1, s2]).expect("decrypt");
+        let recovered = t
+            .inner
+            .decrypt_payload(&payload, &[s1, s2])
+            .expect("decrypt");
         assert_eq!(recovered, plaintext);
     }
 

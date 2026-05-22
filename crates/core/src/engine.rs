@@ -1,6 +1,6 @@
 use crate::bridge::{BridgeDomain, BridgeMessage, BridgeQueue};
-use crate::commit_reveal::{CommitRevealError, CommitRevealPool, TxCommitment, TxReveal};
 use crate::code_publication::{CodePublicationRegistry, PublishedCodeAttestation};
+use crate::commit_reveal::{CommitRevealError, CommitRevealPool, TxCommitment, TxReveal};
 use crate::consensus::{
     Consensus, EvidenceKind, Finalization, Reward, RoundResult, Slashing, SlashingEvidence,
     Unbonding, Validator, ValidatorChange,
@@ -48,14 +48,14 @@ use crate::account_abstraction::Bundler;
 use crate::encrypted_mempool::EncryptedMempool;
 use crate::flat_state::{FlatAccount, FlatState, StateChangeset};
 use crate::formal_verification::InvariantChecker;
+use crate::intents::IntentEngine;
 use crate::liquidation_auction::LiquidationAuction;
+use crate::mainnet::MainnetGuard;
+use crate::market_maker::MarketMakerEngine;
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
 use crate::shielded_orders::ShieldedOrdersEngine;
 use crate::shielded_persistence::ShieldedPersistence;
 use crate::threshold_mempool::ThresholdMempool;
-use crate::intents::IntentEngine;
-use crate::mainnet::MainnetGuard;
-use crate::market_maker::MarketMakerEngine;
 
 /// Synthetic execution result returned by `apply_shielded_tx` when
 /// the shielded path is unavailable (e.g. pre-fork, missing payload).
@@ -596,7 +596,10 @@ impl Engine {
     /// switch on the next `execute_block`.
     pub fn set_privacy_activation_height(&mut self, height: u64) {
         self.privacy_activation_height = Some(height);
-        tracing::info!(activation_height = height, "privacy activation height scheduled");
+        tracing::info!(
+            activation_height = height,
+            "privacy activation height scheduled"
+        );
     }
 
     /// Configure the DKG epoch length, in blocks. The privacy
@@ -615,11 +618,11 @@ impl Engine {
         if self.privacy_mode_activated {
             return false;
         }
-        if let Some(h) = self.privacy_activation_height {
-            if self.block_number >= h {
-                self.activate_privacy_mode();
-                return true;
-            }
+        if let Some(h) = self.privacy_activation_height
+            && self.block_number >= h
+        {
+            self.activate_privacy_mode();
+            return true;
         }
         false
     }
@@ -973,19 +976,19 @@ impl Engine {
         // new ceremony just started; in that case the consensus
         // layer will include DKG inputs in this block's HotStuff-2
         // sub-round.
-        if self.privacy_mode_activated {
-            if let Some(new_epoch) = self.dkg.on_block(self.block_number) {
-                metrics::counter!(
-                    "prime_chain_dkg_ceremonies_started_total",
-                    1,
-                    "epoch" => new_epoch.to_string()
-                );
-                tracing::info!(
-                    block = self.block_number,
-                    epoch = new_epoch,
-                    "DKG ceremony started for new epoch"
-                );
-            }
+        if self.privacy_mode_activated
+            && let Some(new_epoch) = self.dkg.on_block(self.block_number)
+        {
+            metrics::counter!(
+                "prime_chain_dkg_ceremonies_started_total",
+                1,
+                "epoch" => new_epoch.to_string()
+            );
+            tracing::info!(
+                block = self.block_number,
+                epoch = new_epoch,
+                "DKG ceremony started for new epoch"
+            );
         }
 
         let start = Instant::now();
@@ -1266,12 +1269,11 @@ impl Engine {
         // Privacy-redesign Phase 4 — persist shielded state at end of
         // block. No-op pre-fork (the subsystems are still in their
         // initial state and saving an empty snapshot is harmless).
-        if self.privacy_mode_activated {
-            if let Some(p) = &self.shielded_persistence {
-                if let Err(e) = p.save_shielded_evm(&self.shielded_evm, block.number) {
-                    tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed");
-                }
-            }
+        if self.privacy_mode_activated
+            && let Some(p) = &self.shielded_persistence
+            && let Err(e) = p.save_shielded_evm(&self.shielded_evm, block.number)
+        {
+            tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed");
         }
 
         // Run formal verification invariant checks
@@ -1585,12 +1587,11 @@ impl Engine {
         self.evm.state.store_block(&block)?;
 
         // Privacy-redesign Phase 4 — persist shielded state.
-        if self.privacy_mode_activated {
-            if let Some(p) = &self.shielded_persistence {
-                if let Err(e) = p.save_shielded_evm(&self.shielded_evm, block.number) {
-                    tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed (parallel)");
-                }
-            }
+        if self.privacy_mode_activated
+            && let Some(p) = &self.shielded_persistence
+            && let Err(e) = p.save_shielded_evm(&self.shielded_evm, block.number)
+        {
+            tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed (parallel)");
         }
 
         metrics::increment_counter!("prime_chain_blocks_produced_total");
@@ -1711,9 +1712,10 @@ impl Engine {
         self.evm.db = InMemoryDB::default();
         self.evm.state.load_into_db(&mut self.evm.db)?;
         self.evm.state.load_prime_orders(&mut self.orders.state)?;
-        self.evm
-            .state
-            .load_bridge_queues(&mut self.bridge.orders_to_evm, &mut self.bridge.evm_to_orders)?;
+        self.evm.state.load_bridge_queues(
+            &mut self.bridge.orders_to_evm,
+            &mut self.bridge.evm_to_orders,
+        )?;
 
         // Shielded side.
         if let Some(shielded) = envelope.shielded {
@@ -1775,10 +1777,7 @@ impl Engine {
             .unwrap_or(KECCAK_EMPTY))
     }
 
-    pub fn published_code_attestation(
-        &self,
-        address: Address,
-    ) -> Option<PublishedCodeAttestation> {
+    pub fn published_code_attestation(&self, address: Address) -> Option<PublishedCodeAttestation> {
         self.code_publication_registry.attestation(address)
     }
 
@@ -2039,7 +2038,9 @@ impl Engine {
 
     fn verify_tx_signature(&self, tx: &Transaction) -> Result<(), TxRejection> {
         let Some((r, s, v)) = &tx.signature else {
-            return Err(TxRejection::InvalidSignature("unsigned transactions are not accepted".to_string()));
+            return Err(TxRejection::InvalidSignature(
+                "unsigned transactions are not accepted".to_string(),
+            ));
         };
 
         let signed = SignedTransaction {
@@ -2144,11 +2145,14 @@ impl Engine {
         };
         logs.push(LogEntry {
             address: Address::ZERO,
-            topics: vec![topic, B256::from_slice(&{
-                let mut padded = [0u8; 32];
-                padded[31] = envelope.discriminant();
-                padded
-            })],
+            topics: vec![
+                topic,
+                B256::from_slice(&{
+                    let mut padded = [0u8; 32];
+                    padded[31] = envelope.discriminant();
+                    padded
+                }),
+            ],
             data: outcome
                 .as_ref()
                 .err()
@@ -2196,18 +2200,17 @@ impl Engine {
         // ShieldedState (Workstream A7 persistence) — for header
         // commitment purposes we hash the canonical count.
         let mut nbuf = Vec::with_capacity(16);
-        nbuf.extend_from_slice(
-            &(self.shielded_evm.state.nullifier_count() as u64).to_le_bytes(),
-        );
+        nbuf.extend_from_slice(&(self.shielded_evm.state.nullifier_count() as u64).to_le_bytes());
         let nullifier_root = keccak256(&nbuf);
 
         // Shielded event root: keccak of bincode-serialised
         // `ShieldedEvent` records, in block-emission order. Light
         // clients re-derive this from the public event stream.
         let mut ebuf = Vec::new();
-        for ev in domain_events.iter().filter(|e| {
-            matches!(e, crate::events::DomainEvent::Shielded(_))
-        }) {
+        for ev in domain_events
+            .iter()
+            .filter(|e| matches!(e, crate::events::DomainEvent::Shielded(_)))
+        {
             if let Ok(bytes) = bincode::serialize(ev) {
                 ebuf.extend_from_slice(&bytes);
             }
@@ -2339,9 +2342,7 @@ impl Engine {
         // `Poseidon(victim_commitment, oracle_price)`, so it doesn't
         // re-link to a market or trader; `liquidator_id` is the
         // bond commitment (no address leak either).
-        let winners = self
-            .liquidation_auction
-            .settle_block(self.block_number);
+        let winners = self.liquidation_auction.settle_block(self.block_number);
         for (_claim_tag, bond_commitment, winning_bid) in winners {
             metrics::counter!("prime_chain_liquidation_auctions_settled_total", 1);
             self.pending_events
@@ -2360,17 +2361,18 @@ impl Engine {
         let new_root = self.shielded_evm.state.current_root().to_bytes();
         metrics::counter!("prime_chain_shielded_root_advanced_total", 1);
         let snap = self.shielded_evm.state.snapshot();
-        metrics::gauge!(
-            "prime_chain_shielded_notes_total",
-            snap.leaves.len() as f64
-        );
+        metrics::gauge!("prime_chain_shielded_notes_total", snap.leaves.len() as f64);
         metrics::gauge!(
             "prime_chain_shielded_nullifiers_total",
             snap.nullifiers.len() as f64
         );
         metrics::gauge!(
             "prime_chain_privacy_mode_active",
-            if self.privacy_mode_activated { 1.0 } else { 0.0 }
+            if self.privacy_mode_activated {
+                1.0
+            } else {
+                0.0
+            }
         );
         metrics::gauge!(
             "prime_chain_privacy_activation_height",
@@ -2384,7 +2386,6 @@ impl Engine {
                 nullifiers_added: 0,
             }));
     }
-
 
     fn execute_tx(&mut self, tx: &Transaction) -> Result<TxExecution> {
         let mut env = Env::default();

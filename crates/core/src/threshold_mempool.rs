@@ -30,9 +30,9 @@
 #![allow(dead_code)]
 
 use prime_zkp::{
-    threshold::DummyThreshold, DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError,
+    DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError, threshold::DummyThreshold,
 };
-use revm::primitives::{keccak256, B256};
+use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -115,10 +115,7 @@ impl ThresholdMempool {
 
     /// Build a mempool with a caller-supplied provider. Production
     /// validators use this with a BLS-backed implementation.
-    pub fn with_provider(
-        provider: Box<dyn ThresholdElGamal>,
-        max_size: usize,
-    ) -> Self {
+    pub fn with_provider(provider: Box<dyn ThresholdElGamal>, max_size: usize) -> Self {
         Self {
             provider: Arc::new(Mutex::new(provider)),
             pending: HashMap::new(),
@@ -186,8 +183,7 @@ impl ThresholdMempool {
             match provider.submit_share(share) {
                 Ok(v) => v,
                 Err(e) => {
-                    self.stats.rejected_threshold =
-                        self.stats.rejected_threshold.saturating_add(1);
+                    self.stats.rejected_threshold = self.stats.rejected_threshold.saturating_add(1);
                     return Err(MempoolError::Threshold(e));
                 }
             }

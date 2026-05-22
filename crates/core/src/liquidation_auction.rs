@@ -37,9 +37,9 @@
 use crate::prime_orders::MarketId;
 use crate::shielded_state::ShieldedState;
 use prime_zkp::{
+    Fr, NoteCommitment, Nullifier,
     noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
     poseidon::Poseidon,
-    Fr, NoteCommitment, Nullifier,
 };
 use revm::primitives::U256;
 use serde::{Deserialize, Serialize};
@@ -286,7 +286,7 @@ impl LiquidationAuction {
                 winners.push((tag, w.liquidator_id, w.bid_price));
                 self.stats.auctions_settled += 1;
             }
-            all_bids.extend(entry.bids.into_iter());
+            all_bids.extend(entry.bids);
         }
         self.pending_revelation.push((block, all_bids));
         // Reveal bids that have aged past BID_REVELATION_DELAY.
@@ -331,8 +331,10 @@ impl LiquidationAuction {
         state.spend(Nullifier(exec.victim_nullifier))?;
         let _ = state.insert_note(NoteCommitment(exec.bounty_commitment))?;
         let _ = state.insert_note(NoteCommitment(exec.insurance_commitment))?;
-        self.stats.total_bounty_paid =
-            self.stats.total_bounty_paid.saturating_add(exec.winning_bid);
+        self.stats.total_bounty_paid = self
+            .stats
+            .total_bounty_paid
+            .saturating_add(exec.winning_bid);
         Ok(())
     }
 }
@@ -362,11 +364,7 @@ mod tests {
     use super::*;
     use prime_zkp::note::Note;
 
-    fn build_claim(
-        state: &ShieldedState,
-        liquidator_id: Fr,
-        victim: &Note,
-    ) -> LiquidationClaim {
+    fn build_claim(state: &ShieldedState, liquidator_id: Fr, victim: &Note) -> LiquidationClaim {
         let p = Poseidon::default();
         let oracle_price = U256::from(3_200u64);
         let claim_tag = p.hash_two(&victim.commit(&p).0, &Fr::from_u64(u256_low(&oracle_price)));
