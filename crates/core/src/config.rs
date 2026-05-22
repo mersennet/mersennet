@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub engine: EngineConfig,
@@ -243,25 +243,6 @@ impl Default for ZkConfig {
     }
 }
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            engine: EngineConfig::default(),
-            mempool: MempoolConfig::default(),
-            prime_orders: PrimeOrdersConfig::default(),
-            bridge: BridgeConfig::default(),
-            genesis: GenesisConfig::default(),
-            slashing: SlashingConfig::default(),
-            token_economics: TokenEconomicsConfig::default(),
-            rpc: RpcConfig::default(),
-            privacy: PrivacyConfig::default(),
-            p2p: P2pConfig::default(),
-            ws: WsConfig::default(),
-            zk: ZkConfig::default(),
-        }
-    }
-}
-
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
@@ -355,6 +336,7 @@ pub fn load_config(path: &str) -> Result<AppConfig> {
     Ok(config)
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod config_tests {
     use super::*;

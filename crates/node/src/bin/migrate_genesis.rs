@@ -43,10 +43,10 @@
 //! see the same shielded note tree and the same activation height,
 //! so consensus on the privacy-fork block is automatic.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use prime_chain::engine::Engine;
 use prime_chain::engine_snapshot::{
-    encode_transparent_balances, EngineSnapshotEnvelope, ShieldedSnapshotData,
+    EngineSnapshotEnvelope, ShieldedSnapshotData, encode_transparent_balances,
 };
 use prime_chain::liquidation_auction::LiquidationAuction;
 use prime_chain::shielded_evm::{MigrationPlan, ShieldedEvm};
@@ -209,6 +209,7 @@ fn run(args: &Args) -> Result<()> {
         auction: LiquidationAuction::new().snapshot(),
         transparent_balances: encode_transparent_balances(&shielded_evm.transparent_balances),
         migration_plan_applied: true,
+        code_publication_registry: Default::default(),
     };
 
     let out_env = EngineSnapshotEnvelope {
@@ -236,7 +237,11 @@ fn run(args: &Args) -> Result<()> {
         path = %args.output.display(),
         "==> wrote post-fork envelope"
     );
-    println!("migration done: {} -> {}", args.input.display(), args.output.display());
+    println!(
+        "migration done: {} -> {}",
+        args.input.display(),
+        args.output.display()
+    );
     Ok(())
 }
 
@@ -254,7 +259,7 @@ fn build_migration_plan(engine: &mut Engine, activation_height: u64) -> Result<M
         accounts.push((addr, balance, owner_pk));
     }
     // Deterministic ordering so the migration is reproducible.
-    accounts.sort_by(|a, b| a.0.cmp(&b.0));
+    accounts.sort_by_key(|a| a.0);
 
     Ok(MigrationPlan {
         activation_height,
@@ -308,9 +313,9 @@ fn sanity_check_conservation(
     transparent: &HashMap<Address, U256>, // privacy-allow: conservation check at the bridge
 ) -> Result<()> {
     let migrated_total = total_value(plan);
-    let transparent_total = transparent
-        .values()
-        .fold(U256::ZERO, |acc, b| acc.checked_add(*b).unwrap_or(U256::MAX));
+    let transparent_total = transparent.values().fold(U256::ZERO, |acc, b| {
+        acc.checked_add(*b).unwrap_or(U256::MAX)
+    });
     // The post-migration ShieldedEvm.transparent_balances should
     // equal the pre-migration balances (the migration *mirrors*,
     // it doesn't drain). So total transparent == total migrated.

@@ -23,7 +23,7 @@
 //! zeroed shielded fields — equivalent to the pre-privacy-fork
 //! state.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -164,14 +164,13 @@ pub fn encode_transparent_balances(
             (addr_bytes, amount.to_be_bytes::<32>())
         })
         .collect();
-    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.sort_by_key(|a| a.0);
     out
 }
 
 /// Reverse of [`encode_transparent_balances`].
-pub fn decode_transparent_balances(
-    entries: &[([u8; 20], [u8; 32])],
-) -> HashMap<Address, U256> { // privacy-allow: transparent-side mirror decode
+pub fn decode_transparent_balances(entries: &[([u8; 20], [u8; 32])]) -> HashMap<Address, U256> {
+    // privacy-allow: transparent-side mirror decode
     let mut out = HashMap::with_capacity(entries.len());
     for (addr_bytes, amount_bytes) in entries {
         let addr = Address::from_slice(addr_bytes);

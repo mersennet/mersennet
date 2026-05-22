@@ -15,12 +15,12 @@
 //! 2. **`0x0201` precompile** — `shield(uint256,bytes)` and
 //!    `unshield(bytes)`. Bridges transparent ↔ shielded.
 //!    - `shield(amount, encrypted_note_payload)`: debits the caller's
-//!       transparent balance by `amount`, mints a shielded note of
-//!       equal value.
+//!      transparent balance by `amount`, mints a shielded note of
+//!      equal value.
 //!    - `unshield(bytes)`: consumes a shielded note, credits a
-//!       transparent address with the value (the only event that
-//!       intentionally links a shielded note to a transparent
-//!       address).
+//!      transparent address with the value (the only event that
+//!      intentionally links a shielded note to a transparent
+//!      address).
 //!
 //! 3. **Tx envelope type `0x7E`** — EIP-2718 typed transactions for
 //!    privacy. The chain accepts `0x7E` envelopes alongside legacy
@@ -35,8 +35,8 @@
 
 use crate::shielded_state::ShieldedState;
 use prime_zkp::{
-    noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
     Fr, NoteCommitment, Nullifier,
+    noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
 };
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
@@ -348,7 +348,8 @@ impl MigrationPlan {
     }
 }
 
-fn derive_migration_rho(owner: Address, height: u64) -> Fr { // privacy-allow: one-time migration derives shielded params from transparent EOA
+fn derive_migration_rho(owner: Address, height: u64) -> Fr {
+    // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
     h.update(b"PrimeChain-MigrationRho");
@@ -358,7 +359,8 @@ fn derive_migration_rho(owner: Address, height: u64) -> Fr { // privacy-allow: o
     Fr::from_bytes_reduce(&bytes)
 }
 
-fn derive_migration_psi(owner: Address, height: u64) -> Fr { // privacy-allow: one-time migration derives shielded params from transparent EOA
+fn derive_migration_psi(owner: Address, height: u64) -> Fr {
+    // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
     h.update(b"PrimeChain-MigrationPsi");
@@ -426,7 +428,10 @@ mod tests {
             proof,
         };
         let err = evm.apply_shield(&tx).unwrap_err();
-        assert!(matches!(err, ShieldedEvmError::InsufficientTransparentBalance));
+        assert!(matches!(
+            err,
+            ShieldedEvmError::InsufficientTransparentBalance
+        ));
     }
 
     #[test]

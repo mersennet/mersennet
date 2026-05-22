@@ -195,7 +195,8 @@ mod real {
             if let Some(y) = rhs.sqrt() {
                 // Pick the lex-smaller representative for determinism.
                 let neg_y = -y;
-                let y_chosen = if y.into_bigint().to_bytes_le() < neg_y.into_bigint().to_bytes_le() {
+                let y_chosen = if y.into_bigint().to_bytes_le() < neg_y.into_bigint().to_bytes_le()
+                {
                     y
                 } else {
                     neg_y
@@ -206,7 +207,10 @@ mod real {
                 }
             }
         }
-        panic!("derive_generator: try-and-increment failed after 1000 iterations — domain {:?} index {}", domain, index);
+        panic!(
+            "derive_generator: try-and-increment failed after 1000 iterations — domain {:?} index {}",
+            domain, index
+        );
     }
 }
 
@@ -226,7 +230,10 @@ mod tests {
     fn commit_is_randomness_sensitive() {
         let c = Commit::new();
         let msg = [Fr::from_u64(1), Fr::from_u64(2)];
-        assert_ne!(c.commit(&msg, Fr::from_u64(1)), c.commit(&msg, Fr::from_u64(2)));
+        assert_ne!(
+            c.commit(&msg, Fr::from_u64(1)),
+            c.commit(&msg, Fr::from_u64(2))
+        );
     }
 
     #[test]

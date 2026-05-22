@@ -7,12 +7,12 @@
 //! public-input shape must remain stable byte-for-byte.
 
 use prime_zkp::{
+    Fr,
     merkle::MerkleTree,
     noir::{Circuit, MockVerifier, Verifier},
     note::Note,
     nullifier::Nullifier,
     poseidon::Poseidon,
-    Fr,
 };
 
 fn poseidon() -> Poseidon {

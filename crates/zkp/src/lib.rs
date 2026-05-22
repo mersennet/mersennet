@@ -46,23 +46,23 @@
 #![deny(unsafe_code)]
 #![warn(missing_debug_implementations)]
 
-pub mod field;
-pub mod poseidon;
-pub mod pedersen;
-pub mod merkle;
-pub mod nullifier;
-pub mod note;
-pub mod threshold;
 pub mod bls_threshold;
+pub mod field;
+pub mod merkle;
 pub mod noir;
+pub mod note;
+pub mod nullifier;
+pub mod pedersen;
+pub mod poseidon;
 pub mod sp1;
+pub mod threshold;
 
 pub use field::Fr;
-pub use merkle::{MerkleProof, MerkleTree, MERKLE_DEPTH};
+pub use merkle::{MERKLE_DEPTH, MerkleProof, MerkleTree};
+pub use noir::{Circuit, CircuitProof, Verifier, VerifyError};
 pub use note::{EncryptedNote, Note, NoteCommitment, ViewingKey};
 pub use nullifier::{Nullifier, NullifierSet};
-pub use noir::{Circuit, CircuitProof, Verifier, VerifyError};
 pub use threshold::{
-    DecryptionShare, EncryptedPayload, KeyShare, ThresholdCiphertext,
-    ThresholdElGamal, ThresholdError,
+    DecryptionShare, EncryptedPayload, KeyShare, ThresholdCiphertext, ThresholdElGamal,
+    ThresholdError,
 };

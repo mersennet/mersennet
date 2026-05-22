@@ -44,16 +44,16 @@ impl BlockProgramOutput {
     /// downstream circuit (e.g. a bridge verifier on another chain)
     /// needs to consume it via Noir.
     pub fn to_field_elements(&self) -> Vec<Fr> {
-        let mut out = Vec::with_capacity(8);
-        out.push(Fr::from_bytes_reduce(&self.prev_state_root));
-        out.push(Fr::from_bytes_reduce(&self.new_state_root));
-        out.push(Fr::from_bytes_reduce(&self.prev_nullifier_root));
-        out.push(Fr::from_bytes_reduce(&self.new_nullifier_root));
-        out.push(Fr::from_u64(self.block_number));
-        out.push(Fr::from_bytes_reduce(&self.block_hash));
-        out.push(Fr::from_bytes_reduce(&self.new_market_state_hash));
-        out.push(Fr::from_u64(self.tx_count));
-        out
+        vec![
+            Fr::from_bytes_reduce(&self.prev_state_root),
+            Fr::from_bytes_reduce(&self.new_state_root),
+            Fr::from_bytes_reduce(&self.prev_nullifier_root),
+            Fr::from_bytes_reduce(&self.new_nullifier_root),
+            Fr::from_u64(self.block_number),
+            Fr::from_bytes_reduce(&self.block_hash),
+            Fr::from_bytes_reduce(&self.new_market_state_hash),
+            Fr::from_u64(self.tx_count),
+        ]
     }
 }
 

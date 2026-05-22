@@ -280,7 +280,11 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
     Some(Block {
         number: wire.number,
         chain_id: wire.chain_id,
-        timestamp: if wire.timestamp > 0 { wire.timestamp } else { wire.number },
+        timestamp: if wire.timestamp > 0 {
+            wire.timestamp
+        } else {
+            wire.number
+        },
         gas_limit: wire.gas_limit,
         gas_used: wire.gas_used,
         base_fee,
@@ -456,7 +460,8 @@ impl NetworkNode {
                             let count = g.peer_count();
                             info!(peers = count, "peer discovery tick");
                             if let Ok(eng) = engine_for_peers.lock() {
-                                eng.peer_count.store(count, std::sync::atomic::Ordering::Relaxed);
+                                eng.peer_count
+                                    .store(count, std::sync::atomic::Ordering::Relaxed);
                             }
                         }
                     }

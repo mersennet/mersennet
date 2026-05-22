@@ -1,15 +1,15 @@
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use once_cell::sync::Lazy;
 use revm::ContextPrecompile;
+use revm::Database;
 use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
-use revm::Database;
 use revm::precompile::Precompile;
 use revm::primitives::{
-    Address, Bytes, Env, PrecompileError, PrecompileErrors, PrecompileOutput, PrecompileResult,
-    KECCAK_EMPTY, U256,
+    Address, Bytes, Env, KECCAK_EMPTY, PrecompileError, PrecompileErrors, PrecompileOutput,
+    PrecompileResult, U256,
 };
 
 use crate::code_publication::CodePublicationRegistry;
@@ -130,9 +130,11 @@ fn with_code_publication<F, R>(f: F) -> Result<R, PrecompileErrors>
 where
     F: FnOnce(&mut CodePublicationContext) -> Result<R, PrecompileErrors>,
 {
-    let guard = CODE_PUBLICATION_CTX.lock().map_err(|_| PrecompileErrors::Fatal {
-        msg: "code publication context lock poisoned".into(),
-    })?;
+    let guard = CODE_PUBLICATION_CTX
+        .lock()
+        .map_err(|_| PrecompileErrors::Fatal {
+            msg: "code publication context lock poisoned".into(),
+        })?;
     let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
         msg: "code publication context not set".into(),
     })?;
@@ -146,9 +148,11 @@ fn with_shielded_evm<F, R>(f: F) -> Result<R, PrecompileErrors>
 where
     F: FnOnce(&mut ShieldedEvm) -> R,
 {
-    let guard = SHIELDED_EVM_CTX.lock().map_err(|_| PrecompileErrors::Fatal {
-        msg: "shielded evm context lock poisoned".into(),
-    })?;
+    let guard = SHIELDED_EVM_CTX
+        .lock()
+        .map_err(|_| PrecompileErrors::Fatal {
+            msg: "shielded evm context lock poisoned".into(),
+        })?;
     let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
         msg: "shielded evm context not set (call set_shielded_evm_context first)".into(),
     })?;
@@ -158,6 +162,7 @@ where
     Ok(f(&mut state))
 }
 
+#[allow(clippy::arc_with_non_send_sync)]
 pub fn register_shielded_precompiles(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
     let prev_load = handler.pre_execution.load_precompiles.clone();
     handler.pre_execution.load_precompiles = Arc::new(move || {
@@ -180,6 +185,7 @@ pub fn register_shielded_precompiles(handler: &mut EvmHandler<'_, (), InMemoryDB
     });
 }
 
+#[allow(clippy::arc_with_non_send_sync)]
 pub fn register_code_publication_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
     let prev_load = handler.pre_execution.load_precompiles.clone();
     handler.pre_execution.load_precompiles = Arc::new(move || {
@@ -206,7 +212,9 @@ fn shielded_transfer_precompile(input: &Bytes, gas_limit: u64, _env: &Env) -> Pr
         .map_err(|e| PrecompileError::other(format!("shieldedTransfer: invalid bincode: {e}")))?;
 
     let success = match envelope {
-        ShieldedEnvelope::Transfer(t) => with_shielded_evm(|evm| evm.apply_shielded_transfer(&t))?.is_ok(),
+        ShieldedEnvelope::Transfer(t) => {
+            with_shielded_evm(|evm| evm.apply_shielded_transfer(&t))?.is_ok()
+        }
         _ => return Err(PrecompileError::other("shieldedTransfer: wrong envelope variant").into()),
     };
 
@@ -234,8 +242,8 @@ fn shield_bridge_precompile(input: &Bytes, gas_limit: u64, _env: &Env) -> Precom
         // consume the bytes blob; the amount must match the inner
         // ShieldTx (the inner amount is the source of truth, so we
         // reject any mismatch).
-        let amount_word = read_word(input, 0)
-            .ok_or_else(|| PrecompileError::other("shield: missing amount"))?;
+        let amount_word =
+            read_word(input, 0).ok_or_else(|| PrecompileError::other("shield: missing amount"))?;
         let amount = decode_u256(amount_word);
         let payload = abi_decode_bytes_at(input, 1)?;
         let envelope: ShieldedEnvelope = bincode::deserialize(&payload)
@@ -279,16 +287,11 @@ fn shield_bridge_precompile(input: &Bytes, gas_limit: u64, _env: &Env) -> Precom
 // produced by `state_proof::prove_block`.
 // ---------------------------------------------------------------------------
 
-fn state_proof_verifier_precompile(
-    input: &Bytes,
-    gas_limit: u64,
-    _env: &Env,
-) -> PrecompileResult {
+fn state_proof_verifier_precompile(input: &Bytes, gas_limit: u64, _env: &Env) -> PrecompileResult {
     check_gas(gas_limit, GAS_STATE_PROOF_VERIFY)?;
     let payload = abi_decode_bytes(input)?;
-    let proof: StateTransitionProof = bincode::deserialize(&payload).map_err(|e| {
-        PrecompileError::other(format!("verifyStateProof: invalid bincode: {e}"))
-    })?;
+    let proof: StateTransitionProof = bincode::deserialize(&payload)
+        .map_err(|e| PrecompileError::other(format!("verifyStateProof: invalid bincode: {e}")))?;
     let ok = crate::state_proof::verify_block_proof(&proof);
     Ok(PrecompileOutput::new(
         GAS_STATE_PROOF_VERIFY,
@@ -310,20 +313,22 @@ fn code_publication_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> Prec
             .ok_or_else(|| PrecompileError::other("publishCodeHash: missing contract"))?;
         let contract = decode_address(contract_word);
         let metadata = abi_decode_bytes_at(input, 1)?;
-        let metadata_uri = if metadata.is_empty() {
-            None
-        } else {
-            Some(
-                String::from_utf8(metadata)
-                    .map_err(|_| PrecompileError::other("publishCodeHash: invalid UTF-8 metadata"))?,
-            )
-        };
+        let metadata_uri =
+            if metadata.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8(metadata).map_err(|_| {
+                    PrecompileError::other("publishCodeHash: invalid UTF-8 metadata")
+                })?)
+            };
 
         with_code_publication(|ctx| {
             let code_hash = ctx
                 .db
                 .basic(contract)
-                .map_err(|e| PrecompileError::other(format!("publishCodeHash: db read failed: {e}")))?
+                .map_err(|e| {
+                    PrecompileError::other(format!("publishCodeHash: db read failed: {e}"))
+                })?
                 .map(|info| info.code_hash)
                 .unwrap_or(KECCAK_EMPTY);
             ctx.registry
@@ -382,8 +387,8 @@ fn abi_decode_bytes_at(input: &Bytes, slot: usize) -> Result<Vec<u8>, Precompile
     if input.len() < 4 {
         return Err(PrecompileError::other("abi: input < 4").into());
     }
-    let head_word = read_word(input, slot)
-        .ok_or_else(|| PrecompileError::other("abi: missing head word"))?;
+    let head_word =
+        read_word(input, slot).ok_or_else(|| PrecompileError::other("abi: missing head word"))?;
     // Offset is relative to the start of the parameter area
     // (i.e. byte 4 of the input).
     let offset_u = U256::from_be_bytes(head_word);

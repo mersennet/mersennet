@@ -95,10 +95,7 @@ pub struct ThresholdCiphertext {
 pub trait ThresholdElGamal: Send + Sync + std::fmt::Debug {
     fn encrypt(&self, plaintext: &[u8], epoch: u64) -> EncryptedPayload;
 
-    fn submit_share(
-        &mut self,
-        share: DecryptionShare,
-    ) -> Result<Option<Vec<u8>>, ThresholdError>;
+    fn submit_share(&mut self, share: DecryptionShare) -> Result<Option<Vec<u8>>, ThresholdError>;
 
     fn threshold(&self) -> u32;
     fn total_validators(&self) -> u32;
@@ -172,10 +169,7 @@ impl ThresholdElGamal for DummyThreshold {
         }
     }
 
-    fn submit_share(
-        &mut self,
-        share: DecryptionShare,
-    ) -> Result<Option<Vec<u8>>, ThresholdError> {
+    fn submit_share(&mut self, share: DecryptionShare) -> Result<Option<Vec<u8>>, ThresholdError> {
         if share.epoch != self.epoch {
             return Err(ThresholdError::EpochMismatch);
         }
@@ -183,7 +177,10 @@ impl ThresholdElGamal for DummyThreshold {
             return Err(ThresholdError::MalformedShare(share.validator_index));
         }
         let shares = self.pending.entry(share.ciphertext_id).or_default();
-        if shares.iter().any(|s| s.validator_index == share.validator_index) {
+        if shares
+            .iter()
+            .any(|s| s.validator_index == share.validator_index)
+        {
             return Ok(None);
         }
         shares.push(share.clone());

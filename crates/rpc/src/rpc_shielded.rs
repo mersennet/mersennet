@@ -25,10 +25,10 @@
 //! initial empty state.
 
 use prime_chain::engine::Engine;
-use prime_chain::shielded_evm::{ShieldedEnvelope, ShieldedTransferTx, ShieldTx, UnshieldTx};
-use prime_chain::shielded_orders::ShieldedOrderTx;
 use prime_chain::liquidation_auction::{LiquidationClaim, LiquidationExecute};
-use serde_json::{json, Value};
+use prime_chain::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
+use prime_chain::shielded_orders::ShieldedOrderTx;
+use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
 pub struct ShieldedRpcError {
@@ -50,11 +50,7 @@ const ERR_INTERNAL: i64 = -32000;
 
 /// Try to dispatch a shielded-mode RPC. Returns `Ok(None)` if the
 /// method name does not match any shielded method.
-pub fn try_dispatch(
-    method: &str,
-    params: Value,
-    engine: &mut Engine,
-) -> ShieldedRouteResult {
+pub fn try_dispatch(method: &str, params: Value, engine: &mut Engine) -> ShieldedRouteResult {
     if !is_shielded_method(method) {
         return Ok(None);
     }
@@ -68,14 +64,12 @@ pub fn try_dispatch(
         "prime_getStateProof" => Ok(Some(read_state_proof(engine, &params))),
         "prime_getLatestStateProof" => Ok(Some(read_latest_state_proof(engine))),
         "prime_verifyStateProof" => Ok(Some(verify_state_proof(params)?)),
-        "prime_getShieldedMarketAggregates" => {
-            Ok(Some(read_market_aggregates(engine)))
-        }
+        "prime_getShieldedMarketAggregates" => Ok(Some(read_market_aggregates(engine))),
 
         // ─────────── Mutation methods (gated on activation) ─────────
         "prime_submitShieldedTransfer" => {
             require_active(active)?;
-            submit_shielded(engine, params, |t| ShieldedEnvelope::Transfer(t))
+            submit_shielded(engine, params, ShieldedEnvelope::Transfer)
         }
         "prime_submitShield" => {
             require_active(active)?;
@@ -212,22 +206,19 @@ fn read_latest_state_proof(engine: &Engine) -> Value {
 /// ```
 fn read_state_proof(engine: &Engine, params: &Value) -> Value {
     // Extract the first positional arg.
-    let target_height: Option<u64> = params
-        .as_array()
-        .and_then(|arr| arr.first())
-        .and_then(|v| {
-            if v.is_null() {
+    let target_height: Option<u64> = params.as_array().and_then(|arr| arr.first()).and_then(|v| {
+        if v.is_null() {
+            return None;
+        }
+        if let Some(s) = v.as_str() {
+            if s == "latest" {
                 return None;
             }
-            if let Some(s) = v.as_str() {
-                if s == "latest" {
-                    return None;
-                }
-                let stripped = s.strip_prefix("0x").unwrap_or(s);
-                return u64::from_str_radix(stripped, 16).ok();
-            }
-            v.as_u64()
-        });
+            let stripped = s.strip_prefix("0x").unwrap_or(s);
+            return u64::from_str_radix(stripped, 16).ok();
+        }
+        v.as_u64()
+    });
 
     let block_opt = match target_height {
         None => engine.chain.last(),
@@ -287,11 +278,7 @@ fn read_market_aggregates(engine: &Engine) -> Value {
 // Mutation handlers
 // ---------------------------------------------------------------------------
 
-fn submit_shielded<F>(
-    engine: &mut Engine,
-    params: Value,
-    wrap: F,
-) -> ShieldedRouteResult
+fn submit_shielded<F>(engine: &mut Engine, params: Value, wrap: F) -> ShieldedRouteResult
 where
     F: FnOnce(ShieldedTransferTx) -> ShieldedEnvelope,
 {
@@ -345,9 +332,8 @@ fn submit_liquidation_claim(engine: &mut Engine, params: Value) -> ShieldedRoute
         });
     }
     // Reborrow split: now use a fresh borrow for the mutable side.
-    let dummy_state = prime_chain::shielded_state::ShieldedState::restore(
-        &engine.shielded_evm.state.snapshot(),
-    );
+    let dummy_state =
+        prime_chain::shielded_state::ShieldedState::restore(&engine.shielded_evm.state.snapshot());
     let tag = engine
         .liquidation_auction
         .submit_claim(&dummy_state, claim)
@@ -410,9 +396,11 @@ fn apply_envelope_directly(
     envelope: ShieldedEnvelope,
     method_label: &str,
 ) -> ShieldedRouteResult {
-    let mut tx = prime_chain::engine::Transaction::default();
-    tx.tx_type = prime_chain::shielded_evm::SHIELDED_TX_TYPE;
-    tx.shielded_payload = Some(envelope);
+    let tx = prime_chain::engine::Transaction {
+        tx_type: prime_chain::shielded_evm::SHIELDED_TX_TYPE,
+        shielded_payload: Some(envelope),
+        ..Default::default()
+    };
     let execution = engine.apply_shielded_tx(&tx);
     Ok(Some(json!({
         "method": method_label,
@@ -435,14 +423,14 @@ fn invalid_params(msg: impl Into<String>) -> ShieldedRpcError {
 
 fn decode_bincode_hex_param(params: &Value, key: &str) -> Result<Vec<u8>, ShieldedRpcError> {
     // Accept either `[{ key: "0x.." }]` or `["0x.."]`.
-    if let Some(arr) = params.as_array() {
-        if let Some(first) = arr.first() {
-            if let Some(s) = first.as_str() {
-                return decode_hex(s);
-            }
-            if let Some(s) = first.get(key).and_then(Value::as_str) {
-                return decode_hex(s);
-            }
+    if let Some(arr) = params.as_array()
+        && let Some(first) = arr.first()
+    {
+        if let Some(s) = first.as_str() {
+            return decode_hex(s);
+        }
+        if let Some(s) = first.get(key).and_then(Value::as_str) {
+            return decode_hex(s);
         }
     }
     Err(invalid_params(format!("missing or malformed `{key}`")))

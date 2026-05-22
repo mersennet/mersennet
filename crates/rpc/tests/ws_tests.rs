@@ -8,10 +8,9 @@ fn ws_subscription_manager_lifecycle() {
     let (id_heads, rx_heads) = manager
         .subscribe(SubscriptionKind::NewHeads)
         .expect("subscribe newHeads");
-    let (id_trades, rx_trades) =
-        manager
-            .subscribe(SubscriptionKind::PrimeOrdersTrades { market: None })
-            .expect("subscribe trades");
+    let (id_trades, rx_trades) = manager
+        .subscribe(SubscriptionKind::PrimeOrdersTrades { market: None })
+        .expect("subscribe trades");
 
     assert_eq!(manager.active_count(), 2);
 
@@ -35,9 +34,11 @@ fn ws_subscription_manager_lifecycle() {
     assert_eq!(manager.active_count(), 0);
 
     set_privacy_mode_activated(true);
-    assert!(manager
-        .subscribe(SubscriptionKind::PrimeOrdersBook { market: 1 })
-        .is_err());
+    assert!(
+        manager
+            .subscribe(SubscriptionKind::PrimeOrdersBook { market: 1 })
+            .is_err()
+    );
     manager
         .subscribe(SubscriptionKind::NewShieldedRoot)
         .expect("shielded subscription should remain enabled");

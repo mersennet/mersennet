@@ -222,7 +222,9 @@ mod tests {
             .expect_err("stranger revoke rejected");
         assert_eq!(err, CodePublicationError::UnauthorizedPublisher);
 
-        registry.revoke(deployer, contract).expect("deployer revoke works");
+        registry
+            .revoke(deployer, contract)
+            .expect("deployer revoke works");
         assert!(registry.attestation(contract).is_none());
     }
 }

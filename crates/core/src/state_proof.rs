@@ -29,7 +29,7 @@ use crate::shielded_state::{ShieldedRootDigest, ShieldedState};
 use crate::zk_proofs::{StateProver, StateTransitionProof};
 use crate::zk_sp1::{ProverMode, SP1Prover};
 use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput};
-use revm::primitives::{keccak256, B256};
+use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -124,10 +124,7 @@ pub fn prove_block(
 /// tx_count)`.
 pub fn verify_block_proof(proof: &StateTransitionProof) -> bool {
     let prover = SP1Prover::new(ProverMode::Mock);
-    matches!(
-        prover.verify_proof(proof).map(|r| r.valid),
-        Ok(true)
-    )
+    matches!(prover.verify_proof(proof).map(|r| r.valid), Ok(true))
 }
 
 /// Chain-engine convenience: bundle the digests of every shielded

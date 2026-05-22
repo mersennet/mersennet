@@ -18,7 +18,8 @@ use std::time::Duration;
 use tungstenite::Message;
 use tungstenite::accept;
 
-static PRIVACY_MODE_ACTIVATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PRIVACY_MODE_ACTIVATED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_privacy_mode_activated(active: bool) {
     PRIVACY_MODE_ACTIVATED.store(active, Ordering::SeqCst);
@@ -55,9 +56,15 @@ pub enum SubscriptionKind {
         topics: Vec<B256>,
         address: Option<Address>,
     },
-    PrimeOrdersTrades { market: Option<u64> },
-    PrimeOrdersBook { market: u64 },
-    BatchAuctionResults { market: Option<u64> },
+    PrimeOrdersTrades {
+        market: Option<u64>,
+    },
+    PrimeOrdersBook {
+        market: u64,
+    },
+    BatchAuctionResults {
+        market: Option<u64>,
+    },
 
     // ───── Shielded-mode subscriptions (Workstream C3) ─────
     //
@@ -69,10 +76,14 @@ pub enum SubscriptionKind {
     NewShieldedRoot,
     /// Fires after each frequent-batch-auction tick completes, with
     /// the per-market clearing price + matched size.
-    NewClearingPrice { market: Option<u64> },
+    NewClearingPrice {
+        market: Option<u64>,
+    },
     /// Fires when a liquidation auction settles — the winning bond
     /// commitment + bid are public, the victim isn't.
-    NewAuctionSettled { market: Option<u64> },
+    NewAuctionSettled {
+        market: Option<u64>,
+    },
     /// Fires when a fresh `StateTransitionProof` is attached to a
     /// block by the SP1 prover.
     NewStateProof,
@@ -228,7 +239,7 @@ impl WsSubscriptionManager {
         self.send_to_matching(
             |kind| match kind {
                 SubscriptionKind::NewClearingPrice { market: m } => {
-                    m.map_or(true, |mm| mm == market)
+                    m.is_none_or(|mm| mm == market)
                 }
                 _ => false,
             },
@@ -242,7 +253,7 @@ impl WsSubscriptionManager {
         self.send_to_matching(
             |kind| match kind {
                 SubscriptionKind::NewAuctionSettled { market: m } => {
-                    m.map_or(true, |mm| mm == market)
+                    m.is_none_or(|mm| mm == market)
                 }
                 _ => false,
             },

@@ -63,9 +63,9 @@
 use crate::prime_orders::{MarketId, MarketStatus, Side, TimeInForce};
 use crate::shielded_state::ShieldedState;
 use prime_zkp::{
+    Fr, NoteCommitment, Nullifier,
     noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
     poseidon::Poseidon,
-    Fr, NoteCommitment, Nullifier,
 };
 use revm::primitives::U256;
 use serde::{Deserialize, Serialize};
@@ -183,7 +183,7 @@ pub struct ShieldedOrderBook {
 impl ShieldedOrderBook {
     pub fn total_bid_size(&self) -> U256 {
         let mut sum = U256::ZERO;
-        for (_, level) in self.bids.iter() {
+        for level in self.bids.values() {
             for it in level.iter() {
                 sum = sum.saturating_add(it.intent.size);
             }
@@ -192,7 +192,7 @@ impl ShieldedOrderBook {
     }
     pub fn total_ask_size(&self) -> U256 {
         let mut sum = U256::ZERO;
-        for (_, level) in self.asks.iter() {
+        for level in self.asks.values() {
             for it in level.iter() {
                 sum = sum.saturating_add(it.intent.size);
             }
@@ -282,7 +282,9 @@ impl ShieldedOrdersEngine {
         let _ = self.markets.get(&market_id)?;
         // imm = ceil(notional * initial_margin_bps / 10000)
         // notional = (price_band * tick_size) * (size_band * lot_size)
-        let price = self.price_tick.saturating_mul(U256::from(price_band as u64));
+        let price = self
+            .price_tick
+            .saturating_mul(U256::from(price_band as u64));
         let size = self.size_lot.saturating_mul(U256::from(size_band as u64));
         let notional = price.saturating_mul(size);
         let bps = U256::from(self.initial_margin_bps);
@@ -329,10 +331,8 @@ impl ShieldedOrdersEngine {
             });
         }
         // 5. Price-band binding to plaintext price.
-        let actual_price_band = u32::try_from(
-            (intent.price / self.price_tick).as_limbs()[0],
-        )
-        .unwrap_or(u32::MAX);
+        let actual_price_band =
+            u32::try_from((intent.price / self.price_tick).as_limbs()[0]).unwrap_or(u32::MAX);
         if actual_price_band != tx.price_band {
             return Err(ShieldedOrderError::PriceBandMismatch {
                 claimed: tx.price_band,
@@ -340,8 +340,8 @@ impl ShieldedOrdersEngine {
             });
         }
         // 6. Size-band binding (size_band must be >= actual ceil(size/lot)).
-        let actual_size_band = u32::try_from(intent.size.div_ceil(self.size_lot).as_limbs()[0])
-            .unwrap_or(u32::MAX);
+        let actual_size_band =
+            u32::try_from(intent.size.div_ceil(self.size_lot).as_limbs()[0]).unwrap_or(u32::MAX);
         if actual_size_band > tx.size_band {
             return Err(ShieldedOrderError::SizeBandViolation {
                 claimed: tx.size_band,
@@ -411,10 +411,7 @@ impl ShieldedOrdersEngine {
     /// Run a Frequent Batch Auction on `market_id`. Returns a
     /// summary; the engine emits public events with `(market_id,
     /// clearing_price, matched_size)` only — no addresses.
-    pub fn run_fba(
-        &mut self,
-        market_id: MarketId,
-    ) -> Result<ClearingResult, ShieldedOrderError> {
+    pub fn run_fba(&mut self, market_id: MarketId) -> Result<ClearingResult, ShieldedOrderError> {
         let _ = self
             .markets
             .get(&market_id)
@@ -425,12 +422,12 @@ impl ShieldedOrdersEngine {
             .ok_or(ShieldedOrderError::UnknownMarket(market_id))?;
         let result = uniform_price_auction(book);
         // Update aggregates atomically.
-        if let Some(agg) = self.aggregates.get_mut(&market_id) {
-            if !result.matched_size.is_zero() {
-                agg.last_clearing_price = result.clearing_price;
-                agg.mark_price = result.clearing_price;
-                agg.last_volume = result.matched_size;
-            }
+        if let Some(agg) = self.aggregates.get_mut(&market_id)
+            && !result.matched_size.is_zero()
+        {
+            agg.last_clearing_price = result.clearing_price;
+            agg.mark_price = result.clearing_price;
+            agg.last_volume = result.matched_size;
         }
         Ok(result)
     }
@@ -599,6 +596,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_intent(
         engine: &ShieldedOrdersEngine,
         state: &ShieldedState,
