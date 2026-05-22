@@ -36,6 +36,8 @@ const META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("shielded_meta"
 const META_KEY_LATEST_HEIGHT: &[u8] = b"latest_height";
 const META_KEY_LATEST_ROOT: &[u8] = b"latest_root";
 
+type TransparentBalanceMap = HashMap<Address, U256>; // privacy-allow: transparent-side mirror storage type
+
 /// Redb-backed storage for the shielded subsystems. One per node.
 pub struct ShieldedPersistence {
     db: Database,
@@ -116,10 +118,7 @@ impl ShieldedPersistence {
         Ok(())
     }
 
-    fn save_transparent_balances(
-        &self,
-        balances: &HashMap<Address, U256>, // privacy-allow: transparent-side mirror persistence
-    ) -> Result<()> {
+    fn save_transparent_balances(&self, balances: &TransparentBalanceMap) -> Result<()> {
         let write_txn = self.db.begin_write()?;
         {
             let mut bal_t = write_txn.open_table(TRANSPARENT_BALANCES)?;
@@ -175,8 +174,7 @@ impl ShieldedPersistence {
     }
 
     /// Reload transparent balances. Used at startup.
-    pub fn load_transparent_balances(&self) -> Result<HashMap<Address, U256>> {
-        // privacy-allow: transparent-side mirror reload
+    pub fn load_transparent_balances(&self) -> Result<TransparentBalanceMap> {
         let read_txn = self.db.begin_read()?;
         let bal_t = read_txn.open_table(TRANSPARENT_BALANCES)?;
         let mut out = HashMap::new();

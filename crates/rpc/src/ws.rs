@@ -238,9 +238,7 @@ impl WsSubscriptionManager {
     pub fn notify_clearing_price(&mut self, payload: &Value, market: u64) {
         self.send_to_matching(
             |kind| match kind {
-                SubscriptionKind::NewClearingPrice { market: m } => {
-                    m.is_none_or(|mm| mm == market)
-                }
+                SubscriptionKind::NewClearingPrice { market: m } => m.is_none_or(|mm| mm == market),
                 _ => false,
             },
             payload,

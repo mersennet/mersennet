@@ -1039,10 +1039,7 @@ fn find_receipt(engine: &mut Engine, hash: B256) -> Option<ReceiptDto> {
     None
 }
 
-fn find_transaction(
-    engine: &Engine,
-    hash: B256,
-) -> Option<(&Transaction, &Block, u64)> {
+fn find_transaction(engine: &Engine, hash: B256) -> Option<(&Transaction, &Block, u64)> {
     for block in &engine.chain {
         for (index, tx) in block.transactions.iter().enumerate() {
             if tx_hash(tx) == hash {

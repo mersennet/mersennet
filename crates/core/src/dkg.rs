@@ -306,7 +306,9 @@ pub fn hotstuff_dkg_inputs(
     coord: &DkgCoordinator,
     block_number: u64,
 ) -> DkgRoundInputs {
-    let epoch = block_number.checked_div(coord.epoch_length_blocks).unwrap_or(0);
+    let epoch = block_number
+        .checked_div(coord.epoch_length_blocks)
+        .unwrap_or(0);
     DkgRoundInputs {
         epoch,
         is_epoch_boundary: coord.epoch_length_blocks > 0

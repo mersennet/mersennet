@@ -160,7 +160,7 @@ mod real {
     use super::*;
     use blstrs::{G1Affine, G1Projective, Scalar};
     use chacha20poly1305::aead::{Aead, KeyInit};
-    use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
+    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
     use ff::Field;
     use group::{Curve, Group};
     use rand::{Rng, SeedableRng};
@@ -258,7 +258,8 @@ mod real {
             os.fill(&mut nonce_bytes);
             let nonce = Nonce::from(nonce_bytes);
 
-            let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+            let cipher = ChaCha20Poly1305::new_from_slice(&key)
+                .expect("ChaCha20-Poly1305 key length must be 32 bytes");
             let aead_body = cipher
                 .encrypt(&nonce, plaintext)
                 .expect("ChaCha20-Poly1305 encrypt infallible on Vec output");
@@ -404,7 +405,8 @@ mod real {
             let mut nonce_buf = [0u8; NONCE_LEN];
             nonce_buf.copy_from_slice(&body[G1_COMPRESSED_LEN..G1_COMPRESSED_LEN + NONCE_LEN]);
             let aead = &body[G1_COMPRESSED_LEN + NONCE_LEN..];
-            let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+            let cipher = ChaCha20Poly1305::new_from_slice(&key)
+                .expect("ChaCha20-Poly1305 key length must be 32 bytes");
             cipher
                 .decrypt(&Nonce::from(nonce_buf), aead)
                 .map_err(|_| ThresholdError::AuthenticityFailure)

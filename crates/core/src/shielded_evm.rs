@@ -348,23 +348,23 @@ impl MigrationPlan {
     }
 }
 
-fn derive_migration_rho(owner: Address, height: u64) -> Fr {
+fn derive_migration_rho(source_eoa: Address, height: u64) -> Fr {
     // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
     h.update(b"PrimeChain-MigrationRho");
-    h.update(owner.as_slice());
+    h.update(source_eoa.as_slice());
     h.update(height.to_le_bytes());
     let bytes: [u8; 32] = h.finalize().into();
     Fr::from_bytes_reduce(&bytes)
 }
 
-fn derive_migration_psi(owner: Address, height: u64) -> Fr {
+fn derive_migration_psi(source_eoa: Address, height: u64) -> Fr {
     // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
     h.update(b"PrimeChain-MigrationPsi");
-    h.update(owner.as_slice());
+    h.update(source_eoa.as_slice());
     h.update(height.to_le_bytes());
     let bytes: [u8; 32] = h.finalize().into();
     Fr::from_bytes_reduce(&bytes)
