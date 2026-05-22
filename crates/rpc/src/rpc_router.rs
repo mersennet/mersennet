@@ -5,7 +5,7 @@ use prime_chain::events::{
     BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
 };
 use prime_chain::prime_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
-use revm::primitives::{Address, Bytes, U256};
+use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -38,6 +38,39 @@ fn require_transparent_prime_orders_enabled(engine: &Engine) -> RpcResult<()> {
     }
 }
 
+fn require_transparent_account_state_enabled(engine: &Engine) -> RpcResult<()> {
+    if engine.privacy_mode_activated() {
+        Err(RpcError::new(
+            -32605,
+            "transparent account-state RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_transparent_simulation_enabled(engine: &Engine) -> RpcResult<()> {
+    if engine.privacy_mode_activated() {
+        Err(RpcError::new(
+            -32605,
+            "transparent EVM simulation RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_transparent_contract_state_enabled(engine: &Engine) -> RpcResult<()> {
+    if engine.privacy_mode_activated() {
+        Err(RpcError::new(
+            -32605,
+            "transparent contract-state RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value> {
     // Try the Phase 6 shielded-mode dispatcher first. Returns
     // `Ok(None)` if the method is not a shielded method; the main
@@ -55,6 +88,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(hex_u64(engine.latest_height())))
         }
         "prime_getBalance" | "eth_getBalance" => {
+            require_transparent_account_state_enabled(engine)?;
             let (address, _) = parse_balance_params(params)?;
             let balance = engine
                 .get_balance(address)
@@ -194,7 +228,28 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .collect();
             Ok(Value::Array(validators))
         }
+        "prime_getCodeAttestation" => {
+            let (address, _) = parse_balance_params(params)?;
+            match engine.published_code_attestation(address) {
+                Some(attestation) => Ok(json!({
+                    "contract": hex_address(address),
+                    "deployer": hex_address(attestation.deployer),
+                    "codeHash": hex_b256(attestation.code_hash),
+                    "metadataUri": attestation.metadata_uri,
+                    "publishedAtBlock": hex_u64(attestation.published_at_block),
+                })),
+                None => Ok(Value::Null),
+            }
+        }
+        "prime_getCodeHash" => {
+            let (address, _) = parse_balance_params(params)?;
+            match engine.published_code_attestation(address) {
+                Some(attestation) => Ok(Value::String(hex_b256(attestation.code_hash))),
+                None => Ok(Value::Null),
+            }
+        }
         "prime_getCode" | "eth_getCode" => {
+            require_transparent_contract_state_enabled(engine)?;
             let (address, _) = parse_balance_params(params)?;
             let code = engine
                 .get_code(address)
@@ -202,6 +257,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(format!("0x{}", hex::encode(&code))))
         }
         "prime_getStorageAt" | "eth_getStorageAt" => {
+            require_transparent_contract_state_enabled(engine)?;
             let array = match params {
                 Value::Array(values) => values,
                 _ => return Err(RpcError::new(-32602, "invalid params")),
@@ -220,6 +276,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(hex_u256(value)))
         }
         "prime_getTransactionCount" | "eth_getTransactionCount" => {
+            require_transparent_account_state_enabled(engine)?;
             let (address, _) = parse_balance_params(params)?;
             let nonce = engine
                 .get_account_nonce(address)
@@ -227,6 +284,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(hex_u64(nonce)))
         }
         "prime_call" | "eth_call" => {
+            require_transparent_simulation_enabled(engine)?;
             let input = parse_call_input(params)?;
             let to = input
                 .to
@@ -237,6 +295,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(format!("0x{}", hex::encode(&output))))
         }
         "eth_estimateGas" => {
+            require_transparent_simulation_enabled(engine)?;
             let input = parse_call_input(params)?;
             if input.data.is_empty() && input.to.is_some() {
                 Ok(Value::String(hex_u64(21000)))
@@ -599,6 +658,10 @@ fn hex_u256(value: U256) -> String {
 
 fn hex_address(address: Address) -> String {
     format!("0x{}", hex::encode(address.as_slice()))
+}
+
+fn hex_b256(hash: B256) -> String {
+    format!("0x{}", hex::encode(hash.as_slice()))
 }
 
 fn order_outcome_to_dto(outcome: OrderOutcome) -> PrimeOrderResultDto {

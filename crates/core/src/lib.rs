@@ -1,6 +1,7 @@
 pub mod account_abstraction;
 pub mod bridge;
 pub mod commit_reveal;
+pub mod code_publication;
 pub mod config;
 pub mod consensus;
 pub mod cross_chain;
