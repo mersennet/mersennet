@@ -75,6 +75,24 @@ class PrimeProvider {
         const result = (await this.request('eth_getCode', [address]));
         return result || '0x';
     }
+    /** prime_getCodeHash for published contracts; null when unpublished. */
+    async getCodeHash(address) {
+        const result = (await this.request('prime_getCodeHash', [address]));
+        return result ?? null;
+    }
+    /** prime_getCodeAttestation for published contracts; null when unpublished. */
+    async getCodeAttestation(address) {
+        const result = (await this.request('prime_getCodeAttestation', [address]));
+        return result ?? null;
+    }
+    /** Derive the public contract label used by explorers and SDK consumers. */
+    async getContractPublicationStatus(address) {
+        const attestation = await this.getCodeAttestation(address);
+        if (!attestation) {
+            return 'unpublished';
+        }
+        return attestation.metadataUri ? 'source-published' : 'attested';
+    }
     /** eth_getStorageAt / prime_getStorageAt */
     async getStorageAt(address, slot) {
         const result = (await this.request('eth_getStorageAt', [

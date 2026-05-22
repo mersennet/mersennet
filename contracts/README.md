@@ -83,6 +83,40 @@ const vault = await VaultStrategy.deploy(1, 50, 1000);
 await vault.deployed();
 ```
 
+### Optional: publish a public code-hash attestation
+
+After privacy activation, raw bytecode is not exposed over public RPC.
+If a project wants users to verify a deployed contract, the recorded
+deployer can opt in by calling the code-publication precompile at
+`0x0000000000000000000000000000000000000202`.
+
+Conceptually, the Hardhat flow is:
+
+1. Deploy the contract normally.
+2. Wait for the deployment receipt and get the contract address.
+3. Call `publishCodeHash(address,string)` on the precompile from the
+   same deployer address.
+4. Users verify against `prime_getCodeHash` / `prime_getCodeAttestation`
+   by recompiling locally and comparing the runtime bytecode hash.
+
+Example sketch:
+
+```javascript
+const publication = await ethers.getContractAt(
+  ["function publishCodeHash(address contractAddr, string metadataUri) external"],
+  "0x0000000000000000000000000000000000000202"
+);
+
+await publication.publishCodeHash(
+  await vault.getAddress(),
+  "ipfs://<build-metadata>"
+);
+```
+
+If the deployer does not make that second call, the contract remains
+private-by-default from the public RPC perspective: `prime_getCodeHash`
+returns `null` and raw `getCode` remains disabled after privacy mode.
+
 ### Testing
 
 1. **Fund the contract** with native token (for collateral)

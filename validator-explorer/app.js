@@ -39,6 +39,12 @@
         lastUpdate: 0,
         connected: false,
         pollTimer: null,
+        contractLookup: {
+            address: '',
+            loading: false,
+            result: null,
+            error: '',
+        },
     };
 
     // ── RPC Helper ──────────────────────────────────────────────────────
@@ -241,6 +247,157 @@
         return VALIDATOR_NAMES[(addr || '').toLowerCase()] || '';
     }
 
+    function isAddress(value) {
+        return /^0x[a-fA-F0-9]{40}$/.test((value || '').trim());
+    }
+
+    function contractPublicationStatus(attestation) {
+        if (!attestation) return 'unpublished';
+        return attestation.metadataUri ? 'source-published' : 'attested';
+    }
+
+    function contractPublicationLabel(status) {
+        switch (status) {
+            case 'source-published': return 'Source-Published';
+            case 'attested': return 'Attested';
+            default: return 'Unpublished';
+        }
+    }
+
+    function contractPublicationBadge(status) {
+        if (status === 'source-published') {
+            return '<span class="badge badge-source-published">Source-Published</span>';
+        }
+        if (status === 'attested') {
+            return '<span class="badge badge-attested">Attested</span>';
+        }
+        return '<span class="badge badge-unpublished">Unpublished</span>';
+    }
+
+    async function lookupContractAttestation(address) {
+        return rpcCall('prime_getCodeAttestation', [address, 'latest']);
+    }
+
+    async function refreshContractLookup(address) {
+        state.contractLookup.address = address;
+        state.contractLookup.error = '';
+
+        if (!isAddress(address)) {
+            state.contractLookup.loading = false;
+            state.contractLookup.result = null;
+            state.contractLookup.error = 'Enter a valid 20-byte contract address.';
+            renderCurrentPage();
+            return;
+        }
+
+        state.contractLookup.loading = true;
+        renderCurrentPage();
+
+        try {
+            const attestation = await lookupContractAttestation(address);
+            state.contractLookup.result = {
+                address,
+                attestation,
+                status: contractPublicationStatus(attestation),
+            };
+            state.contractLookup.error = '';
+        } catch (e) {
+            state.contractLookup.result = null;
+            state.contractLookup.error = e.message || 'Lookup failed';
+        } finally {
+            state.contractLookup.loading = false;
+            renderCurrentPage();
+        }
+    }
+
+    async function handleContractLookupSubmit(event) {
+        event?.preventDefault?.();
+        const input = document.getElementById('contractLookupInput');
+        const address = (input?.value || state.contractLookup.address || '').trim().toLowerCase();
+        await refreshContractLookup(address);
+    }
+
+    function contractLookupResultMarkup() {
+        const { address, loading, result, error } = state.contractLookup;
+        if (loading) {
+            return '<div class="attestation-empty">Looking up contract attestation…</div>';
+        }
+        if (error) {
+            return `<div class="attestation-error">${error}</div>`;
+        }
+        if (!address) {
+            return '<div class="attestation-empty">Enter a contract address to see whether it is unpublished, attested, or source-published.</div>';
+        }
+        if (!result) {
+            return '';
+        }
+
+        const { status, attestation } = result;
+        if (!attestation) {
+            return `
+                <div class="attestation-card unpublished">
+                    <div class="attestation-head">
+                        <div>
+                            <div class="attestation-title">${truncAddr(address)}</div>
+                            <div class="attestation-sub">No public code attestation found for this contract.</div>
+                        </div>
+                        ${contractPublicationBadge(status)}
+                    </div>
+                    <div class="attestation-grid">
+                        <div class="attestation-row">
+                            <span class="attestation-key">Status</span>
+                            <span class="attestation-value">${contractPublicationLabel(status)}</span>
+                        </div>
+                        <div class="attestation-row">
+                            <span class="attestation-key">Contract</span>
+                            <span class="attestation-value mono">${address}</span>
+                        </div>
+                    </div>
+                    <div class="attestation-actions">
+                        <a href="#/contract/${address}" class="lookup-button">Open Contract View</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="attestation-card ${status}">
+                <div class="attestation-head">
+                    <div>
+                        <div class="attestation-title">${truncAddr(address)}</div>
+                        <div class="attestation-sub">Public code attestation available through prime_getCodeAttestation.</div>
+                    </div>
+                    ${contractPublicationBadge(status)}
+                </div>
+                <div class="attestation-grid">
+                    <div class="attestation-row">
+                        <span class="attestation-key">Status</span>
+                        <span class="attestation-value">${contractPublicationLabel(status)}</span>
+                    </div>
+                    <div class="attestation-row">
+                        <span class="attestation-key">Deployer</span>
+                        <span class="attestation-value mono">${attestation.deployer}</span>
+                    </div>
+                    <div class="attestation-row">
+                        <span class="attestation-key">Code Hash</span>
+                        <span class="attestation-value mono break-all">${attestation.codeHash}</span>
+                    </div>
+                    <div class="attestation-row">
+                        <span class="attestation-key">Published At</span>
+                        <span class="attestation-value mono">${parseInt(attestation.publishedAtBlock, 16)}</span>
+                    </div>
+                    <div class="attestation-row full">
+                        <span class="attestation-key">Metadata URI</span>
+                        <span class="attestation-value mono break-all">${attestation.metadataUri || 'None published'}</span>
+                    </div>
+                </div>
+                <div class="attestation-actions">
+                    <a href="#/contract/${address}" class="lookup-button">Open Contract View</a>
+                </div>
+            </div>
+        `;
+    }
+
     function displayAddr(addr) {
         const name = validatorName(addr);
         return name ? name : truncAddr(addr);
@@ -307,6 +464,9 @@
         if (hash.startsWith('/validator/')) {
             return { page: 'validator', address: hash.slice(11).toLowerCase() };
         }
+        if (hash.startsWith('/contract/')) {
+            return { page: 'contract', address: hash.slice(10).toLowerCase() };
+        }
         if (hash === '/validators') return { page: 'validators' };
         if (hash === '/network') return { page: 'network' };
         return { page: 'dashboard' };
@@ -329,6 +489,7 @@
             case 'dashboard': renderDashboard(content); break;
             case 'validators': renderValidators(content); break;
             case 'validator': renderValidatorDetail(content, route.address); break;
+            case 'contract': renderContractDetail(content, route.address); break;
             case 'network': renderNetwork(content); break;
             default: renderDashboard(content);
         }
@@ -693,6 +854,118 @@
         `;
     }
 
+    function renderContractDetail(container, address) {
+        if (!isAddress(address)) {
+            container.innerHTML = `
+                <div class="container page-enter">
+                    <a href="#/network" class="back-link">${icons.back} Back to Network Stats</a>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#128270;</div>
+                        <div class="empty-state-text">Contract address is invalid</div>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        const cached = state.contractLookup.result && state.contractLookup.result.address === address
+            ? state.contractLookup.result
+            : null;
+        const cachedError = state.contractLookup.address === address ? state.contractLookup.error : '';
+        const isLoading = state.contractLookup.loading && state.contractLookup.address === address;
+
+        if (!cached && !cachedError && !isLoading) {
+            refreshContractLookup(address);
+        }
+
+        const status = cached ? cached.status : 'unpublished';
+        const attestation = cached?.attestation;
+        const publishBlock = attestation ? parseInt(attestation.publishedAtBlock, 16) : null;
+
+        container.innerHTML = `
+            <div class="container page-enter">
+                <a href="#/network" class="back-link">${icons.back} Back to Network Stats</a>
+
+                <div class="detail-header">
+                    <div class="detail-icon">&#9635;</div>
+                    <div class="detail-title-group">
+                        <div class="detail-title">
+                            Contract Publication View
+                            ${!isLoading && !cachedError ? contractPublicationBadge(status) : ''}
+                        </div>
+                        <div class="detail-addr">
+                            ${address}
+                            <button class="copy-btn" onclick="event.stopPropagation(); window.__copyAddr('${address}')" title="Copy address">
+                                ${icons.copy}
+                            </button>
+                            <a href="${EXPLORER_BASE}/#/address/${address}" target="_blank" class="copy-btn" title="View in Explorer" style="color:var(--text-muted);">
+                                ${icons.external}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detail-stats-row detail-stats-4">
+                    <div class="stat-card">
+                        <div class="stat-card-label">Publication Status</div>
+                        <div class="stat-card-value">${isLoading ? 'Loading…' : cachedError ? 'Lookup failed' : contractPublicationLabel(status)}</div>
+                        <div class="stat-card-sub">Derived from prime_getCodeAttestation</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-label">Code Hash</div>
+                        <div class="stat-card-value contract-stat-value">${attestation ? truncAddr(attestation.codeHash) : '—'}</div>
+                        <div class="stat-card-sub">Public only when the deployer opts in</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-label">Published At</div>
+                        <div class="stat-card-value">${publishBlock != null ? publishBlock.toLocaleString() : '—'}</div>
+                        <div class="stat-card-sub">Block number</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-label">Source Metadata</div>
+                        <div class="stat-card-value">${attestation?.metadataUri ? 'Available' : 'None'}</div>
+                        <div class="stat-card-sub">Metadata URI presence upgrades status to source-published</div>
+                    </div>
+                </div>
+
+                ${isLoading ? '<div class="attestation-empty">Looking up contract attestation…</div>' : ''}
+                ${cachedError ? `<div class="attestation-error">${cachedError}</div>` : ''}
+
+                ${!isLoading && !cachedError ? `
+                <div class="detail-card">
+                    <div class="detail-card-title">Publication Details</div>
+                    <div class="detail-rows">
+                        <div class="detail-row">
+                            <span class="detail-label">Contract</span>
+                            <span class="detail-val mono break-all">${address}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Status</span>
+                            <span class="detail-val">${contractPublicationBadge(status)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Deployer</span>
+                            <span class="detail-val mono break-all">${attestation?.deployer || 'Not publicly published'}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Code Hash</span>
+                            <span class="detail-val mono break-all">${attestation?.codeHash || 'Not publicly published'}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Published At Block</span>
+                            <span class="detail-val mono">${publishBlock != null ? publishBlock : 'Not publicly published'}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Metadata URI</span>
+                            <span class="detail-val mono break-all">${attestation?.metadataUri || 'None published'}</span>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
     window.__copyAddr = function (addr) {
         copyToClipboard(addr);
         const btns = document.querySelectorAll('.copy-btn');
@@ -739,6 +1012,27 @@
                         <div class="stat-card-label">Current Block</div>
                         <div class="stat-card-value">${state.currentBlock > 0 ? state.currentBlock.toLocaleString() : '—'}</div>
                     </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head">
+                        <span class="panel-title">Contract Publication Status</span>
+                        <span style="font-size:0.75rem;color:var(--text-muted);">prime_getCodeAttestation labels contracts as unpublished, attested, or source-published</span>
+                    </div>
+                    <form class="lookup-form" id="contractLookupForm">
+                        <input
+                            id="contractLookupInput"
+                            class="lookup-input mono"
+                            type="text"
+                            spellcheck="false"
+                            placeholder="0x... contract address"
+                            value="${state.contractLookup.address}"
+                        />
+                        <button class="lookup-button" type="submit">
+                            ${state.contractLookup.loading ? 'Checking…' : 'Check Status'}
+                        </button>
+                    </form>
+                    ${contractLookupResultMarkup()}
                 </div>
 
                 <div class="charts-grid">
@@ -834,6 +1128,10 @@
             drawBlockChart('netBlockChart', 'netBlockLegend');
             drawPieChart('netPieChart', 'netPieLegend');
             drawBlockTimeChart('netBlockTimeChart');
+            const lookupForm = document.getElementById('contractLookupForm');
+            if (lookupForm) {
+                lookupForm.addEventListener('submit', handleContractLookupSubmit, { once: true });
+            }
         });
     }
 

@@ -2,7 +2,7 @@
  * PrimeProvider - JSON-RPC client for Prime Chain.
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
-import type { Block, CallParams, Receipt, TransactionParams } from './types';
+import type { Block, CallParams, CodeAttestation, ContractPublicationStatus, Receipt, TransactionParams } from './types';
 /**
  * Prime Chain JSON-RPC provider.
  * Connects to the RPC endpoint via HTTP.
@@ -28,6 +28,12 @@ export declare class PrimeProvider {
     getTransactionCount(address: string): Promise<number>;
     /** eth_getCode / prime_getCode */
     getCode(address: string): Promise<string>;
+    /** prime_getCodeHash for published contracts; null when unpublished. */
+    getCodeHash(address: string): Promise<string | null>;
+    /** prime_getCodeAttestation for published contracts; null when unpublished. */
+    getCodeAttestation(address: string): Promise<CodeAttestation | null>;
+    /** Derive the public contract label used by explorers and SDK consumers. */
+    getContractPublicationStatus(address: string): Promise<ContractPublicationStatus>;
     /** eth_getStorageAt / prime_getStorageAt */
     getStorageAt(address: string, slot: string): Promise<string>;
     /** eth_getBlockByNumber / prime_getBlockByNumber */

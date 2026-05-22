@@ -1,5 +1,6 @@
 use crate::bridge::{BridgeDomain, BridgeMessage, BridgeQueue};
 use crate::commit_reveal::{CommitRevealError, CommitRevealPool, TxCommitment, TxReveal};
+use crate::code_publication::{CodePublicationRegistry, PublishedCodeAttestation};
 use crate::consensus::{
     Consensus, EvidenceKind, Finalization, Reward, RoundResult, Slashing, SlashingEvidence,
     Unbonding, Validator, ValidatorChange,
@@ -447,6 +448,8 @@ pub struct Engine {
     /// Lives on every node — non-validators observe + audit but do
     /// not contribute shares.
     pub dkg: crate::dkg::DkgCoordinator,
+    /// Opt-in public contract code-hash attestations.
+    pub code_publication_registry: CodePublicationRegistry,
 }
 
 impl Engine {
@@ -565,6 +568,7 @@ impl Engine {
             // `set_dkg_epoch_length` to match their chain's
             // block-time × desired-rotation cadence.
             dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
+            code_publication_registry: CodePublicationRegistry::default(),
         }
     }
 
@@ -1436,6 +1440,10 @@ impl Engine {
 
         for (idx, exec) in par_result.results {
             gas_used = gas_used.saturating_add(exec.gas_used);
+            if let Some(addr) = exec.created_address {
+                self.code_publication_registry
+                    .record_deployment(addr, evm_txs[idx].from);
+            }
             receipts.push(Receipt {
                 success: exec.success,
                 gas_used: exec.gas_used,
@@ -1663,6 +1671,7 @@ impl Engine {
             // state exists (the migration tool has run); otherwise
             // false.
             migration_plan_applied: !self.shielded_evm.state.snapshot().leaves.is_empty(),
+            code_publication_registry: self.code_publication_registry.snapshot(),
         };
 
         let envelope = crate::engine_snapshot::EngineSnapshotEnvelope {
@@ -1714,6 +1723,10 @@ impl Engine {
                 crate::liquidation_auction::LiquidationAuction::restore(shielded.auction);
             self.shielded_evm.transparent_balances =
                 crate::engine_snapshot::decode_transparent_balances(&shielded.transparent_balances);
+            self.code_publication_registry =
+                crate::code_publication::CodePublicationRegistry::restore(
+                    shielded.code_publication_registry,
+                );
         }
 
         // Privacy-mode flags.
@@ -1751,6 +1764,22 @@ impl Engine {
     pub fn get_code(&mut self, address: Address) -> Result<Bytes> {
         let info = self.evm.db.basic(address)?.unwrap_or_default();
         Ok(info.code.map(|c| c.original_bytes()).unwrap_or_default())
+    }
+
+    pub fn get_code_hash(&mut self, address: Address) -> Result<B256> {
+        Ok(self
+            .evm
+            .db
+            .basic(address)?
+            .map(|info| info.code_hash)
+            .unwrap_or(KECCAK_EMPTY))
+    }
+
+    pub fn published_code_attestation(
+        &self,
+        address: Address,
+    ) -> Option<PublishedCodeAttestation> {
+        self.code_publication_registry.attestation(address)
     }
 
     pub fn get_storage_at(&mut self, address: Address, slot: U256) -> Result<U256> {
@@ -2380,6 +2409,13 @@ impl Engine {
         let shielded_evm = std::mem::take(&mut self.shielded_evm);
         let shared_shielded = Arc::new(Mutex::new(shielded_evm));
         precompiles::set_shielded_evm_context(shared_shielded.clone());
+        let publication_registry = std::mem::take(&mut self.code_publication_registry);
+        let shared_publication = Arc::new(Mutex::new(publication_registry));
+        precompiles::set_code_publication_context(
+            shared_publication.clone(),
+            self.evm.db.clone(),
+            self.block_number,
+        );
 
         let mut evm = Evm::builder()
             .with_db(self.evm.db.clone())
@@ -2387,6 +2423,7 @@ impl Engine {
             .with_env(Box::new(env))
             .append_handler_register(precompiles::register_prime_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
+            .append_handler_register(precompiles::register_code_publication_precompile)
             .build();
 
         precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
@@ -2394,11 +2431,16 @@ impl Engine {
         self.evm.db = std::mem::take(&mut evm.context.evm.db);
         precompiles::set_transparent_prime_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
+        precompiles::clear_code_publication_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
             .expect("no other Arc references to shielded_evm")
             .into_inner()
             .expect("shielded_evm mutex not poisoned");
+        self.code_publication_registry = Arc::try_unwrap(shared_publication)
+            .expect("no other Arc references to code_publication_registry")
+            .into_inner()
+            .expect("code_publication_registry mutex not poisoned");
         self.evm.state.mark_dirty(tx.from);
         if let Some(to) = tx.to {
             self.evm.state.mark_dirty(to);
@@ -2442,6 +2484,8 @@ impl Engine {
 
         if let Some(addr) = &execution.created_address {
             self.evm.state.mark_dirty(*addr);
+            self.code_publication_registry
+                .record_deployment(*addr, tx.from);
         }
 
         Ok(execution)

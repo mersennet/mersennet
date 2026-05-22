@@ -27,6 +27,17 @@ pub const SHIELD_BRIDGE_PRECOMPILE: Address = {
     Address::new(addr)
 };
 
+/// Code publication registry precompile:
+/// 0x0000000000000000000000000000000000000202.
+/// Lets a recorded deployer opt a contract into public code-hash
+/// attestation without exposing raw bytecode.
+pub const CODE_PUBLICATION_PRECOMPILE: Address = {
+    let mut addr = [0u8; 20];
+    addr[18] = 0x02;
+    addr[19] = 0x02;
+    Address::new(addr)
+};
+
 /// State-transition proof verifier: 0x0000000000000000000000000000000000000300.
 /// Verifies SP1-produced block proofs for light clients and bridge
 /// consumption. Phase 5 of the privacy redesign.
@@ -40,6 +51,7 @@ pub const STATE_PROOF_VERIFIER_PRECOMPILE: Address = {
 pub const GAS_SHIELDED_TRANSFER: u64 = 80_000;
 pub const GAS_SHIELD: u64 = 60_000;
 pub const GAS_UNSHIELD: u64 = 60_000;
+pub const GAS_CODE_PUBLICATION_UPDATE: u64 = 45_000;
 pub const GAS_STATE_PROOF_VERIFY: u64 = 250_000;
 
 pub fn shielded_transfer_selector() -> [u8; 4] {
@@ -52,6 +64,14 @@ pub fn shield_selector() -> [u8; 4] {
 
 pub fn unshield_selector() -> [u8; 4] {
     selector("unshield(bytes)")
+}
+
+pub fn publish_code_hash_selector() -> [u8; 4] {
+    selector("publishCodeHash(address,string)")
+}
+
+pub fn revoke_code_hash_selector() -> [u8; 4] {
+    selector("revokeCodeHash(address)")
 }
 
 pub fn verify_state_proof_selector() -> [u8; 4] {

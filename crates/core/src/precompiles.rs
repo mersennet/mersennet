@@ -5,12 +5,14 @@ use once_cell::sync::Lazy;
 use revm::ContextPrecompile;
 use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
+use revm::Database;
 use revm::precompile::Precompile;
 use revm::primitives::{
     Address, Bytes, Env, PrecompileError, PrecompileErrors, PrecompileOutput, PrecompileResult,
-    U256,
+    KECCAK_EMPTY, U256,
 };
 
+use crate::code_publication::CodePublicationRegistry;
 use crate::precompile_abi::*;
 use crate::prime_orders::{MarketId, OrderId, PrimeOrdersState, Side, TimeInForce};
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
@@ -98,6 +100,48 @@ pub fn clear_shielded_evm_context() {
     *SHIELDED_EVM_CTX.lock().unwrap() = None;
 }
 
+#[derive(Debug)]
+struct CodePublicationContext {
+    registry: Arc<Mutex<CodePublicationRegistry>>,
+    db: InMemoryDB,
+    block_number: u64,
+}
+
+static CODE_PUBLICATION_CTX: Lazy<Mutex<Option<Arc<Mutex<CodePublicationContext>>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+pub fn set_code_publication_context(
+    registry: Arc<Mutex<CodePublicationRegistry>>,
+    db: InMemoryDB,
+    block_number: u64,
+) {
+    *CODE_PUBLICATION_CTX.lock().unwrap() = Some(Arc::new(Mutex::new(CodePublicationContext {
+        registry,
+        db,
+        block_number,
+    })));
+}
+
+pub fn clear_code_publication_context() {
+    *CODE_PUBLICATION_CTX.lock().unwrap() = None;
+}
+
+fn with_code_publication<F, R>(f: F) -> Result<R, PrecompileErrors>
+where
+    F: FnOnce(&mut CodePublicationContext) -> Result<R, PrecompileErrors>,
+{
+    let guard = CODE_PUBLICATION_CTX.lock().map_err(|_| PrecompileErrors::Fatal {
+        msg: "code publication context lock poisoned".into(),
+    })?;
+    let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
+        msg: "code publication context not set".into(),
+    })?;
+    let mut state = arc.lock().map_err(|_| PrecompileErrors::Fatal {
+        msg: "code publication state lock poisoned".into(),
+    })?;
+    f(&mut state)
+}
+
 fn with_shielded_evm<F, R>(f: F) -> Result<R, PrecompileErrors>
 where
     F: FnOnce(&mut ShieldedEvm) -> R,
@@ -132,6 +176,18 @@ pub fn register_shielded_precompiles(handler: &mut EvmHandler<'_, (), InMemoryDB
                 ContextPrecompile::Ordinary(Precompile::Env(state_proof_verifier_precompile)),
             ),
         ]);
+        precompiles
+    });
+}
+
+pub fn register_code_publication_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
+    let prev_load = handler.pre_execution.load_precompiles.clone();
+    handler.pre_execution.load_precompiles = Arc::new(move || {
+        let mut precompiles = prev_load();
+        precompiles.extend([(
+            CODE_PUBLICATION_PRECOMPILE,
+            ContextPrecompile::Ordinary(Precompile::Env(code_publication_precompile)),
+        )]);
         precompiles
     });
 }
@@ -238,6 +294,76 @@ fn state_proof_verifier_precompile(
         GAS_STATE_PROOF_VERIFY,
         Bytes::from(encode_bool(ok).to_vec()),
     ))
+}
+
+fn code_publication_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> PrecompileResult {
+    if input.len() < 4 {
+        return Err(PrecompileError::other("code publication: input too short").into());
+    }
+
+    let sel = [input[0], input[1], input[2], input[3]];
+    let caller = env.tx.caller;
+
+    if sel == publish_code_hash_selector() {
+        check_gas(gas_limit, GAS_CODE_PUBLICATION_UPDATE)?;
+        let contract_word = read_word(input, 0)
+            .ok_or_else(|| PrecompileError::other("publishCodeHash: missing contract"))?;
+        let contract = decode_address(contract_word);
+        let metadata = abi_decode_bytes_at(input, 1)?;
+        let metadata_uri = if metadata.is_empty() {
+            None
+        } else {
+            Some(
+                String::from_utf8(metadata)
+                    .map_err(|_| PrecompileError::other("publishCodeHash: invalid UTF-8 metadata"))?,
+            )
+        };
+
+        with_code_publication(|ctx| {
+            let code_hash = ctx
+                .db
+                .basic(contract)
+                .map_err(|e| PrecompileError::other(format!("publishCodeHash: db read failed: {e}")))?
+                .map(|info| info.code_hash)
+                .unwrap_or(KECCAK_EMPTY);
+            ctx.registry
+                .lock()
+                .map_err(|_| PrecompileErrors::Fatal {
+                    msg: "code publication registry mutex poisoned".into(),
+                })?
+                .publish(caller, contract, code_hash, metadata_uri, ctx.block_number)
+                .map_err(|e| PrecompileError::other(e.to_string()).into())
+        })?;
+
+        return Ok(PrecompileOutput::new(
+            GAS_CODE_PUBLICATION_UPDATE,
+            Bytes::from(encode_bool(true).to_vec()),
+        ));
+    }
+
+    if sel == revoke_code_hash_selector() {
+        check_gas(gas_limit, GAS_CODE_PUBLICATION_UPDATE)?;
+        let contract_word = read_word(input, 0)
+            .ok_or_else(|| PrecompileError::other("revokeCodeHash: missing contract"))?;
+        let contract = decode_address(contract_word);
+
+        with_code_publication(|ctx| {
+            ctx.registry
+                .lock()
+                .map_err(|_| PrecompileErrors::Fatal {
+                    msg: "code publication registry mutex poisoned".into(),
+                })?
+                .revoke(caller, contract)
+                .map_err(|e| PrecompileError::other(e.to_string()).into())
+        })?;
+
+        return Ok(PrecompileOutput::new(
+            GAS_CODE_PUBLICATION_UPDATE,
+            Bytes::from(encode_bool(true).to_vec()),
+        ));
+    }
+
+    Err(PrecompileError::other("code publication: unknown selector").into())
 }
 
 /// Decode `bytes` argument that lives in slot 0 (head = offset @ 0,

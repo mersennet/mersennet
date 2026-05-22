@@ -3,7 +3,14 @@
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
 
-import type { Block, CallParams, Receipt, TransactionParams } from './types';
+import type {
+  Block,
+  CallParams,
+  CodeAttestation,
+  ContractPublicationStatus,
+  Receipt,
+  TransactionParams,
+} from './types';
 
 /** Parse hex string to number */
 function hexToNumber(hex: string): number {
@@ -92,6 +99,27 @@ export class PrimeProvider {
   async getCode(address: string): Promise<string> {
     const result = (await this.request('eth_getCode', [address])) as string;
     return result || '0x';
+  }
+
+  /** prime_getCodeHash for published contracts; null when unpublished. */
+  async getCodeHash(address: string): Promise<string | null> {
+    const result = (await this.request('prime_getCodeHash', [address])) as string | null;
+    return result ?? null;
+  }
+
+  /** prime_getCodeAttestation for published contracts; null when unpublished. */
+  async getCodeAttestation(address: string): Promise<CodeAttestation | null> {
+    const result = (await this.request('prime_getCodeAttestation', [address])) as CodeAttestation | null;
+    return result ?? null;
+  }
+
+  /** Derive the public contract label used by explorers and SDK consumers. */
+  async getContractPublicationStatus(address: string): Promise<ContractPublicationStatus> {
+    const attestation = await this.getCodeAttestation(address);
+    if (!attestation) {
+      return 'unpublished';
+    }
+    return attestation.metadataUri ? 'source-published' : 'attested';
   }
 
   /** eth_getStorageAt / prime_getStorageAt */

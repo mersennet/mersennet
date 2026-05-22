@@ -73,6 +73,18 @@ export interface TransactionParams {
   chain_id?: number;
 }
 
+/** Public code publication attestation for an opt-in contract. */
+export interface CodeAttestation {
+  contract: string;
+  deployer: string;
+  codeHash: string;
+  metadataUri: string | null;
+  publishedAtBlock: string;
+}
+
+/** Contract publication label derived from the attestation payload. */
+export type ContractPublicationStatus = 'unpublished' | 'attested' | 'source-published';
+
 /** Order in the order book or open orders list */
 export interface Order {
   id: string;

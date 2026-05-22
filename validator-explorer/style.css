@@ -351,6 +351,156 @@ body.dark-mode .nav-link.active {
     background: var(--border-subtle);
 }
 
+.lookup-form {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.lookup-input {
+    flex: 1 1 320px;
+    min-width: 260px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 0.8rem 0.95rem;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.lookup-input:focus {
+    outline: none;
+    border-color: var(--color-main);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.lookup-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.8rem 1rem;
+    border-radius: var(--radius-sm);
+    background: var(--gradient-primary);
+    color: white;
+    font-weight: 600;
+    box-shadow: var(--shadow-glow-accent);
+    text-decoration: none;
+}
+
+.lookup-button:hover {
+    color: white;
+}
+
+.attestation-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    padding: 1rem;
+}
+
+.attestation-card.unpublished {
+    border-color: var(--border-subtle);
+}
+
+.attestation-card.attested {
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.attestation-card.source-published {
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.attestation-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.attestation-title {
+    font-weight: 700;
+    letter-spacing: -0.2px;
+}
+
+.attestation-sub {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    margin-top: 0.2rem;
+}
+
+.attestation-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem 1rem;
+}
+
+.attestation-actions {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.attestation-row.full {
+    grid-column: 1 / -1;
+}
+
+.attestation-key {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.18rem;
+}
+
+.attestation-value {
+    color: var(--text-primary);
+    font-size: 0.88rem;
+}
+
+.attestation-empty,
+.attestation-error {
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    background: var(--bg-surface);
+}
+
+.attestation-error {
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.25);
+    background: var(--danger-bg);
+}
+
+.badge-attested {
+    background: var(--warn-bg);
+    color: var(--warn);
+}
+
+.badge-source-published {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.badge-unpublished {
+    background: var(--bg-surface);
+    color: var(--text-muted);
+}
+
+.break-all {
+    word-break: break-all;
+}
+
+.contract-stat-value {
+    word-break: break-all;
+    font-size: 1rem;
+}
+
 /* =========================================
    5. PULSE DOT (live indicator)
    ========================================= */

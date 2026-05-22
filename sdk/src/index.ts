@@ -45,6 +45,8 @@ export type {
   Position,
   Trade,
   CallParams,
+  CodeAttestation,
+  ContractPublicationStatus,
   TransactionParams,
   BatchOrderParams,
   SubscriptionEvent,

@@ -27,6 +27,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::code_publication::CodePublicationRegistrySnapshot;
 use crate::liquidation_auction::LiquidationAuctionSnapshot;
 use crate::shielded_state::ShieldedSnapshot;
 use revm::primitives::{Address, U256};
@@ -52,6 +53,9 @@ pub struct ShieldedSnapshotData {
     /// that mirrors transparent → shielded notes for every legacy
     /// account.
     pub migration_plan_applied: bool,
+    /// Opt-in public contract code-hash attestations.
+    #[serde(default)]
+    pub code_publication_registry: CodePublicationRegistrySnapshot,
 }
 
 /// Wrapped snapshot containing the legacy `StateBackend` output plus

@@ -350,6 +350,8 @@ fn dispatch(call: RpcRequest, engine: &Arc<Mutex<Engine>>, filters: &FilterStore
         | "prime_gasPrice"
         | "eth_gasPrice"
         | "prime_validators"
+        | "prime_getCodeAttestation"
+        | "prime_getCodeHash"
         | "prime_getCode"
         | "eth_getCode"
         | "prime_getStorageAt"

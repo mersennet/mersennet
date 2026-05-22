@@ -17,7 +17,7 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
+exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
 var provider_1 = require("./provider");
 Object.defineProperty(exports, "PrimeProvider", { enumerable: true, get: function () { return provider_1.PrimeProvider; } });
 var orders_1 = require("./orders");
@@ -36,3 +36,8 @@ Object.defineProperty(exports, "encodeGetPosition", { enumerable: true, get: fun
 Object.defineProperty(exports, "encodeGetCollateral", { enumerable: true, get: function () { return precompile_1.encodeGetCollateral; } });
 Object.defineProperty(exports, "encodeIsLiquidatable", { enumerable: true, get: function () { return precompile_1.encodeIsLiquidatable; } });
 Object.defineProperty(exports, "encodeGetBestBidAsk", { enumerable: true, get: function () { return precompile_1.encodeGetBestBidAsk; } });
+// Shielded SDK (Phase 6 of the privacy redesign). Use this when
+// connecting to a chain that has activated the ZK privacy hard fork.
+var shielded_1 = require("./shielded");
+Object.defineProperty(exports, "ShieldedClient", { enumerable: true, get: function () { return shielded_1.ShieldedClient; } });
+Object.defineProperty(exports, "ViewingKeyHelpers", { enumerable: true, get: function () { return shielded_1.ViewingKeyHelpers; } });

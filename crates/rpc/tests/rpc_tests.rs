@@ -1,6 +1,7 @@
 use prime_chain::engine::Engine;
+use prime_chain::precompile_abi::{CODE_PUBLICATION_PRECOMPILE, publish_code_hash_selector};
 use prime_chain_rpc::rpc_router::route;
-use revm::primitives::{Address, Bytes, U256};
+use revm::primitives::{Address, Bytes, U256, keccak256};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -16,6 +17,25 @@ fn addr(byte: u8) -> Address {
 
 fn hex_addr(address: Address) -> String {
     format!("0x{}", hex::encode(address.as_slice()))
+}
+
+fn encode_address_word(address: Address) -> [u8; 32] {
+    let mut word = [0u8; 32];
+    word[12..32].copy_from_slice(address.as_slice());
+    word
+}
+
+fn encode_publish_code_hash_call(contract: Address, metadata_uri: &str) -> Bytes {
+    let metadata = metadata_uri.as_bytes();
+    let padded_len = metadata.len().div_ceil(32) * 32;
+    let mut data = Vec::with_capacity(4 + 32 + 32 + 32 + padded_len);
+    data.extend_from_slice(&publish_code_hash_selector());
+    data.extend_from_slice(&encode_address_word(contract));
+    data.extend_from_slice(&U256::from(64u64).to_be_bytes::<32>());
+    data.extend_from_slice(&U256::from(metadata.len()).to_be_bytes::<32>());
+    data.extend_from_slice(metadata);
+    data.resize(4 + 32 + 32 + 32 + padded_len, 0);
+    Bytes::from(data)
 }
 
 #[test]
@@ -53,6 +73,161 @@ fn rpc_prime_get_balance() {
     let params = json!([hex_addr(alice), "latest"]);
     let result = route("prime_getBalance", params, &mut engine).expect("rpc ok");
     assert_eq!(result, Value::String("0x1388".to_string()), "5000 = 0x1388");
+}
+
+#[test]
+fn rpc_transparent_account_state_methods_disabled_after_privacy_activation() {
+    let (mut engine, _dir) = setup_engine(1);
+    let alice = addr(0x11);
+    engine.fund_account(alice, U256::from(5_000u64), 7);
+    engine.activate_privacy_mode();
+
+    let balance_err = route("prime_getBalance", json!([hex_addr(alice), "latest"]), &mut engine)
+        .expect_err("transparent balance RPC should be disabled");
+    assert_eq!(balance_err.code, -32605);
+    assert!(balance_err.message.contains("account-state RPC disabled"));
+
+    let nonce_err = route(
+        "eth_getTransactionCount",
+        json!([hex_addr(alice), "latest"]),
+        &mut engine,
+    )
+    .expect_err("transparent nonce RPC should be disabled");
+    assert_eq!(nonce_err.code, -32605);
+    assert!(nonce_err.message.contains("account-state RPC disabled"));
+}
+
+#[test]
+fn rpc_transparent_simulation_methods_disabled_after_privacy_activation() {
+    let (mut engine, _dir) = setup_engine(1);
+    engine.activate_privacy_mode();
+
+    let prime_call_err = route("prime_call", Value::Null, &mut engine)
+        .expect_err("prime_call should be disabled");
+    assert_eq!(prime_call_err.code, -32605);
+    assert!(prime_call_err.message.contains("simulation RPC disabled"));
+
+    let eth_call_err = route("eth_call", Value::Null, &mut engine)
+        .expect_err("eth_call should be disabled");
+    assert_eq!(eth_call_err.code, -32605);
+    assert!(eth_call_err.message.contains("simulation RPC disabled"));
+
+    let estimate_gas_err = route("eth_estimateGas", Value::Null, &mut engine)
+        .expect_err("eth_estimateGas should be disabled");
+    assert_eq!(estimate_gas_err.code, -32605);
+    assert!(estimate_gas_err.message.contains("simulation RPC disabled"));
+}
+
+#[test]
+fn rpc_code_hash_attests_without_exposing_bytecode() {
+    let (mut engine, _dir) = setup_engine(7919);
+    let deployer = addr(0x66);
+    let stranger = addr(0x77);
+    engine.fund_account(deployer, U256::from(2_000_000u64), 0);
+    engine.fund_account(stranger, U256::from(2_000_000u64), 0);
+
+    let contract_creation = Bytes::from_static(&[
+        0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
+        0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+    ]);
+
+    engine
+        .deploy_contract(
+            deployer,
+            contract_creation,
+            1_000_000,
+            U256::from(1u64),
+            0,
+            U256::ZERO,
+        )
+        .expect("deploy accepted");
+
+    let block = engine.execute_block().expect("block executed");
+    let contract = block.receipts[0]
+        .created_address
+        .expect("contract address recorded");
+
+    let runtime_code = engine.get_code(contract).expect("runtime code loaded");
+    let expected_hash = format!("0x{}", hex::encode(keccak256(&runtime_code).as_slice()));
+
+    engine.activate_privacy_mode();
+
+    let unpublished = route("prime_getCodeHash", json!([hex_addr(contract), "latest"]), &mut engine)
+        .expect("code hash rpc ok");
+    assert_eq!(unpublished, Value::Null, "unpublished contracts stay hidden");
+
+    engine
+        .submit_tx_unsigned(prime_chain::engine::Transaction {
+            from: stranger,
+            to: Some(CODE_PUBLICATION_PRECOMPILE),
+            value: U256::ZERO,
+            data: encode_publish_code_hash_call(contract, "ipfs://bad-actor"),
+            gas_limit: 100_000,
+            gas_price: U256::from(1u64),
+            nonce: 0,
+            chain_id: Some(7919),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+        })
+        .expect("unauthorized publish tx accepted into mempool");
+    let failed_publish_block = engine.execute_block().expect("unauthorized publish block executed");
+    assert!(!failed_publish_block.receipts[0].success, "non-deployer publish must fail");
+
+    let still_unpublished = route("prime_getCodeHash", json!([hex_addr(contract), "latest"]), &mut engine)
+        .expect("code hash rpc ok");
+    assert_eq!(still_unpublished, Value::Null, "failed publish must not expose hash");
+
+    engine
+        .submit_tx_unsigned(prime_chain::engine::Transaction {
+            from: deployer,
+            to: Some(CODE_PUBLICATION_PRECOMPILE),
+            value: U256::ZERO,
+            data: encode_publish_code_hash_call(contract, "ipfs://vaultstrategy-build"),
+            gas_limit: 100_000,
+            gas_price: U256::from(1u64),
+            nonce: 1,
+            chain_id: Some(7919),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+        })
+        .expect("authorized publish tx accepted into mempool");
+    let publish_block = engine.execute_block().expect("authorized publish block executed");
+    assert!(publish_block.receipts[0].success, "deployer publish must succeed");
+
+    let code_hash = route("prime_getCodeHash", json!([hex_addr(contract), "latest"]), &mut engine)
+        .expect("code hash rpc ok");
+    assert_eq!(code_hash, Value::String(expected_hash));
+
+    let attestation = route(
+        "prime_getCodeAttestation",
+        json!([hex_addr(contract), "latest"]),
+        &mut engine,
+    )
+    .expect("code attestation rpc ok");
+    assert_eq!(
+        attestation.get("deployer").and_then(|v| v.as_str()),
+        Some(hex_addr(deployer).as_str())
+    );
+    assert_eq!(
+        attestation.get("metadataUri").and_then(|v| v.as_str()),
+        Some("ipfs://vaultstrategy-build")
+    );
+
+    let code_err = route("prime_getCode", json!([hex_addr(contract), "latest"]), &mut engine)
+        .expect_err("raw bytecode should be disabled");
+    assert_eq!(code_err.code, -32605);
+    assert!(code_err.message.contains("contract-state RPC disabled"));
+
+    let storage_err = route(
+        "eth_getStorageAt",
+        json!([hex_addr(contract), "0x0", "latest"]),
+        &mut engine,
+    )
+    .expect_err("raw storage should be disabled");
+    assert_eq!(storage_err.code, -32605);
+    assert!(storage_err.message.contains("contract-state RPC disabled"));
 }
 
 #[test]
