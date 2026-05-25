@@ -34,11 +34,13 @@
 #![allow(dead_code)]
 
 use crate::shielded_state::ShieldedState;
+use k256::ecdsa::signature::hazmat::PrehashVerifier;
+use k256::ecdsa::{Signature, VerifyingKey};
 use prime_zkp::{
     Fr, NoteCommitment, Nullifier,
     noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
 };
-use revm::primitives::{Address, U256};
+use revm::primitives::{Address, U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -141,6 +143,104 @@ pub struct UnshieldTx {
     pub proof: CircuitProof,
 }
 
+/// Scope names supported by the viewing-key capability model.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ViewingGrantScope {
+    NotesRead,
+    BalancesRead,
+    PositionsRead,
+    OrdersRead,
+    LiquidationsRead,
+    PortfolioDigestExport,
+}
+
+impl ViewingGrantScope {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::NotesRead => "notes:read",
+            Self::BalancesRead => "balances:read",
+            Self::PositionsRead => "positions:read",
+            Self::OrdersRead => "orders:read",
+            Self::LiquidationsRead => "liquidations:read",
+            Self::PortfolioDigestExport => "exports:portfolio_digest",
+        }
+    }
+}
+
+/// Scope-bound capability token for selective disclosure.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ViewingGrantToken {
+    pub version: u8,
+    pub chain_id: u64,
+    pub grant_id: [u8; 32],
+    pub grantor_commitment: [u8; 32],
+    pub grantor_sig_pubkey: Vec<u8>,
+    pub grantee_pubkey: Vec<u8>,
+    pub scopes: Vec<ViewingGrantScope>,
+    pub start_block: u64,
+    pub end_block: u64,
+    pub capabilities_hash: [u8; 32],
+    pub signature: Vec<u8>,
+}
+
+impl ViewingGrantToken {
+    pub fn signing_digest(&self) -> [u8; 32] {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"PRIME_VIEW_GRANT_V1");
+        payload.push(self.version);
+        payload.extend_from_slice(&self.chain_id.to_le_bytes());
+        payload.extend_from_slice(&self.grant_id);
+        payload.extend_from_slice(&self.grantor_commitment);
+        payload.extend_from_slice(&(self.grantor_sig_pubkey.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&self.grantor_sig_pubkey);
+        payload.extend_from_slice(&(self.grantee_pubkey.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&self.grantee_pubkey);
+        for scope in &self.scopes {
+            payload.extend_from_slice(scope.as_str().as_bytes());
+            payload.push(0);
+        }
+        payload.extend_from_slice(&self.start_block.to_le_bytes());
+        payload.extend_from_slice(&self.end_block.to_le_bytes());
+        payload.extend_from_slice(&self.capabilities_hash);
+        let digest = keccak256(payload);
+        let mut out = [0u8; 32];
+        out.copy_from_slice(digest.as_slice());
+        out
+    }
+
+    pub fn verify_signature(&self) -> bool {
+        if self.grantor_sig_pubkey.is_empty() || self.signature.len() != 64 {
+            return false;
+        }
+        let Ok(verifying_key) = VerifyingKey::from_sec1_bytes(&self.grantor_sig_pubkey) else {
+            return false;
+        };
+        let mut sig_bytes = [0u8; 64];
+        sig_bytes.copy_from_slice(&self.signature);
+        let Ok(signature) = Signature::from_bytes((&sig_bytes).into()) else {
+            return false;
+        };
+        verifying_key
+            .verify_prehash(&self.signing_digest(), &signature)
+            .is_ok()
+    }
+
+    pub fn has_scope(&self, scope: &ViewingGrantScope) -> bool {
+        self.scopes.iter().any(|candidate| candidate == scope)
+    }
+
+    pub fn is_active_at(&self, block_number: u64) -> bool {
+        block_number >= self.start_block && block_number <= self.end_block
+    }
+}
+
+/// Recorded on-chain when a viewing grant is revoked.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ViewingGrantRevocation {
+    pub grant_id: [u8; 32],
+    pub revoked_at_block: u64,
+}
+
 /// Adapter that owns the [`ShieldedState`] and the transparent
 /// balances for shielded EOAs. The chain engine holds one of these
 /// and routes precompile dispatches through it.
@@ -153,6 +253,10 @@ pub struct ShieldedEvm {
     /// final wiring this becomes a thin adapter over revm's account
     /// API.
     pub transparent_balances: HashMap<Address, U256>, // privacy-allow: explicit transparent-side mirror at the privacy boundary
+    /// Registered selective-disclosure grant tokens keyed by `grant_id`.
+    pub viewing_grants: HashMap<[u8; 32], ViewingGrantToken>,
+    /// Revocations keyed by `grant_id`.
+    pub viewing_grant_revocations: HashMap<[u8; 32], ViewingGrantRevocation>,
     pub verifier: Box<dyn Verifier>,
 }
 
@@ -161,6 +265,8 @@ impl Default for ShieldedEvm {
         Self {
             state: ShieldedState::new(),
             transparent_balances: HashMap::new(),
+            viewing_grants: HashMap::new(),
+            viewing_grant_revocations: HashMap::new(),
             verifier: Box::new(MockVerifier::new()),
         }
     }
@@ -200,6 +306,32 @@ impl ShieldedEvm {
             .get(who)
             .copied()
             .unwrap_or(U256::ZERO)
+    }
+
+    pub fn register_viewing_grant(&mut self, token: ViewingGrantToken) -> bool {
+        let grant_id = token.grant_id;
+        if self.viewing_grants.contains_key(&grant_id) {
+            return false;
+        }
+        self.viewing_grants.insert(grant_id, token);
+        true
+    }
+
+    pub fn revoke_viewing_grant(&mut self, grant_id: [u8; 32], revoked_at_block: u64) -> bool {
+        if !self.viewing_grants.contains_key(&grant_id) {
+            return false;
+        }
+        self.viewing_grant_revocations
+            .entry(grant_id)
+            .or_insert(ViewingGrantRevocation {
+                grant_id,
+                revoked_at_block,
+            });
+        true
+    }
+
+    pub fn is_viewing_grant_revoked(&self, grant_id: &[u8; 32]) -> bool {
+        self.viewing_grant_revocations.contains_key(grant_id)
     }
 
     /// Apply a shielded transfer. Caller is responsible for

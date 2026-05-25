@@ -399,6 +399,10 @@ fn dispatch(
             let engine = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            if include_txs {
+                require_transparent_tx_metadata_access_enabled(&engine)
+                    .map_err(|err| (id.clone(), err))?;
+            }
             let block = engine.block_by_number(number);
             match block {
                 Some(block) => serde_json::to_value(block_to_dto(block, include_txs))
@@ -413,6 +417,8 @@ fn dispatch(
             let mut engine = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            require_transparent_tx_metadata_access_enabled(&engine)
+                .map_err(|err| (id.clone(), err))?;
             let receipt = find_receipt(&mut engine, tx_hash);
             match receipt {
                 Some(dto) => serde_json::to_value(dto)
@@ -427,6 +433,8 @@ fn dispatch(
             let engine = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            require_transparent_tx_metadata_access_enabled(&engine)
+                .map_err(|err| (id.clone(), err))?;
             let result = find_transaction(&engine, tx_hash);
             match result {
                 Some((tx, block, idx)) => serde_json::to_value(tx_to_dto_with_block(
@@ -482,6 +490,13 @@ fn dispatch(
         }
         "prime_getLogs" | "eth_getLogs" => {
             let params = call.params.unwrap_or(Value::Null);
+            {
+                let engine = engine
+                    .lock()
+                    .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                require_transparent_event_access_enabled(&engine)
+                    .map_err(|err| (id.clone(), err))?;
+            }
             let filter = parse_log_filter(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
             let engine = engine
@@ -509,6 +524,10 @@ fn dispatch(
             let engine = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            if include_txs {
+                require_transparent_tx_metadata_access_enabled(&engine)
+                    .map_err(|err| (id.clone(), err))?;
+            }
             match engine.block_by_hash(hash) {
                 Some(block) => serde_json::to_value(block_to_dto(block, include_txs))
                     .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
@@ -575,6 +594,13 @@ fn dispatch(
         "eth_protocolVersion" => Value::String("0x41".to_string()),
         "eth_newFilter" => {
             let params = call.params.unwrap_or(Value::Null);
+            {
+                let eng = engine
+                    .lock()
+                    .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                require_transparent_event_access_enabled(&eng)
+                    .map_err(|err| (id.clone(), err))?;
+            }
             let filter = parse_log_filter(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
             let latest = {
@@ -603,6 +629,13 @@ fn dispatch(
             Value::String(hex_u64(filter_id))
         }
         "eth_newPendingTransactionFilter" => {
+            {
+                let eng = engine
+                    .lock()
+                    .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                require_transparent_pending_tx_access_enabled(&eng)
+                    .map_err(|err| (id.clone(), err))?;
+            }
             let latest = {
                 let eng = engine
                     .lock()
@@ -636,6 +669,15 @@ fn dispatch(
             let engine_guard = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            match &filter.kind {
+                FilterKind::Log(_) => require_transparent_event_access_enabled(&engine_guard)
+                    .map_err(|err| (id.clone(), err))?,
+                FilterKind::PendingTx => {
+                    require_transparent_pending_tx_access_enabled(&engine_guard)
+                        .map_err(|err| (id.clone(), err))?
+                }
+                FilterKind::Block => {}
+            }
             let latest = engine_guard.latest_height();
             let from_block = filter.last_poll_block + 1;
 
@@ -683,6 +725,8 @@ fn dispatch(
                     let engine_guard = engine
                         .lock()
                         .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+                    require_transparent_event_access_enabled(&engine_guard)
+                        .map_err(|err| (id.clone(), err))?;
                     let logs = collect_logs(&engine_guard, log_filter);
                     serde_json::to_value(logs)
                         .map_err(|e| (id.clone(), rpc_error_internal(e.to_string())))?
@@ -786,6 +830,39 @@ fn rpc_error_with_data(code: i64, message: impl Into<String>, data: Value) -> Rp
         code,
         message: message.into(),
         data: Some(data),
+    }
+}
+
+fn require_transparent_event_access_enabled(engine: &Engine) -> Result<(), RpcError> {
+    if engine.privacy_mode_activated() {
+        Err(rpc_error_with_code(
+            -32605,
+            "transparent event/log RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_transparent_pending_tx_access_enabled(engine: &Engine) -> Result<(), RpcError> {
+    if engine.privacy_mode_activated() {
+        Err(rpc_error_with_code(
+            -32605,
+            "transparent pending-transaction RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_transparent_tx_metadata_access_enabled(engine: &Engine) -> Result<(), RpcError> {
+    if engine.privacy_mode_activated() {
+        Err(rpc_error_with_code(
+            -32605,
+            "transparent transaction/receipt metadata RPC disabled after privacy activation",
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -1472,6 +1549,184 @@ mod tests {
                     | PrimeOrdersEvent::Liquidation { .. }
             )
         )));
+    }
+
+    fn test_request(method: &str, params: Value) -> RpcRequest {
+        RpcRequest {
+            _jsonrpc: Some("2.0".to_string()),
+            id: Value::from(1),
+            method: method.to_string(),
+            params: Some(params),
+        }
+    }
+
+    #[test]
+    fn dispatch_rejects_transparent_log_and_pending_filters_after_privacy_activation() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let mut engine = Engine::new_with_state(1, temp_dir.path());
+        engine.activate_privacy_mode();
+
+        let engine = Arc::new(Mutex::new(engine));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+
+        let log_err = dispatch(
+            test_request("eth_getLogs", json!([{}])),
+            &engine,
+            &filters,
+        )
+        .expect_err("eth_getLogs should be disabled");
+        assert_eq!(log_err.1.code, -32605);
+        assert!(log_err.1.message.contains("event/log RPC disabled"));
+
+        let new_filter_err = dispatch(
+            test_request("eth_newFilter", json!([{}])),
+            &engine,
+            &filters,
+        )
+        .expect_err("eth_newFilter should be disabled");
+        assert_eq!(new_filter_err.1.code, -32605);
+        assert!(new_filter_err.1.message.contains("event/log RPC disabled"));
+
+        let pending_err = dispatch(
+            test_request("eth_newPendingTransactionFilter", json!([])),
+            &engine,
+            &filters,
+        )
+        .expect_err("pending tx filter should be disabled");
+        assert_eq!(pending_err.1.code, -32605);
+        assert!(pending_err.1.message.contains("pending-transaction RPC disabled"));
+    }
+
+    #[test]
+    fn dispatch_rejects_existing_sensitive_filters_after_privacy_activation() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let engine = Arc::new(Mutex::new(Engine::new_with_state(1, temp_dir.path())));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+
+        let log_filter_id = {
+            let mut fs = filters.lock().expect("filter lock");
+            fs.install(
+                FilterKind::Log(LogFilter {
+                    from_block: 0,
+                    to_block: 0,
+                    addresses: Vec::new(),
+                    topics: Vec::new(),
+                }),
+                0,
+            )
+        };
+        let pending_filter_id = {
+            let mut fs = filters.lock().expect("filter lock");
+            fs.install(FilterKind::PendingTx, 0)
+        };
+
+        engine
+            .lock()
+            .expect("engine lock")
+            .activate_privacy_mode();
+
+        let log_changes_err = dispatch(
+            test_request("eth_getFilterChanges", json!([format!("0x{log_filter_id:x}")])),
+            &engine,
+            &filters,
+        )
+        .expect_err("log filter changes should be disabled");
+        assert_eq!(log_changes_err.1.code, -32605);
+        assert!(log_changes_err.1.message.contains("event/log RPC disabled"));
+
+        let log_logs_err = dispatch(
+            test_request("eth_getFilterLogs", json!([format!("0x{log_filter_id:x}")])),
+            &engine,
+            &filters,
+        )
+        .expect_err("log filter logs should be disabled");
+        assert_eq!(log_logs_err.1.code, -32605);
+        assert!(log_logs_err.1.message.contains("event/log RPC disabled"));
+
+        let pending_changes_err = dispatch(
+            test_request(
+                "eth_getFilterChanges",
+                json!([format!("0x{pending_filter_id:x}")]),
+            ),
+            &engine,
+            &filters,
+        )
+        .expect_err("pending filter changes should be disabled");
+        assert_eq!(pending_changes_err.1.code, -32605);
+        assert!(pending_changes_err
+            .1
+            .message
+            .contains("pending-transaction RPC disabled"));
+    }
+
+    #[test]
+    fn dispatch_rejects_transaction_metadata_methods_after_privacy_activation() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let mut eng = Engine::new_with_state(1, temp_dir.path());
+        let from = Address::from_slice(&[0x11; 20]);
+        let to = Address::from_slice(&[0x22; 20]);
+        eng.fund_account(from, U256::from(1_000_000u64), 0);
+        eng.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(to),
+            value: U256::from(1u64),
+            data: Bytes::new(),
+            gas_limit: 21_000,
+            gas_price: U256::from(1u64),
+            nonce: 0,
+            chain_id: Some(1),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+        })
+        .expect("tx accepted");
+        let block = eng.execute_block().expect("block executed");
+        let hash = tx_hash(&block.transactions[0]);
+        eng.activate_privacy_mode();
+
+        let engine = Arc::new(Mutex::new(eng));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+
+        let tx_err = dispatch(
+            test_request("eth_getTransactionByHash", json!([hex_b256(hash)])),
+            &engine,
+            &filters,
+        )
+        .expect_err("tx metadata should be disabled");
+        assert_eq!(tx_err.1.code, -32605);
+        assert!(tx_err.1.message.contains("transaction/receipt metadata RPC disabled"));
+
+        let receipt_err = dispatch(
+            test_request("eth_getTransactionReceipt", json!([hex_b256(hash)])),
+            &engine,
+            &filters,
+        )
+        .expect_err("receipt metadata should be disabled");
+        assert_eq!(receipt_err.1.code, -32605);
+        assert!(receipt_err
+            .1
+            .message
+            .contains("transaction/receipt metadata RPC disabled"));
+
+        let block_err = dispatch(
+            test_request("eth_getBlockByNumber", json!(["latest", true])),
+            &engine,
+            &filters,
+        )
+        .expect_err("full block tx metadata should be disabled");
+        assert_eq!(block_err.1.code, -32605);
+        assert!(block_err
+            .1
+            .message
+            .contains("transaction/receipt metadata RPC disabled"));
+
+        let block_ok = dispatch(
+            test_request("eth_getBlockByNumber", json!(["latest", false])),
+            &engine,
+            &filters,
+        )
+        .expect("header-only block lookup should remain enabled");
+        assert!(block_ok.contains(&hex_b256(hash)));
     }
 }
 

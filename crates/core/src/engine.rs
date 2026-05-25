@@ -499,6 +499,14 @@ impl Engine {
                 Ok(balances) => shielded_evm.transparent_balances = balances,
                 Err(e) => tracing::warn!(error = ?e, "transparent-balance restore failed"),
             }
+            match p.load_viewing_grants() {
+                Ok(grants) => shielded_evm.viewing_grants = grants,
+                Err(e) => tracing::warn!(error = ?e, "viewing-grant restore failed"),
+            }
+            match p.load_viewing_grant_revocations() {
+                Ok(revocations) => shielded_evm.viewing_grant_revocations = revocations,
+                Err(e) => tracing::warn!(error = ?e, "viewing-grant revocation restore failed"),
+            }
         }
 
         let mut db = InMemoryDB::default();
@@ -1673,6 +1681,12 @@ impl Engine {
             // false.
             migration_plan_applied: !self.shielded_evm.state.snapshot().leaves.is_empty(),
             code_publication_registry: self.code_publication_registry.snapshot(),
+            viewing_grants: crate::engine_snapshot::encode_viewing_grants(
+                &self.shielded_evm.viewing_grants,
+            ),
+            viewing_grant_revocations: crate::engine_snapshot::encode_viewing_grant_revocations(
+                &self.shielded_evm.viewing_grant_revocations,
+            ),
         };
 
         let envelope = crate::engine_snapshot::EngineSnapshotEnvelope {
@@ -1728,6 +1742,12 @@ impl Engine {
             self.code_publication_registry =
                 crate::code_publication::CodePublicationRegistry::restore(
                     shielded.code_publication_registry,
+                );
+            self.shielded_evm.viewing_grants =
+                crate::engine_snapshot::decode_viewing_grants(&shielded.viewing_grants);
+            self.shielded_evm.viewing_grant_revocations =
+                crate::engine_snapshot::decode_viewing_grant_revocations(
+                    &shielded.viewing_grant_revocations,
                 );
         }
 

@@ -24,12 +24,16 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::shielded_evm::ShieldedEvm;
+use crate::shielded_evm::{ViewingGrantRevocation, ViewingGrantToken};
 use crate::shielded_state::{ShieldedSnapshot, ShieldedState};
 
 const SHIELDED_LEAVES: TableDefinition<u64, &[u8]> = TableDefinition::new("shielded_leaves");
 const SHIELDED_NULLIFIERS: TableDefinition<&[u8], ()> = TableDefinition::new("shielded_nullifiers");
 const TRANSPARENT_BALANCES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("transparent_balances");
+const VIEWING_GRANTS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("viewing_grants");
+const VIEWING_GRANT_REVOCATIONS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("viewing_grant_revocations");
 const AUCTION_STATE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("auction_state");
 const META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("shielded_meta");
 
@@ -60,6 +64,8 @@ impl ShieldedPersistence {
             let _ = write_txn.open_table(SHIELDED_LEAVES)?;
             let _ = write_txn.open_table(SHIELDED_NULLIFIERS)?;
             let _ = write_txn.open_table(TRANSPARENT_BALANCES)?;
+            let _ = write_txn.open_table(VIEWING_GRANTS)?;
+            let _ = write_txn.open_table(VIEWING_GRANT_REVOCATIONS)?;
             let _ = write_txn.open_table(AUCTION_STATE)?;
             let _ = write_txn.open_table(META)?;
             write_txn.commit()?;
@@ -75,6 +81,8 @@ impl ShieldedPersistence {
         let snapshot = evm.state.snapshot();
         self.save_shielded_state_snapshot(&snapshot, block_height)?;
         self.save_transparent_balances(&evm.transparent_balances)?;
+        self.save_viewing_grants(&evm.viewing_grants)?;
+        self.save_viewing_grant_revocations(&evm.viewing_grant_revocations)?;
         Ok(())
     }
 
@@ -125,6 +133,35 @@ impl ShieldedPersistence {
             for (addr, amount) in balances {
                 let value_bytes = amount.to_be_bytes::<32>();
                 bal_t.insert(addr.as_slice(), value_bytes.as_slice())?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn save_viewing_grants(&self, grants: &HashMap<[u8; 32], ViewingGrantToken>) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut grant_t = write_txn.open_table(VIEWING_GRANTS)?;
+            for (grant_id, grant) in grants {
+                let encoded = bincode::serialize(grant)?;
+                grant_t.insert(grant_id.as_slice(), encoded.as_slice())?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn save_viewing_grant_revocations(
+        &self,
+        revocations: &HashMap<[u8; 32], ViewingGrantRevocation>,
+    ) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut rev_t = write_txn.open_table(VIEWING_GRANT_REVOCATIONS)?;
+            for (grant_id, revocation) in revocations {
+                let encoded = bincode::serialize(revocation)?;
+                rev_t.insert(grant_id.as_slice(), encoded.as_slice())?;
             }
         }
         write_txn.commit()?;
@@ -190,6 +227,42 @@ impl ShieldedPersistence {
         Ok(out)
     }
 
+    pub fn load_viewing_grants(&self) -> Result<HashMap<[u8; 32], ViewingGrantToken>> {
+        let read_txn = self.db.begin_read()?;
+        let grant_t = read_txn.open_table(VIEWING_GRANTS)?;
+        let mut out = HashMap::new();
+        for entry in grant_t.iter()? {
+            let (k, v) = entry?;
+            if k.value().len() != 32 {
+                continue;
+            }
+            let grant: ViewingGrantToken = bincode::deserialize(v.value())?;
+            let mut grant_id = [0u8; 32];
+            grant_id.copy_from_slice(k.value());
+            out.insert(grant_id, grant);
+        }
+        Ok(out)
+    }
+
+    pub fn load_viewing_grant_revocations(
+        &self,
+    ) -> Result<HashMap<[u8; 32], ViewingGrantRevocation>> {
+        let read_txn = self.db.begin_read()?;
+        let rev_t = read_txn.open_table(VIEWING_GRANT_REVOCATIONS)?;
+        let mut out = HashMap::new();
+        for entry in rev_t.iter()? {
+            let (k, v) = entry?;
+            if k.value().len() != 32 {
+                continue;
+            }
+            let revocation: ViewingGrantRevocation = bincode::deserialize(v.value())?;
+            let mut grant_id = [0u8; 32];
+            grant_id.copy_from_slice(k.value());
+            out.insert(grant_id, revocation);
+        }
+        Ok(out)
+    }
+
     /// Latest persisted block height. Returns `None` if nothing has
     /// been written yet.
     pub fn latest_height(&self) -> Result<Option<u64>> {
@@ -242,5 +315,35 @@ mod tests {
         let p = ShieldedPersistence::open(dir.path()).unwrap();
         assert!(p.load_shielded_state().unwrap().is_none());
         assert_eq!(p.latest_height().unwrap(), None);
+    }
+
+    #[test]
+    fn viewing_grants_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = ShieldedPersistence::open(dir.path()).unwrap();
+
+        let mut evm = ShieldedEvm::new();
+        let token = ViewingGrantToken {
+            version: 1,
+            chain_id: 7920,
+            grant_id: [0x11; 32],
+            grantor_commitment: [0x22; 32],
+            grantor_sig_pubkey: vec![0x23; 33],
+            grantee_pubkey: vec![0x33; 33],
+            scopes: vec![crate::shielded_evm::ViewingGrantScope::BalancesRead],
+            start_block: 10,
+            end_block: 20,
+            capabilities_hash: [0x44; 32],
+            signature: vec![0x55; 64],
+        };
+        assert!(evm.register_viewing_grant(token.clone()));
+        assert!(evm.revoke_viewing_grant(token.grant_id, 12));
+
+        p.save_shielded_evm(&evm, 12).unwrap();
+
+        let grants = p.load_viewing_grants().unwrap();
+        let revocations = p.load_viewing_grant_revocations().unwrap();
+        assert_eq!(grants.get(&token.grant_id), Some(&token));
+        assert_eq!(revocations[&token.grant_id].revoked_at_block, 12);
     }
 }

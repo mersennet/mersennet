@@ -2130,6 +2130,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "hex",
+ "k256",
  "metrics",
  "prime-chain",
  "prime-zkp",
