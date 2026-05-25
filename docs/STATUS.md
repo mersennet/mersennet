@@ -77,7 +77,7 @@ All E* gated on `sp1up` install + Phase-5 budget allocation.
 | F2 | Wallet note scanner | ⬜ |
 | F3 | PrimeTrade shielded order UI | ⬜ (tracked in [prime-trade](https://github.com/PrimeNumbersLabs/prime-trade)) |
 | F4 | Migration UX | ⬜ |
-| F5 | Selective-disclosure (viewing key) CLI | ⬜ |
+| F5 | Selective-disclosure grant lifecycle (ADR-019) | 🟡 (`prime_viewGrantToken` / `prime_viewRevokeToken` now verify secp256k1 grant signatures, persist grants + revocations, and gate `prime_viewPortfolioDigest`; wallet reconstruction flows and broader scoped reads still pending) |
 | F6 | Go / Python SDK shielded extensions | ⬜ |
 
 ## G — Ethereum bridge

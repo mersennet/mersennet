@@ -29,6 +29,7 @@ use std::collections::HashMap;
 
 use crate::code_publication::CodePublicationRegistrySnapshot;
 use crate::liquidation_auction::LiquidationAuctionSnapshot;
+use crate::shielded_evm::{ViewingGrantRevocation, ViewingGrantToken};
 use crate::shielded_state::ShieldedSnapshot;
 use revm::primitives::{Address, U256};
 
@@ -56,6 +57,12 @@ pub struct ShieldedSnapshotData {
     /// Opt-in public contract code-hash attestations.
     #[serde(default)]
     pub code_publication_registry: CodePublicationRegistrySnapshot,
+    /// Registered selective-disclosure grant tokens.
+    #[serde(default)]
+    pub viewing_grants: Vec<ViewingGrantToken>,
+    /// Grant revocations keyed by `grant_id`.
+    #[serde(default)]
+    pub viewing_grant_revocations: Vec<ViewingGrantRevocation>,
 }
 
 /// Wrapped snapshot containing the legacy `StateBackend` output plus
@@ -176,6 +183,40 @@ pub fn decode_transparent_balances(entries: &[([u8; 20], [u8; 32])]) -> HashMap<
         let addr = Address::from_slice(addr_bytes);
         let amount = U256::from_be_slice(amount_bytes);
         out.insert(addr, amount);
+    }
+    out
+}
+
+pub fn encode_viewing_grants(
+    grants: &HashMap<[u8; 32], ViewingGrantToken>,
+) -> Vec<ViewingGrantToken> {
+    let mut out: Vec<ViewingGrantToken> = grants.values().cloned().collect();
+    out.sort_by_key(|grant| grant.grant_id);
+    out
+}
+
+pub fn decode_viewing_grants(entries: &[ViewingGrantToken]) -> HashMap<[u8; 32], ViewingGrantToken> {
+    let mut out = HashMap::with_capacity(entries.len());
+    for entry in entries {
+        out.insert(entry.grant_id, entry.clone());
+    }
+    out
+}
+
+pub fn encode_viewing_grant_revocations(
+    revocations: &HashMap<[u8; 32], ViewingGrantRevocation>,
+) -> Vec<ViewingGrantRevocation> {
+    let mut out: Vec<ViewingGrantRevocation> = revocations.values().cloned().collect();
+    out.sort_by_key(|revocation| revocation.grant_id);
+    out
+}
+
+pub fn decode_viewing_grant_revocations(
+    entries: &[ViewingGrantRevocation],
+) -> HashMap<[u8; 32], ViewingGrantRevocation> {
+    let mut out = HashMap::with_capacity(entries.len());
+    for entry in entries {
+        out.insert(entry.grant_id, entry.clone());
     }
     out
 }

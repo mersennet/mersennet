@@ -193,16 +193,31 @@ Tear down with `docker compose -f docker-compose.privacy.yml down -v`.
 
 ## 5. RPC + WebSocket — what's available
 
+After privacy activation, public block retrieval is header-only: block
+headers, roots, fees, timestamps, and transaction hashes remain
+available, but full transaction objects and transaction receipts are no
+longer exposed over public RPC.
+
 ### Transparent RPC (works on both 7919 and 7920)
 
 Standard Ethereum-style methods plus `prime_*` extensions:
 
 | Method | Purpose |
 |---|---|
-| `eth_blockNumber`, `eth_getBlockByNumber`, `eth_call`, `eth_sendRawTransaction`, … | Standard EVM |
+| `eth_blockNumber`, `eth_getBlockByNumber` (header-only post-fork), `eth_call`, `eth_sendRawTransaction`, … | Standard EVM |
 | `prime_getChainConfig` | Chain ID + activation heights + feature flags |
 | `prime_getMarkets`, `prime_getOrderBook`, `prime_submitOrder` | PrimeOrders CLOB |
 | `prime_getBridgeQueue` | Bridge state |
+
+Post-fork retrieval rule:
+
+- `eth_getBlockByNumber` and `eth_getBlockByHash` stay public only when
+  requesting header-only responses.
+- `eth_getTransactionByHash`, `prime_getTransactionByHash`,
+  `eth_getTransactionReceipt`, and `prime_getTransactionReceipt` are
+  disabled after privacy activation.
+- Expanded block responses with full transaction objects are disabled
+  after privacy activation.
 
 ### Shielded RPC (gated on privacy activation — chain 7920)
 

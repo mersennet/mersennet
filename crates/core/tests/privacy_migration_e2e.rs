@@ -71,6 +71,8 @@ fn migration_envelope_round_trip_through_engine() {
             transparent_balances: encode_transparent_balances(&shielded_evm.transparent_balances),
             migration_plan_applied: true,
             code_publication_registry: Default::default(),
+            viewing_grants: Vec::new(),
+            viewing_grant_revocations: Vec::new(),
         }),
     };
     let migrated_bytes = migrated_envelope.encode().unwrap();

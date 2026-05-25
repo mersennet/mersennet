@@ -1,6 +1,8 @@
 # Prime Chain — ZK Privacy Architecture Plan (Internal)
 
-**Status:** Active. Phase 0 + Phase 1 in progress on `feat/zk-privacy`.
+**Status:** Active. Privacy perimeter hardening is largely landed on
+`feat/zk-privacy`; selective disclosure, real proving backends, wallet
+UX, and fork rehearsal remain in progress.
 **Owner:** PrimeNumbersLabs / ZK group.
 **Last updated:** see `git log -1 -- docs/internal/zk-privacy-plan.md`.
 
@@ -89,19 +91,37 @@ crates/core/src/zk_sp1.rs            Phase 5 — swap mock for real sp1_sdk::Pro
 
 ## Phase status
 
-See the active todo list in the agent's plan
-(`/.cursor/plans/prime-chain-zk-privacy_*.plan.md`).
+Use [docs/STATUS.md](../STATUS.md) as the live workstream tracker. The
+table below is the architectural roll-up for this plan.
 
 | # | Title | Status |
 |---|---|---|
-| 0 | Repo consolidation | in progress |
-| 1 | ZK primitives, shielded state, threshold mempool, first circuits | scheduled |
-| 2 | Shielded CLOB | gated |
-| 3 | Liquidation auctions | gated |
-| 4 | Shielded EVM accounts | gated |
-| 5 | Real SP1 state proofs | gated |
-| 6 | SDK / RPC / wallet | gated |
-| 7 | Hard fork + testnet bake | gated |
+| 0 | Repo consolidation + privacy perimeter definition | mostly done |
+| 1 | ZK primitives, shielded state, threshold mempool, first circuits | in progress |
+| 2 | Shielded CLOB | largely landed |
+| 3 | Liquidation auctions | largely landed |
+| 4 | Shielded EVM accounts | partially landed |
+| 5 | Real SP1 state proofs | gated on SP1 toolchain + budget |
+| 6 | SDK / RPC / wallet | in progress |
+| 7 | Hard fork + testnet bake | in progress |
+
+### What is already landed on `feat/zk-privacy`
+
+- Shielded state, shielded orders, liquidation auctions, threshold
+  mempool, and the shielded EVM bridge are wired into the core engine.
+- Shielded RPC and WebSocket methods are live behind the privacy
+  activation switch.
+- Transparent PrimeOrders RPC, WebSocket subscriptions, and precompile
+  access are cut off after privacy activation.
+- Transparent account-state, contract-state, simulation, log/filter,
+  pending-tx, transaction metadata, receipt metadata, and tx-expanded
+  block retrieval are cut off after privacy activation.
+- Public contract publication now uses an opt-in code-attestation model
+  (`prime_getCodeHash`, `prime_getCodeAttestation`) instead of raw
+  post-fork bytecode access.
+- Post-fork public block retrieval is header-only; transaction-by-hash,
+  receipt-by-hash, and tx-expanded block responses are disabled.
+- CI now enforces the privacy invariants and the audit lane is green.
 
 ---
 
@@ -138,16 +158,13 @@ disclosable.
 Today the chain is best described as a **hybrid transparent + shielded
 system**:
 
-1. Transparent PrimeOrders has been mostly cut off post-fork at the
+1. Transparent PrimeOrders has been cut off post-fork at the
   RPC / WS / precompile / event layer.
-2. Shielded order flow, liquidation auctions, and block-level state
+2. Transparent account-state, contract-state, simulation, log/filter,
+  pending-tx, transaction metadata, receipt metadata, and tx-expanded
+  block retrieval methods are cut off after privacy activation.
+3. Shielded order flow, liquidation auctions, and block-level state
   proofs exist and are wired behind the privacy activation switch.
-3. Transparent EVM account/state introspection still exists via the
-  standard Ethereum JSON-RPC surface in
-  [crates/rpc/src/rpc_router.rs](../../crates/rpc/src/rpc_router.rs)
-  and [crates/rpc/src/rpc.rs](../../crates/rpc/src/rpc.rs):
-  `eth_getBalance`, `eth_getCode`, `eth_getStorageAt`,
-  `eth_getTransactionCount`, `eth_call`, `eth_estimateGas`.
 4. The shielded EVM still maintains a transparent balance mirror at the
   privacy boundary in
   [crates/core/src/shielded_evm.rs](../../crates/core/src/shielded_evm.rs),
@@ -157,6 +174,9 @@ system**:
 5. Viewing-key infrastructure is still stubbed; `prime_viewGrantToken`
   and `prime_viewRevokeToken` intentionally return "not implemented"
   in [crates/rpc/src/rpc_shielded.rs](../../crates/rpc/src/rpc_shielded.rs).
+6. The remaining privacy-boundary work is now concentrated in selective
+  disclosure, transparent-compatibility end-state decisions, and
+  acceptance coverage for the surviving public surfaces.
 
 ### Decision gate: what "real zkEVM" means for Prime Chain
 
@@ -201,6 +221,8 @@ than B.
 | Surface | Current state | Target state |
 |---|---|---|
 | Block headers, roots, proofs | Public | Keep public |
+| Block bodies / tx-expanded block RPC | Still exposes tx metadata | Keep header-only block access public; disable tx-expanded responses after privacy activation |
+| Transaction-by-hash / receipt RPC | Still exposes tx + receipt metadata | Disable after privacy activation |
 | Market aggregates, clearing price, aggregate OI | Public | Keep public |
 | Transparent PrimeOrders RPC / WS / precompile | Mostly gated post-fork | Remove fully after the fork |
 | Transparent PrimeOrders events | Gated / redacted post-fork | Remove fully after the fork |
@@ -234,6 +256,10 @@ whether the code already enforces that boundary on `feat/zk-privacy`.
 | `prime_call` | read simulation over state | Disable after privacy activation | future private simulation path or view-key flow | **landed** |
 | `eth_call` | read simulation over state | Disable after privacy activation | future private simulation path or view-key flow | **landed** |
 | `eth_estimateGas` | simulation over state / tx intent | Disable after privacy activation | wallet-side shielded estimation or relayer quote path | **landed** |
+| `prime_getBlockByNumber(..., true)` / `eth_getBlockByNumber(..., true)` | full tx objects in block response | Disable tx-expanded form after privacy activation; keep header-only form | header-only lookup remains public for hashes, roots, fees, and timestamps | **landed** |
+| `eth_getBlockByHash(..., true)` | full tx objects in block response | Disable tx-expanded form after privacy activation; keep header-only form | header-only lookup remains public for hashes, roots, fees, and timestamps | **landed** |
+| `prime_getTransactionByHash` / `eth_getTransactionByHash` | tx sender, recipient, calldata, value | Disable after privacy activation | block-level hash inclusion only; future view-key flow if needed | **landed** |
+| `prime_getTransactionReceipt` / `eth_getTransactionReceipt` | receipt logs, created address, gas + execution metadata | Disable after privacy activation | block-level inclusion only; future view-key flow if needed | **landed** |
 
 Rules implied by this matrix:
 
@@ -248,7 +274,10 @@ Rules implied by this matrix:
   without fetching the deployed code from the chain.
 4. Public call simulation is not part of the post-fork privacy surface;
   any replacement must be private, wallet-scoped, or relayer-mediated.
-5. If the project chooses Option B above, `prime_getCodeHash` can stay
+5. Post-fork block semantics are header-only for public RPC: hashes,
+  roots, fees, timestamps, and transaction hashes remain public, while
+  full transaction objects and receipts do not.
+6. If the project chooses Option B above, `prime_getCodeHash` can stay
   as the public attestation endpoint even after all remaining
   transparent-contract compatibility surfaces are removed.
 
@@ -269,6 +298,9 @@ The initial list is:
 - `eth_getStorageAt` / `prime_getStorageAt`
 - `eth_call` / `prime_call`
 - `eth_estimateGas`
+- `eth_getTransactionByHash` / `prime_getTransactionByHash`
+- `eth_getTransactionReceipt` / `prime_getTransactionReceipt`
+- `eth_getBlockByNumber(..., true)` / `eth_getBlockByHash(..., true)`
 
 #### 2. Transparent execution domain boundary
 
@@ -282,8 +314,9 @@ This must be enforced both in RPC and in execution semantics.
 
 #### 3. Selective disclosure design
 
-Define the view-key / disclosure model before more shielded features are
-added. At minimum:
+The disclosure model is defined in
+[ADR-019](../adr/ADR-019-selective-disclosure-viewing-keys.md). The
+remaining work is implementation and acceptance coverage. At minimum:
 
 - owner self-view
 - delegated read access for wallets / custodians
@@ -321,6 +354,19 @@ Point 1 is complete only when the repo has these artifacts:
 Only after that should Point 2 (protocol transition design) and Point 3
 (implementation sequencing) be treated as stable.
 
+### Point 1 completion snapshot
+
+As of the current branch state:
+
+- The RPC / WS / precompile / event privacy boundary is mostly landed.
+- The written architectural decision remains: ship Option A first, keep
+  Option B as the long-term end-state.
+- The remaining Point 1 gap is no longer broad public RPC leakage; it is
+  the selective-disclosure design, the explicit transparent-
+  compatibility boundary in execution/snapshots, and acceptance tests
+  proving that private trader state cannot be reconstructed from the
+  public APIs that remain.
+
 ### Point 2 preview — protocol transition design
 
 Once the privacy perimeter is fixed, the protocol design work should
@@ -336,9 +382,28 @@ cover:
 
 Recommended order after Point 1:
 
-1. Cut off or scope transparent account-state RPC.
-2. Implement viewing keys and selective disclosure.
-3. Remove or demote `transparent_balances` to compatibility-only.
-4. Replace threshold-encryption scaffolding with production crypto.
-5. Decide whether transparent revm stays permanent or becomes a bounded
+1. Implement viewing keys and selective disclosure.
+2. Remove or demote `transparent_balances` to compatibility-only.
+3. Decide whether transparent revm stays permanent or becomes a bounded
   compatibility subsystem.
+4. Add acceptance coverage for the surviving public metadata surfaces
+  (headers, hashes, proofs, aggregates, code attestations).
+5. Replace threshold-encryption scaffolding and mock proving backends
+  with production crypto / proving toolchains.
+
+### Next actions
+
+1. Extend ADR-019 beyond the first scoped read: add grant expiry /
+  revocation / scope-enforcement acceptance coverage and implement the
+  next grant-gated `prime_view*` methods needed by wallets.
+2. Decide and document the `transparent_balances` end-state: whether it
+  stays as a compatibility mirror for transparent contracts or is fully
+  removed after migration.
+3. Add privacy acceptance tests that prove post-fork public APIs cannot
+  recover balances, positions, transaction metadata, or receipt logs.
+4. Land real proving dependencies: Barretenberg install path, Noir
+  compilation flow, and SP1 prover integration.
+5. Extend SDK / wallet surfaces so shielded balances, shielded orders,
+  code attestations, and the eventual viewing-key flow are first-class.
+6. Start the pre-mainnet bake only after D5, D6, and E* move out of the
+  gated state in [docs/STATUS.md](../STATUS.md).

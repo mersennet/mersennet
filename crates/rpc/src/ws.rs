@@ -29,18 +29,35 @@ fn privacy_mode_activated() -> bool {
     PRIVACY_MODE_ACTIVATED.load(Ordering::SeqCst)
 }
 
-fn is_transparent_prime_orders_subscription(kind: &SubscriptionKind) -> bool {
+fn is_transparent_subscription(kind: &SubscriptionKind) -> bool {
     matches!(
         kind,
-        SubscriptionKind::PrimeOrdersTrades { .. }
+        SubscriptionKind::NewPendingTransactions
+            | SubscriptionKind::Logs { .. }
+            | SubscriptionKind::PrimeOrdersTrades { .. }
             | SubscriptionKind::PrimeOrdersBook { .. }
             | SubscriptionKind::BatchAuctionResults { .. }
     )
 }
 
+fn transparent_subscription_error(kind: &SubscriptionKind) -> SubscriptionError {
+    match kind {
+        SubscriptionKind::PrimeOrdersTrades { .. }
+        | SubscriptionKind::PrimeOrdersBook { .. }
+        | SubscriptionKind::BatchAuctionResults { .. } => {
+            SubscriptionError::TransparentPrimeOrdersDisabled
+        }
+        SubscriptionKind::NewPendingTransactions | SubscriptionKind::Logs { .. } => {
+            SubscriptionError::TransparentEthSubscriptionDisabled
+        }
+        _ => SubscriptionError::TransparentEthSubscriptionDisabled,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubscriptionError {
     TransparentPrimeOrdersDisabled,
+    TransparentEthSubscriptionDisabled,
 }
 
 /// Unique identifier for a subscription.
@@ -115,8 +132,8 @@ impl WsSubscriptionManager {
         &mut self,
         kind: SubscriptionKind,
     ) -> Result<(SubscriptionId, Receiver<String>), SubscriptionError> {
-        if privacy_mode_activated() && is_transparent_prime_orders_subscription(&kind) {
-            return Err(SubscriptionError::TransparentPrimeOrdersDisabled);
+        if privacy_mode_activated() && is_transparent_subscription(&kind) {
+            return Err(transparent_subscription_error(&kind));
         }
 
         let id = SubscriptionId(self.next_id.fetch_add(1, Ordering::SeqCst));
@@ -275,7 +292,7 @@ impl WsSubscriptionManager {
 
     pub fn purge_transparent_subscriptions(&mut self) {
         self.subscribers
-            .retain(|_, info| !is_transparent_prime_orders_subscription(&info.kind));
+            .retain(|_, info| !is_transparent_subscription(&info.kind));
     }
 
     fn send_to_matching<F>(&mut self, pred: F, payload: &Value)
@@ -452,6 +469,19 @@ fn handle_json_rpc(
                         .to_string(),
                     );
                 }
+                Err(SubscriptionError::TransparentEthSubscriptionDisabled) => {
+                    response = Some(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "error": {
+                                "code": -32605,
+                                "message": "transparent eth subscriptions disabled after privacy activation"
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
             }
         }
         "eth_unsubscribe" => {
@@ -494,6 +524,19 @@ fn handle_json_rpc(
                             "error": {
                                 "code": -32605,
                                 "message": "transparent PrimeOrders subscriptions disabled after privacy activation"
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
+                Err(SubscriptionError::TransparentEthSubscriptionDisabled) => {
+                    response = Some(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "error": {
+                                "code": -32605,
+                                "message": "transparent eth subscriptions disabled after privacy activation"
                             }
                         })
                         .to_string(),
@@ -657,6 +700,31 @@ mod tests {
         manager
             .subscribe(SubscriptionKind::NewShieldedRoot)
             .expect("shielded subscription should remain available");
+
+        set_privacy_mode_activated(false);
+    }
+
+    #[test]
+    fn manager_rejects_transparent_eth_subscriptions_after_privacy_activation() {
+        set_privacy_mode_activated(true);
+
+        let mut manager = WsSubscriptionManager::new();
+        let pending_err = manager
+            .subscribe(SubscriptionKind::NewPendingTransactions)
+            .expect_err("pending transactions subscription should be rejected");
+        assert_eq!(pending_err, SubscriptionError::TransparentEthSubscriptionDisabled);
+
+        let logs_err = manager
+            .subscribe(SubscriptionKind::Logs {
+                topics: Vec::new(),
+                address: None,
+            })
+            .expect_err("logs subscription should be rejected");
+        assert_eq!(logs_err, SubscriptionError::TransparentEthSubscriptionDisabled);
+
+        manager
+            .subscribe(SubscriptionKind::NewHeads)
+            .expect("block-level subscription should remain available");
 
         set_privacy_mode_activated(false);
     }

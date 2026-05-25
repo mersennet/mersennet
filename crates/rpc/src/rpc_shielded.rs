@@ -27,7 +27,9 @@
 use prime_chain::engine::Engine;
 use prime_chain::liquidation_auction::{LiquidationClaim, LiquidationExecute};
 use prime_chain::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
+use prime_chain::shielded_evm::{ViewingGrantScope, ViewingGrantToken};
 use prime_chain::shielded_orders::ShieldedOrderTx;
+use revm::primitives::keccak256;
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
@@ -47,6 +49,7 @@ pub type ShieldedRouteResult = Result<Option<Value>, ShieldedRpcError>;
 const ERR_DISABLED: i64 = -32605;
 const ERR_INVALID_PARAMS: i64 = -32602;
 const ERR_INTERNAL: i64 = -32000;
+const ERR_FORBIDDEN: i64 = -32604;
 
 /// Try to dispatch a shielded-mode RPC. Returns `Ok(None)` if the
 /// method name does not match any shielded method.
@@ -97,12 +100,17 @@ pub fn try_dispatch(method: &str, params: Value, engine: &mut Engine) -> Shielde
         }
 
         // ─────────── View-key methods (post-fork only) ──────────────
-        "prime_viewGrantToken" | "prime_viewRevokeToken" => {
+        "prime_viewGrantToken" => {
             require_active(active)?;
-            Err(ShieldedRpcError {
-                code: ERR_DISABLED,
-                message: format!("{method} requires viewing-key infrastructure (Workstream H)"),
-            })
+            grant_view_token(engine, params)
+        }
+        "prime_viewRevokeToken" => {
+            require_active(active)?;
+            revoke_view_token(engine, params)
+        }
+        "prime_viewPortfolioDigest" => {
+            require_active(active)?;
+            read_view_portfolio_digest(engine, params)
         }
 
         _ => Ok(None),
@@ -140,6 +148,7 @@ fn is_shielded_method(method: &str) -> bool {
             | "prime_verifyStateProof"
             | "prime_viewGrantToken"
             | "prime_viewRevokeToken"
+            | "prime_viewPortfolioDigest"
     )
 }
 
@@ -274,6 +283,49 @@ fn read_market_aggregates(engine: &Engine) -> Value {
     json!({ "markets": markets })
 }
 
+fn read_view_portfolio_digest(engine: &Engine, params: Value) -> ShieldedRouteResult {
+    let obj = first_param_object(&params)?;
+    let grant_id = decode_fixed_hex_field(obj, "grantIdHex", 32)?;
+    let token = engine
+        .shielded_evm
+        .viewing_grants
+        .get(&grant_id)
+        .ok_or_else(|| invalid_params("unknown grantIdHex"))?;
+
+    if !token.verify_signature() {
+        return Err(forbidden("grant token signature verification failed"));
+    }
+    if engine.shielded_evm.is_viewing_grant_revoked(&grant_id) {
+        return Err(forbidden("grant token has been revoked"));
+    }
+    if !token.is_active_at(engine.latest_height()) {
+        return Err(forbidden("grant token is outside its validity window"));
+    }
+    if !token.has_scope(&ViewingGrantScope::PortfolioDigestExport) {
+        return Err(forbidden(
+            "grant token is missing exports:portfolio_digest scope",
+        ));
+    }
+
+    let root = engine.shielded_evm.state.current_root().to_bytes();
+    let note_count = engine.shielded_evm.state.note_count() as u64;
+    let nullifier_count = engine.shielded_evm.state.nullifier_count() as u64;
+    let block_number = engine.latest_height();
+    let digest = derive_portfolio_digest(token, &root, block_number, note_count, nullifier_count);
+
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "grantorCommitment": hex_bytes(&token.grantor_commitment),
+        "blockNumber": block_number,
+        "shieldedStateRoot": hex_bytes(&root),
+        "noteCount": note_count,
+        "nullifierCount": nullifier_count,
+        "capabilitiesHash": hex_bytes(&token.capabilities_hash),
+        "portfolioDigest": hex_bytes(&digest),
+        "signatureVerified": true,
+    })))
+}
+
 // ---------------------------------------------------------------------------
 // Mutation handlers
 // ---------------------------------------------------------------------------
@@ -388,6 +440,91 @@ fn register_liquidator(engine: &mut Engine, params: Value) -> ShieldedRouteResul
     Ok(Some(json!({ "registered": ok })))
 }
 
+fn grant_view_token(engine: &mut Engine, params: Value) -> ShieldedRouteResult {
+    let obj = first_param_object(&params)?;
+    let grantor_commitment = decode_fixed_hex_field(obj, "grantorCommitmentHex", 32)?;
+    let grantor_sig_pubkey = decode_hex_field(obj, "grantorSigPubkeyHex")?;
+    let grantee_pubkey = decode_hex_field(obj, "granteePubkeyHex")?;
+    if grantor_sig_pubkey.is_empty() {
+        return Err(invalid_params("grantorSigPubkeyHex must not be empty"));
+    }
+    if grantee_pubkey.is_empty() {
+        return Err(invalid_params("granteePubkeyHex must not be empty"));
+    }
+
+    let scopes = parse_viewing_scopes(obj)?;
+    if scopes.is_empty() {
+        return Err(invalid_params("scopes must not be empty"));
+    }
+
+    let start_block = parse_u64_field(obj, "startBlock")?.unwrap_or_else(|| engine.latest_height());
+    let end_block = parse_u64_field(obj, "endBlock")?
+        .ok_or_else(|| invalid_params("missing endBlock"))?;
+    if end_block < start_block {
+        return Err(invalid_params("endBlock must be >= startBlock"));
+    }
+
+    let capabilities_hash = match obj.get("capabilitiesHashHex").and_then(Value::as_str) {
+        Some(value) => decode_fixed_hex(value, 32)?,
+        None => derive_capabilities_hash(&scopes, start_block, end_block),
+    };
+    let signature = decode_hex_field(obj, "signatureHex")?;
+    let grant_id = match obj.get("grantIdHex").and_then(Value::as_str) {
+        Some(value) => decode_fixed_hex(value, 32)?,
+        None => derive_grant_id(
+            engine.chain_id,
+            &grantor_commitment,
+            &grantor_sig_pubkey,
+            &grantee_pubkey,
+            &capabilities_hash,
+            start_block,
+            end_block,
+        ),
+    };
+
+    let token = ViewingGrantToken {
+        version: 1,
+        chain_id: engine.chain_id,
+        grant_id,
+        grantor_commitment,
+        grantor_sig_pubkey,
+        grantee_pubkey,
+        scopes,
+        start_block,
+        end_block,
+        capabilities_hash,
+        signature,
+    };
+    let signature_verified = token.verify_signature();
+    if !signature_verified {
+        return Err(invalid_params("grant signature verification failed"));
+    }
+    let stored = engine.shielded_evm.register_viewing_grant(token.clone());
+
+    Ok(Some(json!({
+        "grantToken": viewing_grant_to_value(&token),
+        "stored": stored,
+        "signatureVerified": signature_verified,
+    })))
+}
+
+fn revoke_view_token(engine: &mut Engine, params: Value) -> ShieldedRouteResult {
+    let obj = first_param_object(&params)?;
+    let grant_id = decode_fixed_hex_field(obj, "grantIdHex", 32)?;
+    let already_revoked = engine.shielded_evm.is_viewing_grant_revoked(&grant_id);
+    let revoked_at_block = engine.latest_height();
+    let revoked = engine
+        .shielded_evm
+        .revoke_viewing_grant(grant_id, revoked_at_block);
+
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "revoked": revoked,
+        "alreadyRevoked": already_revoked,
+        "revokedAtBlock": if revoked || already_revoked { json!(revoked_at_block) } else { Value::Null },
+    })))
+}
+
 /// Build a synthetic 0x7E transaction, push it through the engine's
 /// `apply_shielded_tx` dispatcher, and return the receipt-shaped JSON
 /// response.
@@ -419,6 +556,166 @@ fn invalid_params(msg: impl Into<String>) -> ShieldedRpcError {
         code: ERR_INVALID_PARAMS,
         message: msg.into(),
     }
+}
+
+fn forbidden(msg: impl Into<String>) -> ShieldedRpcError {
+    ShieldedRpcError {
+        code: ERR_FORBIDDEN,
+        message: msg.into(),
+    }
+}
+
+fn first_param_object<'a>(params: &'a Value) -> Result<&'a Value, ShieldedRpcError> {
+    let arr = params
+        .as_array()
+        .ok_or_else(|| invalid_params("expected single-element array"))?;
+    arr.first()
+        .ok_or_else(|| invalid_params("missing object"))
+}
+
+fn decode_hex_field(obj: &Value, key: &str) -> Result<Vec<u8>, ShieldedRpcError> {
+    let value = obj
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid_params(format!("missing {key}")))?;
+    decode_hex(value)
+}
+
+fn decode_fixed_hex_field(obj: &Value, key: &str, expected_len: usize) -> Result<[u8; 32], ShieldedRpcError> {
+    let value = obj
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid_params(format!("missing {key}")))?;
+    decode_fixed_hex(value, expected_len)
+}
+
+fn decode_fixed_hex(s: &str, expected_len: usize) -> Result<[u8; 32], ShieldedRpcError> {
+    let bytes = decode_hex(s)?;
+    if bytes.len() != expected_len {
+        return Err(invalid_params(format!("expected {expected_len} bytes")));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+fn parse_u64_field(obj: &Value, key: &str) -> Result<Option<u64>, ShieldedRpcError> {
+    let Some(value) = obj.get(key) else {
+        return Ok(None);
+    };
+    if let Some(number) = value.as_u64() {
+        return Ok(Some(number));
+    }
+    if let Some(text) = value.as_str() {
+        let stripped = text.strip_prefix("0x").unwrap_or(text);
+        return u64::from_str_radix(stripped, 16)
+            .map(Some)
+            .map_err(|e| invalid_params(format!("bad {key}: {e}")));
+    }
+    Err(invalid_params(format!("bad {key}")))
+}
+
+fn parse_viewing_scopes(obj: &Value) -> Result<Vec<ViewingGrantScope>, ShieldedRpcError> {
+    let scopes = obj
+        .get("scopes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid_params("missing scopes"))?;
+    scopes
+        .iter()
+        .map(|scope| {
+            let value = scope
+                .as_str()
+                .ok_or_else(|| invalid_params("scope entries must be strings"))?;
+            parse_viewing_scope(value)
+        })
+        .collect()
+}
+
+fn parse_viewing_scope(scope: &str) -> Result<ViewingGrantScope, ShieldedRpcError> {
+    match scope {
+        "notes:read" => Ok(ViewingGrantScope::NotesRead),
+        "balances:read" => Ok(ViewingGrantScope::BalancesRead),
+        "positions:read" => Ok(ViewingGrantScope::PositionsRead),
+        "orders:read" => Ok(ViewingGrantScope::OrdersRead),
+        "liquidations:read" => Ok(ViewingGrantScope::LiquidationsRead),
+        "exports:portfolio_digest" => Ok(ViewingGrantScope::PortfolioDigestExport),
+        _ => Err(invalid_params(format!("unsupported scope: {scope}"))),
+    }
+}
+
+fn derive_capabilities_hash(scopes: &[ViewingGrantScope], start_block: u64, end_block: u64) -> [u8; 32] {
+    let mut payload = Vec::new();
+    for scope in scopes {
+        payload.extend_from_slice(scope.as_str().as_bytes());
+        payload.push(0);
+    }
+    payload.extend_from_slice(&start_block.to_le_bytes());
+    payload.extend_from_slice(&end_block.to_le_bytes());
+    let digest = revm::primitives::keccak256(payload);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest.as_slice());
+    out
+}
+
+fn derive_grant_id(
+    chain_id: u64,
+    grantor_commitment: &[u8; 32],
+    grantor_sig_pubkey: &[u8],
+    grantee_pubkey: &[u8],
+    capabilities_hash: &[u8; 32],
+    start_block: u64,
+    end_block: u64,
+) -> [u8; 32] {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&chain_id.to_le_bytes());
+    payload.extend_from_slice(grantor_commitment);
+    payload.extend_from_slice(grantor_sig_pubkey);
+    payload.extend_from_slice(grantee_pubkey);
+    payload.extend_from_slice(capabilities_hash);
+    payload.extend_from_slice(&start_block.to_le_bytes());
+    payload.extend_from_slice(&end_block.to_le_bytes());
+    let digest = revm::primitives::keccak256(payload);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest.as_slice());
+    out
+}
+
+fn viewing_grant_to_value(token: &ViewingGrantToken) -> Value {
+    json!({
+        "version": token.version,
+        "chainId": token.chain_id,
+        "grantId": hex_bytes(&token.grant_id),
+        "grantorCommitment": hex_bytes(&token.grantor_commitment),
+        "grantorSigPubkey": hex_bytes(&token.grantor_sig_pubkey),
+        "granteePubkey": hex_bytes(&token.grantee_pubkey),
+        "scopes": token.scopes.iter().map(ViewingGrantScope::as_str).collect::<Vec<_>>(),
+        "startBlock": token.start_block,
+        "endBlock": token.end_block,
+        "capabilitiesHash": hex_bytes(&token.capabilities_hash),
+        "signature": hex_bytes(&token.signature),
+    })
+}
+
+fn derive_portfolio_digest(
+    token: &ViewingGrantToken,
+    shielded_state_root: &[u8; 32],
+    block_number: u64,
+    note_count: u64,
+    nullifier_count: u64,
+) -> [u8; 32] {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"PRIME_VIEW_PORTFOLIO_DIGEST_V1");
+    payload.extend_from_slice(&token.grant_id);
+    payload.extend_from_slice(&token.grantor_commitment);
+    payload.extend_from_slice(&token.capabilities_hash);
+    payload.extend_from_slice(shielded_state_root);
+    payload.extend_from_slice(&block_number.to_le_bytes());
+    payload.extend_from_slice(&note_count.to_le_bytes());
+    payload.extend_from_slice(&nullifier_count.to_le_bytes());
+    let digest = keccak256(payload);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest.as_slice());
+    out
 }
 
 fn decode_bincode_hex_param(params: &Value, key: &str) -> Result<Vec<u8>, ShieldedRpcError> {
@@ -454,6 +751,8 @@ fn hex_u256(v: revm::primitives::U256) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use k256::ecdsa::signature::hazmat::PrehashSigner;
+    use k256::ecdsa::{Signature, SigningKey};
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -469,6 +768,52 @@ mod tests {
         );
         std::mem::forget(dir); // leak the temp dir for the rest of the test
         e
+    }
+
+    fn sign_viewing_grant(
+        signing_key: &SigningKey,
+        chain_id: u64,
+        grantor_commitment: [u8; 32],
+        grantee_pubkey: Vec<u8>,
+        scopes: Vec<ViewingGrantScope>,
+        start_block: u64,
+        end_block: u64,
+    ) -> (String, String, String) {
+        let grantor_sig_pubkey = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let capabilities_hash = derive_capabilities_hash(&scopes, start_block, end_block);
+        let grant_id = derive_grant_id(
+            chain_id,
+            &grantor_commitment,
+            &grantor_sig_pubkey,
+            &grantee_pubkey,
+            &capabilities_hash,
+            start_block,
+            end_block,
+        );
+        let token = ViewingGrantToken {
+            version: 1,
+            chain_id,
+            grant_id,
+            grantor_commitment,
+            grantor_sig_pubkey: grantor_sig_pubkey.clone(),
+            grantee_pubkey,
+            scopes,
+            start_block,
+            end_block,
+            capabilities_hash,
+            signature: Vec::new(),
+        };
+        let digest = token.signing_digest();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        (
+            format!("0x{}", hex::encode(grantor_sig_pubkey)),
+            format!("0x{}", hex::encode(grant_id)),
+            format!("0x{}", hex::encode(signature.to_bytes())),
+        )
     }
 
     #[test]
@@ -537,5 +882,308 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(resp["registered"], true);
+    }
+
+    #[test]
+    fn view_grant_token_registers_post_fork() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[7u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, _, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x11; 32],
+            vec![0x22; 33],
+            vec![ViewingGrantScope::BalancesRead, ViewingGrantScope::OrdersRead],
+            5,
+            10,
+        );
+
+        let resp = try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "11".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "22".repeat(33)),
+                "scopes": ["balances:read", "orders:read"],
+                "startBlock": "0x5",
+                "endBlock": "0xa",
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resp["stored"], true);
+        assert_eq!(resp["signatureVerified"], true);
+        assert_eq!(resp["grantToken"]["startBlock"], 5);
+        assert_eq!(resp["grantToken"]["endBlock"], 10);
+        assert_eq!(e.shielded_evm.viewing_grants.len(), 1);
+    }
+
+    #[test]
+    fn view_grant_token_can_be_revoked_post_fork() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[9u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, _, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x44; 32],
+            vec![0x55; 33],
+            vec![ViewingGrantScope::NotesRead],
+            e.latest_height(),
+            20,
+        );
+
+        let grant = try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "44".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "55".repeat(33)),
+                "scopes": ["notes:read"],
+                "endBlock": "0x14",
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+        let grant_id = grant["grantToken"]["grantId"].as_str().unwrap().to_string();
+
+        let revoke = try_dispatch(
+            "prime_viewRevokeToken",
+            json!([{
+                "grantIdHex": grant_id,
+            }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(revoke["revoked"], true);
+        assert_eq!(e.shielded_evm.viewing_grant_revocations.len(), 1);
+    }
+
+    #[test]
+    fn view_portfolio_digest_requires_scope_and_valid_grant() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[11u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x66; 32],
+            vec![0x77; 33],
+            vec![ViewingGrantScope::PortfolioDigestExport],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "66".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "77".repeat(33)),
+                "scopes": ["exports:portfolio_digest"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex,
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let digest = try_dispatch(
+            "prime_viewPortfolioDigest",
+            json!([{
+                "grantIdHex": grant_id_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(digest["signatureVerified"], true);
+        assert!(digest.get("portfolioDigest").is_some());
+    }
+
+    #[test]
+    fn view_grant_token_rejects_invalid_signature() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[13u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, _, mut signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x88; 32],
+            vec![0x99; 33],
+            vec![ViewingGrantScope::BalancesRead],
+            1,
+            9,
+        );
+        signature_hex.replace_range(signature_hex.len() - 2.., "00");
+
+        let err = try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "88".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "99".repeat(33)),
+                "scopes": ["balances:read"],
+                "startBlock": "0x1",
+                "endBlock": "0x9",
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn view_portfolio_digest_rejects_revoked_grant() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[15u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0xAA; 32],
+            vec![0xBB; 33],
+            vec![ViewingGrantScope::PortfolioDigestExport],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "aa".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "bb".repeat(33)),
+                "scopes": ["exports:portfolio_digest"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        try_dispatch(
+            "prime_viewRevokeToken",
+            json!([{ "grantIdHex": grant_id_hex.clone() }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let err = try_dispatch(
+            "prime_viewPortfolioDigest",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ERR_FORBIDDEN);
+        assert!(err.message.contains("revoked"));
+    }
+
+    #[test]
+    fn view_portfolio_digest_rejects_expired_grant() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[17u8; 32]).into()).unwrap();
+        let current = e.latest_height();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0xCC; 32],
+            vec![0xDD; 33],
+            vec![ViewingGrantScope::PortfolioDigestExport],
+            current.saturating_sub(3),
+            current.saturating_sub(1),
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "cc".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "dd".repeat(33)),
+                "scopes": ["exports:portfolio_digest"],
+                "startBlock": format!("0x{:x}", current.saturating_sub(3)),
+                "endBlock": format!("0x{:x}", current.saturating_sub(1)),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let expired_height = current.saturating_add(1);
+        let expired_block = prime_chain::engine::Block {
+            number: expired_height,
+            ..Default::default()
+        };
+        e.chain.push(expired_block);
+
+        let err = try_dispatch(
+            "prime_viewPortfolioDigest",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ERR_FORBIDDEN);
+        assert!(err.message.contains("validity window"));
+    }
+
+    #[test]
+    fn view_portfolio_digest_rejects_wrong_scope() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[19u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0xEE; 32],
+            vec![0xFF; 33],
+            vec![ViewingGrantScope::BalancesRead],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "ee".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "ff".repeat(33)),
+                "scopes": ["balances:read"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let err = try_dispatch(
+            "prime_viewPortfolioDigest",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ERR_FORBIDDEN);
+        assert!(err.message.contains("missing exports:portfolio_digest scope"));
     }
 }

@@ -196,6 +196,10 @@ Estimates gas for a transaction.
 
 Returns block by block number.
 
+After privacy activation, this method remains public only for
+header-only access. Setting `fullTransactions=true` is rejected because
+full transaction metadata is not part of the post-fork public surface.
+
 **Parameters:**
 
 1. `blockNumber` — Block number (hex) or `"latest"`, `"pending"`
@@ -233,6 +237,10 @@ curl -X POST http://46.225.30.187:8545 \
 
 Returns block by block hash.
 
+After privacy activation, this method remains public only for
+header-only access. Setting `fullTransactions=true` is rejected because
+full transaction metadata is not part of the post-fork public surface.
+
 **Parameters:**
 
 1. `blockHash` — 32-byte block hash (hex)
@@ -243,6 +251,9 @@ Returns block by block hash.
 ### eth_getTransactionByHash
 
 Returns transaction by hash.
+
+After privacy activation, this method is disabled on the public RPC
+surface because transaction metadata remains private.
 
 **Parameters:**
 
@@ -273,6 +284,9 @@ Returns transaction by hash.
 ### eth_getTransactionReceipt
 
 Returns transaction receipt by hash.
+
+After privacy activation, this method is disabled on the public RPC
+surface because receipt metadata and logs remain private.
 
 **Parameters:**
 
