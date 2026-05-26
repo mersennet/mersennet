@@ -64,13 +64,16 @@ use crate::prime_orders::{MarketId, MarketStatus, Side, TimeInForce};
 use crate::shielded_state::ShieldedState;
 use prime_zkp::{
     Fr, NoteCommitment, Nullifier,
-    noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
+    noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
 };
 use revm::primitives::U256;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use thiserror::Error;
+
+#[cfg(test)]
+use prime_zkp::noir::MockVerifier;
 
 /// Externally-submitted shielded order envelope. Crosses the
 /// threshold mempool encrypted; only the public fields below are
@@ -250,7 +253,7 @@ impl Default for ShieldedOrdersEngine {
             initial_margin_bps: 500,
             maintenance_margin_bps: 300,
             next_sequence: 0,
-            verifier: Box::new(MockVerifier::new()),
+            verifier: default_verifier(),
             poseidon: Poseidon::default(),
             price_tick: U256::from(10u64),
             size_lot: U256::from(1u64),

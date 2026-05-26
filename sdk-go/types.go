@@ -81,3 +81,22 @@ type Trade struct {
 	Price    string `json:"price"`
 	Size     string `json:"size"`
 }
+
+// ViewNotesEntry represents one encrypted note returned by prime_viewNotes.
+type ViewNotesEntry struct {
+	NoteCommitment string `json:"noteCommitment"`
+	EncryptedNote  string `json:"encryptedNote"`
+}
+
+// ViewNotesResult represents the prime_viewNotes response.
+type ViewNotesResult struct {
+	GrantID                string           `json:"grantId"`
+	GrantorCommitment      string           `json:"grantorCommitment"`
+	BlockNumber            uint64           `json:"blockNumber"`
+	ShieldedStateRoot      string           `json:"shieldedStateRoot"`
+	TotalEncryptedNoteCount int             `json:"totalEncryptedNoteCount"`
+	ReturnedEncryptedNoteCount int          `json:"returnedEncryptedNoteCount"`
+	NextCursor             *string          `json:"nextCursor"`
+	Notes                  []ViewNotesEntry `json:"notes"`
+	SignatureVerified      bool             `json:"signatureVerified"`
+}

@@ -17,7 +17,7 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
+exports.parseShieldedNotePlaintext = exports.parseEncryptedNotePayload = exports.scanGrantedNotes = exports.createMockNoteDecryptor = exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
 var provider_1 = require("./provider");
 Object.defineProperty(exports, "PrimeProvider", { enumerable: true, get: function () { return provider_1.PrimeProvider; } });
 var orders_1 = require("./orders");
@@ -41,3 +41,7 @@ Object.defineProperty(exports, "encodeGetBestBidAsk", { enumerable: true, get: f
 var shielded_1 = require("./shielded");
 Object.defineProperty(exports, "ShieldedClient", { enumerable: true, get: function () { return shielded_1.ShieldedClient; } });
 Object.defineProperty(exports, "ViewingKeyHelpers", { enumerable: true, get: function () { return shielded_1.ViewingKeyHelpers; } });
+Object.defineProperty(exports, "createMockNoteDecryptor", { enumerable: true, get: function () { return shielded_1.createMockNoteDecryptor; } });
+Object.defineProperty(exports, "scanGrantedNotes", { enumerable: true, get: function () { return shielded_1.scanGrantedNotes; } });
+Object.defineProperty(exports, "parseEncryptedNotePayload", { enumerable: true, get: function () { return shielded_1.parseEncryptedNotePayload; } });
+Object.defineProperty(exports, "parseShieldedNotePlaintext", { enumerable: true, get: function () { return shielded_1.parseShieldedNotePlaintext; } });

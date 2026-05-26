@@ -171,9 +171,12 @@ system**:
   and the migration machinery persists `transparent_balances` through
   snapshots in
   [crates/core/src/engine.rs](../../crates/core/src/engine.rs).
-5. Viewing-key infrastructure is still stubbed; `prime_viewGrantToken`
-  and `prime_viewRevokeToken` intentionally return "not implemented"
-  in [crates/rpc/src/rpc_shielded.rs](../../crates/rpc/src/rpc_shielded.rs).
+5. Viewing-key infrastructure is partially landed: grant issuance,
+  revocation, signature verification, `prime_viewGrantStatus`, and
+  `prime_viewPortfolioDigest` are live in
+  [crates/rpc/src/rpc_shielded.rs](../../crates/rpc/src/rpc_shielded.rs),
+  and shield / transfer / unshield-change note ciphertexts are now
+  retained in core state for wallet reconstruction flows.
 6. The remaining privacy-boundary work is now concentrated in selective
   disclosure, transparent-compatibility end-state decisions, and
   acceptance coverage for the surviving public surfaces.
@@ -230,7 +233,7 @@ than B.
 | Liquidation auctions | Shielded / bonded | Keep and harden |
 | `eth_getBalance` / `eth_getCode` / `eth_getStorageAt` | Still public | Cut off or scope to transparent-only domain |
 | `eth_call` / `eth_estimateGas` | Still public | Redesign for private state or scope to transparent-only domain |
-| Viewing keys | Stubbed | Implement selective disclosure |
+| Viewing keys | Grant lifecycle and first scoped read landed; richer wallet reads still pending | Implement selective disclosure |
 | `transparent_balances` mirror | Still present | Transitional only; phase out once migration completes |
 
 ### Concrete cutoff tasks for Point 1
@@ -382,7 +385,8 @@ cover:
 
 Recommended order after Point 1:
 
-1. Implement viewing keys and selective disclosure.
+1. Extend selective disclosure from grant lifecycle into wallet-facing
+  note and balance reads.
 2. Remove or demote `transparent_balances` to compatibility-only.
 3. Decide whether transparent revm stays permanent or becomes a bounded
   compatibility subsystem.
@@ -393,9 +397,11 @@ Recommended order after Point 1:
 
 ### Next actions
 
-1. Extend ADR-019 beyond the first scoped read: add grant expiry /
-  revocation / scope-enforcement acceptance coverage and implement the
-  next grant-gated `prime_view*` methods needed by wallets.
+1. Extend ADR-019 beyond the now-landed `prime_viewNotes` scoped read:
+  implement balance / position / order grant-gated `prime_view*`
+  methods on top of the persisted encrypted EVM note payloads, and
+  decide how shielded-order and liquidation-created notes should be
+  indexed for the same flows.
 2. Decide and document the `transparent_balances` end-state: whether it
   stays as a compatibility mirror for transparent contracts or is fully
   removed after migration.

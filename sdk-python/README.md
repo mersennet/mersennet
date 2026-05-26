@@ -53,6 +53,7 @@ print("Asks:", book.asks)
 | `call(tx_object)` | Simulate call (eth_call) |
 | `chain_id()` | Chain ID |
 | `block_number()` | Latest block number |
+| `view_notes(grant_id_hex, limit, cursor_hex)` | Grant-gated encrypted note export |
 | `gas_price()` | Current gas price |
 
 ### PrimeOrders
@@ -76,6 +77,29 @@ print("Asks:", book.asks)
 | `subscribe_trades(market, callback)` | Subscribe to trades |
 | `subscribe_logs(callback, topics, address)` | Subscribe to logs |
 | `unsubscribe(id)` | Unsubscribe |
+
+### Shielded Notes
+
+Use `view_notes` to fetch encrypted note envelopes, then call
+`scan_granted_notes` with a decrypt function that applies your granted
+viewing material locally.
+
+```python
+from prime_chain import GrantedViewingMaterial, PrimeProvider, make_mock_note_decryptor, scan_granted_notes
+
+provider = PrimeProvider("http://localhost:8545")
+
+material = GrantedViewingMaterial(
+    grant_id_hex="0x...",
+    recipient_public_key="0x...",
+    decrypt_note_ciphertext=make_mock_note_decryptor("0x..."),
+)
+
+result = scan_granted_notes(provider, material, limit=64)
+print("Decrypted notes:", len(result.notes))
+```
+
+See the runnable end-to-end example in [examples/view_notes_end_to_end.py](examples/view_notes_end_to_end.py).
 
 ## WebSocket Example
 

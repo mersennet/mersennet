@@ -66,13 +66,51 @@ For every tx in `txs`, in order:
 the [`crate::zk_sp1::SP1Prover`] mock. Tests cover the input/output
 boundary and the prove-then-verify round trip.
 
+Reference request/response adapters for the eventual real prover live
+under [scripts/zk/README.md](../../scripts/zk/README.md).
+
+This directory now also contains a minimal materialized SP1 program:
+
+- [Cargo.toml](./Cargo.toml) is a standalone crate outside the root workspace.
+- [src/main.rs](./src/main.rs) is a real `sp1-zkvm` entrypoint that matches the
+  current host-runner request contract rather than the final full block program.
+
+The current minimal ELF consumes:
+
+- `prev_state_root`
+- `new_state_root`
+- `block_height`
+- `block_hash`
+- `tx_count`
+
+and commits the public values shape the current host runner verifies:
+
+- `prev_state_root`
+- `new_state_root`
+- `block_hash`
+- `tx_count`
+
+That is intentionally narrower than the eventual `BlockProgramInput` /
+`BlockProgramOutput` design above. It exists so the real `sp1_sdk` host path can
+exercise an actual ELF once WSL or Linux is available, without waiting for the
+entire block re-execution program to land.
+
+## Minimal build target
+
+Once a Linux SP1 toolchain is available, build the ELF from this directory, for
+example with the usual SP1 build flow for your environment. The resulting ELF can
+then be passed through `PRIME_SP1_PROGRAM_ELF` to the checked-in host runner and
+adapter scripts.
+
 ## Phase 5 cut-over
 
-When the `sp1` feature is enabled on `prime-zkp`:
+The remaining cut-over from this minimal ELF to the full block prover is:
 
-1. Add `sp1_sdk = "3"` to `crates/zkp/Cargo.toml` under the `sp1` feature.
-2. Implement the program in `programs/state-transition/src/main.rs`
-   (RISC-V binary that consumes `BlockProgramInput`).
+1. Replace the temporary `HostProgramInput` / `HostProgramOutput` contract in
+  [src/main.rs](./src/main.rs) with the full `prime_zkp::sp1::BlockProgramInput`
+  / `BlockProgramOutput` pipeline documented above.
+2. Re-run the full block transition inside the zkVM instead of echoing the host
+  request fields.
 3. Swap `SP1Prover::new(ProverMode::Mock)` in
    `crates/core/src/state_proof.rs` for
    `sp1_sdk::ProverClient::network()` (or `local()` for self-hosting).

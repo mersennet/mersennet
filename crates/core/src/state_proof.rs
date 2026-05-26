@@ -27,7 +27,7 @@ use crate::shielded_evm::ShieldedEvm;
 use crate::shielded_orders::ShieldedOrdersEngine;
 use crate::shielded_state::{ShieldedRootDigest, ShieldedState};
 use crate::zk_proofs::{StateProver, StateTransitionProof};
-use crate::zk_sp1::{ProverMode, SP1Prover};
+use crate::zk_sp1::SP1Prover;
 use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput};
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
@@ -104,7 +104,7 @@ pub fn prove_block(
     new_state: &ShieldedState,
     market_state_hash: B256,
 ) -> anyhow::Result<StateTransitionProof> {
-    let prover = SP1Prover::new(ProverMode::Mock);
+    let prover = SP1Prover::runtime_default();
     let prev_root = B256::from(request.prev_state_root);
     let new_root_bytes = new_state.current_root().to_bytes();
     let new_root = B256::from(new_root_bytes);
@@ -123,7 +123,7 @@ pub fn prove_block(
 /// chain's claimed `(prev_root, new_root, block_number, block_hash,
 /// tx_count)`.
 pub fn verify_block_proof(proof: &StateTransitionProof) -> bool {
-    let prover = SP1Prover::new(ProverMode::Mock);
+    let prover = SP1Prover::runtime_default();
     matches!(prover.verify_proof(proof).map(|r| r.valid), Ok(true))
 }
 

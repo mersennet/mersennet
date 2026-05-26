@@ -51,6 +51,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p prime-zkp --features prover --all-targets
 
+  check_zk_runtime:
+    name: cargo check (node --features prover,sp1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p prime-chain-node --features prover,sp1
+
   # ────────────────────────────────────────────────────────────────
   # Clippy + rustfmt
   # ────────────────────────────────────────────────────────────────

@@ -143,4 +143,21 @@ export interface BookUpdate {
     bids?: OrderBookLevel[];
     asks?: OrderBookLevel[];
 }
+/** Single encrypted note entry returned by prime_viewNotes. */
+export interface ViewNotesEntry {
+    noteCommitment: string;
+    encryptedNote: string;
+}
+/** Response payload returned by prime_viewNotes. */
+export interface ViewNotesResult {
+    grantId: string;
+    grantorCommitment: string;
+    blockNumber: number;
+    shieldedStateRoot: string;
+    totalEncryptedNoteCount: number;
+    returnedEncryptedNoteCount: number;
+    nextCursor: string | null;
+    notes: ViewNotesEntry[];
+    signatureVerified: boolean;
+}
 //# sourceMappingURL=types.d.ts.map

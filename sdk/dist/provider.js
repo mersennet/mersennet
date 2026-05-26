@@ -147,6 +147,17 @@ class PrimeProvider {
         const result = (await this.request('eth_chainId'));
         return hexToNumber(result);
     }
+    /** prime_viewNotes for grant-gated encrypted note export. */
+    async viewNotes(grantIdHex, options = {}) {
+        const request = { grantIdHex };
+        if (options.limit !== undefined) {
+            request.limit = options.limit;
+        }
+        if (options.cursorHex) {
+            request.cursorHex = options.cursorHex;
+        }
+        return (await this.request('prime_viewNotes', [request]));
+    }
     /** eth_gasPrice / prime_gasPrice */
     async getGasPrice() {
         const result = (await this.request('eth_gasPrice'));

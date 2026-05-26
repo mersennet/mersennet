@@ -10,6 +10,7 @@ import type {
   ContractPublicationStatus,
   Receipt,
   TransactionParams,
+  ViewNotesResult,
 } from './types';
 
 /** Parse hex string to number */
@@ -189,6 +190,21 @@ export class PrimeProvider {
   async getChainId(): Promise<number> {
     const result = (await this.request('eth_chainId')) as string;
     return hexToNumber(result);
+  }
+
+  /** prime_viewNotes for grant-gated encrypted note export. */
+  async viewNotes(
+    grantIdHex: string,
+    options: { limit?: number; cursorHex?: string } = {}
+  ): Promise<ViewNotesResult> {
+    const request: Record<string, unknown> = { grantIdHex };
+    if (options.limit !== undefined) {
+      request.limit = options.limit;
+    }
+    if (options.cursorHex) {
+      request.cursorHex = options.cursorHex;
+    }
+    return (await this.request('prime_viewNotes', [request])) as ViewNotesResult;
   }
 
   /** eth_gasPrice / prime_gasPrice */

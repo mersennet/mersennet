@@ -38,13 +38,16 @@ use crate::prime_orders::MarketId;
 use crate::shielded_state::ShieldedState;
 use prime_zkp::{
     Fr, NoteCommitment, Nullifier,
-    noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
+    noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
 };
 use revm::primitives::U256;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
+
+#[cfg(test)]
+use prime_zkp::noir::MockVerifier;
 
 /// Minimum bond, in PRIM lowest units, to register as a liquidator.
 /// Configurable via governance after launch. Default = 10_000 PRIM.
@@ -173,7 +176,7 @@ impl Default for LiquidationAuction {
             pending_revelation: Vec::new(),
             insurance_fund: U256::ZERO,
             stats: AuctionStats::default(),
-            verifier: Box::new(MockVerifier::new()),
+            verifier: default_verifier(),
             poseidon: Poseidon::default(),
         }
     }

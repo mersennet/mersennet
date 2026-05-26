@@ -20,6 +20,7 @@
  * implementation; no API change.
  */
 
+import { createHash } from 'crypto';
 import type { PrimeProvider } from './provider';
 
 /** BN254 scalar field element, encoded as a 32-byte little-endian hex string. */
@@ -95,6 +96,40 @@ export interface ShieldedClientOptions {
   provider: PrimeProvider;
   viewingKey: ViewingKey;
   prover?: ZkProver;
+  grantedViewingMaterial?: GrantedViewingMaterial;
+}
+
+export interface GrantedViewingMaterial {
+  grantIdHex: string;
+  recipientPublicKey?: Fr;
+  decryptNoteCiphertext(input: {
+    noteCommitment: string;
+    encryptedNoteHex: string;
+    envelope: EncryptedNote;
+  }): Uint8Array | null | Promise<Uint8Array | null>;
+}
+
+export interface GrantedNoteScanOptions {
+  limit?: number;
+  cursorHex?: string;
+  maxPages?: number;
+  ignoreMalformed?: boolean;
+}
+
+export interface GrantedDecryptedNote {
+  noteCommitment: string;
+  envelope: EncryptedNote;
+  note: Note;
+}
+
+export interface GrantedNoteScanResult {
+  grantId: string;
+  blockNumber: number;
+  totalEncryptedNoteCount: number;
+  fetchedEncryptedNoteCount: number;
+  nextCursor: string | null;
+  skippedMalformedCount: number;
+  notes: GrantedDecryptedNote[];
 }
 
 /**
@@ -120,12 +155,14 @@ export class ShieldedClient {
   // viewing-key trial decryption) and the selective-disclosure
   // delegation flow.
   private readonly viewingKey: ViewingKey;
+  private grantedViewingMaterial?: GrantedViewingMaterial;
   private prover: ZkProver | undefined;
   private noteCache: Note[] = [];
 
   constructor(opts: ShieldedClientOptions) {
     this.provider = opts.provider;
     this.viewingKey = opts.viewingKey;
+    this.grantedViewingMaterial = opts.grantedViewingMaterial;
     this.prover = opts.prover;
   }
 
@@ -139,6 +176,10 @@ export class ShieldedClient {
 
   setProver(prover: ZkProver): void {
     this.prover = prover;
+  }
+
+  setGrantedViewingMaterial(grantedViewingMaterial: GrantedViewingMaterial): void {
+    this.grantedViewingMaterial = grantedViewingMaterial;
   }
 
   /**
@@ -163,8 +204,11 @@ export class ShieldedClient {
    * do this incrementally via WebSocket subscriptions.
    */
   async scanRecentBlocks(_fromBlock: bigint, _toBlock: bigint): Promise<void> {
-    // Phase 6.x: implement via prime_getShieldedNotes RPC + viewing-key decrypt.
-    // For now this is a no-op so the surface compiles.
+    if (!this.grantedViewingMaterial) {
+      return;
+    }
+    const scanned = await scanGrantedNotes(this.provider, this.grantedViewingMaterial);
+    this.noteCache = scanned.notes.map((entry) => entry.note);
   }
 
   /**
@@ -230,6 +274,151 @@ export const ViewingKeyHelpers = {
   },
 };
 
+export async function scanGrantedNotes(
+  provider: PrimeProvider,
+  grantedViewingMaterial: GrantedViewingMaterial,
+  options: GrantedNoteScanOptions = {}
+): Promise<GrantedNoteScanResult> {
+  const maxPages = options.maxPages ?? Number.MAX_SAFE_INTEGER;
+  let cursorHex = options.cursorHex;
+  let pageCount = 0;
+  let totalEncryptedNoteCount = 0;
+  let fetchedEncryptedNoteCount = 0;
+  let blockNumber = 0;
+  let nextCursor: string | null = null;
+  let skippedMalformedCount = 0;
+  const notes: GrantedDecryptedNote[] = [];
+
+  while (pageCount < maxPages) {
+    const page = await provider.viewNotes(grantedViewingMaterial.grantIdHex, {
+      limit: options.limit,
+      cursorHex,
+    });
+    totalEncryptedNoteCount = page.totalEncryptedNoteCount;
+    fetchedEncryptedNoteCount += page.returnedEncryptedNoteCount;
+    blockNumber = page.blockNumber;
+    nextCursor = page.nextCursor;
+
+    for (const entry of page.notes) {
+      let envelope: EncryptedNote;
+      try {
+        envelope = parseEncryptedNotePayload(entry.encryptedNote);
+      } catch (error) {
+        if (options.ignoreMalformed ?? true) {
+          skippedMalformedCount += 1;
+          continue;
+        }
+        throw error;
+      }
+
+      if (
+        grantedViewingMaterial.recipientPublicKey &&
+        envelope.recipient.toLowerCase() !== grantedViewingMaterial.recipientPublicKey.toLowerCase()
+      ) {
+        continue;
+      }
+
+      const plaintext = await grantedViewingMaterial.decryptNoteCiphertext({
+        noteCommitment: entry.noteCommitment,
+        encryptedNoteHex: entry.encryptedNote,
+        envelope,
+      });
+      if (!plaintext) {
+        continue;
+      }
+
+      notes.push({
+        noteCommitment: entry.noteCommitment,
+        envelope,
+        note: parseShieldedNotePlaintext(plaintext),
+      });
+    }
+
+    pageCount += 1;
+    if (!page.nextCursor) {
+      break;
+    }
+    cursorHex = page.nextCursor;
+  }
+
+  return {
+    grantId: grantedViewingMaterial.grantIdHex,
+    blockNumber,
+    totalEncryptedNoteCount,
+    fetchedEncryptedNoteCount,
+    nextCursor,
+    skippedMalformedCount,
+    notes,
+  };
+}
+
+export function parseEncryptedNotePayload(payloadHex: string): EncryptedNote {
+  const payload = hexToBytes(payloadHex);
+  let offset = 0;
+  const recipient = bytesToFr(payload.subarray(offset, offset + 32));
+  offset += 32;
+  const ciphertextLen = Number(readU64LE(payload, offset));
+  offset += 8;
+  if (offset + ciphertextLen + 32 > payload.length) {
+    throw new Error('malformed encrypted note payload');
+  }
+  const ciphertext = payload.slice(offset, offset + ciphertextLen);
+  offset += ciphertextLen;
+  const ephemeralPk = bytesToFr(payload.subarray(offset, offset + 32));
+  offset += 32;
+  if (offset !== payload.length) {
+    throw new Error('encrypted note payload has trailing bytes');
+  }
+  return {
+    recipient,
+    ciphertext,
+    ephemeralPk,
+  };
+}
+
+export function parseShieldedNotePlaintext(plaintext: Uint8Array): Note {
+  if (plaintext.length !== 116) {
+    throw new Error('malformed note plaintext');
+  }
+  let offset = 0;
+  const value = readU128LE(plaintext, offset);
+  offset += 16;
+  const assetId = readU32LE(plaintext, offset);
+  offset += 4;
+  const ownerPk = bytesToFr(plaintext.subarray(offset, offset + 32));
+  offset += 32;
+  const rho = bytesToFr(plaintext.subarray(offset, offset + 32));
+  offset += 32;
+  const psi = bytesToFr(plaintext.subarray(offset, offset + 32));
+
+  return {
+    value,
+    assetId,
+    ownerPk,
+    rho,
+    psi,
+  };
+}
+
+/**
+ * Example/mock decryptor matching the current end-to-end SDK examples.
+ *
+ * This is not the production viewing-key cryptosystem. It derives a
+ * deterministic shared secret from `viewSecretHex` and `ephemeralPk`,
+ * expands that into a byte stream, and XORs it with the ciphertext.
+ */
+export function createMockNoteDecryptor(
+  viewSecretHex: string
+): GrantedViewingMaterial['decryptNoteCiphertext'] {
+  return ({ envelope }) => {
+    const key = expandMockKey(
+      deriveMockSharedSecret(viewSecretHex, envelope.ephemeralPk),
+      envelope.ciphertext.length
+    );
+    return xorBytes(envelope.ciphertext, key);
+  };
+}
+
 function simpleHash(input: string): string {
   // Placeholder; real impl uses keccak256 via ethers or noble-hashes.
   let h = 0n;
@@ -242,4 +431,71 @@ function simpleHash(input: string): string {
 
 function bytesToHex(bytes: Uint8Array): string {
   return '0x' + Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hashBytes(bytes: Uint8Array): Uint8Array {
+  return createHash('sha256').update(bytes).digest();
+}
+
+function deriveMockSharedSecret(viewSecretHex: string, ephemeralPk: Fr): Uint8Array {
+  const payload = new Uint8Array([
+    ...hexToBytes(viewSecretHex),
+    ...hexToBytes(ephemeralPk),
+  ]);
+  return hashBytes(payload);
+}
+
+function expandMockKey(seed: Uint8Array, len: number): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let hash = hashBytes(seed);
+  while (total < len) {
+    chunks.push(hash);
+    total += hash.length;
+    hash = hashBytes(hash);
+  }
+  return Uint8Array.from(chunks.flatMap((chunk) => Array.from(chunk)).slice(0, len));
+}
+
+function xorBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+  const out = new Uint8Array(left.length);
+  for (let index = 0; index < left.length; index += 1) {
+    out[index] = left[index] ^ right[index];
+  }
+  return out;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const normalized = hex.startsWith('0x') ? hex.slice(2) : hex;
+  if (normalized.length % 2 !== 0) {
+    throw new Error('hex string must have an even number of characters');
+  }
+  const out = new Uint8Array(normalized.length / 2);
+  for (let index = 0; index < out.length; index += 1) {
+    out[index] = parseInt(normalized.slice(index * 2, index * 2 + 2), 16);
+  }
+  return out;
+}
+
+function bytesToFr(bytes: Uint8Array): Fr {
+  if (bytes.length !== 32) {
+    throw new Error('field elements must be 32 bytes');
+  }
+  return bytesToHex(bytes);
+}
+
+function readU32LE(bytes: Uint8Array, offset: number): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return view.getUint32(offset, true);
+}
+
+function readU64LE(bytes: Uint8Array, offset: number): bigint {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return view.getBigUint64(offset, true);
+}
+
+function readU128LE(bytes: Uint8Array, offset: number): bigint {
+  const low = readU64LE(bytes, offset);
+  const high = readU64LE(bytes, offset + 8);
+  return low + (high << 64n);
 }

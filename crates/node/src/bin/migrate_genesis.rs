@@ -210,6 +210,7 @@ fn run(args: &Args) -> Result<()> {
         transparent_balances: encode_transparent_balances(&shielded_evm.transparent_balances),
         migration_plan_applied: true,
         code_publication_registry: Default::default(),
+        encrypted_note_payloads: Vec::new(),
         viewing_grants: Vec::new(),
         viewing_grant_revocations: Vec::new(),
     };

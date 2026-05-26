@@ -66,6 +66,7 @@ func main() {
 | `Call(txObject)` | Simulate call |
 | `ChainID()` | Chain ID |
 | `BlockNumber()` | Latest block number |
+| `ViewNotes(grantID, limit, cursorHex)` | Grant-gated encrypted note export |
 | `GasPrice()` | Current gas price |
 
 ### Orders
@@ -76,3 +77,26 @@ func main() {
 | `PlaceOrder(market, side, price, amount, tif, owner)` | Place order |
 | `CancelOrder(orderID)` | Cancel order |
 | `GetOrderBook(market)` | Get order book |
+
+### Shielded Notes
+
+Use `ViewNotes` to fetch encrypted note envelopes, then call `ScanGrantedNotes`
+with a decrypt function that applies your delegated viewing material locally.
+
+```go
+material := primechain.GrantedViewingMaterial{
+    GrantID:            "0x...",
+    RecipientPublicKey: "0x...",
+    Decrypt:            primechain.NewMockNoteDecryptor("0x..."),
+}
+
+result, err := primechain.ScanGrantedNotes(provider, material, &primechain.GrantedNoteScanOptions{
+    Limit: 64,
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("Decrypted notes:", len(result.Notes))
+```
+
+See the runnable end-to-end example in [examples/view-notes-end-to-end/main.go](examples/view-notes-end-to-end/main.go).

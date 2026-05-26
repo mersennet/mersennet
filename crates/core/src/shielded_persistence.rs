@@ -31,6 +31,8 @@ const SHIELDED_LEAVES: TableDefinition<u64, &[u8]> = TableDefinition::new("shiel
 const SHIELDED_NULLIFIERS: TableDefinition<&[u8], ()> = TableDefinition::new("shielded_nullifiers");
 const TRANSPARENT_BALANCES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("transparent_balances");
+const ENCRYPTED_NOTE_PAYLOADS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("encrypted_note_payloads");
 const VIEWING_GRANTS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("viewing_grants");
 const VIEWING_GRANT_REVOCATIONS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("viewing_grant_revocations");
@@ -64,6 +66,7 @@ impl ShieldedPersistence {
             let _ = write_txn.open_table(SHIELDED_LEAVES)?;
             let _ = write_txn.open_table(SHIELDED_NULLIFIERS)?;
             let _ = write_txn.open_table(TRANSPARENT_BALANCES)?;
+            let _ = write_txn.open_table(ENCRYPTED_NOTE_PAYLOADS)?;
             let _ = write_txn.open_table(VIEWING_GRANTS)?;
             let _ = write_txn.open_table(VIEWING_GRANT_REVOCATIONS)?;
             let _ = write_txn.open_table(AUCTION_STATE)?;
@@ -81,6 +84,7 @@ impl ShieldedPersistence {
         let snapshot = evm.state.snapshot();
         self.save_shielded_state_snapshot(&snapshot, block_height)?;
         self.save_transparent_balances(&evm.transparent_balances)?;
+        self.save_encrypted_note_payloads(&evm.encrypted_note_payloads)?;
         self.save_viewing_grants(&evm.viewing_grants)?;
         self.save_viewing_grant_revocations(&evm.viewing_grant_revocations)?;
         Ok(())
@@ -133,6 +137,21 @@ impl ShieldedPersistence {
             for (addr, amount) in balances {
                 let value_bytes = amount.to_be_bytes::<32>();
                 bal_t.insert(addr.as_slice(), value_bytes.as_slice())?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn save_encrypted_note_payloads(
+        &self,
+        payloads: &HashMap<[u8; 32], Vec<u8>>,
+    ) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut payload_t = write_txn.open_table(ENCRYPTED_NOTE_PAYLOADS)?;
+            for (commitment, payload) in payloads {
+                payload_t.insert(commitment.as_slice(), payload.as_slice())?;
             }
         }
         write_txn.commit()?;
@@ -223,6 +242,22 @@ impl ShieldedPersistence {
             let addr = Address::from_slice(k.value());
             let amount = U256::from_be_slice(v.value());
             out.insert(addr, amount);
+        }
+        Ok(out)
+    }
+
+    pub fn load_encrypted_note_payloads(&self) -> Result<HashMap<[u8; 32], Vec<u8>>> {
+        let read_txn = self.db.begin_read()?;
+        let payload_t = read_txn.open_table(ENCRYPTED_NOTE_PAYLOADS)?;
+        let mut out = HashMap::new();
+        for entry in payload_t.iter()? {
+            let (k, v) = entry?;
+            if k.value().len() != 32 {
+                continue;
+            }
+            let mut commitment = [0u8; 32];
+            commitment.copy_from_slice(k.value());
+            out.insert(commitment, v.value().to_vec());
         }
         Ok(out)
     }
@@ -345,5 +380,19 @@ mod tests {
         let revocations = p.load_viewing_grant_revocations().unwrap();
         assert_eq!(grants.get(&token.grant_id), Some(&token));
         assert_eq!(revocations[&token.grant_id].revoked_at_block, 12);
+    }
+
+    #[test]
+    fn encrypted_note_payloads_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = ShieldedPersistence::open(dir.path()).unwrap();
+
+        let mut evm = ShieldedEvm::new();
+        evm.record_encrypted_note_payload(Fr::from_u64(0xabc), &[1, 2, 3, 4]);
+
+        p.save_shielded_evm(&evm, 1).unwrap();
+
+        let payloads = p.load_encrypted_note_payloads().unwrap();
+        assert_eq!(payloads.get(&Fr::from_u64(0xabc).to_bytes()), Some(&vec![1, 2, 3, 4]));
     }
 }

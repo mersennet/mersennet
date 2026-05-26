@@ -4,6 +4,11 @@ version = "0.7.0"
 authors = ["Rodolfo Cova @rodaemonic"]
 edition = "2024"
 
+[features]
+default = []
+prover = ["prime-chain/prover", "prime-chain-rpc/prover", "prime-zkp/prover"]
+sp1 = ["prime-chain/sp1", "prime-chain-rpc/sp1", "prime-zkp/sp1"]
+
 [[bin]]
 name = "prime-chain"
 path = "src/bin/prime-chain.rs"

@@ -9,7 +9,7 @@ try:
 except ImportError:
     _USE_REQUESTS = False
 
-from .types import Block
+from .types import Block, ViewNotesEntry, ViewNotesResult
 
 
 class PrimeChainError(Exception):
@@ -143,6 +143,38 @@ class PrimeProvider:
         """Get latest block number."""
         result = self._request("eth_blockNumber")
         return _hex_to_number(result) if result else 0
+
+    def view_notes(
+        self,
+        grant_id_hex: str,
+        limit: Optional[int] = None,
+        cursor_hex: Optional[str] = None,
+    ) -> ViewNotesResult:
+        """Get grant-gated encrypted note exports via prime_viewNotes."""
+        request: Dict[str, Any] = {"grantIdHex": grant_id_hex}
+        if limit is not None:
+            request["limit"] = limit
+        if cursor_hex is not None:
+            request["cursorHex"] = cursor_hex
+        result = self._request("prime_viewNotes", [request])
+        notes = [
+            ViewNotesEntry(
+                note_commitment=entry.get("noteCommitment", "0x"),
+                encrypted_note=entry.get("encryptedNote", "0x"),
+            )
+            for entry in result.get("notes", [])
+        ]
+        return ViewNotesResult(
+            grant_id=result.get("grantId", "0x"),
+            grantor_commitment=result.get("grantorCommitment", "0x"),
+            block_number=result.get("blockNumber", 0),
+            shielded_state_root=result.get("shieldedStateRoot", "0x"),
+            total_encrypted_note_count=result.get("totalEncryptedNoteCount", 0),
+            returned_encrypted_note_count=result.get("returnedEncryptedNoteCount", 0),
+            next_cursor=result.get("nextCursor"),
+            notes=notes,
+            signature_verified=result.get("signatureVerified", False),
+        )
 
     def gas_price(self) -> str:
         """Get current gas price (hex)."""

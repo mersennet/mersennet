@@ -86,3 +86,26 @@ class Trade:
     side: str
     price: str
     size: str
+
+
+@dataclass
+class ViewNotesEntry:
+    """Single encrypted note entry returned by prime_viewNotes."""
+
+    note_commitment: str
+    encrypted_note: str
+
+
+@dataclass
+class ViewNotesResult:
+    """Grant-gated encrypted note export returned by prime_viewNotes."""
+
+    grant_id: str
+    grantor_commitment: str
+    block_number: int
+    shielded_state_root: str
+    total_encrypted_note_count: int
+    returned_encrypted_note_count: int
+    next_cursor: Optional[str]
+    notes: List[ViewNotesEntry]
+    signature_verified: bool

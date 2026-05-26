@@ -20,7 +20,7 @@ export { PrimeOrders } from './orders';
 export { PrimeSubscription } from './subscription';
 export { PrimePrecompile, PRECOMPILE_ADDRESS, SELECTORS, encodePlaceOrder, encodeCancelOrder, encodeDepositCollateral, encodeWithdrawCollateral, encodeGetPosition, encodeGetCollateral, encodeIsLiquidatable, encodeGetBestBidAsk, } from './precompile';
 export type { Block, Transaction, Receipt, LogEntry, Order, OrderBook, OrderBookLevel, OrderOutcome, Position, Trade, CallParams, CodeAttestation, ContractPublicationStatus, TransactionParams, BatchOrderParams, SubscriptionEvent, BookUpdate, } from './types';
-export { ShieldedClient, ViewingKeyHelpers, } from './shielded';
-export type { Note, EncryptedNote, ShieldedBalance, ViewingKey, OrderPlacePublicInputs, ZkProver, ShieldedClientOptions, } from './shielded';
+export { ShieldedClient, ViewingKeyHelpers, createMockNoteDecryptor, scanGrantedNotes, parseEncryptedNotePayload, parseShieldedNotePlaintext, } from './shielded';
+export type { Note, EncryptedNote, GrantedDecryptedNote, GrantedNoteScanOptions, GrantedNoteScanResult, GrantedViewingMaterial, ShieldedBalance, ViewingKey, OrderPlacePublicInputs, ZkProver, ShieldedClientOptions, } from './shielded';
 export type { Fr } from './shielded';
 //# sourceMappingURL=index.d.ts.map

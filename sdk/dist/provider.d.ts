@@ -2,7 +2,7 @@
  * PrimeProvider - JSON-RPC client for Prime Chain.
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
-import type { Block, CallParams, CodeAttestation, ContractPublicationStatus, Receipt, TransactionParams } from './types';
+import type { Block, CallParams, CodeAttestation, ContractPublicationStatus, Receipt, TransactionParams, ViewNotesResult } from './types';
 /**
  * Prime Chain JSON-RPC provider.
  * Connects to the RPC endpoint via HTTP.
@@ -50,6 +50,11 @@ export declare class PrimeProvider {
     sendTransaction(tx: TransactionParams): Promise<string>;
     /** eth_chainId / prime_chainId */
     getChainId(): Promise<number>;
+    /** prime_viewNotes for grant-gated encrypted note export. */
+    viewNotes(grantIdHex: string, options?: {
+        limit?: number;
+        cursorHex?: string;
+    }): Promise<ViewNotesResult>;
     /** eth_gasPrice / prime_gasPrice */
     getGasPrice(): Promise<string>;
     /** Get the WebSocket URL if configured */

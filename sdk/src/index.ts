@@ -58,10 +58,18 @@ export type {
 export {
   ShieldedClient,
   ViewingKeyHelpers,
+  createMockNoteDecryptor,
+  scanGrantedNotes,
+  parseEncryptedNotePayload,
+  parseShieldedNotePlaintext,
 } from './shielded';
 export type {
   Note,
   EncryptedNote,
+  GrantedDecryptedNote,
+  GrantedNoteScanOptions,
+  GrantedNoteScanResult,
+  GrantedViewingMaterial,
   ShieldedBalance,
   ViewingKey,
   OrderPlacePublicInputs,

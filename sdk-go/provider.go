@@ -227,6 +227,28 @@ func (p *Provider) BlockNumber() (uint64, error) {
 	return n, nil
 }
 
+// ViewNotes returns grant-gated encrypted notes from prime_viewNotes.
+func (p *Provider) ViewNotes(grantID string, limit *int, cursorHex *string) (*ViewNotesResult, error) {
+	request := map[string]interface{}{
+		"grantIdHex": grantID,
+	}
+	if limit != nil {
+		request["limit"] = *limit
+	}
+	if cursorHex != nil && *cursorHex != "" {
+		request["cursorHex"] = *cursorHex
+	}
+	result, err := p.request("prime_viewNotes", []interface{}{request})
+	if err != nil {
+		return nil, err
+	}
+	var out ViewNotesResult
+	if err := json.Unmarshal(result, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GasPrice returns the current gas price
 func (p *Provider) GasPrice() (string, error) {
 	result, err := p.request("eth_gasPrice", nil)
