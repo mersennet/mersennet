@@ -50,6 +50,8 @@ const ERR_DISABLED: i64 = -32605;
 const ERR_INVALID_PARAMS: i64 = -32602;
 const ERR_INTERNAL: i64 = -32000;
 const ERR_FORBIDDEN: i64 = -32604;
+const DEFAULT_VIEW_NOTES_LIMIT: usize = 128;
+const MAX_VIEW_NOTES_LIMIT: usize = 512;
 
 /// Try to dispatch a shielded-mode RPC. Returns `Ok(None)` if the
 /// method name does not match any shielded method.
@@ -112,6 +114,14 @@ pub fn try_dispatch(method: &str, params: Value, engine: &mut Engine) -> Shielde
             require_active(active)?;
             read_view_portfolio_digest(engine, params)
         }
+        "prime_viewNotes" => {
+            require_active(active)?;
+            read_view_notes(engine, params)
+        }
+        "prime_viewGrantStatus" => {
+            require_active(active)?;
+            read_view_grant_status(engine, params)
+        }
 
         _ => Ok(None),
     }
@@ -149,6 +159,8 @@ fn is_shielded_method(method: &str) -> bool {
             | "prime_viewGrantToken"
             | "prime_viewRevokeToken"
             | "prime_viewPortfolioDigest"
+            | "prime_viewNotes"
+            | "prime_viewGrantStatus"
     )
 }
 
@@ -284,28 +296,12 @@ fn read_market_aggregates(engine: &Engine) -> Value {
 }
 
 fn read_view_portfolio_digest(engine: &Engine, params: Value) -> ShieldedRouteResult {
-    let obj = first_param_object(&params)?;
-    let grant_id = decode_fixed_hex_field(obj, "grantIdHex", 32)?;
-    let token = engine
-        .shielded_evm
-        .viewing_grants
-        .get(&grant_id)
-        .ok_or_else(|| invalid_params("unknown grantIdHex"))?;
-
-    if !token.verify_signature() {
-        return Err(forbidden("grant token signature verification failed"));
-    }
-    if engine.shielded_evm.is_viewing_grant_revoked(&grant_id) {
-        return Err(forbidden("grant token has been revoked"));
-    }
-    if !token.is_active_at(engine.latest_height()) {
-        return Err(forbidden("grant token is outside its validity window"));
-    }
-    if !token.has_scope(&ViewingGrantScope::PortfolioDigestExport) {
-        return Err(forbidden(
-            "grant token is missing exports:portfolio_digest scope",
-        ));
-    }
+    let (grant_id, token) = resolve_active_viewing_grant(
+        engine,
+        &params,
+        &ViewingGrantScope::PortfolioDigestExport,
+        "exports:portfolio_digest",
+    )?;
 
     let root = engine.shielded_evm.state.current_root().to_bytes();
     let note_count = engine.shielded_evm.state.note_count() as u64;
@@ -323,6 +319,96 @@ fn read_view_portfolio_digest(engine: &Engine, params: Value) -> ShieldedRouteRe
         "capabilitiesHash": hex_bytes(&token.capabilities_hash),
         "portfolioDigest": hex_bytes(&digest),
         "signatureVerified": true,
+    })))
+}
+
+fn read_view_notes(engine: &Engine, params: Value) -> ShieldedRouteResult {
+    let (grant_id, token) =
+        resolve_active_viewing_grant(engine, &params, &ViewingGrantScope::NotesRead, "notes:read")?;
+    let obj = first_param_object(&params)?;
+    let limit = parse_usize_field(obj, "limit")?
+        .unwrap_or(DEFAULT_VIEW_NOTES_LIMIT)
+        .min(MAX_VIEW_NOTES_LIMIT);
+    let cursor = match obj.get("cursorHex").and_then(Value::as_str) {
+        Some(value) => Some(decode_fixed_hex(value, 32)?),
+        None => None,
+    };
+
+    let mut notes: Vec<(&[u8; 32], &Vec<u8>)> = engine
+        .shielded_evm
+        .encrypted_note_payloads
+        .iter()
+        .collect();
+    notes.sort_by_key(|(commitment, _)| **commitment);
+
+    let start = match cursor {
+        Some(cursor_commitment) => notes.partition_point(|(commitment, _)| **commitment <= cursor_commitment),
+        None => 0,
+    };
+    let end = start.saturating_add(limit).min(notes.len());
+    let window = &notes[start..end];
+    let next_cursor = if end < notes.len() {
+        window.last().map(|(commitment, _)| hex_bytes(commitment.as_slice()))
+    } else {
+        None
+    };
+
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "grantorCommitment": hex_bytes(&token.grantor_commitment),
+        "blockNumber": engine.latest_height(),
+        "shieldedStateRoot": hex_bytes(&engine.shielded_evm.state.current_root().to_bytes()),
+        "totalEncryptedNoteCount": notes.len(),
+        "returnedEncryptedNoteCount": window.len(),
+        "nextCursor": next_cursor,
+        "notes": window.iter().map(|(commitment, payload)| json!({
+            "noteCommitment": hex_bytes(commitment.as_slice()),
+            "encryptedNote": hex_bytes(payload),
+        })).collect::<Vec<_>>(),
+        "signatureVerified": true,
+    })))
+}
+
+fn read_view_grant_status(engine: &Engine, params: Value) -> ShieldedRouteResult {
+    let obj = first_param_object(&params)?;
+    let grant_id = decode_fixed_hex_field(obj, "grantIdHex", 32)?;
+    let Some(token) = engine.shielded_evm.viewing_grants.get(&grant_id) else {
+        return Ok(Some(json!({
+            "grantId": hex_bytes(&grant_id),
+            "exists": false,
+            "status": "unknown",
+        })));
+    };
+
+    let revoked = engine.shielded_evm.is_viewing_grant_revoked(&grant_id);
+    let revoked_at_block = engine
+        .shielded_evm
+        .viewing_grant_revocations
+        .get(&grant_id)
+        .map(|revocation| revocation.revoked_at_block);
+    let current_block = engine.latest_height();
+    let active_now = token.is_active_at(current_block) && !revoked;
+    let signature_verified = token.verify_signature();
+    let status = if revoked {
+        "revoked"
+    } else if current_block < token.start_block {
+        "scheduled"
+    } else if current_block > token.end_block {
+        "expired"
+    } else {
+        "active"
+    };
+
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "exists": true,
+        "status": status,
+        "activeNow": active_now,
+        "signatureVerified": signature_verified,
+        "currentBlock": current_block,
+        "grantToken": viewing_grant_to_value(token),
+        "revoked": revoked,
+        "revokedAtBlock": revoked_at_block,
     })))
 }
 
@@ -565,6 +651,38 @@ fn forbidden(msg: impl Into<String>) -> ShieldedRpcError {
     }
 }
 
+fn resolve_active_viewing_grant<'a>(
+    engine: &'a Engine,
+    params: &Value,
+    required_scope: &ViewingGrantScope,
+    scope_name: &str,
+) -> Result<([u8; 32], &'a ViewingGrantToken), ShieldedRpcError> {
+    let obj = first_param_object(params)?;
+    let grant_id = decode_fixed_hex_field(obj, "grantIdHex", 32)?;
+    let token = engine
+        .shielded_evm
+        .viewing_grants
+        .get(&grant_id)
+        .ok_or_else(|| invalid_params("unknown grantIdHex"))?;
+
+    if !token.verify_signature() {
+        return Err(forbidden("grant token signature verification failed"));
+    }
+    if engine.shielded_evm.is_viewing_grant_revoked(&grant_id) {
+        return Err(forbidden("grant token has been revoked"));
+    }
+    if !token.is_active_at(engine.latest_height()) {
+        return Err(forbidden("grant token is outside its validity window"));
+    }
+    if !token.has_scope(required_scope) {
+        return Err(forbidden(format!(
+            "grant token is missing {scope_name} scope"
+        )));
+    }
+
+    Ok((grant_id, token))
+}
+
 fn first_param_object<'a>(params: &'a Value) -> Result<&'a Value, ShieldedRpcError> {
     let arr = params
         .as_array()
@@ -613,6 +731,12 @@ fn parse_u64_field(obj: &Value, key: &str) -> Result<Option<u64>, ShieldedRpcErr
             .map_err(|e| invalid_params(format!("bad {key}: {e}")));
     }
     Err(invalid_params(format!("bad {key}")))
+}
+
+fn parse_usize_field(obj: &Value, key: &str) -> Result<Option<usize>, ShieldedRpcError> {
+    parse_u64_field(obj, key)?.map(|value| {
+        usize::try_from(value).map_err(|_| invalid_params(format!("bad {key}: value too large")))
+    }).transpose()
 }
 
 fn parse_viewing_scopes(obj: &Value) -> Result<Vec<ViewingGrantScope>, ShieldedRpcError> {
@@ -1013,6 +1137,167 @@ mod tests {
     }
 
     #[test]
+    fn view_notes_returns_encrypted_payloads_for_active_notes_read_grant() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(9), &[0x09, 0x09]);
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(2), &[0x02]);
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(5), &[0x05, 0x00]);
+
+        let signing_key = SigningKey::from_bytes((&[12u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x42; 32],
+            vec![0x24; 33],
+            vec![ViewingGrantScope::NotesRead],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{ 
+                "grantorCommitmentHex": format!("0x{}", "42".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "24".repeat(33)),
+                "scopes": ["notes:read"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let first_page = try_dispatch(
+            "prime_viewNotes",
+            json!([{ "grantIdHex": grant_id_hex.clone(), "limit": 2 }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(first_page["signatureVerified"], true);
+        assert_eq!(first_page["totalEncryptedNoteCount"], 3);
+        assert_eq!(first_page["returnedEncryptedNoteCount"], 2);
+        assert_eq!(first_page["notes"].as_array().unwrap().len(), 2);
+        assert_eq!(first_page["notes"][0]["encryptedNote"], "0x02");
+        assert_eq!(first_page["notes"][1]["encryptedNote"], "0x0500");
+        let cursor = first_page["nextCursor"].as_str().unwrap().to_string();
+
+        let second_page = try_dispatch(
+            "prime_viewNotes",
+            json!([{ "grantIdHex": grant_id_hex, "cursorHex": cursor, "limit": 2 }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(second_page["returnedEncryptedNoteCount"], 1);
+        assert_eq!(second_page["nextCursor"], Value::Null);
+        assert_eq!(second_page["notes"][0]["encryptedNote"], "0x0909");
+    }
+
+    #[test]
+    fn view_notes_rejects_wrong_scope() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(1), &[0x01]);
+        let signing_key = SigningKey::from_bytes((&[14u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x52; 32],
+            vec![0x35; 33],
+            vec![ViewingGrantScope::BalancesRead],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{ 
+                "grantorCommitmentHex": format!("0x{}", "52".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "35".repeat(33)),
+                "scopes": ["balances:read"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let err = try_dispatch(
+            "prime_viewNotes",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ERR_FORBIDDEN);
+        assert!(err.message.contains("missing notes:read scope"));
+    }
+
+    #[test]
+    fn view_notes_rejects_revoked_grant() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(3), &[0x03]);
+        let signing_key = SigningKey::from_bytes((&[16u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x62; 32],
+            vec![0x46; 33],
+            vec![ViewingGrantScope::NotesRead],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{ 
+                "grantorCommitmentHex": format!("0x{}", "62".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "46".repeat(33)),
+                "scopes": ["notes:read"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+        try_dispatch(
+            "prime_viewRevokeToken",
+            json!([{ "grantIdHex": grant_id_hex.clone() }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let err = try_dispatch(
+            "prime_viewNotes",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ERR_FORBIDDEN);
+        assert!(err.message.contains("revoked"));
+    }
+
+    #[test]
     fn view_grant_token_rejects_invalid_signature() {
         let mut e = fresh_engine();
         e.activate_privacy_mode();
@@ -1185,5 +1470,150 @@ mod tests {
 
         assert_eq!(err.code, ERR_FORBIDDEN);
         assert!(err.message.contains("missing exports:portfolio_digest scope"));
+    }
+
+    #[test]
+    fn view_grant_status_reports_active_and_unknown_grants() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[21u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x12; 32],
+            vec![0x34; 33],
+            vec![ViewingGrantScope::PortfolioDigestExport],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "12".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "34".repeat(33)),
+                "scopes": ["exports:portfolio_digest"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let status = try_dispatch(
+            "prime_viewGrantStatus",
+            json!([{ "grantIdHex": grant_id_hex.clone() }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(status["exists"], true);
+        assert_eq!(status["status"], "active");
+        assert_eq!(status["activeNow"], true);
+        assert_eq!(status["signatureVerified"], true);
+
+        let unknown = try_dispatch(
+            "prime_viewGrantStatus",
+            json!([{ "grantIdHex": format!("0x{}", "99".repeat(32)) }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(unknown["exists"], false);
+        assert_eq!(unknown["status"], "unknown");
+    }
+
+    #[test]
+    fn view_grant_status_reports_revoked_and_expired() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[23u8; 32]).into()).unwrap();
+
+        let (revoked_pubkey_hex, revoked_id_hex, revoked_sig_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x56; 32],
+            vec![0x78; 33],
+            vec![ViewingGrantScope::PortfolioDigestExport],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "56".repeat(32)),
+                "grantorSigPubkeyHex": revoked_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "78".repeat(33)),
+                "scopes": ["exports:portfolio_digest"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": revoked_id_hex.clone(),
+                "signatureHex": revoked_sig_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+        try_dispatch(
+            "prime_viewRevokeToken",
+            json!([{ "grantIdHex": revoked_id_hex.clone() }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let revoked = try_dispatch(
+            "prime_viewGrantStatus",
+            json!([{ "grantIdHex": revoked_id_hex }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(revoked["status"], "revoked");
+        assert_eq!(revoked["activeNow"], false);
+        assert_eq!(revoked["revoked"], true);
+
+        let (expired_pubkey_hex, expired_id_hex, expired_sig_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x9A; 32],
+            vec![0xBC; 33],
+            vec![ViewingGrantScope::PortfolioDigestExport],
+            0,
+            0,
+        );
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "9a".repeat(32)),
+                "grantorSigPubkeyHex": expired_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "bc".repeat(33)),
+                "scopes": ["exports:portfolio_digest"],
+                "startBlock": "0x0",
+                "endBlock": "0x0",
+                "grantIdHex": expired_id_hex.clone(),
+                "signatureHex": expired_sig_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+        e.chain.push(prime_chain::engine::Block {
+            number: 1,
+            ..Default::default()
+        });
+
+        let expired = try_dispatch(
+            "prime_viewGrantStatus",
+            json!([{ "grantIdHex": expired_id_hex }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(expired["status"], "expired");
+        assert_eq!(expired["activeNow"], false);
+        assert_eq!(expired["revoked"], false);
     }
 }

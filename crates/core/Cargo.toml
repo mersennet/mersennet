@@ -5,6 +5,11 @@ authors = ["Rodolfo Cova @rodaemonic"]
 edition = "2024"
 autobenches = false
 
+[features]
+default = []
+prover = ["prime-zkp/prover"]
+sp1 = ["prime-zkp/sp1"]
+
 [dependencies]
 anyhow = "1.0"
 hex = "0.4"

@@ -42,12 +42,62 @@ cargo build -p prime-zkp
 cargo test -p prime-zkp
 ```
 
+Feature-enabled runtime wiring now has two explicit lanes:
+
+```bash
+cargo check -p prime-zkp --features prover --lib
+cargo check -p prime-chain-node --features prover,sp1
+```
+
 Real Barretenberg-backed proving and verification are gated behind the
 `prover` feature; CI runs the workspace without it. Real BLS12-381
 threshold cryptography is gated behind the same feature. Tests use the
 `MockVerifier` and `DummyThreshold` so the rest of the workspace can
 integrate against the proof surface without pulling in pairing-friendly
 curve libraries.
+
+## Toolchain adapters
+
+The default build still falls back to the mock verifier/prover paths.
+When the external toolchains are available, the runtime switches to the
+real paths via environment variables instead of linking native SDKs
+directly into every workspace build.
+
+### Noir / Barretenberg
+
+- `PRIME_NARGO_BIN`: optional override for the `nargo` executable.
+- `PRIME_NOIR_CIRCUITS_DIR`: optional override for the shared circuit source tree.
+- `PRIME_NOIR_ARTIFACTS_DIR`: directory where compiled per-circuit artifacts live.
+- `PRIME_BB_VERIFY_ADAPTER`: executable or script that verifies a proof against one compiled circuit.
+
+`NoirToolchain::compile_circuit` materializes a temporary per-circuit
+package from `crates/zkp/circuits/src`, runs `nargo compile`, copies the
+resulting `target/` directory into `PRIME_NOIR_ARTIFACTS_DIR/<circuit>/`,
+then writes a deterministic `vk.hash` file over the compiled artifacts.
+
+The verify adapter is invoked with:
+
+```text
+<adapter> --circuit <slug> --artifacts <dir> --proof <proof.bin> --public-inputs <public_inputs.txt>
+```
+
+where `public_inputs.txt` contains one little-endian field element per
+line as hex.
+
+### SP1
+
+- `PRIME_SP1_PROVE_ADAPTER`: executable or script that produces an SP1 proof response.
+- `PRIME_SP1_VERIFY_ADAPTER`: executable or script that verifies an SP1 proof response.
+- `PRIME_SP1_PROGRAM_ELF`: optional path to the program ELF used by the adapter.
+- `PRIME_SP1_VKEY_HASH`: optional pinned 32-byte hex vkey hash.
+- `PRIME_SP1_MODE`: `local` or `network`.
+
+The SP1 adapters receive `--request <json> --response <json>` and are
+responsible for filling the response file with the proof or verification
+result. When these variables are absent, `SP1Prover::runtime_default()`
+falls back to the existing deterministic mock path.
+
+Reference scripts for all of the above live in [scripts/zk/README.md](../../scripts/zk/README.md).
 
 ## Roadmap (matches `docs/internal/zk-privacy-plan.md`)
 

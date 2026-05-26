@@ -499,6 +499,10 @@ impl Engine {
                 Ok(balances) => shielded_evm.transparent_balances = balances,
                 Err(e) => tracing::warn!(error = ?e, "transparent-balance restore failed"),
             }
+            match p.load_encrypted_note_payloads() {
+                Ok(payloads) => shielded_evm.encrypted_note_payloads = payloads,
+                Err(e) => tracing::warn!(error = ?e, "encrypted-note-payload restore failed"),
+            }
             match p.load_viewing_grants() {
                 Ok(grants) => shielded_evm.viewing_grants = grants,
                 Err(e) => tracing::warn!(error = ?e, "viewing-grant restore failed"),
@@ -1681,6 +1685,9 @@ impl Engine {
             // false.
             migration_plan_applied: !self.shielded_evm.state.snapshot().leaves.is_empty(),
             code_publication_registry: self.code_publication_registry.snapshot(),
+            encrypted_note_payloads: crate::engine_snapshot::encode_encrypted_note_payloads(
+                &self.shielded_evm.encrypted_note_payloads,
+            ),
             viewing_grants: crate::engine_snapshot::encode_viewing_grants(
                 &self.shielded_evm.viewing_grants,
             ),
@@ -1742,6 +1749,10 @@ impl Engine {
             self.code_publication_registry =
                 crate::code_publication::CodePublicationRegistry::restore(
                     shielded.code_publication_registry,
+                );
+            self.shielded_evm.encrypted_note_payloads =
+                crate::engine_snapshot::decode_encrypted_note_payloads(
+                    &shielded.encrypted_note_payloads,
                 );
             self.shielded_evm.viewing_grants =
                 crate::engine_snapshot::decode_viewing_grants(&shielded.viewing_grants);

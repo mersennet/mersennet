@@ -38,12 +38,15 @@ use k256::ecdsa::signature::hazmat::PrehashVerifier;
 use k256::ecdsa::{Signature, VerifyingKey};
 use prime_zkp::{
     Fr, NoteCommitment, Nullifier,
-    noir::{Circuit, CircuitProof, MockVerifier, Verifier, VerifyError},
+    noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
 };
 use revm::primitives::{Address, U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
+
+#[cfg(test)]
+use prime_zkp::noir::MockVerifier;
 
 /// EIP-2718 type byte for shielded transactions.
 pub const SHIELDED_TX_TYPE: u8 = 0x7E;
@@ -253,6 +256,10 @@ pub struct ShieldedEvm {
     /// final wiring this becomes a thin adapter over revm's account
     /// API.
     pub transparent_balances: HashMap<Address, U256>, // privacy-allow: explicit transparent-side mirror at the privacy boundary
+    /// Encrypted note payloads keyed by note commitment bytes. This is a
+    /// non-consensus sidecar used for wallet/custody reconstruction flows.
+    /// Only note-producing paths that actually carry ciphertext populate it.
+    pub encrypted_note_payloads: HashMap<[u8; 32], Vec<u8>>,
     /// Registered selective-disclosure grant tokens keyed by `grant_id`.
     pub viewing_grants: HashMap<[u8; 32], ViewingGrantToken>,
     /// Revocations keyed by `grant_id`.
@@ -265,9 +272,10 @@ impl Default for ShieldedEvm {
         Self {
             state: ShieldedState::new(),
             transparent_balances: HashMap::new(),
+            encrypted_note_payloads: HashMap::new(),
             viewing_grants: HashMap::new(),
             viewing_grant_revocations: HashMap::new(),
-            verifier: Box::new(MockVerifier::new()),
+            verifier: default_verifier(),
         }
     }
 }
@@ -306,6 +314,20 @@ impl ShieldedEvm {
             .get(who)
             .copied()
             .unwrap_or(U256::ZERO)
+    }
+
+    pub fn record_encrypted_note_payload(&mut self, commitment: Fr, payload: &[u8]) {
+        if payload.is_empty() {
+            return;
+        }
+        self.encrypted_note_payloads
+            .insert(commitment.to_bytes(), payload.to_vec());
+    }
+
+    pub fn encrypted_note_payload(&self, commitment: &[u8; 32]) -> Option<&[u8]> {
+        self.encrypted_note_payloads
+            .get(commitment)
+            .map(Vec::as_slice)
     }
 
     pub fn register_viewing_grant(&mut self, token: ViewingGrantToken) -> bool {
@@ -358,6 +380,7 @@ impl ShieldedEvm {
         let _ = self
             .state
             .insert_note(NoteCommitment(tx.output_commitment))?;
+        self.record_encrypted_note_payload(tx.output_commitment, &tx.encrypted_output);
         Ok(())
     }
 
@@ -377,6 +400,7 @@ impl ShieldedEvm {
         let _ = self
             .state
             .insert_note(NoteCommitment(tx.output_commitment))?;
+        self.record_encrypted_note_payload(tx.output_commitment, &tx.encrypted_output);
         Ok(())
     }
 
@@ -403,6 +427,7 @@ impl ShieldedEvm {
             let _ = self
                 .state
                 .insert_note(NoteCommitment(tx.change_commitment))?;
+            self.record_encrypted_note_payload(tx.change_commitment, &tx.encrypted_change);
         }
         // Credit the transparent destination.
         self.credit_transparent(tx.to, tx.amount);
@@ -528,12 +553,13 @@ mod tests {
             from: alice,
             amount: U256::from(1_000u64),
             output_commitment: cm,
-            encrypted_output: Vec::new(),
+            encrypted_output: vec![1, 2, 3, 4],
             proof,
         };
         evm.apply_shield(&tx).unwrap();
         assert_eq!(evm.transparent_balance(&alice), U256::ZERO);
         assert_eq!(evm.state.note_count(), 1);
+        assert_eq!(evm.encrypted_note_payload(&cm.to_bytes()), Some(&[1, 2, 3, 4][..]));
     }
 
     #[test]
@@ -627,11 +653,54 @@ mod tests {
             anchor_root: anchor,
             nullifier,
             output_commitment: out_cm,
-            encrypted_output: Vec::new(),
+            encrypted_output: vec![9, 8, 7],
             proof,
         };
         evm.apply_shielded_transfer(&tx).unwrap();
         assert_eq!(evm.state.note_count(), 2);
+        assert_eq!(evm.encrypted_note_payload(&out_cm.to_bytes()), Some(&[9, 8, 7][..]));
+    }
+
+    #[test]
+    fn unshield_change_records_encrypted_payload() {
+        let mut evm = ShieldedEvm::new();
+        let p = Poseidon::default();
+        let note = Note {
+            value: 500,
+            asset_id: 0,
+            owner_pk: Fr::from_u64(1),
+            rho: Fr::from_u64(10),
+            psi: Fr::from_u64(20),
+        };
+        evm.state.insert_note(note.commit(&p)).unwrap();
+        let change_note = Note {
+            value: 100,
+            asset_id: 0,
+            owner_pk: Fr::from_u64(2),
+            rho: Fr::from_u64(30),
+            psi: Fr::from_u64(40),
+        };
+        let change_commitment = change_note.commit(&p).0;
+        let sk = Fr::from_u64(0xcafe);
+        let nullifier = note.nullifier(&p, &sk).0;
+        let bob = Address::repeat_byte(0xbb);
+        let anchor = evm.state.current_root();
+        let public_inputs = vec![anchor, nullifier, change_commitment, Fr::from_u64(400)];
+        let proof = MockVerifier::new().prove(Circuit::Spend, public_inputs);
+        let tx = UnshieldTx {
+            anchor_root: anchor,
+            nullifier,
+            amount: U256::from(400u64),
+            to: bob,
+            change_commitment,
+            encrypted_change: vec![4, 0, 0, 1],
+            proof,
+        };
+        evm.apply_unshield(&tx).unwrap();
+        assert_eq!(
+            evm.encrypted_note_payload(&change_commitment.to_bytes()),
+            Some(&[4, 0, 0, 1][..])
+        );
     }
 
     #[test]

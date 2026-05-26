@@ -57,6 +57,9 @@ pub struct ShieldedSnapshotData {
     /// Opt-in public contract code-hash attestations.
     #[serde(default)]
     pub code_publication_registry: CodePublicationRegistrySnapshot,
+    /// Encrypted note payload sidecar keyed by note commitment.
+    #[serde(default)]
+    pub encrypted_note_payloads: Vec<([u8; 32], Vec<u8>)>,
     /// Registered selective-disclosure grant tokens.
     #[serde(default)]
     pub viewing_grants: Vec<ViewingGrantToken>,
@@ -192,6 +195,27 @@ pub fn encode_viewing_grants(
 ) -> Vec<ViewingGrantToken> {
     let mut out: Vec<ViewingGrantToken> = grants.values().cloned().collect();
     out.sort_by_key(|grant| grant.grant_id);
+    out
+}
+
+pub fn encode_encrypted_note_payloads(
+    payloads: &HashMap<[u8; 32], Vec<u8>>,
+) -> Vec<([u8; 32], Vec<u8>)> {
+    let mut out: Vec<([u8; 32], Vec<u8>)> = payloads
+        .iter()
+        .map(|(commitment, payload)| (*commitment, payload.clone()))
+        .collect();
+    out.sort_by_key(|entry| entry.0);
+    out
+}
+
+pub fn decode_encrypted_note_payloads(
+    entries: &[([u8; 32], Vec<u8>)],
+) -> HashMap<[u8; 32], Vec<u8>> {
+    let mut out = HashMap::with_capacity(entries.len());
+    for (commitment, payload) in entries {
+        out.insert(*commitment, payload.clone());
+    }
     out
 }
 

@@ -9,6 +9,14 @@ use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
+#[cfg(feature = "sp1")]
+use std::{
+    env, fs,
+    path::PathBuf,
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 // ---------------------------------------------------------------------------
 // SP1 Proof Types
 // ---------------------------------------------------------------------------
@@ -67,6 +75,8 @@ pub struct SP1Prover {
     pub program_elf: Vec<u8>,
     pub vkey_hash: B256,
     mode: ProverMode,
+    #[cfg(feature = "sp1")]
+    backend: Option<Sp1CliBackend>,
 }
 
 impl SP1Prover {
@@ -75,7 +85,20 @@ impl SP1Prover {
             program_elf: Vec::new(),
             vkey_hash: keccak256(b"sp1_prime_chain_mock_vkey"),
             mode,
+            #[cfg(feature = "sp1")]
+            backend: None,
         }
+    }
+
+    pub fn runtime_default() -> Self {
+        #[cfg(feature = "sp1")]
+        {
+            if let Ok(backend) = Sp1CliBackend::from_env() {
+                return Self::with_backend(backend);
+            }
+        }
+
+        Self::new(ProverMode::Mock)
     }
 
     pub fn with_elf(elf: Vec<u8>, mode: ProverMode) -> Self {
@@ -88,6 +111,18 @@ impl SP1Prover {
             program_elf: elf,
             vkey_hash,
             mode,
+            #[cfg(feature = "sp1")]
+            backend: None,
+        }
+    }
+
+    #[cfg(feature = "sp1")]
+    fn with_backend(backend: Sp1CliBackend) -> Self {
+        Self {
+            program_elf: backend.program_elf.clone(),
+            vkey_hash: backend.vkey_hash,
+            mode: backend.mode.clone(),
+            backend: Some(backend),
         }
     }
 
@@ -141,6 +176,12 @@ impl SP1Prover {
     ) -> Result<Vec<SP1Proof>> {
         let mut proofs = Vec::with_capacity(transitions.len());
         for (prev, new, height, hash, tx_count) in transitions {
+            #[cfg(feature = "sp1")]
+            if let Some(backend) = &self.backend {
+                proofs.push(backend.prove(*prev, *new, *height, *hash, *tx_count)?);
+                continue;
+            }
+
             proofs.push(self.prove_mock(*prev, *new, *height, *hash, *tx_count));
         }
         Ok(proofs)
@@ -156,6 +197,14 @@ impl StateProver for SP1Prover {
         block_hash: B256,
         tx_count: u64,
     ) -> Result<StateTransitionProof> {
+        #[cfg(feature = "sp1")]
+        let sp1_proof = if let Some(backend) = &self.backend {
+            backend.prove(prev_root, new_root, block_height, block_hash, tx_count)?
+        } else {
+            self.prove_mock(prev_root, new_root, block_height, block_hash, tx_count)
+        };
+
+        #[cfg(not(feature = "sp1"))]
         let sp1_proof = self.prove_mock(prev_root, new_root, block_height, block_hash, tx_count);
 
         let proof_data = bincode::serialize(&sp1_proof).unwrap_or(sp1_proof.proof_bytes);
@@ -180,6 +229,25 @@ impl StateProver for SP1Prover {
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult> {
         let start = Instant::now();
 
+        #[cfg(feature = "sp1")]
+        let valid = if proof.proof_type != ProofType::SP1 {
+            false
+        } else if let Some(backend) = &self.backend {
+            backend.verify(proof)?
+        } else if let Ok(sp1) = bincode::deserialize::<SP1Proof>(&proof.proof_data) {
+            SP1ProofVerifier::verify(&sp1, proof)
+        } else {
+            let expected = SP1Prover::compute_mock_proof_bytes(
+                proof.prev_state_root,
+                proof.new_state_root,
+                proof.block_height,
+                proof.block_hash,
+                proof.tx_count,
+            );
+            proof.proof_data == expected
+        };
+
+        #[cfg(not(feature = "sp1"))]
         let valid = if proof.proof_type != ProofType::SP1 {
             false
         } else if let Ok(sp1) = bincode::deserialize::<SP1Proof>(&proof.proof_data) {
@@ -236,6 +304,160 @@ impl SP1ProofVerifier {
 
         sp1_proof.proof_bytes == computed && !sp1_proof.public_values.is_empty()
     }
+}
+
+#[cfg(feature = "sp1")]
+#[derive(Clone, Debug)]
+struct Sp1CliBackend {
+    mode: ProverMode,
+    program_elf: Vec<u8>,
+    vkey_hash: B256,
+    prove_adapter: String,
+    verify_adapter: String,
+}
+
+#[cfg(feature = "sp1")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Sp1CliProofResponse {
+    vkey_hash_hex: String,
+    public_values_hex: String,
+    proof_bytes_hex: String,
+    proof_system: String,
+}
+
+#[cfg(feature = "sp1")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Sp1CliVerifyResponse {
+    verified: bool,
+}
+
+#[cfg(feature = "sp1")]
+impl Sp1CliBackend {
+    fn from_env() -> Result<Self> {
+        let prove_adapter = env::var("PRIME_SP1_PROVE_ADAPTER")?;
+        let verify_adapter = env::var("PRIME_SP1_VERIFY_ADAPTER")?;
+        let program_elf = match env::var_os("PRIME_SP1_PROGRAM_ELF") {
+            Some(path) => fs::read(path)?,
+            None => Vec::new(),
+        };
+        let vkey_hash = match env::var("PRIME_SP1_VKEY_HASH") {
+            Ok(value) => parse_b256_hex(&value)?,
+            Err(_) if !program_elf.is_empty() => keccak256(&program_elf),
+            Err(_) => keccak256(b"sp1_prime_chain_mock_vkey"),
+        };
+        let mode = match env::var("PRIME_SP1_MODE")
+            .unwrap_or_else(|_| "local".to_string())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "network" => ProverMode::Network,
+            _ => ProverMode::Local,
+        };
+        Ok(Self {
+            mode,
+            program_elf,
+            vkey_hash,
+            prove_adapter,
+            verify_adapter,
+        })
+    }
+
+    fn prove(
+        &self,
+        prev_root: B256,
+        new_root: B256,
+        block_height: u64,
+        block_hash: B256,
+        tx_count: u64,
+    ) -> Result<SP1Proof> {
+        let request_dir = unique_temp_dir("prove");
+        fs::create_dir_all(&request_dir)?;
+        let request_path = request_dir.join("request.json");
+        let response_path = request_dir.join("response.json");
+        let payload = serde_json::json!({
+            "prevStateRootHex": hex::encode(prev_root.as_slice()),
+            "newStateRootHex": hex::encode(new_root.as_slice()),
+            "blockHeight": block_height,
+            "blockHashHex": hex::encode(block_hash.as_slice()),
+            "txCount": tx_count,
+            "vkeyHashHex": hex::encode(self.vkey_hash.as_slice()),
+            "programElfPath": env::var("PRIME_SP1_PROGRAM_ELF").ok(),
+        });
+        fs::write(&request_path, serde_json::to_vec_pretty(&payload)?)?;
+
+        let output = Command::new(&self.prove_adapter)
+            .arg("--request")
+            .arg(&request_path)
+            .arg("--response")
+            .arg(&response_path)
+            .output()?;
+        if !output.status.success() {
+            anyhow::bail!(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let response: Sp1CliProofResponse = serde_json::from_slice(&fs::read(&response_path)?)?;
+        Ok(SP1Proof {
+            vkey_hash: parse_b256_hex(&response.vkey_hash_hex)?,
+            public_values: hex::decode(response.public_values_hex)?,
+            proof_bytes: hex::decode(response.proof_bytes_hex)?,
+            proof_system: response.proof_system,
+        })
+    }
+
+    fn verify(&self, proof: &StateTransitionProof) -> Result<bool> {
+        let request_dir = unique_temp_dir("verify");
+        fs::create_dir_all(&request_dir)?;
+        let request_path = request_dir.join("request.json");
+        let response_path = request_dir.join("response.json");
+
+        let sp1_proof: SP1Proof = bincode::deserialize(&proof.proof_data)?;
+        let payload = serde_json::json!({
+            "prevStateRootHex": hex::encode(proof.prev_state_root.as_slice()),
+            "newStateRootHex": hex::encode(proof.new_state_root.as_slice()),
+            "blockHeight": proof.block_height,
+            "blockHashHex": hex::encode(proof.block_hash.as_slice()),
+            "txCount": proof.tx_count,
+            "vkeyHashHex": hex::encode(sp1_proof.vkey_hash.as_slice()),
+            "publicValuesHex": hex::encode(&sp1_proof.public_values),
+            "proofBytesHex": hex::encode(&sp1_proof.proof_bytes),
+            "proofSystem": sp1_proof.proof_system,
+            "programElfPath": env::var("PRIME_SP1_PROGRAM_ELF").ok(),
+        });
+        fs::write(&request_path, serde_json::to_vec_pretty(&payload)?)?;
+
+        let output = Command::new(&self.verify_adapter)
+            .arg("--request")
+            .arg(&request_path)
+            .arg("--response")
+            .arg(&response_path)
+            .output()?;
+        if !output.status.success() {
+            anyhow::bail!(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let response: Sp1CliVerifyResponse = serde_json::from_slice(&fs::read(&response_path)?)?;
+        Ok(response.verified)
+    }
+}
+
+#[cfg(feature = "sp1")]
+fn unique_temp_dir(label: &str) -> PathBuf {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    env::temp_dir().join(format!("prime-chain-sp1-{label}-{}-{now}", std::process::id()))
+}
+
+#[cfg(feature = "sp1")]
+fn parse_b256_hex(raw: &str) -> Result<B256> {
+    let bytes = hex::decode(raw.trim())?;
+    if bytes.len() != 32 {
+        anyhow::bail!("expected 32-byte hex value, got {} bytes", bytes.len());
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(B256::from(out))
 }
 
 // ---------------------------------------------------------------------------
@@ -323,5 +545,21 @@ impl SP1BatchAggregator {
 
     pub fn pending_count(&self) -> usize {
         self.proofs.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_round_trip_still_verifies() {
+        let prover = SP1Prover::runtime_default();
+        let proof = prover
+            .prove_state_transition(B256::ZERO, B256::from([7u8; 32]), 3, B256::from([9u8; 32]), 2)
+            .unwrap();
+        let verified = prover.verify_proof(&proof).unwrap();
+        assert!(verified.valid);
+        assert_eq!(proof.proof_type, ProofType::SP1);
     }
 }
