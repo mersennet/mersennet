@@ -71,3 +71,7 @@ node-dashboard/deploy-*.sh
 node-dashboard/remote-*.sh
 node-dashboard/restart-*.sh
 node-dashboard/*.tar.gz
+
+# Python
+__pycache__/
+*.pyc
