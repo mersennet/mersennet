@@ -29,6 +29,11 @@ docs-site/.docusaurus/
 **/build/
 **/dist/
 
+# Cache directories
+**/cache/
+**/.cache/
+**/.cache-loader/
+
 # Archives and binaries
 *.tar.gz
 *.zip
