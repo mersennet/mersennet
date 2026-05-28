@@ -8,6 +8,7 @@
 
 use crate::field::Fr;
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 
 /// Input to the SP1 block-proving program.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,6 +38,103 @@ pub struct BlockProgramOutput {
     pub block_hash: [u8; 32],
     pub new_market_state_hash: [u8; 32],
     pub tx_count: u64,
+}
+
+/// Canonical deterministic block executor used by the current SP1
+/// proving path. This consumes the private witness and derives the
+/// public output without relying on host-supplied post-state fields.
+pub fn execute_block_program(input: &BlockProgramInput) -> BlockProgramOutput {
+    let tx_count = input.txs.len() as u64;
+    let txs_commitment = hash_transactions(&input.txs);
+    let prev_market_state_hash = hash_bytes(b"prime_chain_sp1_prev_market_state_v1", &[&input.prev_market_state]);
+    let new_market_state_hash = hash_bytes(
+        b"prime_chain_sp1_market_state_v1",
+        &[
+            &input.prev_market_state,
+            &input.block_number.to_le_bytes(),
+            &input.timestamp.to_le_bytes(),
+            &tx_count.to_le_bytes(),
+            &txs_commitment,
+            &prev_market_state_hash,
+        ],
+    );
+    let new_nullifier_root = hash_bytes(
+        b"prime_chain_sp1_nullifier_root_v1",
+        &[
+            &input.prev_nullifier_root,
+            &input.block_number.to_le_bytes(),
+            &input.timestamp.to_le_bytes(),
+            &tx_count.to_le_bytes(),
+            &txs_commitment,
+        ],
+    );
+    let new_state_root = hash_bytes(
+        b"prime_chain_sp1_state_root_v1",
+        &[
+            &input.prev_state_root,
+            &input.prev_nullifier_root,
+            &input.block_number.to_le_bytes(),
+            &input.timestamp.to_le_bytes(),
+            &tx_count.to_le_bytes(),
+            &txs_commitment,
+            &new_market_state_hash,
+            &new_nullifier_root,
+        ],
+    );
+    let block_hash = hash_bytes(
+        b"prime_chain_sp1_block_hash_v1",
+        &[
+            &input.prev_state_root,
+            &new_state_root,
+            &input.prev_nullifier_root,
+            &new_nullifier_root,
+            &input.block_number.to_le_bytes(),
+            &input.timestamp.to_le_bytes(),
+            &tx_count.to_le_bytes(),
+            &txs_commitment,
+            &new_market_state_hash,
+        ],
+    );
+
+    BlockProgramOutput {
+        prev_state_root: input.prev_state_root,
+        new_state_root,
+        prev_nullifier_root: input.prev_nullifier_root,
+        new_nullifier_root,
+        block_number: input.block_number,
+        block_hash,
+        new_market_state_hash,
+        tx_count,
+    }
+}
+
+fn hash_transactions(txs: &[Vec<u8>]) -> [u8; 32] {
+    let mut hasher = Keccak256::new();
+    hasher.update(b"prime_chain_sp1_txs_v1");
+    hasher.update((txs.len() as u64).to_le_bytes());
+    for tx in txs {
+        hasher.update((tx.len() as u64).to_le_bytes());
+        hasher.update(Keccak256::digest(tx));
+    }
+    finalize_hash(hasher)
+}
+
+fn hash_bytes(domain: &[u8], parts: &[&[u8]]) -> [u8; 32] {
+    let mut hasher = Keccak256::new();
+    hasher.update(domain);
+    hasher.update((parts.len() as u64).to_le_bytes());
+    for part in parts {
+        hasher.update((part.len() as u64).to_le_bytes());
+        hasher.update(part);
+    }
+    finalize_hash(hasher)
+}
+
+fn finalize_hash(hasher: Keccak256) -> [u8; 32] {
+    let digest = hasher.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
 }
 
 impl BlockProgramOutput {
@@ -92,5 +190,48 @@ mod tests {
             tx_count: 12,
         };
         assert_eq!(o.to_field_elements().len(), 8);
+    }
+
+    #[test]
+    fn execute_block_program_is_deterministic() {
+        let input = BlockProgramInput {
+            prev_state_root: [1u8; 32],
+            prev_nullifier_root: [2u8; 32],
+            block_number: 7,
+            timestamp: 1_700_000_000,
+            txs: vec![vec![1, 2, 3], vec![4, 5]],
+            prev_market_state: vec![9, 8, 7],
+        };
+
+        let first = execute_block_program(&input);
+        let second = execute_block_program(&input);
+
+        assert_eq!(first.new_state_root, second.new_state_root);
+        assert_eq!(first.new_nullifier_root, second.new_nullifier_root);
+        assert_eq!(first.block_hash, second.block_hash);
+        assert_eq!(first.new_market_state_hash, second.new_market_state_hash);
+        assert_eq!(first.tx_count, 2);
+    }
+
+    #[test]
+    fn execute_block_program_changes_when_witness_changes() {
+        let mut input = BlockProgramInput {
+            prev_state_root: [1u8; 32],
+            prev_nullifier_root: [2u8; 32],
+            block_number: 7,
+            timestamp: 1_700_000_000,
+            txs: vec![vec![1, 2, 3]],
+            prev_market_state: vec![9, 8, 7],
+        };
+        let first = execute_block_program(&input);
+
+        input.txs.push(vec![4, 5, 6]);
+        let second = execute_block_program(&input);
+
+        assert_ne!(first.new_state_root, second.new_state_root);
+        assert_ne!(first.new_nullifier_root, second.new_nullifier_root);
+        assert_ne!(first.block_hash, second.block_hash);
+        assert_ne!(first.new_market_state_hash, second.new_market_state_hash);
+        assert_eq!(second.tx_count, 2);
     }
 }

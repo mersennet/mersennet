@@ -4,6 +4,7 @@
 //! Supports mock prover for testing and extensible interface for future STARK/SNARK backends.
 
 use anyhow::Result;
+use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -17,12 +18,30 @@ use std::time::Instant;
 pub struct StateTransitionProof {
     pub prev_state_root: B256,
     pub new_state_root: B256,
+    pub prev_nullifier_root: B256,
+    pub new_nullifier_root: B256,
     pub block_height: u64,
     pub block_hash: B256,
+    pub new_market_state_hash: B256,
     pub tx_count: u64,
     pub proof_data: Vec<u8>,
     pub proof_type: ProofType,
     pub timestamp: u64,
+}
+
+impl StateTransitionProof {
+    pub fn public_output(&self) -> BlockProgramOutput {
+        BlockProgramOutput {
+            prev_state_root: self.prev_state_root.0,
+            new_state_root: self.new_state_root.0,
+            prev_nullifier_root: self.prev_nullifier_root.0,
+            new_nullifier_root: self.new_nullifier_root.0,
+            block_number: self.block_height,
+            block_hash: self.block_hash.0,
+            new_market_state_hash: self.new_market_state_hash.0,
+            tx_count: self.tx_count,
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -49,14 +68,12 @@ pub struct ProofVerificationResult {
 
 #[allow(dead_code)]
 pub trait StateProver: Send + Sync {
-    fn prove_state_transition(
-        &self,
-        prev_root: B256,
-        new_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> Result<StateTransitionProof>;
+    fn prove_state_transition(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof>;
+
+    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
+        let public_output = execute_block_program(program_input);
+        self.prove_state_transition(&public_output)
+    }
 
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult>;
 
@@ -75,19 +92,16 @@ impl MockProver {
         Self
     }
 
-    fn compute_proof_hash(
-        prev_root: B256,
-        new_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> B256 {
-        let mut buf = Vec::with_capacity(32 * 3 + 8 + 8);
-        buf.extend_from_slice(prev_root.as_slice());
-        buf.extend_from_slice(new_root.as_slice());
-        buf.extend_from_slice(block_hash.as_slice());
-        buf.extend_from_slice(&block_height.to_be_bytes());
-        buf.extend_from_slice(&tx_count.to_be_bytes());
+    fn compute_proof_hash(public_output: &BlockProgramOutput) -> B256 {
+        let mut buf = Vec::with_capacity(32 * 5 + 8 * 2);
+        buf.extend_from_slice(&public_output.prev_state_root);
+        buf.extend_from_slice(&public_output.new_state_root);
+        buf.extend_from_slice(&public_output.prev_nullifier_root);
+        buf.extend_from_slice(&public_output.new_nullifier_root);
+        buf.extend_from_slice(&public_output.block_hash);
+        buf.extend_from_slice(&public_output.block_number.to_be_bytes());
+        buf.extend_from_slice(&public_output.tx_count.to_be_bytes());
+        buf.extend_from_slice(&public_output.new_market_state_hash);
         keccak256(&buf)
     }
 }
@@ -99,18 +113,8 @@ impl Default for MockProver {
 }
 
 impl StateProver for MockProver {
-    fn prove_state_transition(
-        &self,
-        prev_root: B256,
-        new_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> Result<StateTransitionProof> {
-        let proof_data =
-            Self::compute_proof_hash(prev_root, new_root, block_height, block_hash, tx_count)
-                .0
-                .to_vec();
+    fn prove_state_transition(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof> {
+        let proof_data = Self::compute_proof_hash(public_output).0.to_vec();
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -118,11 +122,14 @@ impl StateProver for MockProver {
             .as_secs();
 
         Ok(StateTransitionProof {
-            prev_state_root: prev_root,
-            new_state_root: new_root,
-            block_height,
-            block_hash,
-            tx_count,
+            prev_state_root: B256::from(public_output.prev_state_root),
+            new_state_root: B256::from(public_output.new_state_root),
+            prev_nullifier_root: B256::from(public_output.prev_nullifier_root),
+            new_nullifier_root: B256::from(public_output.new_nullifier_root),
+            block_height: public_output.block_number,
+            block_hash: B256::from(public_output.block_hash),
+            new_market_state_hash: B256::from(public_output.new_market_state_hash),
+            tx_count: public_output.tx_count,
             proof_data,
             proof_type: ProofType::Mock,
             timestamp,
@@ -132,13 +139,7 @@ impl StateProver for MockProver {
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult> {
         let start = Instant::now();
 
-        let expected = Self::compute_proof_hash(
-            proof.prev_state_root,
-            proof.new_state_root,
-            proof.block_height,
-            proof.block_hash,
-            proof.tx_count,
-        );
+        let expected = Self::compute_proof_hash(&proof.public_output());
 
         let valid =
             proof.proof_data.len() == 32 && proof.proof_data.as_slice() == expected.as_slice();
@@ -208,8 +209,11 @@ impl BatchProofAggregator {
         let aggregate_proof = StateTransitionProof {
             prev_state_root: first.prev_state_root,
             new_state_root: last.new_state_root,
+            prev_nullifier_root: first.prev_nullifier_root,
+            new_nullifier_root: last.new_nullifier_root,
             block_height: last.block_height,
             block_hash: last.block_hash,
+            new_market_state_hash: last.new_market_state_hash,
             tx_count: batch.iter().map(|p| p.tx_count).sum(),
             proof_data: aggregated_data,
             proof_type: ProofType::Mock,

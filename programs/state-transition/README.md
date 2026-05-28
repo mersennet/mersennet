@@ -62,38 +62,28 @@ For every tx in `txs`, in order:
 
 ## Today
 
-[`crate::state_proof`] runs the chain side of this pipeline and uses
-the [`crate::zk_sp1::SP1Prover`] mock. Tests cover the input/output
-boundary and the prove-then-verify round trip.
+[`crate::state_proof`] now proves from canonical
+`prime_zkp::sp1::BlockProgramInput`, and the checked-in SP1 program in
+[src/main.rs](./src/main.rs) re-derives `BlockProgramOutput` from that
+input inside the zkVM. The host-echo contract is gone.
 
-Reference request/response adapters for the eventual real prover live
-under [scripts/zk/README.md](../../scripts/zk/README.md).
+The current executor is still a simplified deterministic transition,
+shared between the chain, host runner, and zkVM:
 
-This directory now also contains a minimal materialized SP1 program:
+1. Hash the transaction list and previous market-state bytes.
+2. Derive `new_market_state_hash` from the previous market state,
+   block metadata, and transaction commitment.
+3. Derive `new_nullifier_root` from the previous nullifier root and
+   the transaction commitment.
+4. Derive `new_state_root` and `block_hash` from the full witness.
 
-- [Cargo.toml](./Cargo.toml) is a standalone crate outside the root workspace.
-- [src/main.rs](./src/main.rs) is a real `sp1-zkvm` entrypoint that matches the
-  current host-runner request contract rather than the final full block program.
+That means the program now consumes the real private-witness shape and
+computes its own public values, but it does not yet replay the full
+Prime Chain engine (`revm`, Noir-proof verification, FBA matching,
+liquidation flows) inside the zkVM.
 
-The current minimal ELF consumes:
-
-- `prev_state_root`
-- `new_state_root`
-- `block_height`
-- `block_hash`
-- `tx_count`
-
-and commits the public values shape the current host runner verifies:
-
-- `prev_state_root`
-- `new_state_root`
-- `block_hash`
-- `tx_count`
-
-That is intentionally narrower than the eventual `BlockProgramInput` /
-`BlockProgramOutput` design above. It exists so the real `sp1_sdk` host path can
-exercise an actual ELF once WSL or Linux is available, without waiting for the
-entire block re-execution program to land.
+Reference request/response adapters for the real prover live under
+[scripts/zk/README.md](../../scripts/zk/README.md).
 
 ## Minimal build target
 
@@ -106,16 +96,16 @@ adapter scripts.
 
 The remaining cut-over from this minimal ELF to the full block prover is:
 
-1. Replace the temporary `HostProgramInput` / `HostProgramOutput` contract in
-  [src/main.rs](./src/main.rs) with the full `prime_zkp::sp1::BlockProgramInput`
-  / `BlockProgramOutput` pipeline documented above.
-2. Re-run the full block transition inside the zkVM instead of echoing the host
-  request fields.
+1. Replace the simplified deterministic executor with a zkVM-friendly
+  extraction of the real state-transition core documented above.
+2. Re-run the full block transition inside the zkVM: tx decoding,
+  Noir-proof verification, nullifier/commitment updates, and market
+  matching.
 3. Swap `SP1Prover::new(ProverMode::Mock)` in
    `crates/core/src/state_proof.rs` for
    `sp1_sdk::ProverClient::network()` (or `local()` for self-hosting).
-4. Compile the program ELF; pin its `vkey_hash` in
-   `crates/zkp/params/state-transition.vkey`.
+4. Produce a release-grade prove/verify transcript against the pinned
+  ELF and vkey hash.
 5. The on-chain verifier precompile at `0x0300` consumes the
    resulting Groth16-wrapped proof and the program's public values,
    exactly as the `verifyStateProof(bytes)` selector specifies in

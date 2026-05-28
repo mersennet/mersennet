@@ -31,6 +31,7 @@ blstrs = { version = "0.7", optional = true }
 group = { version = "0.13", optional = true }
 ff = { version = "0.13", optional = true }
 chacha20poly1305 = { version = "0.10", optional = true }
+num-bigint = { version = "0.4", optional = true }
 
 [dev-dependencies]
 proptest = "1.4"
@@ -51,6 +52,7 @@ prover = [
     "dep:group",
     "dep:ff",
     "dep:chacha20poly1305",
+    "dep:num-bigint",
 ]
 # Real sp1_sdk::ProverClient. When off, the SP1 verifier path uses the
 # existing mock in crates/core/src/zk_sp1.rs.

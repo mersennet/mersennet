@@ -7,6 +7,7 @@ process start via `include_bytes!` and decoded once.
 | File | Used by | Purpose |
 |---|---|---|
 | `poseidon-bn254.bin` | `crates/zkp/src/poseidon.rs` | Pinned Aztec Poseidon-2 BN254 width-3 round constants + MDS matrix. |
+| `sp1/state-transition.vk.hash` | SP1 host runner and release process | Pinned verifying-key hash for the checked-in `programs/state-transition` ELF build. |
 
 ## File format: `poseidon-bn254.bin`
 
@@ -22,6 +23,11 @@ bytes N..end : width*width            × 32-byte LE Fr MDS matrix entries
 
 Total length for the Aztec-BN254-W3 config: `6 + (192 + 9) * 32 = 6438`
 bytes.
+
+## File format: `sp1/state-transition.vk.hash`
+
+Plain ASCII lowercase hex, exactly 64 nybbles, no `0x` prefix, with an
+optional trailing newline.
 
 ## Regenerating the artifact
 

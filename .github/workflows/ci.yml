@@ -60,6 +60,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p prime-chain-node --features prover,sp1
 
+  check_sp1_program:
+    name: cargo check (state-transition program)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --manifest-path programs/state-transition/Cargo.toml
+
+  test_sp1_host:
+    name: cargo test (state-transition host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --manifest-path programs/state-transition-host/Cargo.toml
+
   # ────────────────────────────────────────────────────────────────
   # Clippy + rustfmt
   # ────────────────────────────────────────────────────────────────

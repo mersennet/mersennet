@@ -10,5 +10,6 @@ name = "prime-chain-state-transition"
 path = "src/main.rs"
 
 [dependencies]
+prime-zkp = { path = "../../crates/zkp" }
 serde = { version = "1.0", features = ["derive"] }
 sp1-zkvm = "6.2.2"

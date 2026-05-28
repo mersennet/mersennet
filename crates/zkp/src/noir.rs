@@ -15,6 +15,7 @@
 use crate::field::Fr;
 use crate::poseidon::Poseidon;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[cfg(feature = "prover")]
@@ -115,6 +116,142 @@ pub trait Verifier: Send + Sync + std::fmt::Debug {
     ) -> Result<(), VerifyError>;
 }
 
+#[derive(Debug, Error)]
+pub enum ProveError {
+    #[error("missing witness input `{0}`")]
+    MissingWitnessInput(String),
+    #[error("proof backend is unavailable: {0}")]
+    BackendUnavailable(String),
+    #[error("proof backend failed: {0}")]
+    BackendFailure(String),
+}
+
+pub trait Prover: Send + Sync + std::fmt::Debug {
+    /// Produce a proof for `circuit`, using `witness` as the full Noir
+    /// input map and `public_inputs` as the canonical verifier contract.
+    fn prove(
+        &self,
+        circuit: Circuit,
+        public_inputs: Vec<Fr>,
+        witness: &WitnessInputs,
+    ) -> Result<CircuitProof, ProveError>;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WitnessInputs {
+    fields: BTreeMap<String, WitnessValue>,
+}
+
+impl WitnessInputs {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert<K, V>(&mut self, key: K, value: V)
+    where
+        K: Into<String>,
+        V: Into<WitnessValue>,
+    {
+        self.fields.insert(key.into(), value.into());
+    }
+
+    #[cfg(feature = "prover")]
+    fn to_toml(&self) -> String {
+        let mut out = String::new();
+        for (key, value) in &self.fields {
+            out.push_str(key);
+            out.push_str(" = ");
+            out.push_str(&value.to_toml());
+            out.push('\n');
+        }
+        out
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WitnessValue {
+    Field(Fr),
+    Array(Vec<WitnessValue>),
+    Struct(BTreeMap<String, WitnessValue>),
+}
+
+impl WitnessValue {
+    pub fn array(values: Vec<WitnessValue>) -> Self {
+        Self::Array(values)
+    }
+
+    pub fn structure<K, V, I>(entries: I) -> Self
+    where
+        K: Into<String>,
+        V: Into<WitnessValue>,
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let mut fields = BTreeMap::new();
+        for (key, value) in entries {
+            fields.insert(key.into(), value.into());
+        }
+        Self::Struct(fields)
+    }
+
+    #[cfg(feature = "prover")]
+    fn to_toml(&self) -> String {
+        match self {
+            WitnessValue::Field(value) => format!("\"{}\"", encode_field_for_noir(value)),
+            WitnessValue::Array(values) => {
+                let encoded = values
+                    .iter()
+                    .map(WitnessValue::to_toml)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{encoded}]")
+            }
+            WitnessValue::Struct(fields) => {
+                let encoded = fields
+                    .iter()
+                    .map(|(key, value)| format!("{key} = {}", value.to_toml()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{ {encoded} }}")
+            }
+        }
+    }
+}
+
+impl From<Fr> for WitnessValue {
+    fn from(value: Fr) -> Self {
+        WitnessValue::Field(value)
+    }
+}
+
+impl From<u64> for WitnessValue {
+    fn from(value: u64) -> Self {
+        WitnessValue::Field(Fr::from_u64(value))
+    }
+}
+
+impl From<[u64; 32]> for WitnessValue {
+    fn from(values: [u64; 32]) -> Self {
+        WitnessValue::Array(values.into_iter().map(WitnessValue::from).collect())
+    }
+}
+
+impl From<Vec<Fr>> for WitnessValue {
+    fn from(values: Vec<Fr>) -> Self {
+        WitnessValue::Array(values.into_iter().map(WitnessValue::from).collect())
+    }
+}
+
+pub fn default_prover() -> Box<dyn Prover> {
+    #[cfg(feature = "prover")]
+    {
+        if let Ok(prover) = BarretenbergProver::from_env() {
+            return Box::new(prover);
+        }
+    }
+
+    Box::new(MockProver::new())
+}
+
 pub fn default_verifier() -> Box<dyn Verifier> {
     #[cfg(feature = "prover")]
     {
@@ -124,6 +261,37 @@ pub fn default_verifier() -> Box<dyn Verifier> {
     }
 
     Box::new(MockVerifier::new())
+}
+
+/// Mock prover used when the `prover` feature is off. It mirrors the
+/// mock verifier so tests can exercise the proof boundary without an
+/// external Noir / Barretenberg toolchain.
+#[derive(Clone, Debug, Default)]
+pub struct MockProver {
+    poseidon: Poseidon,
+}
+
+impl MockProver {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Prover for MockProver {
+    fn prove(
+        &self,
+        circuit: Circuit,
+        public_inputs: Vec<Fr>,
+        _witness: &WitnessInputs,
+    ) -> Result<CircuitProof, ProveError> {
+        let h = self.poseidon.hash_many(&public_inputs);
+        Ok(CircuitProof {
+            circuit,
+            public_inputs,
+            proof_bytes: h.to_bytes().to_vec(),
+            vk_hash: MockVerifier::vk_hash_for(circuit),
+        })
+    }
 }
 
 /// Mock verifier used when the `prover` feature is off. Accepts proofs
@@ -161,13 +329,9 @@ impl MockVerifier {
     /// Build a mock proof. Test/SDK callers use this until the real
     /// prover is available.
     pub fn prove(&self, circuit: Circuit, public_inputs: Vec<Fr>) -> CircuitProof {
-        let h = self.poseidon.hash_many(&public_inputs);
-        CircuitProof {
-            circuit,
-            public_inputs,
-            proof_bytes: h.to_bytes().to_vec(),
-            vk_hash: Self::vk_hash_for(circuit),
-        }
+        MockProver::new()
+            .prove(circuit, public_inputs, &WitnessInputs::default())
+            .expect("mock prover must not fail")
     }
 }
 
@@ -338,6 +502,13 @@ pub struct BarretenbergVerifier {
 }
 
 #[cfg(feature = "prover")]
+#[derive(Clone, Debug)]
+pub struct BarretenbergProver {
+    toolchain: NoirToolchain,
+    prove_adapter: String,
+}
+
+#[cfg(feature = "prover")]
 impl BarretenbergVerifier {
     pub fn from_env() -> Result<Self, NoirToolchainError> {
         let artifacts_dir = env::var_os("PRIME_NOIR_ARTIFACTS_DIR")
@@ -403,6 +574,75 @@ impl BarretenbergVerifier {
 }
 
 #[cfg(feature = "prover")]
+impl BarretenbergProver {
+    pub fn from_env() -> Result<Self, NoirToolchainError> {
+        let toolchain = NoirToolchain::from_env()?;
+        let prove_adapter = env::var("PRIME_BB_PROVE_ADAPTER")
+            .map_err(|_| NoirToolchainError::MissingEnv("PRIME_BB_PROVE_ADAPTER"))?;
+        Ok(Self {
+            toolchain,
+            prove_adapter,
+        })
+    }
+}
+
+#[cfg(feature = "prover")]
+impl Prover for BarretenbergProver {
+    fn prove(
+        &self,
+        circuit: Circuit,
+        public_inputs: Vec<Fr>,
+        witness: &WitnessInputs,
+    ) -> Result<CircuitProof, ProveError> {
+        let artifacts = self
+            .toolchain
+            .compile_circuit(circuit)
+            .map_err(map_toolchain_error_to_prove)?;
+        let witness_path = artifacts.package_dir.join("Prover.toml");
+        fs::write(&witness_path, witness.to_toml()).map_err(io_prove_error)?;
+
+        let proof_path = artifacts.package_dir.join("target").join("proof.bin");
+        if let Some(parent) = proof_path.parent() {
+            fs::create_dir_all(parent).map_err(io_prove_error)?;
+        }
+
+        let output = Command::new(&self.prove_adapter)
+            .arg("--circuit")
+            .arg(circuit.slug())
+            .arg("--package-dir")
+            .arg(&artifacts.package_dir)
+            .arg("--artifacts")
+            .arg(&artifacts.artifacts_dir)
+            .arg("--witness")
+            .arg(&witness_path)
+            .arg("--proof")
+            .arg(&proof_path)
+            .output()
+            .map_err(io_prove_error)?;
+
+        if !output.status.success() {
+            return Err(ProveError::BackendFailure(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+
+        let proof_bytes = fs::read(&proof_path).map_err(|_| {
+            ProveError::BackendFailure(format!(
+                "proof adapter completed without creating {}",
+                proof_path.display()
+            ))
+        })?;
+
+        Ok(CircuitProof {
+            circuit,
+            public_inputs,
+            proof_bytes,
+            vk_hash: artifacts.vk_hash,
+        })
+    }
+}
+
+#[cfg(feature = "prover")]
 impl Verifier for BarretenbergVerifier {
     fn verify(
         &self,
@@ -462,11 +702,42 @@ fn io_backend_error(error: std::io::Error) -> VerifyError {
 }
 
 #[cfg(feature = "prover")]
+fn io_prove_error(error: std::io::Error) -> ProveError {
+    ProveError::BackendFailure(error.to_string())
+}
+
+#[cfg(feature = "prover")]
+fn map_toolchain_error_to_prove(error: NoirToolchainError) -> ProveError {
+    match error {
+        NoirToolchainError::MissingEnv(name) => {
+            ProveError::BackendUnavailable(format!("missing required environment variable {name}"))
+        }
+        NoirToolchainError::Io(error) => ProveError::BackendFailure(error.to_string()),
+        NoirToolchainError::CommandFailed { tool, message } => {
+            ProveError::BackendFailure(format!("tool `{tool}` failed: {message}"))
+        }
+        NoirToolchainError::MissingArtifact(path) => {
+            ProveError::BackendFailure(format!("missing artifact: {}", path.display()))
+        }
+        NoirToolchainError::InvalidVkHash { path, message } => ProveError::BackendFailure(
+            format!("invalid vk hash contents in {}: {message}", path.display()),
+        ),
+    }
+}
+
+#[cfg(feature = "prover")]
 fn encode_public_inputs(inputs: &[Fr]) -> Vec<String> {
     inputs
         .iter()
         .map(|value| hex::encode(value.to_bytes()))
         .collect()
+}
+
+#[cfg(feature = "prover")]
+fn encode_field_for_noir(value: &Fr) -> String {
+    use num_bigint::BigUint;
+
+    BigUint::from_bytes_le(&value.to_bytes()).to_str_radix(10)
 }
 
 #[cfg(feature = "prover")]
@@ -850,5 +1121,31 @@ mod tests {
     fn circuit_slugs_are_stable() {
         assert_eq!(Circuit::Spend.slug(), "spend");
         assert_eq!(Circuit::LiquidateExecute.slug(), "liquidate_execute");
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn witness_inputs_render_nested_toml() {
+        let witness = WitnessInputs {
+            fields: BTreeMap::from([
+                ("root".to_string(), Fr::from_u64(1).into()),
+                (
+                    "note".to_string(),
+                    WitnessValue::structure([
+                        ("value_lo", Fr::from_u64(2)),
+                        ("value_hi", Fr::from_u64(0)),
+                    ]),
+                ),
+                (
+                    "path".to_string(),
+                    WitnessValue::array(vec![Fr::from_u64(3).into(), Fr::from_u64(4).into()]),
+                ),
+            ]),
+        };
+
+        let rendered = witness.to_toml();
+        assert!(rendered.contains("root = \"1\""));
+        assert!(rendered.contains("note = { value_hi = \"0\", value_lo = \"2\" }"));
+        assert!(rendered.contains("path = [\"3\", \"4\"]"));
     }
 }

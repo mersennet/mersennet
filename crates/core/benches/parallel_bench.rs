@@ -228,6 +228,7 @@ fn main() {
     println!("\n=== ZK MockProver Benchmark ===\n");
     {
         use prime_chain::zk_proofs::{MockProver, StateProver};
+        use prime_zkp::sp1::BlockProgramOutput;
         use revm::primitives::B256;
 
         let prover = MockProver::new();
@@ -238,12 +239,30 @@ fn main() {
         let iterations = 10_000;
         let start = Instant::now();
         for i in 0..iterations {
-            let _ = prover.prove_state_transition(prev_root, new_root, i, block_hash, 100);
+            let _ = prover.prove_state_transition(&BlockProgramOutput {
+                prev_state_root: prev_root.0,
+                new_state_root: new_root.0,
+                prev_nullifier_root: [0u8; 32],
+                new_nullifier_root: [0u8; 32],
+                block_number: i,
+                block_hash: block_hash.0,
+                new_market_state_hash: [0u8; 32],
+                tx_count: 100,
+            });
         }
         let elapsed = start.elapsed();
         let proves_per_sec = iterations as f64 / elapsed.as_secs_f64();
         let proof = prover
-            .prove_state_transition(prev_root, new_root, 0, block_hash, 100)
+            .prove_state_transition(&BlockProgramOutput {
+                prev_state_root: prev_root.0,
+                new_state_root: new_root.0,
+                prev_nullifier_root: [0u8; 32],
+                new_nullifier_root: [0u8; 32],
+                block_number: 0,
+                block_hash: block_hash.0,
+                new_market_state_hash: [0u8; 32],
+                tx_count: 100,
+            })
             .unwrap();
         let verify_start = Instant::now();
         for _ in 0..iterations {

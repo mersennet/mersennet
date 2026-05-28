@@ -1,15 +1,20 @@
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use prime_chain::zk_proofs::{ProofType, StateTransitionProof};
-use prime_chain::zk_sp1::{SP1ProgramOutput, SP1Proof, SP1ProofVerifier};
+use prime_chain::zk_sp1::{SP1Proof, SP1ProofVerifier};
+use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
+use std::env;
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
 use sp1_sdk::{
     HashableKey,
-    blocking::{Elf, ProveRequest, Prover, ProverClient, SP1Stdin},
+    ProvingKey,
+    blocking::{Elf, ProveRequest as Sp1ProveRequest, Prover, ProverClient, SP1Stdin},
     proof::SP1ProofWithPublicValues,
 };
 
@@ -29,10 +34,14 @@ struct Cli {
 #[serde(rename_all = "camelCase")]
 struct ProveRequest {
     prev_state_root_hex: String,
-    new_state_root_hex: String,
-    block_height: u64,
-    block_hash_hex: String,
-    tx_count: u64,
+    prev_nullifier_root_hex: String,
+    #[serde(alias = "blockHeight")]
+    block_number: u64,
+    timestamp: u64,
+    #[serde(default)]
+    txs_hex: Vec<String>,
+    #[serde(default)]
+    prev_market_state_hex: String,
     vkey_hash_hex: String,
     program_elf_path: Option<String>,
 }
@@ -42,8 +51,11 @@ struct ProveRequest {
 struct VerifyRequest {
     prev_state_root_hex: String,
     new_state_root_hex: String,
+    prev_nullifier_root_hex: String,
+    new_nullifier_root_hex: String,
     block_height: u64,
     block_hash_hex: String,
+    new_market_state_hash_hex: String,
     tx_count: u64,
     vkey_hash_hex: String,
     public_values_hex: String,
@@ -65,16 +77,6 @@ struct VerifyResponse {
     verified: bool,
 }
 
-#[cfg(all(feature = "real-sp1", not(windows)))]
-#[derive(Debug, Serialize, Deserialize)]
-struct HostProgramInput {
-    prev_state_root: B256,
-    new_state_root: B256,
-    block_height: u64,
-    block_hash: B256,
-    tx_count: u64,
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match (
@@ -91,15 +93,7 @@ fn main() -> Result<()> {
 
 fn run_prove(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
     let request: ProveRequest = read_json(request_path)?;
-    let proof = build_proof(
-        &request.prev_state_root_hex,
-        &request.new_state_root_hex,
-        request.block_height,
-        &request.block_hash_hex,
-        request.tx_count,
-        &request.vkey_hash_hex,
-        request.program_elf_path.as_deref(),
-    )?;
+    let proof = build_proof(&request)?;
     let response = ProveResponse {
         vkey_hash_hex: hex::encode(proof.vkey_hash.as_slice()),
         public_values_hex: hex::encode(&proof.public_values),
@@ -113,7 +107,10 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
     let request: VerifyRequest = read_json(request_path)?;
     let prev_root = decode_b256(&request.prev_state_root_hex)?;
     let new_root = decode_b256(&request.new_state_root_hex)?;
+    let prev_nullifier_root = decode_b256(&request.prev_nullifier_root_hex)?;
+    let new_nullifier_root = decode_b256(&request.new_nullifier_root_hex)?;
     let block_hash = decode_b256(&request.block_hash_hex)?;
+    let new_market_state_hash = decode_b256(&request.new_market_state_hash_hex)?;
     let vkey_hash = resolve_vkey_hash(&request.vkey_hash_hex, request.program_elf_path.as_deref())?;
     let public_values = hex::decode(request.public_values_hex.trim())
         .context("invalid public_values_hex")?;
@@ -128,18 +125,25 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
     let state_proof = StateTransitionProof {
         prev_state_root: prev_root,
         new_state_root: new_root,
+        prev_nullifier_root,
+        new_nullifier_root,
         block_height: request.block_height,
         block_hash,
+        new_market_state_hash,
         tx_count: request.tx_count,
         proof_data: bincode::serialize(&sp1_proof).context("serialize SP1 proof")?,
         proof_type: ProofType::SP1,
         timestamp: unix_timestamp_secs(),
     };
 
-    let expected_output = SP1ProgramOutput {
-        prev_state_root: prev_root,
-        new_state_root: new_root,
-        block_hash,
+    let expected_output = BlockProgramOutput {
+        prev_state_root: prev_root.0,
+        new_state_root: new_root.0,
+        prev_nullifier_root: prev_nullifier_root.0,
+        new_nullifier_root: new_nullifier_root.0,
+        block_number: request.block_height,
+        block_hash: block_hash.0,
+        new_market_state_hash: new_market_state_hash.0,
         tx_count: request.tx_count,
     };
     let expected_public_values = bincode::serialize(&expected_output).context("serialize expected public values")?;
@@ -162,52 +166,44 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
 }
 
 fn build_proof(
-    prev_state_root_hex: &str,
-    new_state_root_hex: &str,
-    block_height: u64,
-    block_hash_hex: &str,
-    tx_count: u64,
-    vkey_hash_hex: &str,
-    program_elf_path: Option<&str>,
+    request: &ProveRequest,
 ) -> Result<SP1Proof> {
-    let prev_root = decode_b256(prev_state_root_hex)?;
-    let new_root = decode_b256(new_state_root_hex)?;
-    let block_hash = decode_b256(block_hash_hex)?;
+    let prev_root = decode_b256(&request.prev_state_root_hex)?;
+    let prev_nullifier_root = decode_b256(&request.prev_nullifier_root_hex)?;
+    let prev_market_state = decode_bytes(&request.prev_market_state_hex)?;
+    let txs = request
+        .txs_hex
+        .iter()
+        .map(|tx| decode_bytes(tx))
+        .collect::<Result<Vec<_>>>()?;
+    let program_input = BlockProgramInput {
+        prev_state_root: prev_root.0,
+        prev_nullifier_root: prev_nullifier_root.0,
+        block_number: request.block_number,
+        timestamp: request.timestamp,
+        txs,
+        prev_market_state,
+    };
+    let output = execute_block_program(&program_input);
 
     #[cfg(all(feature = "real-sp1", not(windows)))]
-    if let Some(program_elf_path) = program_elf_path.filter(|value| !value.is_empty()) {
-        return build_real_sp1_proof(
-            prev_root,
-            new_root,
-            block_height,
-            block_hash,
-            tx_count,
-            vkey_hash_hex,
-            program_elf_path,
-        );
+    if let Some(program_elf_path) = request.program_elf_path.as_deref().filter(|value| !value.is_empty()) {
+        return build_real_sp1_proof(&program_input, &output, &request.vkey_hash_hex, program_elf_path);
     }
 
     #[cfg(all(feature = "real-sp1", windows))]
-    if program_elf_path.filter(|value| !value.is_empty()).is_some() {
+    if request.program_elf_path.as_deref().filter(|value| !value.is_empty()).is_some() {
         return build_real_sp1_proof(
-            prev_root,
-            new_root,
-            block_height,
-            block_hash,
-            tx_count,
-            vkey_hash_hex,
-            program_elf_path.unwrap(),
+            &program_input,
+            &output,
+            &request.vkey_hash_hex,
+            request.program_elf_path.as_deref().unwrap(),
         );
     }
 
-    let vkey_hash = resolve_vkey_hash(vkey_hash_hex, program_elf_path)?;
-    let proof_bytes = compute_mock_proof_bytes(prev_root, new_root, block_height, block_hash, tx_count);
-    let public_values = bincode::serialize(&SP1ProgramOutput {
-        prev_state_root: prev_root,
-        new_state_root: new_root,
-        block_hash,
-        tx_count,
-    })
+    let vkey_hash = resolve_vkey_hash(&request.vkey_hash_hex, request.program_elf_path.as_deref())?;
+    let proof_bytes = compute_mock_proof_bytes(&output);
+    let public_values = bincode::serialize(&output)
     .context("serialize SP1 public values")?;
     Ok(SP1Proof {
         vkey_hash,
@@ -217,19 +213,16 @@ fn build_proof(
     })
 }
 
-fn compute_mock_proof_bytes(
-    prev_state_root: B256,
-    new_state_root: B256,
-    block_height: u64,
-    block_hash: B256,
-    tx_count: u64,
-) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(32 * 3 + 8 + 8);
-    buf.extend_from_slice(prev_state_root.as_slice());
-    buf.extend_from_slice(new_state_root.as_slice());
-    buf.extend_from_slice(block_hash.as_slice());
-    buf.extend_from_slice(&block_height.to_be_bytes());
-    buf.extend_from_slice(&tx_count.to_be_bytes());
+fn compute_mock_proof_bytes(output: &BlockProgramOutput) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(32 * 5 + 8 * 2);
+    buf.extend_from_slice(&output.prev_state_root);
+    buf.extend_from_slice(&output.new_state_root);
+    buf.extend_from_slice(&output.prev_nullifier_root);
+    buf.extend_from_slice(&output.new_nullifier_root);
+    buf.extend_from_slice(&output.block_hash);
+    buf.extend_from_slice(&output.block_number.to_be_bytes());
+    buf.extend_from_slice(&output.tx_count.to_be_bytes());
+    buf.extend_from_slice(&output.new_market_state_hash);
     keccak256(&buf).0.to_vec()
 }
 
@@ -252,21 +245,28 @@ fn resolve_vkey_hash(vkey_hash_hex: &str, program_elf_path: Option<&str>) -> Res
 }
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
-fn build_real_sp1_proof(
-    prev_root: B256,
-    new_root: B256,
-    block_height: u64,
-    block_hash: B256,
-    tx_count: u64,
+fn configured_sp1_mode() -> String {
+    env::var("PRIME_SP1_MODE")
+        .unwrap_or_else(|_| "env".to_string())
+        .trim()
+        .to_ascii_lowercase()
+}
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
+fn build_real_sp1_proof_with<P>(
+    prover: &P,
+    elf_bytes: Vec<u8>,
+    stdin: SP1Stdin,
+    expected_output: &BlockProgramOutput,
     vkey_hash_hex: &str,
-    program_elf_path: &str,
-) -> Result<SP1Proof> {
-    let elf_bytes = fs::read(program_elf_path)
-        .with_context(|| format!("read program ELF at {program_elf_path}"))?;
-    let prover = ProverClient::from_env();
+) -> Result<SP1Proof>
+where
+    P: Prover,
+    P::Error: std::fmt::Display,
+{
     let proving_key = prover
         .setup(Elf::from(elf_bytes))
-        .context("setup SP1 prover")?;
+        .map_err(|err| anyhow::anyhow!("setup SP1 prover: {err}"))?;
     let verifying_key = proving_key.verifying_key();
     let vkey_hash = B256::from(verifying_key.bytes32_raw());
     let requested_vkey_hash = decode_b256(vkey_hash_hex)?;
@@ -278,20 +278,25 @@ fn build_real_sp1_proof(
         );
     }
 
-    let mut stdin = SP1Stdin::new();
-    stdin.write(&HostProgramInput {
-        prev_state_root: prev_root,
-        new_state_root: new_root,
-        block_height,
-        block_hash,
-        tx_count,
-    });
-
     let proof = prover
         .prove(&proving_key, stdin)
         .compressed()
         .run()
-        .context("generate SP1 proof")?;
+        .map_err(|err| anyhow::anyhow!("generate SP1 proof: {err}"))?;
+
+    let mut decoded_output = proof.public_values.clone();
+    let actual_output: BlockProgramOutput = decoded_output.read();
+    if actual_output.prev_state_root != expected_output.prev_state_root
+        || actual_output.new_state_root != expected_output.new_state_root
+        || actual_output.prev_nullifier_root != expected_output.prev_nullifier_root
+        || actual_output.new_nullifier_root != expected_output.new_nullifier_root
+        || actual_output.block_number != expected_output.block_number
+        || actual_output.block_hash != expected_output.block_hash
+        || actual_output.new_market_state_hash != expected_output.new_market_state_hash
+        || actual_output.tx_count != expected_output.tx_count
+    {
+        bail!("SP1 public values do not match canonical BlockProgramInput execution");
+    }
 
     prover
         .verify(&proof, verifying_key, None)
@@ -306,31 +311,20 @@ fn build_real_sp1_proof(
     })
 }
 
-#[cfg(all(feature = "real-sp1", windows))]
-fn build_real_sp1_proof(
-    _prev_root: B256,
-    _new_root: B256,
-    _block_height: u64,
-    _block_hash: B256,
-    _tx_count: u64,
-    _vkey_hash_hex: &str,
-    _program_elf_path: &str,
-) -> Result<SP1Proof> {
-    bail!("real-sp1 host proving is not supported on Windows because the current sp1-sdk toolchain pulls Unix-only sp1-jit components")
-}
-
 #[cfg(all(feature = "real-sp1", not(windows)))]
-fn verify_real_sp1(request: &VerifyRequest, expected_output: &SP1ProgramOutput) -> Result<bool> {
-    let Some(program_elf_path) = request.program_elf_path.as_deref().filter(|value| !value.is_empty()) else {
-        return Ok(false);
-    };
-
-    let elf_bytes = fs::read(program_elf_path)
-        .with_context(|| format!("read program ELF at {program_elf_path}"))?;
-    let prover = ProverClient::from_env();
+fn verify_real_sp1_with<P>(
+    prover: &P,
+    elf_bytes: Vec<u8>,
+    request: &VerifyRequest,
+    expected_output: &BlockProgramOutput,
+) -> Result<bool>
+where
+    P: Prover,
+    P::Error: std::fmt::Display,
+{
     let proving_key = prover
         .setup(Elf::from(elf_bytes))
-        .context("setup SP1 prover")?;
+        .map_err(|err| anyhow::anyhow!("setup SP1 prover: {err}"))?;
     let verifying_key = proving_key.verifying_key();
     let requested_vkey_hash = decode_b256(&request.vkey_hash_hex)?;
     let actual_vkey_hash = B256::from(verifying_key.bytes32_raw());
@@ -348,10 +342,14 @@ fn verify_real_sp1(request: &VerifyRequest, expected_output: &SP1ProgramOutput) 
     }
 
     let mut decoded_output = proof.public_values.clone();
-    let actual_output: SP1ProgramOutput = decoded_output.read();
+    let actual_output: BlockProgramOutput = decoded_output.read();
     if actual_output.prev_state_root != expected_output.prev_state_root
         || actual_output.new_state_root != expected_output.new_state_root
+        || actual_output.prev_nullifier_root != expected_output.prev_nullifier_root
+        || actual_output.new_nullifier_root != expected_output.new_nullifier_root
+        || actual_output.block_number != expected_output.block_number
         || actual_output.block_hash != expected_output.block_hash
+        || actual_output.new_market_state_hash != expected_output.new_market_state_hash
         || actual_output.tx_count != expected_output.tx_count
     {
         return Ok(false);
@@ -360,8 +358,68 @@ fn verify_real_sp1(request: &VerifyRequest, expected_output: &SP1ProgramOutput) 
     Ok(prover.verify(&proof, verifying_key, None).is_ok())
 }
 
+#[cfg(all(feature = "real-sp1", not(windows)))]
+fn build_real_sp1_proof(
+    input: &BlockProgramInput,
+    expected_output: &BlockProgramOutput,
+    vkey_hash_hex: &str,
+    program_elf_path: &str,
+) -> Result<SP1Proof> {
+    let elf_bytes = fs::read(program_elf_path)
+        .with_context(|| format!("read program ELF at {program_elf_path}"))?;
+    let mut stdin = SP1Stdin::new();
+    stdin.write(input);
+
+    match configured_sp1_mode().as_str() {
+        "network" => bail!(
+            "PRIME_SP1_MODE=network is currently blocked in this host crate because sp1-sdk/network conflicts with the revm c-kzg dependency graph"
+        ),
+        "local" => {
+            let prover = ProverClient::builder().cpu().build();
+            build_real_sp1_proof_with(&prover, elf_bytes, stdin, expected_output, vkey_hash_hex)
+        }
+        _ => {
+            let prover = ProverClient::from_env();
+            build_real_sp1_proof_with(&prover, elf_bytes, stdin, expected_output, vkey_hash_hex)
+        }
+    }
+}
+
 #[cfg(all(feature = "real-sp1", windows))]
-fn verify_real_sp1(_request: &VerifyRequest, _expected_output: &SP1ProgramOutput) -> Result<bool> {
+fn build_real_sp1_proof(
+    _input: &BlockProgramInput,
+    _expected_output: &BlockProgramOutput,
+    _vkey_hash_hex: &str,
+    _program_elf_path: &str,
+) -> Result<SP1Proof> {
+    bail!("real-sp1 host proving is not supported on Windows because the current sp1-sdk toolchain pulls Unix-only sp1-jit components")
+}
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
+fn verify_real_sp1(request: &VerifyRequest, expected_output: &BlockProgramOutput) -> Result<bool> {
+    let Some(program_elf_path) = request.program_elf_path.as_deref().filter(|value| !value.is_empty()) else {
+        return Ok(false);
+    };
+
+    let elf_bytes = fs::read(program_elf_path)
+        .with_context(|| format!("read program ELF at {program_elf_path}"))?;
+    match configured_sp1_mode().as_str() {
+        "network" => bail!(
+            "PRIME_SP1_MODE=network is currently blocked in this host crate because sp1-sdk/network conflicts with the revm c-kzg dependency graph"
+        ),
+        "local" => {
+            let prover = ProverClient::builder().cpu().build();
+            verify_real_sp1_with(&prover, elf_bytes, request, expected_output)
+        }
+        _ => {
+            let prover = ProverClient::from_env();
+            verify_real_sp1_with(&prover, elf_bytes, request, expected_output)
+        }
+    }
+}
+
+#[cfg(all(feature = "real-sp1", windows))]
+fn verify_real_sp1(_request: &VerifyRequest, _expected_output: &BlockProgramOutput) -> Result<bool> {
     bail!("real-sp1 host verification is not supported on Windows because the current sp1-sdk toolchain pulls Unix-only sp1-jit components")
 }
 
@@ -373,6 +431,13 @@ fn decode_b256(raw: &str) -> Result<B256> {
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);
     Ok(B256::from(out))
+}
+
+fn decode_bytes(raw: &str) -> Result<Vec<u8>> {
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    hex::decode(raw.trim()).with_context(|| format!("invalid hex bytes: {raw}"))
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &PathBuf) -> Result<T> {
@@ -404,8 +469,11 @@ mod tests {
         let proof = build_proof(
             &hex::encode([1u8; 32]),
             &hex::encode([2u8; 32]),
-            12,
             &hex::encode([3u8; 32]),
+            &hex::encode([4u8; 32]),
+            12,
+            &hex::encode([5u8; 32]),
+            &hex::encode([6u8; 32]),
             4,
             &hex::encode([9u8; 32]),
             None,
@@ -415,8 +483,11 @@ mod tests {
         let request = VerifyRequest {
             prev_state_root_hex: hex::encode([1u8; 32]),
             new_state_root_hex: hex::encode([2u8; 32]),
+            prev_nullifier_root_hex: hex::encode([3u8; 32]),
+            new_nullifier_root_hex: hex::encode([4u8; 32]),
             block_height: 12,
-            block_hash_hex: hex::encode([3u8; 32]),
+            block_hash_hex: hex::encode([5u8; 32]),
+            new_market_state_hash_hex: hex::encode([6u8; 32]),
             tx_count: 4,
             vkey_hash_hex: hex::encode([9u8; 32]),
             public_values_hex: hex::encode(&proof.public_values),

@@ -286,14 +286,22 @@ fn pipeline_buffer_and_drain() {
 #[test]
 fn mock_prover_roundtrip() {
     use prime_chain::zk_proofs::{MockProver, StateProver};
+    use prime_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
-    let prev_root = B256::from([1u8; 32]);
-    let new_root = B256::from([2u8; 32]);
-    let block_hash = B256::from([3u8; 32]);
+    let output = BlockProgramOutput {
+        prev_state_root: [1u8; 32],
+        new_state_root: [2u8; 32],
+        prev_nullifier_root: [3u8; 32],
+        new_nullifier_root: [4u8; 32],
+        block_number: 1,
+        block_hash: [5u8; 32],
+        new_market_state_hash: [6u8; 32],
+        tx_count: 5,
+    };
 
     let proof = prover
-        .prove_state_transition(prev_root, new_root, 1, block_hash, 5)
+        .prove_state_transition(&output)
         .expect("prove");
 
     let result = prover.verify_proof(&proof).expect("verify");
@@ -308,6 +316,7 @@ fn mock_prover_roundtrip() {
 #[test]
 fn checkpoint_store_chain_verification() {
     use prime_chain::zk_proofs::{CheckpointStore, MockProver, ProofCheckpoint, StateProver};
+    use prime_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
     let mut store = CheckpointStore::new(100);
@@ -316,8 +325,18 @@ fn checkpoint_store_chain_verification() {
     for h in 1..=5u64 {
         let new_root = B256::from([h as u8; 32]);
         let block_hash = keccak256(h.to_be_bytes());
+        let output = BlockProgramOutput {
+            prev_state_root: prev_root.0,
+            new_state_root: new_root.0,
+            prev_nullifier_root: [0u8; 32],
+            new_nullifier_root: [h as u8; 32],
+            block_number: h,
+            block_hash: block_hash.0,
+            new_market_state_hash: [h as u8; 32],
+            tx_count: 1,
+        };
         let proof = prover
-            .prove_state_transition(prev_root, new_root, h, block_hash, 1)
+            .prove_state_transition(&output)
             .expect("prove");
         store.add(ProofCheckpoint {
             height: h,
@@ -331,7 +350,16 @@ fn checkpoint_store_chain_verification() {
     assert!(store.verify_chain(&prover).expect("verify chain"));
 
     let bad_proof = prover
-        .prove_state_transition(B256::ZERO, B256::ZERO, 99, B256::ZERO, 0)
+        .prove_state_transition(&BlockProgramOutput {
+            prev_state_root: [0u8; 32],
+            new_state_root: [0u8; 32],
+            prev_nullifier_root: [0u8; 32],
+            new_nullifier_root: [0u8; 32],
+            block_number: 99,
+            block_hash: [0u8; 32],
+            new_market_state_hash: [0u8; 32],
+            tx_count: 0,
+        })
         .expect("bad proof");
     store.add(ProofCheckpoint {
         height: 99,
@@ -346,6 +374,7 @@ fn checkpoint_store_chain_verification() {
 #[test]
 fn batch_proof_aggregation() {
     use prime_chain::zk_proofs::{BatchProofAggregator, MockProver, StateProver};
+    use prime_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
     let mut aggregator = BatchProofAggregator::new(3);
@@ -354,8 +383,18 @@ fn batch_proof_aggregation() {
     for h in 1..=3u64 {
         let new_root = B256::from([h as u8; 32]);
         let block_hash = keccak256(h.to_be_bytes());
+        let output = BlockProgramOutput {
+            prev_state_root: prev_root.0,
+            new_state_root: new_root.0,
+            prev_nullifier_root: [0u8; 32],
+            new_nullifier_root: [h as u8; 32],
+            block_number: h,
+            block_hash: block_hash.0,
+            new_market_state_hash: [h as u8; 32],
+            tx_count: 1,
+        };
         let proof = prover
-            .prove_state_transition(prev_root, new_root, h, block_hash, 1)
+            .prove_state_transition(&output)
             .expect("prove");
         aggregator.add_proof(proof);
         prev_root = new_root;
