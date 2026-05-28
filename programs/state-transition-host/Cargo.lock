@@ -3579,6 +3579,7 @@ dependencies = [
  "clap",
  "hex",
  "prime-chain",
+ "prime-zkp",
  "revm",
  "serde",
  "serde_json",

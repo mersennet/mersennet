@@ -113,10 +113,13 @@ Response:
   "blockHeight": 500,
   "prevStateRoot": "0x…",
   "newStateRoot":  "0x…",
+  "prevNullifierRoot": "0x…",
+  "newNullifierRoot":  "0x…",
   "blockHash":     "0x…",
+  "newMarketStateHash": "0x…",
   "txCount": 12,
   "proofBincodeHex": "0x…",
-  "proofType": "SP1Groth16"
+  "proofType": "SP1"
 }
 ```
 

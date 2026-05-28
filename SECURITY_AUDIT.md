@@ -78,6 +78,12 @@
     - Threshold security
     - Key rotation
 
+14. **Privacy state-proof path** (`crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `programs/state-transition/`, `programs/state-transition-host/`)
+   - Public-values contract matches the documented `BlockProgramOutput`
+   - Host/program/request wiring preserves `prev/new` nullifier roots and market-state hash
+   - Vkey pin procedure and release artifact provenance
+   - Real-SP1 cut-over boundary versus deterministic mock path
+
 ## Known Risks
 
 | Risk | Location | Description |
@@ -90,6 +96,7 @@
 | FBA price discovery | fba.rs | Clearing price maximization; edge cases when buy/sell volumes are asymmetric |
 | Parallel execution conflicts | parallel.rs, engine.rs | Block-STM validation; ensure no lost updates or incorrect rollbacks |
 | Cross-chain proof verification | cross_chain.rs | Proof validation logic; ensure no forged proofs accepted |
+| SP1 proving path still partially scaffolded | state_proof.rs, zk_sp1.rs, programs/state-transition/, programs/state-transition-host/ | Public output is wired end-to-end, but the zkVM program still echoes host-supplied outputs instead of re-executing the full private witness. Audit should treat this as a cut-over boundary, not a completed proving system. |
 
 ## Test Coverage Summary
 
@@ -108,6 +115,17 @@
 **Total:** ~60+ unit/integration tests across `crates/core/tests/`, `crates/rpc/tests/`, `crates/network/tests/`.
 
 **Formal verification:** `crates/core/src/formal_verification.rs` provides invariant checking and property-based test generators.
+
+## Privacy-Fork Audit Package
+
+Before scheduling external privacy-fork audits, attach the following artifacts to the engagement packet:
+
+- Working packet document: `docs/security/privacy-fork-audit-packet.md`
+
+- Exact SP1 proving artifact set: program ELF provenance, pinned `PRIME_SP1_VKEY_HASH`, and one prove/verify transcript.
+- Output-contract references: `crates/zkp/src/sp1.rs`, `crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `programs/state-transition/src/main.rs`, `programs/state-transition-host/src/main.rs`.
+- Current limitation note: the repo now enforces the full public-output boundary, but the zkVM program has not yet re-executed the full block witness.
+- CI evidence for the host/program path: node `--features prover,sp1`, standalone program check, standalone host test.
 
 ## Static Analysis
 

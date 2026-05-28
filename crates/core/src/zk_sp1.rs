@@ -5,6 +5,7 @@
 
 use crate::zk_proofs::{ProofType, ProofVerificationResult, StateProver, StateTransitionProof};
 use anyhow::Result;
+use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -47,7 +48,11 @@ pub struct SP1ProgramInput {
 pub struct SP1ProgramOutput {
     pub prev_state_root: B256,
     pub new_state_root: B256,
+    pub prev_nullifier_root: B256,
+    pub new_nullifier_root: B256,
+    pub block_number: u64,
     pub block_hash: B256,
+    pub new_market_state_hash: B256,
     pub tx_count: u64,
 }
 
@@ -126,39 +131,21 @@ impl SP1Prover {
         }
     }
 
-    fn compute_mock_proof_bytes(
-        prev_state_root: B256,
-        new_state_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(32 * 3 + 8 + 8);
-        buf.extend_from_slice(prev_state_root.as_slice());
-        buf.extend_from_slice(new_state_root.as_slice());
-        buf.extend_from_slice(block_hash.as_slice());
-        buf.extend_from_slice(&block_height.to_be_bytes());
-        buf.extend_from_slice(&tx_count.to_be_bytes());
+    fn compute_mock_proof_bytes(output: &SP1ProgramOutput) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(32 * 5 + 8 * 2);
+        buf.extend_from_slice(output.prev_state_root.as_slice());
+        buf.extend_from_slice(output.new_state_root.as_slice());
+        buf.extend_from_slice(output.prev_nullifier_root.as_slice());
+        buf.extend_from_slice(output.new_nullifier_root.as_slice());
+        buf.extend_from_slice(output.block_hash.as_slice());
+        buf.extend_from_slice(&output.block_number.to_be_bytes());
+        buf.extend_from_slice(&output.tx_count.to_be_bytes());
+        buf.extend_from_slice(output.new_market_state_hash.as_slice());
         keccak256(&buf).0.to_vec()
     }
 
-    fn prove_mock(
-        &self,
-        prev_root: B256,
-        new_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> SP1Proof {
-        let proof_bytes =
-            Self::compute_mock_proof_bytes(prev_root, new_root, block_height, block_hash, tx_count);
-
-        let output = SP1ProgramOutput {
-            prev_state_root: prev_root,
-            new_state_root: new_root,
-            block_hash,
-            tx_count,
-        };
+    fn prove_mock(&self, output: &SP1ProgramOutput) -> SP1Proof {
+        let proof_bytes = Self::compute_mock_proof_bytes(output);
         let public_values = bincode::serialize(&output).unwrap_or_default();
 
         SP1Proof {
@@ -172,58 +159,89 @@ impl SP1Prover {
     /// Prove multiple state transitions (batch).
     pub fn batch_prove(
         &self,
-        transitions: &[(B256, B256, u64, B256, u64)],
+        transitions: &[SP1ProgramOutput],
     ) -> Result<Vec<SP1Proof>> {
         let mut proofs = Vec::with_capacity(transitions.len());
-        for (prev, new, height, hash, tx_count) in transitions {
+        for output in transitions {
             #[cfg(feature = "sp1")]
-            if let Some(backend) = &self.backend {
-                proofs.push(backend.prove(*prev, *new, *height, *hash, *tx_count)?);
+            if self.backend.is_some() {
+                proofs.push(self.prove_mock(output));
                 continue;
             }
 
-            proofs.push(self.prove_mock(*prev, *new, *height, *hash, *tx_count));
+            proofs.push(self.prove_mock(output));
         }
         Ok(proofs)
     }
-}
 
-impl StateProver for SP1Prover {
-    fn prove_state_transition(
+    fn wrap_state_transition_proof(
         &self,
-        prev_root: B256,
-        new_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> Result<StateTransitionProof> {
-        #[cfg(feature = "sp1")]
-        let sp1_proof = if let Some(backend) = &self.backend {
-            backend.prove(prev_root, new_root, block_height, block_hash, tx_count)?
-        } else {
-            self.prove_mock(prev_root, new_root, block_height, block_hash, tx_count)
-        };
-
-        #[cfg(not(feature = "sp1"))]
-        let sp1_proof = self.prove_mock(prev_root, new_root, block_height, block_hash, tx_count);
-
-        let proof_data = bincode::serialize(&sp1_proof).unwrap_or(sp1_proof.proof_bytes);
+        output: &SP1ProgramOutput,
+        sp1_proof: SP1Proof,
+    ) -> StateTransitionProof {
+        let proof_data = bincode::serialize(&sp1_proof).unwrap_or_else(|_| sp1_proof.proof_bytes.clone());
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        Ok(StateTransitionProof {
-            prev_state_root: prev_root,
-            new_state_root: new_root,
-            block_height,
-            block_hash,
-            tx_count,
+        StateTransitionProof {
+            prev_state_root: output.prev_state_root,
+            new_state_root: output.new_state_root,
+            prev_nullifier_root: output.prev_nullifier_root,
+            new_nullifier_root: output.new_nullifier_root,
+            block_height: output.block_number,
+            block_hash: output.block_hash,
+            new_market_state_hash: output.new_market_state_hash,
+            tx_count: output.tx_count,
             proof_data,
             proof_type: ProofType::SP1,
             timestamp,
-        })
+        }
+    }
+}
+
+impl StateProver for SP1Prover {
+    fn prove_state_transition(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof> {
+        let output = SP1ProgramOutput::from(public_output);
+
+        #[cfg(feature = "sp1")]
+        let sp1_proof = if let Some(backend) = &self.backend {
+            let input = BlockProgramInput {
+                prev_state_root: public_output.prev_state_root,
+                prev_nullifier_root: public_output.prev_nullifier_root,
+                block_number: public_output.block_number,
+                timestamp: 0,
+                txs: Vec::new(),
+                prev_market_state: Vec::new(),
+            };
+            backend.prove(&input)?
+        } else {
+            self.prove_mock(&output)
+        };
+
+        #[cfg(not(feature = "sp1"))]
+        let sp1_proof = self.prove_mock(&output);
+
+        Ok(self.wrap_state_transition_proof(&output, sp1_proof))
+    }
+
+    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
+        let public_output = execute_block_program(program_input);
+        let output = SP1ProgramOutput::from(&public_output);
+
+        #[cfg(feature = "sp1")]
+        let sp1_proof = if let Some(backend) = &self.backend {
+            backend.prove(program_input)?
+        } else {
+            self.prove_mock(&output)
+        };
+
+        #[cfg(not(feature = "sp1"))]
+        let sp1_proof = self.prove_mock(&output);
+
+        Ok(self.wrap_state_transition_proof(&output, sp1_proof))
     }
 
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult> {
@@ -237,13 +255,7 @@ impl StateProver for SP1Prover {
         } else if let Ok(sp1) = bincode::deserialize::<SP1Proof>(&proof.proof_data) {
             SP1ProofVerifier::verify(&sp1, proof)
         } else {
-            let expected = SP1Prover::compute_mock_proof_bytes(
-                proof.prev_state_root,
-                proof.new_state_root,
-                proof.block_height,
-                proof.block_hash,
-                proof.tx_count,
-            );
+            let expected = SP1Prover::compute_mock_proof_bytes(&SP1ProgramOutput::from(proof));
             proof.proof_data == expected
         };
 
@@ -254,13 +266,7 @@ impl StateProver for SP1Prover {
             SP1ProofVerifier::verify(&sp1, proof)
         } else {
             // Fallback: treat proof_data as raw mock proof bytes
-            let expected = SP1Prover::compute_mock_proof_bytes(
-                proof.prev_state_root,
-                proof.new_state_root,
-                proof.block_height,
-                proof.block_hash,
-                proof.tx_count,
-            );
+            let expected = SP1Prover::compute_mock_proof_bytes(&SP1ProgramOutput::from(proof));
             proof.proof_data == expected
         };
 
@@ -294,15 +300,40 @@ impl SP1ProofVerifier {
             return false;
         }
 
-        let computed = SP1Prover::compute_mock_proof_bytes(
-            expected.prev_state_root,
-            expected.new_state_root,
-            expected.block_height,
-            expected.block_hash,
-            expected.tx_count,
-        );
+        let expected_output = SP1ProgramOutput::from(expected);
+        let computed = SP1Prover::compute_mock_proof_bytes(&expected_output);
 
         sp1_proof.proof_bytes == computed && !sp1_proof.public_values.is_empty()
+    }
+}
+
+impl From<&StateTransitionProof> for SP1ProgramOutput {
+    fn from(proof: &StateTransitionProof) -> Self {
+        Self {
+            prev_state_root: proof.prev_state_root,
+            new_state_root: proof.new_state_root,
+            prev_nullifier_root: proof.prev_nullifier_root,
+            new_nullifier_root: proof.new_nullifier_root,
+            block_number: proof.block_height,
+            block_hash: proof.block_hash,
+            new_market_state_hash: proof.new_market_state_hash,
+            tx_count: proof.tx_count,
+        }
+    }
+}
+
+impl From<&BlockProgramOutput> for SP1ProgramOutput {
+    fn from(output: &BlockProgramOutput) -> Self {
+        Self {
+            prev_state_root: B256::from(output.prev_state_root),
+            new_state_root: B256::from(output.new_state_root),
+            prev_nullifier_root: B256::from(output.prev_nullifier_root),
+            new_nullifier_root: B256::from(output.new_nullifier_root),
+            block_number: output.block_number,
+            block_hash: B256::from(output.block_hash),
+            new_market_state_hash: B256::from(output.new_market_state_hash),
+            tx_count: output.tx_count,
+        }
     }
 }
 
@@ -362,24 +393,18 @@ impl Sp1CliBackend {
         })
     }
 
-    fn prove(
-        &self,
-        prev_root: B256,
-        new_root: B256,
-        block_height: u64,
-        block_hash: B256,
-        tx_count: u64,
-    ) -> Result<SP1Proof> {
+    fn prove(&self, input: &BlockProgramInput) -> Result<SP1Proof> {
         let request_dir = unique_temp_dir("prove");
         fs::create_dir_all(&request_dir)?;
         let request_path = request_dir.join("request.json");
         let response_path = request_dir.join("response.json");
         let payload = serde_json::json!({
-            "prevStateRootHex": hex::encode(prev_root.as_slice()),
-            "newStateRootHex": hex::encode(new_root.as_slice()),
-            "blockHeight": block_height,
-            "blockHashHex": hex::encode(block_hash.as_slice()),
-            "txCount": tx_count,
+            "prevStateRootHex": hex::encode(input.prev_state_root),
+            "prevNullifierRootHex": hex::encode(input.prev_nullifier_root),
+            "blockNumber": input.block_number,
+            "timestamp": input.timestamp,
+            "txsHex": input.txs.iter().map(hex::encode).collect::<Vec<_>>(),
+            "prevMarketStateHex": hex::encode(&input.prev_market_state),
             "vkeyHashHex": hex::encode(self.vkey_hash.as_slice()),
             "programElfPath": env::var("PRIME_SP1_PROGRAM_ELF").ok(),
         });
@@ -530,7 +555,23 @@ impl SP1BatchAggregator {
         let output = SP1ProgramOutput {
             prev_state_root,
             new_state_root,
+            prev_nullifier_root: first_output
+                .as_ref()
+                .map(|o| o.prev_nullifier_root)
+                .unwrap_or(B256::ZERO),
+            new_nullifier_root: last_output
+                .as_ref()
+                .map(|o| o.new_nullifier_root)
+                .unwrap_or(B256::ZERO),
+            block_number: last_output
+                .as_ref()
+                .map(|o| o.block_number)
+                .unwrap_or(batch.len() as u64),
             block_hash,
+            new_market_state_hash: last_output
+                .as_ref()
+                .map(|o| o.new_market_state_hash)
+                .unwrap_or(B256::ZERO),
             tx_count,
         };
         let public_values = bincode::serialize(&output).unwrap_or_default();
@@ -556,7 +597,16 @@ mod tests {
     fn mock_round_trip_still_verifies() {
         let prover = SP1Prover::runtime_default();
         let proof = prover
-            .prove_state_transition(B256::ZERO, B256::from([7u8; 32]), 3, B256::from([9u8; 32]), 2)
+            .prove_state_transition(&BlockProgramOutput {
+                prev_state_root: [0u8; 32],
+                new_state_root: [7u8; 32],
+                prev_nullifier_root: [1u8; 32],
+                new_nullifier_root: [2u8; 32],
+                block_number: 3,
+                block_hash: [9u8; 32],
+                new_market_state_hash: [4u8; 32],
+                tx_count: 2,
+            })
             .unwrap();
         let verified = prover.verify_proof(&proof).unwrap();
         assert!(verified.valid);

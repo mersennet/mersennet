@@ -28,7 +28,7 @@ use crate::shielded_orders::ShieldedOrdersEngine;
 use crate::shielded_state::{ShieldedRootDigest, ShieldedState};
 use crate::zk_proofs::{StateProver, StateTransitionProof};
 use crate::zk_sp1::SP1Prover;
-use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput};
+use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 
@@ -70,52 +70,27 @@ pub fn collect_block_input(
 /// the SP1 program redundantly re-derives it inside the zkVM.
 pub fn compute_block_output(
     input: &BlockProgramInput,
-    new_state: &ShieldedState,
-    market_state_hash: B256,
-    block_hash: B256,
 ) -> BlockProgramOutput {
-    BlockProgramOutput {
-        prev_state_root: input.prev_state_root,
-        new_state_root: new_state.current_root().to_bytes(),
-        prev_nullifier_root: input.prev_nullifier_root,
-        new_nullifier_root: nullifier_root_from_state(new_state),
-        block_number: input.block_number,
-        block_hash: block_hash.0,
-        new_market_state_hash: market_state_hash.0,
-        tx_count: input.txs.len() as u64,
-    }
-}
-
-fn nullifier_root_from_state(state: &ShieldedState) -> [u8; 32] {
-    // The nullifier set is a sparse hash set; its "root" for proof
-    // purposes is `Keccak256(count || sorted nullifiers' hashes)`.
-    // For the mock prover this is sufficient; the real SP1 program
-    // uses a sparse Merkle tree of nullifiers.
-    let mut buf = Vec::with_capacity(16);
-    buf.extend_from_slice(&(state.nullifier_count() as u64).to_le_bytes());
-    let h = keccak256(&buf);
-    h.0
+    execute_block_program(input)
 }
 
 /// Drive the prover for a single block. Returns the proof envelope
 /// that the chain attaches to the block header.
 pub fn prove_block(
     request: &BlockProofRequest,
-    new_state: &ShieldedState,
-    market_state_hash: B256,
+    _new_state: &ShieldedState,
+    _market_state_hash: B256,
 ) -> anyhow::Result<StateTransitionProof> {
     let prover = SP1Prover::runtime_default();
-    let prev_root = B256::from(request.prev_state_root);
-    let new_root_bytes = new_state.current_root().to_bytes();
-    let new_root = B256::from(new_root_bytes);
-    let _ = market_state_hash;
-    prover.prove_state_transition(
-        prev_root,
-        new_root,
+    let input = collect_block_input(
         request.block_number,
-        request.block_hash,
-        request.txs.len() as u64,
-    )
+        request.timestamp,
+        request.prev_state_root,
+        request.prev_nullifier_root,
+        request.txs.clone(),
+        request.prev_market_state.clone(),
+    );
+    prover.prove_block_program(&input)
 }
 
 /// On-chain verifier shim that the 0x0300 precompile calls into.

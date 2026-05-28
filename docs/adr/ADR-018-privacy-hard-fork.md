@@ -92,7 +92,7 @@ Two runbooks now exist:
    is the one operators use today.
 2. **[`../runbooks/zk-fork-activation.md`](../runbooks/zk-fork-activation.md)** —
    T-8w through T+24h checklist for the mainnet activation. Drafted
-   now, gated on D5/D6/E completion + audit.
+   now, gated on E completion + audit.
 
 ### Implementation status
 
@@ -105,7 +105,8 @@ Two runbooks now exist:
 | Synthetic load (H4) + chaos drill (H5) | ✅ | `testnet/scripts/` |
 | Privacy metrics + Grafana dashboard (H7) | ✅ | `deploy/monitoring/grafana-privacy-dashboard.json` |
 | CI privacy invariants (K2) | ✅ | `scripts/ci/check-privacy-invariants.sh` |
-| Barretenberg verifier (D5), Noir compilation (D6), SP1 program (E) | 🔒 | Gated on `nargo` / `barretenberg-sys` / `sp1up` install |
-| Third-party audit (I) | 🔒 | Gated on D5/D6/E completion |
+| Barretenberg verifier (D5), Noir compilation (D6) | ✅ | Wired through `crates/zkp/src/noir.rs` and `scripts/zk/` |
+| SP1 program (E) | 🔒 | Gated on `sp1up` install |
+| Third-party audit (I) | 🔒 | Gated on E completion |
 
 See [`../STATUS.md`](../STATUS.md) for the full live tracker.

@@ -15,6 +15,10 @@ privacy hard fork on chain ID 7919.
 
 ## T-8 weeks: testnet activation
 
+- [ ] Record the SP1 proving artifact set for the candidate release:
+      - program ELF build provenance
+      - pinned `PRIME_SP1_VKEY_HASH`
+      - one successful prove + verify transcript against the checked-in host runner
 - [ ] Tag `v1.0.0-zk-rc.0` on `feat/zk-privacy`.
 - [ ] Pre-mainnet testnet (chain ID 7920) restarts from snapshot
       with the new genesis. Migration runs. Every faucet account
@@ -35,6 +39,10 @@ Every two weeks:
 
 - Replace one mock dependency (`MockVerifier`, `DummyThreshold`,
   `SP1Prover::Mock`) with its production backend.
+- Reconfirm the SP1 CI lanes stay green:
+      `cargo check -p prime-chain-node --features prover,sp1`,
+      `cargo check --manifest-path programs/state-transition/Cargo.toml`,
+      `cargo test --manifest-path programs/state-transition-host/Cargo.toml`.
 - Run an internal red-team exercise: a privileged team tries to
   identify a trader by network observation. Result must be:
   unidentifiable.
@@ -64,6 +72,8 @@ Every two weeks:
       - the migration plan size matches `prime_getStateTrieSize`
       - the resulting tree root matches the deterministic recomputation
       - elapsed time is `<10 minutes`
+- [ ] Re-run one SP1 prove + verify round-trip against the exact release
+      artifact set (`program ELF`, `PRIME_SP1_VKEY_HASH`, host runner build).
 - [ ] Confirm the SP1 state-proof prover backend is healthy
       (latest checkpoint <2 minutes old).
 - [ ] Confirm the threshold-decryption ceremony succeeded for the

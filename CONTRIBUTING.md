@@ -88,7 +88,8 @@ Additional jobs run in CI:
 - **`sdk_typecheck`** — `tsc --noEmit` over `sdk/`
 - **`contracts`** — `forge build --sizes && forge test -vvv` in `contracts/`
 - **`audit`** — `cargo audit`
-- (Coming) `nargo test` for Noir circuits in `crates/zkp/circuits/`
+- Optional local Noir workflow via `scripts/zk/compile_noir_artifacts.py`
+   plus the Barretenberg adapter smoke tests in `scripts/zk/README.md`
 
 ---
 
@@ -112,7 +113,7 @@ for the full plan.
 | 4. Shielded EVM accounts | **Done** |
 | 5. Real SP1 state proofs | In progress (mock today, sp1up integration tracked in E1–E5) |
 | 6. SDK / RPC / wallet | In progress (Rust RPC done, wallet/SDK tracked in F1–F6) |
-| 7. Hard fork + testnet bake | **Testnet ready** (8-week bake gated on D5/D6/E completion) |
+| 7. Hard fork + testnet bake | **Testnet ready** (8-week bake gated on E completion) |
 
 ### Workstreams (granular)
 
@@ -122,14 +123,14 @@ for the full plan.
 | B | Shielded subsystems | **Done** |
 | C | RPC + WS | **Done** |
 | D1–D4 | Crypto primitives + DKG | **Done** |
-| D5 | Barretenberg verifier bindings | Pending nargo install |
-| D6 | Noir circuit compilation | Pending nargo install |
+| D5 | Barretenberg verifier + prover adapters | **Done** |
+| D6 | Noir circuit compilation | **Done** |
 | D7 | Cryptography spec for auditor | **Done** ([here](docs/security/cryptography-spec.md)) |
 | E1–E5 | SP1 toolchain + program body | Pending sp1up install |
 | F1–F6 | WASM Noir prover + UI + SDKs | Tracked separately |
 | G1–G4 | Solidity bridge + Foundry tests | Tracked separately |
 | H1–H7 | Testnet bring-up | **Done** ([runbook](docs/runbooks/privacy-testnet-bootstrap.md)) |
-| I1–I6 | Third-party audit | Awaiting D5/D6/E |
+| I1–I6 | Third-party audit | Awaiting E |
 | J1–J6 | Governance activation | Awaiting audit |
 | K1–K5 | CI / coverage / dev container | **K1–K2 done**, K3–K5 pending |
 

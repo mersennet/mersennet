@@ -9,6 +9,7 @@ added in `prime-zkp` and `prime-chain`.
   per circuit, runs `nargo compile`, copies the resulting `target/`
   directory into `crates/zkp/params/noir/<circuit>/`, and writes the
   same deterministic `vk.hash` format that the Rust verifier expects.
+- `barretenberg_prove_adapter.py`: adapter for `PRIME_BB_PROVE_ADAPTER`.
 - `barretenberg_verify_adapter.py`: adapter for `PRIME_BB_VERIFY_ADAPTER`.
 - `sp1_prove_adapter.py`: adapter for `PRIME_SP1_PROVE_ADAPTER`.
 - `sp1_verify_adapter.py`: adapter for `PRIME_SP1_VERIFY_ADAPTER`.
@@ -28,8 +29,10 @@ Useful environment variables:
 - `PRIME_NARGO_BIN`: override the `nargo` executable.
 - `PRIME_NOIR_ARTIFACTS_DIR`: override the compiled artifact directory.
 - `PRIME_BB_BIN`: override the `bb` executable.
+- `PRIME_BB_PROVE_ADAPTER`: executable or script that produces a proof file for one compiled circuit.
 - `PRIME_BB_ACIR_PATH`: override ACIR artifact discovery.
 - `PRIME_BB_VK_PATH`: point the adapter at an already-generated VK.
+- `PRIME_BB_PROVE_TEMPLATE`: custom proof generation command.
 - `PRIME_BB_WRITE_VK_TEMPLATE`: custom VK generation command.
 - `PRIME_BB_VERIFY_TEMPLATE`: custom proof verification command.
 
@@ -48,24 +51,26 @@ Default runtime setup on Windows:
 
 ```powershell
 $env:PRIME_NOIR_ARTIFACTS_DIR = (Resolve-Path .\crates\zkp\params\noir)
+$env:PRIME_BB_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\barretenberg_prove_adapter.cmd)
 $env:PRIME_BB_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\barretenberg_verify_adapter.cmd)
 ```
 
 If your Barretenberg CLI needs nonstandard flags, set
-`PRIME_BB_WRITE_VK_TEMPLATE` and `PRIME_BB_VERIFY_TEMPLATE` to an exact
-command line. Example:
+`PRIME_BB_PROVE_TEMPLATE`, `PRIME_BB_WRITE_VK_TEMPLATE`, and
+`PRIME_BB_VERIFY_TEMPLATE` to an exact command line. Example:
 
 ```powershell
+$env:PRIME_BB_PROVE_TEMPLATE = 'nargo prove'
 $env:PRIME_BB_VERIFY_TEMPLATE = 'bb verify --vk {vk} --proof {proof} --public-inputs {public_inputs}'
 ```
 
 ## SP1
 
-The SP1 adapters are thin request/response shims around a real prover
-and verifier command. The repository still ships the state-transition
-program as a scaffold in `programs/state-transition/`, so you must
-first materialize/build that program or point the adapters at an
-external SP1 host runner.
+The SP1 adapters are thin request/response shims around a prover and
+verifier command. The repository now ships a checked-in minimal
+state-transition program plus a host runner that can exercise either
+the deterministic mock path or the SDK-backed real-SP1 path on
+supported targets.
 
 Useful environment variables:
 
@@ -83,10 +88,11 @@ Template placeholders:
 - `{response}`
 - `{program_elf}`
 - `{prev_state_root_hex}`
-- `{new_state_root_hex}`
-- `{block_height}`
-- `{block_hash_hex}`
-- `{tx_count}`
+- `{prev_nullifier_root_hex}`
+- `{block_number}`
+- `{timestamp}`
+- `{txs_hex}`
+- `{prev_market_state_hex}`
 - `{vkey_hash_hex}`
 - `{public_values_hex}`
 - `{proof_bytes_hex}`
@@ -144,3 +150,50 @@ The adapters validate the JSON shape that the Rust runtime expects:
 
 - prove response: `vkey_hash_hex`, `public_values_hex`, `proof_bytes_hex`, `proof_system`
 - verify response: `verified`
+
+The current SP1 prove request boundary includes canonical
+`BlockProgramInput` fields:
+
+- `prevStateRootHex`
+- `prevNullifierRootHex`
+- `blockNumber`
+- `timestamp`
+- `txsHex`
+- `prevMarketStateHex`
+
+The current SP1 verify/public-values boundary remains the full
+`BlockProgramOutput` contract:
+
+- `prevStateRootHex`
+- `newStateRootHex`
+- `prevNullifierRootHex`
+- `newNullifierRootHex`
+- `blockHeight`
+- `blockHashHex`
+- `newMarketStateHashHex`
+- `txCount`
+
+## Current vkey pinning boundary
+
+The checked-in SP1 release pin is now captured from a real Linux/WSL ELF
+build of `programs/state-transition`.
+
+- Canonical ELF path:
+  `programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+- Captured verifying-key hash:
+  `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477`
+- Checked-in pin artifact:
+  `crates/zkp/params/sp1/state-transition.vk.hash`
+
+Recommended setup:
+
+```powershell
+$env:PRIME_SP1_VKEY_HASH = (Get-Content .\crates\zkp\params\sp1\state-transition.vk.hash -Raw).Trim()
+```
+
+This completes the real vkey capture step for E3. The checked-in SP1 path
+now also re-derives `BlockProgramOutput` from canonical
+`BlockProgramInput` instead of echoing host-supplied outputs. The wider
+SP1 cut-over still has separate milestones: release-grade prove/verify
+transcript capture, full engine-parity block execution, and network
+prover integration.

@@ -85,7 +85,7 @@ programs/       — SP1 program (state-transition proof body)
 | `crates/zkp/src/pedersen.rs` | BN254 Pedersen commitment + generators |
 | `crates/zkp/src/bls_threshold.rs` | BLS12-381 threshold ElGamal (real impl behind `prover` feature) |
 | `crates/zkp/src/threshold.rs` | Generic `ThresholdElGamal` trait + dummy impl |
-| `crates/zkp/src/noir.rs` | Noir prover/verifier interface (mock today; nargo integration tracked in D5/D6) |
+| `crates/zkp/src/noir.rs` | Noir prover/verifier interface with checked-in compile and Barretenberg adapter hooks |
 | `crates/zkp/src/sp1.rs` | SP1 state-transition proof I/O types |
 
 ### Where the testnet stack lives
@@ -124,7 +124,7 @@ git checkout feat/zk-privacy
 ```
 
 The session-executable subset of the privacy work (workstreams
-A, B, C, D1–D4, D7, H, K1–K2) is merged. See
+A, B, C, D1–D6, D7, H, K1–K2) is merged. See
 [`STATUS.md`](STATUS.md) for what's left.
 
 ---
@@ -136,7 +136,7 @@ A, B, C, D1–D4, D7, H, K1–K2) is merged. See
 - Rust 1.79+ (stable). Install with [rustup](https://rustup.rs/).
 - Docker 24+ + Docker Compose v2 (for the testnet).
 - Foundry (for Solidity bridge work — workstream G).
-- Optional, for the real ZK pipeline (workstreams D5/D6/E):
+- Optional, for the real ZK pipeline at runtime (workstreams D5/D6/E):
   - `nargo` (Noir 0.30+)
   - `sp1up` + the SP1 toolchain
   - `barretenberg-sys` dependencies (libc++, cmake)
@@ -299,7 +299,7 @@ full rule set.
 |---|---|---|
 | Add a new shielded RPC method | `crates/rpc/src/rpc_shielded.rs` | C |
 | Add a new WS subscription | `crates/rpc/src/ws.rs` + node binary dispatch | C |
-| Wire real Noir circuits | `crates/zkp/src/noir.rs` + `crates/zkp/circuits/` | D5, D6 |
+| Extend or maintain the Noir proving path | `crates/zkp/src/noir.rs` + `crates/zkp/circuits/` + `scripts/zk/` | D5, D6 |
 | Plug in `sp1up` for real proofs | `crates/core/src/state_proof.rs` + `programs/state-transition/` | E |
 | Build the wallet UI | `sdk/` (TS bindings) + external prime-trade repo | F |
 | Write the Solidity bridge | `contracts/src/bridge/` (placeholder dir) | G |

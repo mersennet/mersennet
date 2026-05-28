@@ -1,10 +1,11 @@
 //! End-to-end circuit integration tests.
 //!
 //! These exercise the same public-input layouts that the production
-//! Noir circuits expose, using the [`MockVerifier`]. When the
-//! `prover` feature lands and Barretenberg verification replaces the
-//! mock, this file becomes the regression suite — every circuit's
-//! public-input shape must remain stable byte-for-byte.
+//! Noir circuits expose. The mock path stays as the deterministic
+//! baseline, and the `prover`-feature round-trip test checks the real
+//! Barretenberg-backed wiring when the external toolchain is
+//! configured. Every circuit's public-input shape must remain stable
+//! byte-for-byte.
 
 use prime_zkp::{
     Fr,
@@ -14,6 +15,10 @@ use prime_zkp::{
     nullifier::Nullifier,
     poseidon::Poseidon,
 };
+#[cfg(feature = "prover")]
+use prime_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
+#[cfg(feature = "prover")]
+use std::env;
 
 fn poseidon() -> Poseidon {
     Poseidon::default()
@@ -252,4 +257,161 @@ fn nullifier_set_double_spend() {
     let n = Nullifier(Fr::from_u64(0xfeedface));
     assert!(s.insert(n));
     assert!(!s.insert(n));
+}
+
+#[cfg(feature = "prover")]
+#[test]
+fn real_toolchain_spend_and_order_place_round_trip_when_configured() {
+    if !real_noir_toolchain_configured() {
+        return;
+    }
+
+    let prover = default_prover();
+    let verifier = default_verifier();
+    let p = poseidon();
+
+    let mut spend_tree = MerkleTree::new();
+    let spent = make_note(1000, 42, 11, 22);
+    let spend_index = spend_tree.insert(spent.commit(&p).0);
+    let spend_membership = spend_tree.prove(spend_index);
+    let spend_sk = Fr::from_u64(0xdead_beef);
+    let nullifier = spent.nullifier(&p, &spend_sk);
+    let change = make_note(700, 42, 13, 24);
+    let spend_public_inputs = vec![
+        spend_tree.root(),
+        nullifier.0,
+        change.commit(&p).0,
+        Fr::from_u64(300),
+    ];
+    let spend_witness = spend_witness(&spent, &change, &spend_membership, spend_sk);
+    let spend_proof = prover
+        .prove(Circuit::Spend, spend_public_inputs.clone(), &spend_witness)
+        .expect("configured Noir toolchain should produce a spend proof");
+    assert_ne!(spend_proof.vk_hash, MockVerifier::vk_hash_for(Circuit::Spend));
+    verifier
+        .verify(&spend_proof, Circuit::Spend, &spend_public_inputs)
+        .expect("configured verifier should accept the spend proof");
+
+    let mut order_tree = MerkleTree::new();
+    let collateral = make_note(10_000, 9, 99, 100);
+    let order_index = order_tree.insert(collateral.commit(&p).0);
+    let order_membership = order_tree.prove(order_index);
+    let order_sk = Fr::from_u64(0xaaaaaaaa);
+    let remaining = make_note(9_500, 9, 199, 200);
+    let side = Fr::from_u64(1);
+    let side_salt = Fr::from_u64(0xdead);
+    let order_public_inputs = vec![
+        order_tree.root(),
+        collateral.nullifier(&p, &order_sk).0,
+        remaining.commit(&p).0,
+        Fr::from_u64(1),
+        p.hash_two(&side, &side_salt),
+        Fr::from_u64(450),
+        Fr::from_u64(100),
+        Fr::from_u64(449),
+        Fr::from_u64(500),
+    ];
+    let order_witness = order_place_witness(
+        &collateral,
+        &remaining,
+        &order_membership,
+        order_sk,
+        side_salt,
+        side,
+    );
+    let order_proof = prover
+        .prove(Circuit::OrderPlace, order_public_inputs.clone(), &order_witness)
+        .expect("configured Noir toolchain should produce an order proof");
+    assert_ne!(order_proof.vk_hash, MockVerifier::vk_hash_for(Circuit::OrderPlace));
+    verifier
+        .verify(&order_proof, Circuit::OrderPlace, &order_public_inputs)
+        .expect("configured verifier should accept the order proof");
+}
+
+#[cfg(feature = "prover")]
+fn real_noir_toolchain_configured() -> bool {
+    env::var("PRIME_BB_PROVE_ADAPTER").is_ok() && env::var("PRIME_BB_VERIFY_ADAPTER").is_ok()
+}
+
+#[cfg(feature = "prover")]
+fn spend_witness(
+    spent: &Note,
+    output: &Note,
+    membership: &prime_zkp::MerkleProof,
+    spend_sk: Fr,
+) -> WitnessInputs {
+    let mut witness = WitnessInputs::new();
+    witness.insert("root", membership.root(&poseidon()));
+    witness.insert("nullifier", spent.nullifier(&poseidon(), &spend_sk).0);
+    witness.insert("new_commitment", output.commit(&poseidon()).0);
+    witness.insert("public_amount", Fr::from_u64((spent.value - output.value) as u64));
+    witness.insert(
+        "spent_note",
+        WitnessValue::structure([("note", note_witness(spent))]),
+    );
+    witness.insert(
+        "output_note",
+        WitnessValue::structure([("note", note_witness(output))]),
+    );
+    witness.insert(
+        "merkle_path",
+        WitnessValue::array(membership.siblings.iter().copied().map(WitnessValue::from).collect()),
+    );
+    witness.insert("merkle_index_bits", WitnessValue::from(index_bits(membership.index)));
+    witness.insert("spend_sk", spend_sk);
+    witness
+}
+
+#[cfg(feature = "prover")]
+fn order_place_witness(
+    spent: &Note,
+    output: &Note,
+    membership: &prime_zkp::MerkleProof,
+    spend_sk: Fr,
+    side_salt: Fr,
+    side: Fr,
+) -> WitnessInputs {
+    let p = poseidon();
+    let mut witness = WitnessInputs::new();
+    witness.insert("root", membership.root(&p));
+    witness.insert("nullifier", spent.nullifier(&p, &spend_sk).0);
+    witness.insert("new_commitment", output.commit(&p).0);
+    witness.insert("market_id", Fr::from_u64(1));
+    witness.insert("side_hash", p.hash_two(&side, &side_salt));
+    witness.insert("price_band", Fr::from_u64(450));
+    witness.insert("size_band", Fr::from_u64(100));
+    witness.insert("oracle_price", Fr::from_u64(449));
+    witness.insert("imm_required", Fr::from_u64(500));
+    witness.insert("spent", note_witness(spent));
+    witness.insert("output", note_witness(output));
+    witness.insert(
+        "spent_path",
+        WitnessValue::array(membership.siblings.iter().copied().map(WitnessValue::from).collect()),
+    );
+    witness.insert("spent_index_bits", WitnessValue::from(index_bits(membership.index)));
+    witness.insert("spend_sk", spend_sk);
+    witness.insert("side_salt", side_salt);
+    witness.insert("side", side);
+    witness
+}
+
+#[cfg(feature = "prover")]
+fn note_witness(note: &Note) -> WitnessValue {
+    WitnessValue::structure([
+        ("value_lo", Fr::from_u64(note.value as u64)),
+        ("value_hi", Fr::from_u64((note.value >> 64) as u64)),
+        ("asset_id", Fr::from_u64(note.asset_id as u64)),
+        ("owner_pk", note.owner_pk),
+        ("rho", note.rho),
+        ("psi", note.psi),
+    ])
+}
+
+#[cfg(feature = "prover")]
+fn index_bits(index: u64) -> [u64; 32] {
+    let mut bits = [0u64; 32];
+    for (bit, slot) in bits.iter_mut().enumerate() {
+        *slot = (index >> bit) & 1;
+    }
+    bits
 }
