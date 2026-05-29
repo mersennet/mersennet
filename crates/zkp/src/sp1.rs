@@ -1825,6 +1825,88 @@ mod tests {
     }
 
     #[test]
+    fn execute_block_program_replays_liquidation_events() {
+        let anchor_root = MerkleTree::new().root().to_bytes();
+        let liquidator_id = Fr::from_u64(7);
+        let winning_bid = u64_bytes(25);
+        let claim_tag = Fr::from_u64(9);
+        let claim = LiquidationClaimWitness {
+            anchor_root: Fr::from_bytes_reduce(&anchor_root),
+            market_id: 3,
+            oracle_price: u64_bytes(120),
+            liquidator_id,
+            claim_tag,
+            encrypted_bid: Vec::new(),
+            proof: crate::noir::MockVerifier::new().prove(
+                Circuit::LiquidateClaim,
+                vec![
+                    Fr::from_bytes_reduce(&anchor_root),
+                    Fr::from_u64(3),
+                    Fr::from_u64(120),
+                    liquidator_id,
+                    claim_tag,
+                ],
+            ),
+        };
+        let input = BlockProgramInput {
+            prev_state_root: anchor_root,
+            prev_nullifier_root: [0u8; 32],
+            block_number: 12,
+            timestamp: 0,
+            header: test_header(0, 0),
+            txs: Vec::new(),
+            prev_market_state: Vec::new(),
+            prev_shielded_state: ShieldedStateWitness {
+                leaves: Vec::new(),
+                nullifiers: Vec::new(),
+                recent_roots: vec![anchor_root],
+            },
+            transparent_balances: Vec::new(),
+            pre_tick_witness: ShieldedTickWitness {
+                liquidation: LiquidationAuctionTickWitness {
+                    liquidators: vec![LiquidatorWitness {
+                        bond_commitment: liquidator_id,
+                        bond_amount: 100,
+                        registered_at: 1,
+                    }],
+                    auctions: vec![LiquidationAuctionEntryWitness {
+                        claim_tag,
+                        claims: vec![claim],
+                        bids: vec![LiquidationBidWitness {
+                            claim_tag,
+                            liquidator_id,
+                            bid_price: winning_bid,
+                        }],
+                    }],
+                    pending_revelation: Vec::new(),
+                    insurance_fund: U256Bytes::default(),
+                    stats: LiquidationAuctionStatsWitness::default(),
+                },
+                ..Default::default()
+            },
+            expected_block_hash: derive_block_hash(12, &test_header(0, 0)),
+            expected_market_state_hash: hash_market_aggregates(&[]),
+        };
+
+        let output = execute_block_program(&input).unwrap();
+        let expected_events = vec![CanonicalShieldedEvent::LiquidationSettled {
+            market_id: 0,
+            winner_bond_commitment: liquidator_id.to_bytes(),
+            winning_bid,
+        }];
+        let expected_root = shielded_event_root(&build_shielded_tick_events(
+            12,
+            0,
+            &[],
+            &expected_events,
+            anchor_root,
+        ));
+
+        assert_eq!(output.new_market_state_hash, hash_market_aggregates(&[]));
+        assert_eq!(output.shielded_event_root, expected_root);
+    }
+
+    #[test]
     fn execute_block_program_rejects_market_hash_mismatch() {
         let input = BlockProgramInput {
             prev_state_root: MerkleTree::new().root().to_bytes(),

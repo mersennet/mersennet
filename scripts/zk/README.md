@@ -172,6 +172,15 @@ Notes:
 - All hex fields are raw lowercase hex without a `0x` prefix.
 - `blockProgramInputHex` must be the exact bincode serialization fed to
   the prover for the transcript you intend to record.
+- The repository now ships a helper to materialize that exact value into
+  a request file:
+
+```powershell
+cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_prove_request -- scripts/zk/sp1-prove-request.request.json scripts/zk/sp1-prove-request.request.json
+```
+
+  Run that before invoking the real host prover if the request was
+  created from placeholder or fallback fields.
 - `vkeyHashHex`, `publicValuesHex`, `proofBytesHex`, and `proofSystem`
   in the verify request should be copied from the corresponding prove
   response and wrapped `StateTransitionProof`.
