@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use prime_chain::zk_proofs::{ProofType, StateTransitionProof};
 use prime_chain::zk_sp1::{SP1Proof, SP1ProofVerifier};
-use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
+use prime_zkp::sp1::{BlockHeaderWitness, BlockProgramInput, BlockProgramOutput, derive_block_hash, execute_block_program};
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
@@ -33,6 +33,8 @@ struct Cli {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProveRequest {
+    #[serde(default)]
+    block_program_input_hex: String,
     prev_state_root_hex: String,
     prev_nullifier_root_hex: String,
     #[serde(alias = "blockHeight")]
@@ -56,6 +58,7 @@ struct VerifyRequest {
     block_height: u64,
     block_hash_hex: String,
     new_market_state_hash_hex: String,
+    shielded_event_root_hex: String,
     tx_count: u64,
     vkey_hash_hex: String,
     public_values_hex: String,
@@ -111,6 +114,7 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
     let new_nullifier_root = decode_b256(&request.new_nullifier_root_hex)?;
     let block_hash = decode_b256(&request.block_hash_hex)?;
     let new_market_state_hash = decode_b256(&request.new_market_state_hash_hex)?;
+    let shielded_event_root = decode_b256(&request.shielded_event_root_hex)?;
     let vkey_hash = resolve_vkey_hash(&request.vkey_hash_hex, request.program_elf_path.as_deref())?;
     let public_values = hex::decode(request.public_values_hex.trim())
         .context("invalid public_values_hex")?;
@@ -130,6 +134,7 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
         block_height: request.block_height,
         block_hash,
         new_market_state_hash,
+        shielded_event_root,
         tx_count: request.tx_count,
         proof_data: bincode::serialize(&sp1_proof).context("serialize SP1 proof")?,
         proof_type: ProofType::SP1,
@@ -144,6 +149,7 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
         block_number: request.block_height,
         block_hash: block_hash.0,
         new_market_state_hash: new_market_state_hash.0,
+        shielded_event_root: shielded_event_root.0,
         tx_count: request.tx_count,
     };
     let expected_public_values = bincode::serialize(&expected_output).context("serialize expected public values")?;
@@ -168,23 +174,39 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
 fn build_proof(
     request: &ProveRequest,
 ) -> Result<SP1Proof> {
-    let prev_root = decode_b256(&request.prev_state_root_hex)?;
-    let prev_nullifier_root = decode_b256(&request.prev_nullifier_root_hex)?;
-    let prev_market_state = decode_bytes(&request.prev_market_state_hex)?;
-    let txs = request
-        .txs_hex
-        .iter()
-        .map(|tx| decode_bytes(tx))
-        .collect::<Result<Vec<_>>>()?;
-    let program_input = BlockProgramInput {
-        prev_state_root: prev_root.0,
-        prev_nullifier_root: prev_nullifier_root.0,
-        block_number: request.block_number,
-        timestamp: request.timestamp,
-        txs,
-        prev_market_state,
+    let program_input = if request.block_program_input_hex.trim().is_empty() {
+        let prev_root = decode_b256(&request.prev_state_root_hex)?;
+        let prev_nullifier_root = decode_b256(&request.prev_nullifier_root_hex)?;
+        let prev_market_state = decode_bytes(&request.prev_market_state_hex)?;
+        let txs = request
+            .txs_hex
+            .iter()
+            .map(|tx| decode_bytes(tx))
+            .collect::<Result<Vec<_>>>()?;
+        let header = BlockHeaderWitness {
+            tx_count: txs.len() as u64,
+            ..Default::default()
+        };
+        BlockProgramInput {
+            prev_state_root: prev_root.0,
+            prev_nullifier_root: prev_nullifier_root.0,
+            block_number: request.block_number,
+            timestamp: request.timestamp,
+            header: header.clone(),
+            txs,
+            prev_market_state,
+            prev_shielded_state: Default::default(),
+            transparent_balances: Vec::new(),
+            pre_tick_witness: Default::default(),
+            expected_block_hash: derive_block_hash(request.block_number, &header),
+            expected_market_state_hash: [0u8; 32],
+        }
+    } else {
+        let bytes = hex::decode(request.block_program_input_hex.trim())
+            .context("invalid block_program_input_hex")?;
+        bincode::deserialize(&bytes).context("deserialize block program input")?
     };
-    let output = execute_block_program(&program_input);
+    let output = execute_block_program(&program_input)?;
 
     #[cfg(all(feature = "real-sp1", not(windows)))]
     if let Some(program_elf_path) = request.program_elf_path.as_deref().filter(|value| !value.is_empty()) {
@@ -214,7 +236,7 @@ fn build_proof(
 }
 
 fn compute_mock_proof_bytes(output: &BlockProgramOutput) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(32 * 5 + 8 * 2);
+    let mut buf = Vec::with_capacity(32 * 6 + 8 * 2);
     buf.extend_from_slice(&output.prev_state_root);
     buf.extend_from_slice(&output.new_state_root);
     buf.extend_from_slice(&output.prev_nullifier_root);
@@ -223,6 +245,7 @@ fn compute_mock_proof_bytes(output: &BlockProgramOutput) -> Vec<u8> {
     buf.extend_from_slice(&output.block_number.to_be_bytes());
     buf.extend_from_slice(&output.tx_count.to_be_bytes());
     buf.extend_from_slice(&output.new_market_state_hash);
+    buf.extend_from_slice(&output.shielded_event_root);
     keccak256(&buf).0.to_vec()
 }
 

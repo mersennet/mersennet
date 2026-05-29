@@ -28,9 +28,14 @@ use prime_chain::engine::Engine;
 use prime_chain::liquidation_auction::{LiquidationClaim, LiquidationExecute};
 use prime_chain::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
 use prime_chain::shielded_evm::{ViewingGrantScope, ViewingGrantToken};
-use prime_chain::shielded_orders::ShieldedOrderTx;
-use revm::primitives::keccak256;
+use prime_chain::prime_orders::{MarketId, Side, TimeInForce};
+use prime_chain::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
+use prime_zkp::noir::{Circuit, CircuitProof, MockVerifier};
+use prime_zkp::poseidon::Poseidon;
+use prime_zkp::Fr;
+use revm::primitives::{U256, keccak256};
 use serde_json::{Value, json};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub struct ShieldedRpcError {
@@ -445,14 +450,121 @@ fn submit_unshield(engine: &mut Engine, params: Value) -> ShieldedRouteResult {
 }
 
 fn submit_shielded_order(engine: &mut Engine, params: Value) -> ShieldedRouteResult {
-    let payload = decode_bincode_hex_param(&params, "envelopeBincodeHex")?;
-    let tx: ShieldedOrderTx = bincode::deserialize(&payload)
-        .map_err(|e| invalid_params(format!("invalid order envelope: {e}")))?;
-    apply_envelope_directly(
-        engine,
-        ShieldedEnvelope::Order(Box::new(tx)),
-        "shieldedOrder",
-    )
+    let obj = first_param_object(&params)?;
+    let request = parse_shielded_order_request(obj, engine)?;
+    let payload = bincode::serialize(&request.threshold_order_intent)
+        .map_err(|e| invalid_params(format!("serialize threshold order intent: {e}")))?;
+    let intent = engine.threshold_mempool.encrypt_plaintext(
+        &payload,
+        request.gas_limit,
+        request.max_fee_per_gas,
+        request.submitted_at,
+    );
+    let intent_id = engine
+        .threshold_mempool
+        .submit(intent)
+        .map_err(|e| ShieldedRpcError {
+            code: ERR_INTERNAL,
+            message: format!("submit_shielded_order: {e:?}"),
+        })?;
+    Ok(Some(json!({ "intentId": hex_bytes(intent_id.as_slice()) })))
+}
+
+struct ShieldedOrderSubmitRequest {
+    threshold_order_intent: ThresholdOrderIntent,
+    gas_limit: u64,
+    max_fee_per_gas: u64,
+    submitted_at: u64,
+}
+
+fn parse_shielded_order_request(
+    obj: &Value,
+    engine: &Engine,
+) -> Result<ShieldedOrderSubmitRequest, ShieldedRpcError> {
+    let anchor_root = parse_fr_field(obj, "anchorRootHex")?;
+    let nullifier = parse_fr_field(obj, "nullifierHex")?;
+    let new_commitment = parse_fr_field(obj, "newCommitmentHex")?;
+    let market_id = MarketId(
+        parse_u64_field(obj, "marketId")?.ok_or_else(|| invalid_params("missing marketId"))?,
+    );
+    let side = parse_order_side(obj)?;
+    let price = parse_u256_field(obj, "price")?.ok_or_else(|| invalid_params("missing price"))?;
+    let size = parse_u256_field(obj, "size")?.ok_or_else(|| invalid_params("missing size"))?;
+    let owner_pk = parse_fr_field(obj, "ownerPkHex")?;
+    let salt = parse_fr_field(obj, "saltHex")?;
+    let tif = parse_time_in_force(obj)?;
+    let gas_limit = parse_u64_field(obj, "gasLimit")?.unwrap_or(200_000);
+    let max_fee_per_gas = parse_u64_field(obj, "maxFeePerGas")?.unwrap_or(1_000_000_000);
+    let submitted_at = parse_u64_field(obj, "submittedAt")?.unwrap_or_else(unix_timestamp_secs);
+
+    let price_band = u32::try_from((price / engine.shielded_orders.price_tick).as_limbs()[0])
+        .map_err(|_| invalid_params("price band overflow"))?;
+    let size_band = u32::try_from(size.div_ceil(engine.shielded_orders.size_lot).as_limbs()[0])
+        .map_err(|_| invalid_params("size band overflow"))?;
+    let oracle_price = engine
+        .shielded_orders
+        .oracle_price_for_market(market_id)
+        .unwrap_or_default();
+    let imm_required = engine
+        .shielded_orders
+        .derive_imm_required(market_id, price_band, size_band, oracle_price)
+        .ok_or_else(|| invalid_params("unknown marketId"))?;
+    let side_fr = match side {
+        Side::Buy => Fr::ZERO,
+        Side::Sell => Fr::ONE,
+    };
+    let side_hash = Poseidon::default().hash_two(&side_fr, &salt);
+
+    let public_inputs = vec![
+        anchor_root,
+        nullifier,
+        new_commitment,
+        Fr::from_u64(market_id.0),
+        side_hash,
+        Fr::from_u64(price_band as u64),
+        Fr::from_u64(size_band as u64),
+        Fr::from_u64(low_u64(&oracle_price)),
+        Fr::from_u64(low_u64(&imm_required)),
+    ];
+    let proof = if let Some(proof_bytes_hex) = obj.get("proofBytesHex").and_then(Value::as_str) {
+        CircuitProof {
+            circuit: Circuit::OrderPlace,
+            public_inputs: public_inputs.clone(),
+            proof_bytes: decode_hex(proof_bytes_hex)?,
+            vk_hash: MockVerifier::vk_hash_for(Circuit::OrderPlace),
+        }
+    } else {
+        MockVerifier::new().prove(Circuit::OrderPlace, public_inputs.clone())
+    };
+
+    let tx = ShieldedOrderTx {
+        anchor_root,
+        nullifier,
+        new_commitment,
+        market_id,
+        side_hash,
+        price_band,
+        size_band,
+        oracle_price,
+        imm_required,
+        encrypted_payload: Vec::new(),
+        proof,
+        tif,
+    };
+    let intent = DecryptedIntent {
+        side,
+        price,
+        size,
+        owner_pk,
+        salt,
+    };
+
+    Ok(ShieldedOrderSubmitRequest {
+        threshold_order_intent: ThresholdOrderIntent { tx, intent },
+        gas_limit,
+        max_fee_per_gas,
+        submitted_at,
+    })
 }
 
 fn submit_liquidation_claim(engine: &mut Engine, params: Value) -> ShieldedRouteResult {
@@ -736,6 +848,60 @@ fn parse_u64_field(obj: &Value, key: &str) -> Result<Option<u64>, ShieldedRpcErr
     Err(invalid_params(format!("bad {key}")))
 }
 
+fn parse_u256_field(obj: &Value, key: &str) -> Result<Option<U256>, ShieldedRpcError> {
+    let Some(value) = obj.get(key) else {
+        return Ok(None);
+    };
+    if let Some(number) = value.as_u64() {
+        return Ok(Some(U256::from(number)));
+    }
+    if let Some(text) = value.as_str() {
+        let stripped = text.strip_prefix("0x").unwrap_or(text);
+        let padded = if stripped.len() % 2 == 0 {
+            stripped.to_string()
+        } else {
+            format!("0{stripped}")
+        };
+        let bytes = hex::decode(&padded).map_err(|e| invalid_params(format!("bad {key}: {e}")))?;
+        return Ok(Some(U256::from_be_slice(&bytes)));
+    }
+    Err(invalid_params(format!("bad {key}")))
+}
+
+fn parse_fr_field(obj: &Value, key: &str) -> Result<Fr, ShieldedRpcError> {
+    let bytes = decode_fixed_hex_field(obj, key, 32)?;
+    Ok(Fr::from_bytes_reduce(&bytes))
+}
+
+fn parse_order_side(obj: &Value) -> Result<Side, ShieldedRpcError> {
+    match obj.get("side").and_then(Value::as_str) {
+        Some("buy") => Ok(Side::Buy),
+        Some("sell") => Ok(Side::Sell),
+        Some(other) => Err(invalid_params(format!("unsupported side: {other}"))),
+        None => Err(invalid_params("missing side")),
+    }
+}
+
+fn parse_time_in_force(obj: &Value) -> Result<TimeInForce, ShieldedRpcError> {
+    match obj.get("tif").and_then(Value::as_str).unwrap_or("gtc") {
+        "gtc" => Ok(TimeInForce::Gtc),
+        "ioc" => Ok(TimeInForce::Ioc),
+        "fok" => Ok(TimeInForce::Fok),
+        other => Err(invalid_params(format!("unsupported tif: {other}"))),
+    }
+}
+
+fn low_u64(value: &U256) -> u64 {
+    value.as_limbs()[0]
+}
+
+fn unix_timestamp_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 fn parse_usize_field(obj: &Value, key: &str) -> Result<Option<usize>, ShieldedRpcError> {
     parse_u64_field(obj, key)?.map(|value| {
         usize::try_from(value).map_err(|_| invalid_params(format!("bad {key}: value too large")))
@@ -1009,6 +1175,56 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(resp["registered"], true);
+    }
+
+    #[test]
+    fn submit_shielded_order_enqueues_threshold_intent_post_fork() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let market = e
+            .shielded_orders
+            .markets
+            .keys()
+            .copied()
+            .next()
+            .unwrap_or_else(|| {
+                let market = prime_chain::prime_orders::Market {
+                    id: prime_chain::prime_orders::MarketId(1),
+                    symbol: "M1".to_string(),
+                    tick_size: U256::from(10u64),
+                    lot_size: U256::from(1u64),
+                    last_price: U256::from(1_000u64),
+                    status: prime_chain::prime_orders::MarketStatus::Active,
+                };
+                e.shielded_orders.add_market(market.clone());
+                e.shielded_orders.markets.get_mut(&market.id).unwrap().last_price = U256::from(1_000u64);
+                market.id
+            });
+        if let Some(entry) = e.shielded_orders.markets.get_mut(&market) {
+            entry.last_price = U256::from(1_000u64);
+        }
+
+        let root = e.shielded_evm.state.current_root().to_bytes();
+        let resp = try_dispatch(
+            "prime_submitShieldedOrder",
+            json!([{
+                "anchorRootHex": hex_bytes(&root),
+                "nullifierHex": format!("0x{}", "00".repeat(32)),
+                "newCommitmentHex": format!("0x{}", "01".repeat(32)),
+                "marketId": format!("0x{:x}", market.0),
+                "side": "buy",
+                "price": "0x64",
+                "size": "0x5",
+                "ownerPkHex": format!("0x{}", "02".repeat(32)),
+                "saltHex": format!("0x{}", "03".repeat(32)),
+            }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(resp["intentId"].as_str().unwrap().starts_with("0x"));
+        assert_eq!(e.threshold_mempool.pending_count(), 1);
     }
 
     #[test]

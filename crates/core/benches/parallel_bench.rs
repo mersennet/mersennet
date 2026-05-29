@@ -239,7 +239,7 @@ fn main() {
         let iterations = 10_000;
         let start = Instant::now();
         for i in 0..iterations {
-            let _ = prover.prove_state_transition(&BlockProgramOutput {
+            let _ = prover.prove_public_output(&BlockProgramOutput {
                 prev_state_root: prev_root.0,
                 new_state_root: new_root.0,
                 prev_nullifier_root: [0u8; 32],
@@ -247,13 +247,14 @@ fn main() {
                 block_number: i,
                 block_hash: block_hash.0,
                 new_market_state_hash: [0u8; 32],
+                shielded_event_root: [0u8; 32],
                 tx_count: 100,
             });
         }
         let elapsed = start.elapsed();
         let proves_per_sec = iterations as f64 / elapsed.as_secs_f64();
         let proof = prover
-            .prove_state_transition(&BlockProgramOutput {
+            .prove_public_output(&BlockProgramOutput {
                 prev_state_root: prev_root.0,
                 new_state_root: new_root.0,
                 prev_nullifier_root: [0u8; 32],
@@ -261,6 +262,7 @@ fn main() {
                 block_number: 0,
                 block_hash: block_hash.0,
                 new_market_state_hash: [0u8; 32],
+                shielded_event_root: [0u8; 32],
                 tx_count: 100,
             })
             .unwrap();

@@ -67,20 +67,26 @@ For every tx in `txs`, in order:
 [src/main.rs](./src/main.rs) re-derives `BlockProgramOutput` from that
 input inside the zkVM. The host-echo contract is gone.
 
-The current executor is still a simplified deterministic transition,
-shared between the chain, host runner, and zkVM:
+The current executor is now a partial real replay, shared between the
+chain, host runner, and zkVM:
 
-1. Hash the transaction list and previous market-state bytes.
-2. Derive `new_market_state_hash` from the previous market state,
-   block metadata, and transaction commitment.
-3. Derive `new_nullifier_root` from the previous nullifier root and
-   the transaction commitment.
-4. Derive `new_state_root` and `block_hash` from the full witness.
+1. Re-verify and apply shielded transfer / shield / unshield /
+  liquidation-execute txs against the carried note-tree witness.
+2. Restore the pre-tick shielded-order books and aggregates from
+  `pre_tick_witness`, replay the deterministic FBA clearing step for
+  each market, and derive `new_market_state_hash` from the resulting
+  post-tick aggregates.
+3. Treat the decrypted-intent drain as part of the carried tick witness
+  boundary, but do not yet replay order admission from plaintext
+  intents.
+4. Keep block-hash/header derivation and the remaining liquidation
+  claim / settle path outside the zkVM for now.
 
 That means the program now consumes the real private-witness shape and
-computes its own public values, but it does not yet replay the full
-Prime Chain engine (`revm`, Noir-proof verification, FBA matching,
-liquidation flows) inside the zkVM.
+computes its own public values for the shielded tx sub-path plus the
+deterministic market-clearing hash, but it does not yet replay the full
+Prime Chain engine (`revm`, order admission, liquidation claim/settle,
+full header derivation) inside the zkVM.
 
 Reference request/response adapters for the real prover live under
 [scripts/zk/README.md](../../scripts/zk/README.md).

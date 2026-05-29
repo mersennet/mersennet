@@ -31,6 +31,7 @@
 
 use prime_zkp::{
     DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError, threshold::DummyThreshold,
+    sp1::DecryptedIntentWitness,
 };
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
@@ -214,6 +215,25 @@ impl ThresholdMempool {
 
     pub fn decrypted_count(&self) -> usize {
         self.decrypted.len()
+    }
+
+    pub fn decrypted_intent_witness(&self) -> Vec<DecryptedIntentWitness> {
+        let mut intents: Vec<_> = self
+            .decrypted
+            .iter()
+            .map(|(intent_id, plaintext)| DecryptedIntentWitness {
+                intent_id: intent_id.0,
+                plaintext: plaintext.clone(),
+                order_admission: None,
+            })
+            .collect();
+        intents.sort_by(|left, right| left.intent_id.cmp(&right.intent_id));
+        intents
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_decrypted_for_test(&mut self, intent_id: B256, plaintext: Vec<u8>) {
+        self.decrypted.insert(intent_id, plaintext);
     }
 }
 
