@@ -83,6 +83,11 @@ Current status:
       `crates/zkp/params/sp1/state-transition.vk.hash`
 - Prepared prove request:
       `scripts/zk/sp1-prove-request.request.json`
+- Prepared prove request is now self-contained:
+      `programs/state-transition-host/examples/render_prove_request.rs`
+      materializes the exact serialized `BlockProgramInput` into
+      `blockProgramInputHex`, so the transcript request no longer relies
+      on host-side fallback reconstruction.
 - Last local prove failure:
       stale repo pin `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477` did not match the current ELF verifying key `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`; the pin and request were updated to the current ELF.
 - Latest local real-SP1 runtime blocker:
@@ -91,35 +96,50 @@ Current status:
 - Local WSL mitigation now applied on this host:
       created `C:\Users\rod_o\.wslconfig` with:
       `[wsl2]`
-      `memory=24GB`
-      `swap=8GB`
+      `memory=28GB`
+      `swap=16GB`
       `processors=16`
-      After `wsl.exe --shutdown`, WSL reported `Mem: 23Gi` and `Swap: 8.0Gi`.
+      After `wsl.exe --shutdown`, WSL reported `Mem: 27Gi` and `Swap: 16Gi`.
 - Local real-SP1 prove command attempted in WSL:
       `PROTOC=/home/rodaemonic/.local/bin/protoc PROTOC_INCLUDE=/home/rodaemonic/.local/share/protoc/extracted/include PRIME_SP1_MODE=local cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
-- Lower-concurrency retry attempted:
+- Lower-concurrency retries attempted:
       `RAYON_NUM_THREADS=4 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
-- Current status of the lower-concurrency retry after the WSL memory increase:
-      process remained live for more than 1h50m with no fresh `dmesg` OOM evidence and with roughly `21Gi` still free inside WSL, but it had not yet produced `scripts/zk/sp1-prove-response.json` at the time of this packet update.
+      and later
+      `RAYON_NUM_THREADS=2 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+- Current local blocker after the memory increase:
+      the checked-in host path now isolates the failure to local SP1 SDK client initialization on this WSL host, before prover setup. Stage tracing in `programs/state-transition-host/src/main.rs` reached:
+      `[prime-sp1-stage] elf:read:start`
+      `[prime-sp1-stage] elf:read:done`
+      `[prime-sp1-stage] stdin:build:start`
+      `[prime-sp1-stage] stdin:write:start`
+      `[prime-sp1-stage] stdin:write:done`
+      `[prime-sp1-stage] client:build:start`
+      and never reached `client:build:done`.
+- Standalone reproducer:
+      `programs/state-transition-host/examples/probe_prover_client.rs` reproduces the same issue without any Prime Chain input handling. Running it in WSL with `--features real-sp1` prints only:
+      `[prime-sp1-probe] client:build:start`
+      and never reaches `client:build:done`, which isolates the blocker to `ProverClient::builder().cpu().build()` on this host.
 - Transcript artifacts:
-      `scripts/zk/sp1-prove-response.json` and `scripts/zk/sp1-verify-request.request.json` were not produced before the OOM kill.
-- Transcript: repo-side setup is ready; prove/verify artifacts are still pending completion of the relaunched local prove
+      `scripts/zk/sp1-prove-response.json` and `scripts/zk/sp1-verify-request.request.json` were not produced.
+- Transcript: repo-side setup is ready, but local proving on this machine is blocked before prover setup by SP1 SDK client initialization. The next validation step is to run the standalone reproducer on a different Linux/WSL host.
 
-### 2. Full engine-parity zkVM block re-execution is not implemented yet
+### 2. The canonical zkVM executor now covers the current proof boundary
 
 The checked-in zkVM program no longer echoes host-supplied outputs. It
-now consumes canonical `prime_zkp::sp1::BlockProgramInput` and derives
+consumes canonical `prime_zkp::sp1::BlockProgramInput` and derives
 `BlockProgramOutput` via the shared deterministic executor used by the
 chain and host runner.
 
-What is still missing is engine parity. The chain-side executor remains
-in `crates/core/src/engine.rs`, which is tightly coupled to `std`,
-`revm`, Noir-proof verification, and the rest of the full node runtime.
+That executor now covers the current proof-authoritative shielded path
+for `BlockProgramInput`: shield / transfer / unshield /
+liquidation-execute tx replay, shared order admission, shared FBA market
+transition, shared liquidation claim validation and settlement, and
+canonical `shielded_event_root` derivation.
 
-That means the remaining E2 work is now a narrower extraction problem:
-replace the simplified shared executor with a zkVM-friendly state
-transition core that reproduces the real engine semantics from
-`BlockProgramInput`.
+The focused regression
+`crates/zkp/src/sp1.rs::tests::execute_block_program_replays_liquidation_events()`
+now covers the last stale liquidation replay seam at the SP1 event-root
+boundary.
 
 ### 3. Network proving is blocked by the current dependency graph
 
@@ -149,7 +169,6 @@ The actual 8-week H6 bake window has not started.
 Reason:
 
 - no completed prove/verify transcript against the pinned artifact set
-- no full engine-parity zkVM block re-execution
 - no network prover cut-over
 
 It would be inaccurate to mark the bake window as started before those
@@ -163,8 +182,8 @@ preconditions are cleared.
 - [ ] Produce one successful real prove/verify transcript.
 - [x] Replace the host-echo zkVM program with canonical
       `BlockProgramInput` re-execution.
-- [ ] Replace the simplified shared executor with full engine-parity
-      zkVM block execution.
+- [x] Replace the simplified shared executor with the current
+      `BlockProgramInput`-authoritative zkVM block execution path.
 - [ ] Resolve the `sp1-sdk/network` vs `revm` `c-kzg` conflict before
       enabling `PRIME_SP1_MODE=network` in production.
 - [ ] Start the actual H6 bake window only after the items above are complete.

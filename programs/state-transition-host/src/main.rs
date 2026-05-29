@@ -276,6 +276,20 @@ fn configured_sp1_mode() -> String {
 }
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
+fn trace_real_sp1_stage(stage: &str) {
+    let enabled = env::var("PRIME_SP1_STAGE_TRACE")
+        .ok()
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            !value.is_empty() && value != "0" && value != "false" && value != "off"
+        })
+        .unwrap_or(false);
+    if enabled {
+        eprintln!("[prime-sp1-stage] {stage}");
+    }
+}
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
 fn build_real_sp1_proof_with<P>(
     prover: &P,
     elf_bytes: Vec<u8>,
@@ -287,9 +301,11 @@ where
     P: Prover,
     P::Error: std::fmt::Display,
 {
+    trace_real_sp1_stage("setup:start");
     let proving_key = prover
         .setup(Elf::from(elf_bytes))
         .map_err(|err| anyhow::anyhow!("setup SP1 prover: {err}"))?;
+    trace_real_sp1_stage("setup:done");
     let verifying_key = proving_key.verifying_key();
     let vkey_hash = B256::from(verifying_key.bytes32_raw());
     let requested_vkey_hash = decode_b256(vkey_hash_hex)?;
@@ -301,12 +317,15 @@ where
         );
     }
 
+    trace_real_sp1_stage("prove:start");
     let proof = prover
         .prove(&proving_key, stdin)
         .compressed()
         .run()
         .map_err(|err| anyhow::anyhow!("generate SP1 proof: {err}"))?;
+    trace_real_sp1_stage("prove:done");
 
+    trace_real_sp1_stage("public-values:check:start");
     let mut decoded_output = proof.public_values.clone();
     let actual_output: BlockProgramOutput = decoded_output.read();
     if actual_output.prev_state_root != expected_output.prev_state_root
@@ -320,12 +339,17 @@ where
     {
         bail!("SP1 public values do not match canonical BlockProgramInput execution");
     }
+    trace_real_sp1_stage("public-values:check:done");
 
+    trace_real_sp1_stage("verify:start");
     prover
         .verify(&proof, verifying_key, None)
         .context("verify generated SP1 proof")?;
+    trace_real_sp1_stage("verify:done");
 
+    trace_real_sp1_stage("serialize:start");
     let proof_bytes = bincode::serialize(&proof).context("serialize SP1 proof envelope")?;
+    trace_real_sp1_stage("serialize:done");
     Ok(SP1Proof {
         vkey_hash,
         public_values: proof.public_values.to_vec(),
@@ -388,21 +412,31 @@ fn build_real_sp1_proof(
     vkey_hash_hex: &str,
     program_elf_path: &str,
 ) -> Result<SP1Proof> {
+    trace_real_sp1_stage("elf:read:start");
     let elf_bytes = fs::read(program_elf_path)
         .with_context(|| format!("read program ELF at {program_elf_path}"))?;
+    trace_real_sp1_stage("elf:read:done");
+
+    trace_real_sp1_stage("stdin:build:start");
     let mut stdin = SP1Stdin::new();
+    trace_real_sp1_stage("stdin:write:start");
     stdin.write(input);
+    trace_real_sp1_stage("stdin:write:done");
 
     match configured_sp1_mode().as_str() {
         "network" => bail!(
             "PRIME_SP1_MODE=network is currently blocked in this host crate because sp1-sdk/network conflicts with the revm c-kzg dependency graph"
         ),
         "local" => {
+            trace_real_sp1_stage("client:build:start");
             let prover = ProverClient::builder().cpu().build();
+            trace_real_sp1_stage("client:build:done");
             build_real_sp1_proof_with(&prover, elf_bytes, stdin, expected_output, vkey_hash_hex)
         }
         _ => {
+            trace_real_sp1_stage("client:env:start");
             let prover = ProverClient::from_env();
+            trace_real_sp1_stage("client:env:done");
             build_real_sp1_proof_with(&prover, elf_bytes, stdin, expected_output, vkey_hash_hex)
         }
     }

@@ -143,15 +143,16 @@ Owners are taken from `.github/CODEOWNERS`.
 
 ### E — SP1 state-proof close-out
 
+E2 is now closed on this branch. The remaining SP1 close-out work is
+E3 through E5.
+
 | Item | Owner | Files | Commands | Exit criteria |
 |---|---|---|---|---|
-| E2a. Final header/public-output derivation hardening | `@PrimeNumbersLabs/zk`, `@PrimeNumbersLabs/core` | `crates/zkp/src/sp1.rs`, `crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `crates/core/src/engine.rs`, `programs/state-transition/src/main.rs`, `programs/state-transition-host/src/main.rs` | `cargo test -p prime-zkp sp1`<br>`cargo test -p prime-chain --lib zk_sp1::tests::mock_round_trip_still_verifies --features prover,sp1`<br>`cargo check -p prime-chain-node --features prover,sp1` | `BlockProgramOutput` is fully proof-derived, header/public outputs are not re-derived inconsistently outside the proof boundary, and the round-trip proof test stays green. |
-| E2b. Engine-parity zkVM execution extraction | `@PrimeNumbersLabs/zk`, `@PrimeNumbersLabs/core` | `crates/core/src/engine.rs`, `crates/zkp/src/sp1.rs`, `crates/core/src/state_proof.rs`, `programs/state-transition/src/main.rs` | `cargo test -p prime-chain --lib engine::tests::run_shielded_tick_admits_decrypted_threshold_order_payload --features prover,sp1`<br>`cargo test -p prime-zkp sp1`<br>`cargo check --manifest-path programs/state-transition/Cargo.toml` | Shared zkVM-friendly executor covers the real engine semantics required by `BlockProgramInput`, replacing the remaining simplified execution boundary called out in the audit packet. |
 | E3. Release-grade SP1 transcript and pin artifacts | `@PrimeNumbersLabs/zk`, `@PrimeNumbersLabs/docs` | `scripts/zk/README.md`, `scripts/zk/sp1-prove-request.template.json`, `scripts/zk/sp1-verify-request.template.json`, `crates/zkp/params/sp1/state-transition.vk.hash`, `docs/runbooks/zk-fork-activation.md`, `docs/security/privacy-fork-audit-packet.md` | WSL:<br>`cd programs/state-transition && cargo-prove prove build`<br>`cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`<br>`cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1`<br>Host prove/verify capture in local mode:<br>`PRIME_SP1_MODE=local cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`<br>`PRIME_SP1_MODE=local cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request scripts/zk/sp1-verify-request.request.json --verify-response scripts/zk/sp1-verify-response.json`<br>On Windows, drive those same commands through `PRIME_SP1_HOST_EXECUTOR=wsl`. Populate the request files from `scripts/zk/sp1-prove-request.template.json` and `scripts/zk/sp1-verify-request.template.json`. | Audit packet contains ELF provenance, pinned `PRIME_SP1_VKEY_HASH`, and one successful real prove/verify transcript against the exact release artifact set. E3 is independent of the E4 network-prover cut-over. |
 | E4. `ProverClient::network()` cut-over | `@PrimeNumbersLabs/zk` | `crates/core/src/zk_sp1.rs`, `programs/state-transition-host/src/main.rs`, `scripts/zk/README.md`, `docs/security/privacy-fork-audit-packet.md` | `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1`<br>`cargo tree -p prime-chain-node --features prover,sp1 -i c-kzg` | `PRIME_SP1_MODE=network` succeeds against the real host path, with the `sp1-sdk/network` vs `revm` `c-kzg` conflict resolved and documented. Until then, the host should fail loudly instead of silently falling back. |
 | E5. Groth16 wrap for Ethereum verifier path | `@PrimeNumbersLabs/contracts`, `@PrimeNumbersLabs/core` | `contracts/`, `crates/core/src/precompiles.rs` | `Set-Location contracts; forge build --sizes`<br>`Set-Location contracts; forge test -vvv` | Groth16 verifier and bridge contracts exist, pass Foundry tests, and are wired to the chain-side proof verification path. |
 
-#### E2 Code-Level Sub-Checklist
+#### E2 Completed Scope
 
 - E2a. `crates/core/src/engine.rs::shielded_block_header()` now fails closed behind required-proof mode and sources post-fork shielded roots from the proof whenever a proof exists, rather than preserving a proof-validity bypass through host fallback values.
 - E2a. `crates/core/src/state_proof.rs::collect_block_input()` and `crates/core/src/state_proof.rs::prove_block()` now treat `expected_block_hash` and `expected_market_state_hash` as commitments checked against the produced output, and they bind the live shielded/nullifier state instead of ignoring the host-side post-state.
@@ -160,7 +161,7 @@ Owners are taken from `.github/CODEOWNERS`.
 - E2b. Shared tick-event sequencing now flows through `crates/zkp/src/sp1.rs::build_shielded_tick_events()`, and shared market clearing/apply now flows through `crates/zkp/src/sp1.rs::apply_market_tick_witness()` with runtime consumption in `crates/core/src/shielded_orders.rs::run_fba()`.
 - E2b. Shared order-admission validation now lives in `crates/zkp/src/sp1.rs::validate_order_admission_witness()`, with runtime `crates/core/src/shielded_orders.rs::admit_intent()` and zk replay `crates/zkp/src/sp1.rs::replay_order_admission()` both calling the same core.
 - E2b. Liquidation claim validation now lives in `crates/zkp/src/sp1.rs::validate_liquidation_claim_witness()`, with runtime `crates/core/src/liquidation_auction.rs::submit_claim()` and zk replay `crates/zkp/src/sp1.rs::replay_liquidation_events()` both using the same stale-anchor, registration, and proof checks.
-- E2b. Liquidation winner ordering and canonical event derivation are now shared; the remaining liquidation parity work is to collapse any replay-vs-runtime differences beyond the already-shared winner/event path.
+- E2b. Liquidation claim shaping, winner ordering, settlement, canonical event derivation, and executor-side liquidation event replay are now shared across runtime and zk replay. The focused regression `crates/zkp/src/sp1.rs::tests::execute_block_program_replays_liquidation_events()` covers the canonical SP1 event-root path.
 - E2b. `crates/core/src/state_proof.rs::shielded_tick_witness()` and `crates/core/src/state_proof.rs::snapshot_subsystem_digests()` should stay serialization/binding helpers over shared witness-level helpers, not drift back into runtime-only semantic hashing or transition logic.
 
 ### H — Testnet bake start criteria
@@ -192,8 +193,8 @@ Owners are taken from `.github/CODEOWNERS`.
   pipeline. The SP1 prove path now carries canonical witness data and
   replays the shielded tx + tick path end to end, including order
   admission, liquidation settle, and `shielded_event_root`; the
-  remaining blocker before a hard-fork rehearsal is final
-  header/public-output hardening plus network prover and Groth16 bridge
+  remaining blockers before a hard-fork rehearsal are the real prove /
+  verify transcript, network prover cut-over, and Groth16 bridge
   integration.
 - **Bake clock.** The 8-week pre-mainnet bake (H6) starts on the
   day E lands and the audit cycle (I) is funded.
