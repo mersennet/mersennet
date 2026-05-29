@@ -96,7 +96,7 @@
 | FBA price discovery | fba.rs | Clearing price maximization; edge cases when buy/sell volumes are asymmetric |
 | Parallel execution conflicts | parallel.rs, engine.rs | Block-STM validation; ensure no lost updates or incorrect rollbacks |
 | Cross-chain proof verification | cross_chain.rs | Proof validation logic; ensure no forged proofs accepted |
-| SP1 proving path still partially scaffolded | state_proof.rs, zk_sp1.rs, programs/state-transition/, programs/state-transition-host/ | Public output is wired end-to-end, but the zkVM program still echoes host-supplied outputs instead of re-executing the full private witness. Audit should treat this as a cut-over boundary, not a completed proving system. |
+| SP1 proving path not engine-parity complete yet | state_proof.rs, zk_sp1.rs, programs/state-transition/, programs/state-transition-host/ | The zkVM path now consumes canonical witness-bearing `BlockProgramInput` and replays the shielded tx + tick path, including order admission, liquidation settle, and `shielded_event_root`. The remaining cut-over boundary is final header/public-output hardening, replacing mirrored replay code with extracted engine-parity transition core, release-grade prove/verify transcript capture, and network proving integration. |
 
 ## Test Coverage Summary
 
@@ -124,7 +124,7 @@ Before scheduling external privacy-fork audits, attach the following artifacts t
 
 - Exact SP1 proving artifact set: program ELF provenance, pinned `PRIME_SP1_VKEY_HASH`, and one prove/verify transcript.
 - Output-contract references: `crates/zkp/src/sp1.rs`, `crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `programs/state-transition/src/main.rs`, `programs/state-transition-host/src/main.rs`.
-- Current limitation note: the repo now enforces the full public-output boundary, but the zkVM program has not yet re-executed the full block witness.
+- Current limitation note: the repo now re-executes canonical witness-bearing `BlockProgramInput` and enforces the public-output boundary, but it still needs final header/public-output hardening, extraction of shared engine-parity transition logic, release-grade prove/verify transcript capture, and network prover integration before the SP1 path should be treated as release-complete.
 - CI evidence for the host/program path: node `--features prover,sp1`, standalone program check, standalone host test.
 
 ## Static Analysis

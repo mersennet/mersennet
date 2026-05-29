@@ -53,9 +53,10 @@ use crate::liquidation_auction::LiquidationAuction;
 use crate::mainnet::MainnetGuard;
 use crate::market_maker::MarketMakerEngine;
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
-use crate::shielded_orders::ShieldedOrdersEngine;
+use crate::shielded_orders::{ShieldedOrdersEngine, decode_threshold_order_intent};
 use crate::shielded_persistence::ShieldedPersistence;
 use crate::threshold_mempool::ThresholdMempool;
+use prime_zkp::sp1::{CanonicalShieldedEvent, U256Bytes, build_shielded_tick_events};
 
 /// Synthetic execution result returned by `apply_shielded_tx` when
 /// the shielded path is unavailable (e.g. pre-fork, missing payload).
@@ -423,6 +424,9 @@ pub struct Engine {
     /// engine auto-flips `privacy_mode_activated` to `true` at the
     /// start of the block-production loop.
     pub privacy_activation_height: Option<u64>,
+    /// When set, block production fails closed if the post-fork SP1
+    /// state proof cannot be produced.
+    pub sp1_proof_required: bool,
     /// Discrete-time uniform-price auction state per shielded
     /// market.
     pub shielded_orders: ShieldedOrdersEngine,
@@ -567,6 +571,7 @@ impl Engine {
             // in-memory; persistence is wired in Workstream A7.
             privacy_mode_activated: false,
             privacy_activation_height: None,
+            sp1_proof_required: false,
             shielded_orders: ShieldedOrdersEngine::new(),
             liquidation_auction: LiquidationAuction::new(),
             shielded_evm,
@@ -614,6 +619,10 @@ impl Engine {
         );
     }
 
+    pub fn set_sp1_proof_required(&mut self, required: bool) {
+        self.sp1_proof_required = required;
+    }
+
     /// Configure the DKG epoch length, in blocks. The privacy
     /// testnet ships with a 1800-block (~6 min @ 200 ms blocks)
     /// epoch for faster rotation testing; mainnet uses
@@ -634,6 +643,7 @@ impl Engine {
             && self.block_number >= h
         {
             self.activate_privacy_mode();
+            self.sp1_proof_required = true;
             return true;
         }
         false
@@ -1007,6 +1017,13 @@ impl Engine {
         let mut gas_used = 0u64;
         let mut receipts = Vec::new();
         let mut transactions = Vec::new();
+        let pre_shielded_snapshot = self.shielded_evm.state.snapshot();
+        let pre_transparent_balances = self.shielded_evm.transparent_balances.clone();
+        let pre_tick_witness = crate::state_proof::shielded_tick_witness(
+            &self.shielded_orders,
+            &self.threshold_mempool,
+            &self.liquidation_auction,
+        );
         let mut nonce_cache: HashMap<Address, u64> = HashMap::new();
         let mut progressed = true;
 
@@ -1241,7 +1258,15 @@ impl Engine {
         // state-transition proof. Pre-fork the roots stay
         // `B256::ZERO` and no proof is generated.
         let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
-            self.shielded_block_header(&transactions, &domain_events, hash);
+            self.shielded_block_header(
+                &transactions,
+                &domain_events,
+                hash,
+                gas_used,
+                Some(&pre_shielded_snapshot),
+                Some(&pre_transparent_balances),
+                Some(&pre_tick_witness),
+            )?;
 
         let block = Block {
             number: self.block_number,
@@ -1421,6 +1446,14 @@ impl Engine {
         // EVM, so they can't go through ParallelExecutor. They mutate
         // dedicated subsystems (shielded_evm, shielded_orders,
         // liquidation_auction) and are applied sequentially below.
+        let pre_shielded_snapshot = self.shielded_evm.state.snapshot();
+        let pre_transparent_balances = self.shielded_evm.transparent_balances.clone();
+        let pre_tick_witness = crate::state_proof::shielded_tick_witness(
+            &self.shielded_orders,
+            &self.threshold_mempool,
+            &self.liquidation_auction,
+        );
+
         let (evm_txs, shielded_txs): (Vec<Transaction>, Vec<Transaction>) = collected_txs
             .iter()
             .cloned()
@@ -1561,7 +1594,15 @@ impl Engine {
             .as_secs();
 
         let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
-            self.shielded_block_header(&transactions, &domain_events, hash);
+            self.shielded_block_header(
+                &transactions,
+                &domain_events,
+                hash,
+                gas_used,
+                Some(&pre_shielded_snapshot),
+                Some(&pre_transparent_balances),
+                Some(&pre_tick_witness),
+            )?;
 
         let block = Block {
             number: self.block_number,
@@ -2216,14 +2257,18 @@ impl Engine {
         transactions: &[Transaction],
         domain_events: &[crate::events::DomainEvent],
         block_hash: B256,
-    ) -> (
+        gas_used: u64,
+        pre_shielded_snapshot: Option<&crate::shielded_state::ShieldedSnapshot>,
+        pre_transparent_balances: Option<&HashMap<Address, U256>>,
+        pre_tick_witness: Option<&prime_zkp::sp1::ShieldedTickWitness>,
+    ) -> Result<(
         B256,
         B256,
         B256,
         Option<crate::zk_proofs::StateTransitionProof>,
-    ) {
+    )> {
         if !self.privacy_mode_activated {
-            return (B256::ZERO, B256::ZERO, B256::ZERO, None);
+            return Ok((B256::ZERO, B256::ZERO, B256::ZERO, None));
         }
 
         let shielded_state_root = B256::from(self.shielded_evm.state.current_root().to_bytes());
@@ -2246,11 +2291,17 @@ impl Engine {
                 ebuf.extend_from_slice(&bytes);
             }
         }
-        let shielded_event_root = if ebuf.is_empty() {
+        let host_shielded_event_root = if ebuf.is_empty() {
             B256::ZERO
         } else {
             keccak256(&ebuf)
         };
+        let market_state_hash = crate::state_proof::snapshot_subsystem_digests(
+            &self.shielded_orders,
+            &self.liquidation_auction,
+            &self.shielded_evm,
+        )
+        .market_state_hash;
 
         // Drive the (mock) SP1 prover. Returns `None` when proving
         // fails — the block is still produced, but it won't pass the
@@ -2269,27 +2320,64 @@ impl Engine {
                 .last()
                 .map(|b| b.nullifier_root)
                 .unwrap_or(B256::ZERO),
-            txs: transactions
-                .iter()
-                .filter(|t| t.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE)
-                .filter_map(|t| bincode::serialize(&t.shielded_payload).ok())
-                .collect(),
+            header: prime_zkp::sp1::BlockHeaderWitness {
+                chain_id: self.chain_id,
+                gas_limit: self.gas_limit_per_block,
+                gas_used,
+                base_fee_be: self.base_fee.to_be_bytes::<32>(),
+                coinbase: {
+                    let mut out = [0u8; 20];
+                    out.copy_from_slice(self.coinbase.as_slice());
+                    out
+                },
+                tx_count: transactions.len() as u64,
+            },
+            txs: crate::state_proof::encode_block_txs(transactions),
             prev_market_state: Vec::new(),
             block_hash,
+            expected_market_state_hash: market_state_hash,
+            prev_shielded_state: pre_shielded_snapshot
+                .map(crate::state_proof::shielded_state_witness)
+                .unwrap_or_default(),
+            transparent_balances: pre_transparent_balances
+                .map(crate::state_proof::transparent_balance_entries)
+                .unwrap_or_default(),
+            pre_tick_witness: pre_tick_witness.cloned().unwrap_or_default(),
         };
-        let state_proof = crate::state_proof::prove_block(
+        let state_proof_result = crate::state_proof::prove_block(
             &request,
             &self.shielded_evm.state,
-            shielded_event_root,
-        )
-        .ok();
+            host_shielded_event_root,
+        );
+        let proof_required = self.sp1_proof_required;
+        let state_proof = match state_proof_result {
+            Ok(proof) => Some(proof),
+            Err(err) if proof_required => {
+                return Err(anyhow::anyhow!("mandatory SP1 proof generation failed: {err}"));
+            }
+            Err(err) => {
+                tracing::warn!(error = ?err, block = self.block_number, "SP1 proof generation failed; falling back to host-derived shielded header fields");
+                None
+            }
+        };
 
-        (
+        let (shielded_state_root, nullifier_root, shielded_event_root) = state_proof
+            .as_ref()
+            .map(|proof| {
+                (
+                    proof.new_state_root,
+                    proof.new_nullifier_root,
+                    proof.shielded_event_root,
+                )
+            })
+            .unwrap_or((shielded_state_root, nullifier_root, host_shielded_event_root));
+
+        Ok((
             shielded_state_root,
             nullifier_root,
             shielded_event_root,
             state_proof,
-        )
+        ))
     }
 
     /// Run the per-block shielded tick:
@@ -2304,89 +2392,9 @@ impl Engine {
     /// 4. Emit a [`ShieldedEvent::ShieldedRootAdvanced`] summarising
     ///    the post-tick canonical state. Light clients sync off this.
     fn run_shielded_tick(&mut self) {
-        use crate::events::{DomainEvent, ShieldedEvent};
-
-        // Step 1 — drain decrypted intents. The plaintext routing
-        // into `shielded_orders.admit_intent` is deferred to D3 once
-        // the threshold-decryption pipe is real; we still flush so
-        // the bookkeeping stays consistent.
-        let drained = self.threshold_mempool.drain_decrypted(usize::MAX);
-        if !drained.is_empty() {
-            metrics::counter!(
-                "prime_chain_threshold_mempool_admitted_total",
-                drained.len() as u64
-            );
-            self.pending_events
-                .push(DomainEvent::Shielded(ShieldedEvent::MempoolBatchAdmitted {
-                    block_number: self.block_number,
-                    intent_count: drained.len() as u64,
-                }));
-        }
-        metrics::gauge!(
-            "prime_chain_threshold_mempool_pending",
-            self.threshold_mempool.pending_count() as f64
-        );
-
-        // Step 2 — uniform-price auction per market.
-        let market_ids: Vec<crate::prime_orders::MarketId> =
-            self.shielded_orders.aggregates.keys().copied().collect();
-        for market_id in market_ids {
-            match self.shielded_orders.run_fba(market_id) {
-                Ok(result) => {
-                    if !result.matched_size.is_zero() {
-                        metrics::counter!(
-                            "prime_chain_fba_cleared_total",
-                            1,
-                            "market_id" => market_id.0.to_string()
-                        );
-                        // Gauges carry only market-level aggregates;
-                        // no per-trader labels (CI K2).
-                        metrics::gauge!(
-                            "prime_chain_fba_clearing_price",
-                            f64_from_u256(result.clearing_price),
-                            "market_id" => market_id.0.to_string()
-                        );
-                        metrics::gauge!(
-                            "prime_chain_fba_matched_size",
-                            f64_from_u256(result.matched_size),
-                            "market_id" => market_id.0.to_string()
-                        );
-                        self.pending_events.push(DomainEvent::Shielded(
-                            ShieldedEvent::FbaCleared {
-                                market_id,
-                                clearing_price: result.clearing_price,
-                                matched_size: result.matched_size,
-                                intent_count: result.fills.len() as u64,
-                            },
-                        ));
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!(market = %market_id.0, error = ?err, "shielded FBA failed");
-                }
-            }
-        }
-
-        // Step 3 — settle sealed-bid liquidations. `settle_block`
-        // returns (claim_tag, liquidator_id, winning_bid) for every
-        // tag that received bids. `claim_tag` is
-        // `Poseidon(victim_commitment, oracle_price)`, so it doesn't
-        // re-link to a market or trader; `liquidator_id` is the
-        // bond commitment (no address leak either).
-        let winners = self.liquidation_auction.settle_block(self.block_number);
-        for (_claim_tag, bond_commitment, winning_bid) in winners {
-            metrics::counter!("prime_chain_liquidation_auctions_settled_total", 1);
-            self.pending_events
-                .push(DomainEvent::Shielded(ShieldedEvent::LiquidationSettled {
-                    market_id: crate::prime_orders::MarketId(0), // see ADR-016: market is unbound at settle time
-                    winner_bond_commitment: bond_commitment.to_bytes(),
-                    winning_bid,
-                }));
-        }
-        metrics::gauge!(
-            "prime_chain_liquidator_count",
-            self.liquidation_auction.liquidators.len() as f64
-        );
+        let admitted_intent_count = self.admit_decrypted_threshold_orders();
+        let fba_events = self.run_shielded_market_auctions();
+        let liquidation_events = self.settle_shielded_liquidations();
 
         // Step 4 — emit the new shielded-state root for light clients.
         let new_root = self.shielded_evm.state.current_root().to_bytes();
@@ -2409,14 +2417,176 @@ impl Engine {
             "prime_chain_privacy_activation_height",
             self.privacy_activation_height.unwrap_or(0) as f64
         );
-        self.pending_events
-            .push(DomainEvent::Shielded(ShieldedEvent::ShieldedRootAdvanced {
-                block_number: self.block_number,
-                new_root,
-                notes_added: 0,
-                nullifiers_added: 0,
-            }));
+        let events = build_shielded_tick_events(
+            self.block_number,
+            admitted_intent_count,
+            &fba_events,
+            &liquidation_events,
+            new_root,
+        );
+        self.pending_events.extend(
+            events
+                .into_iter()
+                .map(Self::domain_event_from_canonical_shielded_event),
+        );
     }
+
+    fn admit_decrypted_threshold_orders(&mut self) -> u64 {
+
+        // Step 1 — drain decrypted intents and replay canonical
+        // order admission from the recovered plaintext payloads.
+        let mut drained = self.threshold_mempool.drain_decrypted(usize::MAX);
+        drained.sort_by(|(left, _), (right, _)| left.0.cmp(&right.0));
+        if !drained.is_empty() {
+            metrics::counter!(
+                "prime_chain_threshold_mempool_admitted_total",
+                drained.len() as u64
+            );
+            for (intent_id, plaintext) in &drained {
+                let payload = match decode_threshold_order_intent(plaintext) {
+                    Ok(payload) => payload,
+                    Err(err) => {
+                        tracing::warn!(intent_id = %hex::encode(intent_id.as_slice()), error = ?err, "failed to decode decrypted order intent");
+                        continue;
+                    }
+                };
+                let oracle_price = self
+                    .shielded_orders
+                    .oracle_price_for_market(payload.tx.market_id)
+                    .unwrap_or_default();
+                if let Err(err) = self.shielded_orders.admit_intent(
+                    &mut self.shielded_evm.state,
+                    payload.tx,
+                    payload.intent,
+                    oracle_price,
+                ) {
+                    tracing::warn!(intent_id = %hex::encode(intent_id.as_slice()), error = ?err, "shielded order admission failed");
+                }
+            }
+        }
+        metrics::gauge!(
+            "prime_chain_threshold_mempool_pending",
+            self.threshold_mempool.pending_count() as f64
+        );
+        drained.len() as u64
+    }
+
+    fn run_shielded_market_auctions(&mut self) -> Vec<CanonicalShieldedEvent> {
+        // Step 2 — uniform-price auction per market.
+        let mut events = Vec::new();
+        let market_ids = self.shielded_orders.market_ids_in_canonical_order();
+        for market_id in market_ids {
+            match self.shielded_orders.run_fba(market_id) {
+                Ok(result) => {
+                    if !result.matched_size.is_zero() {
+                        metrics::counter!(
+                            "prime_chain_fba_cleared_total",
+                            1,
+                            "market_id" => market_id.0.to_string()
+                        );
+                        // Gauges carry only market-level aggregates;
+                        // no per-trader labels (CI K2).
+                        metrics::gauge!(
+                            "prime_chain_fba_clearing_price",
+                            f64_from_u256(result.clearing_price),
+                            "market_id" => market_id.0.to_string()
+                        );
+                        metrics::gauge!(
+                            "prime_chain_fba_matched_size",
+                            f64_from_u256(result.matched_size),
+                            "market_id" => market_id.0.to_string()
+                        );
+                        events.push(CanonicalShieldedEvent::FbaCleared {
+                            market_id: market_id.0,
+                            clearing_price: Self::u256_bytes(result.clearing_price),
+                            matched_size: Self::u256_bytes(result.matched_size),
+                            intent_count: result.fills.len() as u64,
+                        });
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(market = %market_id.0, error = ?err, "shielded FBA failed");
+                }
+            }
+        }
+        events
+    }
+
+    fn settle_shielded_liquidations(&mut self) -> Vec<CanonicalShieldedEvent> {
+        // Step 3 — settle sealed-bid liquidations. Runtime and zk replay
+        // now consume the same witness-level settlement result, including
+        // canonical event emission.
+        let settlement = self.liquidation_auction.settle_block_witness(self.block_number);
+        for winner in &settlement.winners {
+            metrics::counter!("prime_chain_liquidation_auctions_settled_total", 1);
+            let _ = winner;
+        }
+        metrics::gauge!(
+            "prime_chain_liquidator_count",
+            self.liquidation_auction.liquidators.len() as f64
+        );
+        settlement.events
+    }
+
+fn domain_event_from_canonical_shielded_event(event: CanonicalShieldedEvent) -> DomainEvent {
+    DomainEvent::Shielded(match event {
+        CanonicalShieldedEvent::FbaCleared {
+            market_id,
+            clearing_price,
+            matched_size,
+            intent_count,
+        } => crate::events::ShieldedEvent::FbaCleared {
+            market_id: MarketId(market_id),
+            clearing_price: Self::u256_from_bytes(clearing_price),
+            matched_size: Self::u256_from_bytes(matched_size),
+            intent_count,
+        },
+        CanonicalShieldedEvent::MempoolBatchAdmitted {
+            block_number,
+            intent_count,
+        } => crate::events::ShieldedEvent::MempoolBatchAdmitted {
+            block_number,
+            intent_count,
+        },
+        CanonicalShieldedEvent::LiquidationSettled {
+            market_id,
+            winner_bond_commitment,
+            winning_bid,
+        } => crate::events::ShieldedEvent::LiquidationSettled {
+            market_id: MarketId(market_id),
+            winner_bond_commitment,
+            winning_bid: Self::u256_from_bytes(winning_bid),
+        },
+        CanonicalShieldedEvent::ShieldedRootAdvanced {
+            block_number,
+            new_root,
+            notes_added,
+            nullifiers_added,
+        } => crate::events::ShieldedEvent::ShieldedRootAdvanced {
+            block_number,
+            new_root,
+            notes_added,
+            nullifiers_added,
+        },
+    })
+}
+
+fn u256_bytes(value: U256) -> U256Bytes {
+    let mut out = [0u8; 32];
+    for (index, limb) in value.as_limbs().iter().enumerate() {
+        out[index * 8..(index + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+    }
+    U256Bytes(out)
+}
+
+fn u256_from_bytes(value: U256Bytes) -> U256 {
+    let limbs = value
+        .0
+        .chunks_exact(8)
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]])
+}
 
     fn execute_tx(&mut self, tx: &Transaction) -> Result<TxExecution> {
         let mut env = Env::default();
@@ -2534,15 +2704,19 @@ impl Engine {
         coinbase: Address,
         tx_count: u64,
     ) -> B256 {
-        let mut payload = Vec::with_capacity(8 + 8 + 8 + 8 + 32 + 20 + 8);
-        payload.extend_from_slice(&number.to_be_bytes());
-        payload.extend_from_slice(&chain_id.to_be_bytes());
-        payload.extend_from_slice(&gas_limit.to_be_bytes());
-        payload.extend_from_slice(&gas_used.to_be_bytes());
-        payload.extend_from_slice(&base_fee.to_be_bytes::<32>());
-        payload.extend_from_slice(coinbase.as_slice());
-        payload.extend_from_slice(&tx_count.to_be_bytes());
-        keccak256(payload)
+        let mut coinbase_bytes = [0u8; 20];
+        coinbase_bytes.copy_from_slice(coinbase.as_slice());
+        B256::from(prime_zkp::sp1::derive_block_hash(
+            number,
+            &prime_zkp::sp1::BlockHeaderWitness {
+                chain_id,
+                gas_limit,
+                gas_used,
+                base_fee_be: base_fee.to_be_bytes::<32>(),
+                coinbase: coinbase_bytes,
+                tx_count,
+            },
+        ))
     }
 
     fn apply_rewards(&mut self, rewards: &[Reward]) -> Result<()> {
@@ -2588,5 +2762,222 @@ impl Engine {
                 .unwrap_or(U256::ZERO);
             base_fee.saturating_sub(fee_delta).max(U256::from(1u64))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{DomainEvent, ShieldedEvent};
+    use crate::prime_orders::{Market, MarketStatus};
+    use crate::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
+    use prime_zkp::noir::{Circuit, MockVerifier};
+    use prime_zkp::note::Note;
+    use prime_zkp::Fr;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::tempdir;
+
+    fn fresh_inactive_engine() -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let engine = Engine::new_with_backend(7919, sub, "redb");
+        std::mem::forget(dir);
+        engine
+    }
+
+    fn fresh_engine() -> Engine {
+        let mut engine = fresh_inactive_engine();
+        engine.activate_privacy_mode();
+        engine
+    }
+
+    #[cfg(feature = "sp1")]
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[cfg(feature = "sp1")]
+    struct EnvVarGuard {
+        key: &'static str,
+        value: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(feature = "sp1")]
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self {
+                key,
+                value: previous,
+            }
+        }
+    }
+
+    #[cfg(feature = "sp1")]
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.value {
+                Some(value) => unsafe {
+                    std::env::set_var(self.key, value);
+                },
+                None => unsafe {
+                    std::env::remove_var(self.key);
+                },
+            }
+        }
+    }
+
+    fn market(id: u64) -> Market {
+        Market {
+            id: MarketId(id),
+            symbol: format!("M{id}"),
+            tick_size: U256::from(10u64),
+            lot_size: U256::from(1u64),
+            last_price: U256::from(1_000u64),
+            status: MarketStatus::Active,
+        }
+    }
+
+    fn build_threshold_order_intent(
+        engine: &Engine,
+        market_id: MarketId,
+        side: Side,
+        price: U256,
+        size: U256,
+        owner_pk: Fr,
+        seed: u64,
+    ) -> ThresholdOrderIntent {
+        let poseidon = &engine.shielded_orders.poseidon;
+        let collateral = Note {
+            value: 1_000_000_000,
+            asset_id: 0,
+            owner_pk,
+            rho: Fr::from_u64(seed),
+            psi: Fr::from_u64(seed + 1),
+        };
+        let spend_sk = Fr::from_u64(seed + 0xdead);
+        let nullifier = collateral.nullifier(poseidon, &spend_sk).0;
+        let new_collateral = Note {
+            value: 999_900_000,
+            asset_id: 0,
+            owner_pk,
+            rho: Fr::from_u64(seed + 100),
+            psi: Fr::from_u64(seed + 101),
+        };
+        let new_commitment = new_collateral.commit(poseidon).0;
+        let price_band = u32::try_from((price / engine.shielded_orders.price_tick).as_limbs()[0]).unwrap();
+        let size_band = u32::try_from(size.div_ceil(engine.shielded_orders.size_lot).as_limbs()[0]).unwrap();
+        let oracle_price = U256::from(1_000u64);
+        let imm_required = engine
+            .shielded_orders
+            .derive_imm_required(market_id, price_band, size_band, oracle_price)
+            .unwrap();
+        let salt = Fr::from_u64(seed + 0xbeef);
+        let side_fr = match side {
+            Side::Buy => Fr::ZERO,
+            Side::Sell => Fr::ONE,
+        };
+        let side_hash = poseidon.hash_two(&side_fr, &salt);
+        let anchor_root = engine.shielded_evm.state.current_root();
+        let public_inputs = vec![
+            anchor_root,
+            nullifier,
+            new_commitment,
+            Fr::from_u64(market_id.0),
+            side_hash,
+            Fr::from_u64(price_band as u64),
+            Fr::from_u64(size_band as u64),
+            Fr::from_u64(oracle_price.as_limbs()[0]),
+            Fr::from_u64(imm_required.as_limbs()[0]),
+        ];
+        let proof = MockVerifier::new().prove(Circuit::OrderPlace, public_inputs);
+        ThresholdOrderIntent {
+            tx: ShieldedOrderTx {
+                anchor_root,
+                nullifier,
+                new_commitment,
+                market_id,
+                side_hash,
+                price_band,
+                size_band,
+                oracle_price,
+                imm_required,
+                encrypted_payload: Vec::new(),
+                proof,
+                tif: TimeInForce::Gtc,
+            },
+            intent: DecryptedIntent {
+                side,
+                price,
+                size,
+                owner_pk,
+                salt,
+            },
+        }
+    }
+
+    #[test]
+    fn run_shielded_tick_admits_decrypted_threshold_order_payload() {
+        let mut engine = fresh_engine();
+        let market = market(7);
+        engine.shielded_orders.add_market(market.clone());
+        engine.shielded_orders.markets.get_mut(&market.id).unwrap().last_price = U256::from(1_000u64);
+
+        let threshold_intent = build_threshold_order_intent(
+            &engine,
+            market.id,
+            Side::Buy,
+            U256::from(100u64),
+            U256::from(5u64),
+            Fr::from_u64(0xa11ce),
+            1,
+        );
+        let plaintext = bincode::serialize(&threshold_intent).unwrap();
+        engine
+            .threshold_mempool
+            .insert_decrypted_for_test(B256::from([0x11; 32]), plaintext);
+
+        engine.run_shielded_tick();
+
+        let book = engine.shielded_orders.books.get(&market.id).unwrap();
+        assert_eq!(book.bids.len(), 1);
+        assert_eq!(book.total_bid_size(), U256::from(5u64));
+        assert_eq!(engine.threshold_mempool.decrypted_count(), 0);
+        assert!(engine.pending_events.iter().any(|event| matches!(
+            event,
+            DomainEvent::Shielded(ShieldedEvent::MempoolBatchAdmitted {
+                intent_count: 1,
+                ..
+            })
+        )));
+    }
+
+    #[cfg(feature = "sp1")]
+    #[test]
+    fn execute_block_fails_closed_when_privacy_fork_enables_required_sp1_proofs() {
+        let _env_guard = env_lock().lock().unwrap();
+        let _prove_adapter = EnvVarGuard::set("PRIME_SP1_PROVE_ADAPTER", "definitely-not-a-real-sp1-prover");
+        let _verify_adapter = EnvVarGuard::set("PRIME_SP1_VERIFY_ADAPTER", "definitely-not-a-real-sp1-verifier");
+        let _mode = EnvVarGuard::set("PRIME_SP1_MODE", "local");
+
+        let mut engine = fresh_inactive_engine();
+        engine.block_number = 3;
+        engine.set_privacy_activation_height(3);
+
+        let error = engine.execute_block().unwrap_err();
+
+        assert!(engine.privacy_mode_activated());
+        assert!(engine.sp1_proof_required);
+        assert!(
+            error
+                .to_string()
+                .contains("mandatory SP1 proof generation failed"),
+            "unexpected error: {error:#}"
+        );
     }
 }

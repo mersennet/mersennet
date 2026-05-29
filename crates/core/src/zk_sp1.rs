@@ -53,6 +53,7 @@ pub struct SP1ProgramOutput {
     pub block_number: u64,
     pub block_hash: B256,
     pub new_market_state_hash: B256,
+    pub shielded_event_root: B256,
     pub tx_count: u64,
 }
 
@@ -132,7 +133,7 @@ impl SP1Prover {
     }
 
     fn compute_mock_proof_bytes(output: &SP1ProgramOutput) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(32 * 5 + 8 * 2);
+        let mut buf = Vec::with_capacity(32 * 6 + 8 * 2);
         buf.extend_from_slice(output.prev_state_root.as_slice());
         buf.extend_from_slice(output.new_state_root.as_slice());
         buf.extend_from_slice(output.prev_nullifier_root.as_slice());
@@ -141,6 +142,7 @@ impl SP1Prover {
         buf.extend_from_slice(&output.block_number.to_be_bytes());
         buf.extend_from_slice(&output.tx_count.to_be_bytes());
         buf.extend_from_slice(output.new_market_state_hash.as_slice());
+        buf.extend_from_slice(output.shielded_event_root.as_slice());
         keccak256(&buf).0.to_vec()
     }
 
@@ -194,6 +196,7 @@ impl SP1Prover {
             block_height: output.block_number,
             block_hash: output.block_hash,
             new_market_state_hash: output.new_market_state_hash,
+            shielded_event_root: output.shielded_event_root,
             tx_count: output.tx_count,
             proof_data,
             proof_type: ProofType::SP1,
@@ -203,32 +206,8 @@ impl SP1Prover {
 }
 
 impl StateProver for SP1Prover {
-    fn prove_state_transition(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof> {
-        let output = SP1ProgramOutput::from(public_output);
-
-        #[cfg(feature = "sp1")]
-        let sp1_proof = if let Some(backend) = &self.backend {
-            let input = BlockProgramInput {
-                prev_state_root: public_output.prev_state_root,
-                prev_nullifier_root: public_output.prev_nullifier_root,
-                block_number: public_output.block_number,
-                timestamp: 0,
-                txs: Vec::new(),
-                prev_market_state: Vec::new(),
-            };
-            backend.prove(&input)?
-        } else {
-            self.prove_mock(&output)
-        };
-
-        #[cfg(not(feature = "sp1"))]
-        let sp1_proof = self.prove_mock(&output);
-
-        Ok(self.wrap_state_transition_proof(&output, sp1_proof))
-    }
-
     fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
-        let public_output = execute_block_program(program_input);
+        let public_output = execute_block_program(program_input)?;
         let output = SP1ProgramOutput::from(&public_output);
 
         #[cfg(feature = "sp1")]
@@ -317,6 +296,7 @@ impl From<&StateTransitionProof> for SP1ProgramOutput {
             block_number: proof.block_height,
             block_hash: proof.block_hash,
             new_market_state_hash: proof.new_market_state_hash,
+            shielded_event_root: proof.shielded_event_root,
             tx_count: proof.tx_count,
         }
     }
@@ -332,6 +312,7 @@ impl From<&BlockProgramOutput> for SP1ProgramOutput {
             block_number: output.block_number,
             block_hash: B256::from(output.block_hash),
             new_market_state_hash: B256::from(output.new_market_state_hash),
+            shielded_event_root: B256::from(output.shielded_event_root),
             tx_count: output.tx_count,
         }
     }
@@ -398,7 +379,9 @@ impl Sp1CliBackend {
         fs::create_dir_all(&request_dir)?;
         let request_path = request_dir.join("request.json");
         let response_path = request_dir.join("response.json");
+        let block_program_input_hex = hex::encode(bincode::serialize(input)?);
         let payload = serde_json::json!({
+            "blockProgramInputHex": block_program_input_hex,
             "prevStateRootHex": hex::encode(input.prev_state_root),
             "prevNullifierRootHex": hex::encode(input.prev_nullifier_root),
             "blockNumber": input.block_number,
@@ -439,8 +422,12 @@ impl Sp1CliBackend {
         let payload = serde_json::json!({
             "prevStateRootHex": hex::encode(proof.prev_state_root.as_slice()),
             "newStateRootHex": hex::encode(proof.new_state_root.as_slice()),
+            "prevNullifierRootHex": hex::encode(proof.prev_nullifier_root.as_slice()),
+            "newNullifierRootHex": hex::encode(proof.new_nullifier_root.as_slice()),
             "blockHeight": proof.block_height,
             "blockHashHex": hex::encode(proof.block_hash.as_slice()),
+            "newMarketStateHashHex": hex::encode(proof.new_market_state_hash.as_slice()),
+            "shieldedEventRootHex": hex::encode(proof.shielded_event_root.as_slice()),
             "txCount": proof.tx_count,
             "vkeyHashHex": hex::encode(sp1_proof.vkey_hash.as_slice()),
             "publicValuesHex": hex::encode(&sp1_proof.public_values),
@@ -572,6 +559,10 @@ impl SP1BatchAggregator {
                 .as_ref()
                 .map(|o| o.new_market_state_hash)
                 .unwrap_or(B256::ZERO),
+            shielded_event_root: last_output
+                .as_ref()
+                .map(|o| o.shielded_event_root)
+                .unwrap_or(B256::ZERO),
             tx_count,
         };
         let public_values = bincode::serialize(&output).unwrap_or_default();
@@ -596,16 +587,21 @@ mod tests {
     #[test]
     fn mock_round_trip_still_verifies() {
         let prover = SP1Prover::runtime_default();
+        let header = prime_zkp::sp1::BlockHeaderWitness::default();
         let proof = prover
-            .prove_state_transition(&BlockProgramOutput {
+            .prove_block_program(&BlockProgramInput {
                 prev_state_root: [0u8; 32],
-                new_state_root: [7u8; 32],
                 prev_nullifier_root: [1u8; 32],
-                new_nullifier_root: [2u8; 32],
                 block_number: 3,
-                block_hash: [9u8; 32],
-                new_market_state_hash: [4u8; 32],
-                tx_count: 2,
+                timestamp: 0,
+                header: header.clone(),
+                txs: Vec::new(),
+                prev_market_state: Vec::new(),
+                prev_shielded_state: prime_zkp::sp1::ShieldedStateWitness::default(),
+                transparent_balances: Vec::new(),
+                pre_tick_witness: prime_zkp::sp1::ShieldedTickWitness::default(),
+                expected_block_hash: prime_zkp::sp1::derive_block_hash(3, &header),
+                expected_market_state_hash: [0u8; 32],
             })
             .unwrap();
         let verified = prover.verify_proof(&proof).unwrap();

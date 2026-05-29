@@ -18,7 +18,7 @@ privacy hard fork on chain ID 7919.
 - [ ] Record the SP1 proving artifact set for the candidate release:
       - program ELF build provenance
       - pinned `PRIME_SP1_VKEY_HASH`
-      - one successful prove + verify transcript against the checked-in host runner
+      - one successful `PRIME_SP1_MODE=local` prove + verify transcript against the checked-in host runner
 - [ ] Tag `v1.0.0-zk-rc.0` on `feat/zk-privacy`.
 - [ ] Pre-mainnet testnet (chain ID 7920) restarts from snapshot
       with the new genesis. Migration runs. Every faucet account
@@ -73,7 +73,12 @@ Every two weeks:
       - the resulting tree root matches the deterministic recomputation
       - elapsed time is `<10 minutes`
 - [ ] Re-run one SP1 prove + verify round-trip against the exact release
-      artifact set (`program ELF`, `PRIME_SP1_VKEY_HASH`, host runner build).
+      artifact set (`program ELF`, `PRIME_SP1_VKEY_HASH`, host runner build),
+      using `scripts/zk/sp1-prove-request.template.json` and
+      `scripts/zk/sp1-verify-request.template.json` as the request
+      skeletons. On Windows, run the checked-in host runner through
+      `PRIME_SP1_HOST_EXECUTOR=wsl`; keep `PRIME_SP1_MODE=local` until
+      the E4 network-prover dependency conflict is resolved.
 - [ ] Confirm the SP1 state-proof prover backend is healthy
       (latest checkpoint <2 minutes old).
 - [ ] Confirm the threshold-decryption ceremony succeeded for the

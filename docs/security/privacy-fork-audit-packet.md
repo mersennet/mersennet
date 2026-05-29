@@ -18,7 +18,7 @@ starting the real H6 bake clock.
   envelope, host runner, zkVM program, and RPC response surface.
 - Canonical SP1 ELF build succeeded in WSL via `cargo-prove prove build`.
 - Real SP1 verifying-key hash was captured from that ELF and pinned as
-      `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477`.
+      `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`.
 - Real-SP1 host runner now passes `cargo check --manifest-path
       programs/state-transition-host/Cargo.toml --features real-sp1` in WSL.
 - Host-side real-SP1 path now has explicit mode handling:
@@ -54,10 +54,12 @@ WSL SP1 artifact capture:
 
 ```bash
 cd programs/state-transition
-cargo-prove prove build
-cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition
+/home/rodaemonic/.sp1/bin/cargo-prove prove build
+/home/rodaemonic/.sp1/bin/cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition
 
 cd ..
+PROTOC=/home/rodaemonic/.local/bin/protoc \
+PROTOC_INCLUDE=/home/rodaemonic/.local/share/protoc/extracted/include \
 cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1
 ```
 
@@ -68,16 +70,40 @@ cargo check --manifest-path programs/state-transition-host/Cargo.toml --features
 The canonical ELF is built, the real verifying-key hash is captured, and
 the real-SP1 host runner compiles in WSL. What is still missing is one
 completed local prove/verify transcript against the pinned artifact set.
+That transcript should be captured with `PRIME_SP1_MODE=local`; it does
+not depend on the blocked E4 network-prover path.
 
 Current status:
 
 - ELF path:
-      `programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+      `/mnt/c/Users/rod_o/Documents/projects/personal/prime-chain/programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
 - Pinned hash:
-      `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477`
+      `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`
 - Checked-in artifact:
       `crates/zkp/params/sp1/state-transition.vk.hash`
-- Transcript: still pending capture
+- Prepared prove request:
+      `scripts/zk/sp1-prove-request.request.json`
+- Last local prove failure:
+      stale repo pin `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477` did not match the current ELF verifying key `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`; the pin and request were updated to the current ELF.
+- Latest local real-SP1 runtime blocker:
+      WSL OOM-killed `prime-chain-state-transition-host` during proving even after the pin mismatch was fixed. The most recent kernel evidence was:
+      `Out of memory: Killed process 832 (prime-chain-sta) total-vm:21708000kB, anon-rss:15662908kB, ...`
+- Local WSL mitigation now applied on this host:
+      created `C:\Users\rod_o\.wslconfig` with:
+      `[wsl2]`
+      `memory=24GB`
+      `swap=8GB`
+      `processors=16`
+      After `wsl.exe --shutdown`, WSL reported `Mem: 23Gi` and `Swap: 8.0Gi`.
+- Local real-SP1 prove command attempted in WSL:
+      `PROTOC=/home/rodaemonic/.local/bin/protoc PROTOC_INCLUDE=/home/rodaemonic/.local/share/protoc/extracted/include PRIME_SP1_MODE=local cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+- Lower-concurrency retry attempted:
+      `RAYON_NUM_THREADS=4 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+- Current status of the lower-concurrency retry after the WSL memory increase:
+      process remained live for more than 1h50m with no fresh `dmesg` OOM evidence and with roughly `21Gi` still free inside WSL, but it had not yet produced `scripts/zk/sp1-prove-response.json` at the time of this packet update.
+- Transcript artifacts:
+      `scripts/zk/sp1-prove-response.json` and `scripts/zk/sp1-verify-request.request.json` were not produced before the OOM kill.
+- Transcript: repo-side setup is ready; prove/verify artifacts are still pending completion of the relaunched local prove
 
 ### 2. Full engine-parity zkVM block re-execution is not implemented yet
 
@@ -109,6 +135,12 @@ package `c-kzg` links to the native library `ckzg`, but it conflicts with a prev
 
 The host runner now surfaces this as an explicit runtime blocker when
 `PRIME_SP1_MODE=network` is requested.
+
+This means the honest near-term path is:
+
+- finish E3 with a local/WSL real-SP1 transcript against the pinned ELF
+- keep `PRIME_SP1_MODE=network` as a loud failure mode until the
+      dependency conflict is resolved
 
 ## H6 Bake Status
 

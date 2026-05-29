@@ -297,12 +297,11 @@ fn mock_prover_roundtrip() {
         block_number: 1,
         block_hash: [5u8; 32],
         new_market_state_hash: [6u8; 32],
+        shielded_event_root: [7u8; 32],
         tx_count: 5,
     };
 
-    let proof = prover
-        .prove_state_transition(&output)
-        .expect("prove");
+    let proof = prover.prove_public_output(&output).expect("prove");
 
     let result = prover.verify_proof(&proof).expect("verify");
     assert!(result.valid);
@@ -315,7 +314,7 @@ fn mock_prover_roundtrip() {
 
 #[test]
 fn checkpoint_store_chain_verification() {
-    use prime_chain::zk_proofs::{CheckpointStore, MockProver, ProofCheckpoint, StateProver};
+    use prime_chain::zk_proofs::{CheckpointStore, MockProver, ProofCheckpoint};
     use prime_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
@@ -333,11 +332,10 @@ fn checkpoint_store_chain_verification() {
             block_number: h,
             block_hash: block_hash.0,
             new_market_state_hash: [h as u8; 32],
+            shielded_event_root: [0u8; 32],
             tx_count: 1,
         };
-        let proof = prover
-            .prove_state_transition(&output)
-            .expect("prove");
+        let proof = prover.prove_public_output(&output).expect("prove");
         store.add(ProofCheckpoint {
             height: h,
             state_root: new_root,
@@ -350,7 +348,7 @@ fn checkpoint_store_chain_verification() {
     assert!(store.verify_chain(&prover).expect("verify chain"));
 
     let bad_proof = prover
-        .prove_state_transition(&BlockProgramOutput {
+        .prove_public_output(&BlockProgramOutput {
             prev_state_root: [0u8; 32],
             new_state_root: [0u8; 32],
             prev_nullifier_root: [0u8; 32],
@@ -358,6 +356,7 @@ fn checkpoint_store_chain_verification() {
             block_number: 99,
             block_hash: [0u8; 32],
             new_market_state_hash: [0u8; 32],
+            shielded_event_root: [0u8; 32],
             tx_count: 0,
         })
         .expect("bad proof");
@@ -373,7 +372,7 @@ fn checkpoint_store_chain_verification() {
 
 #[test]
 fn batch_proof_aggregation() {
-    use prime_chain::zk_proofs::{BatchProofAggregator, MockProver, StateProver};
+    use prime_chain::zk_proofs::{BatchProofAggregator, MockProver};
     use prime_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
@@ -391,11 +390,10 @@ fn batch_proof_aggregation() {
             block_number: h,
             block_hash: block_hash.0,
             new_market_state_hash: [h as u8; 32],
+            shielded_event_root: [0u8; 32],
             tx_count: 1,
         };
-        let proof = prover
-            .prove_state_transition(&output)
-            .expect("prove");
+        let proof = prover.prove_public_output(&output).expect("prove");
         aggregator.add_proof(proof);
         prev_root = new_root;
     }

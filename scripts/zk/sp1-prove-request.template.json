@@ -1,0 +1,11 @@
+{
+  "blockProgramInputHex": "REPLACE_WITH_BINCODED_BLOCK_PROGRAM_INPUT_HEX_NO_0X",
+  "prevStateRootHex": "REPLACE_WITH_32_BYTE_PREV_STATE_ROOT_HEX_NO_0X",
+  "prevNullifierRootHex": "REPLACE_WITH_32_BYTE_PREV_NULLIFIER_ROOT_HEX_NO_0X",
+  "blockNumber": 0,
+  "timestamp": 0,
+  "txsHex": [],
+  "prevMarketStateHex": "",
+  "vkeyHashHex": "REPLACE_WITH_PINNED_SP1_VKEY_HASH_HEX_NO_0X",
+  "programElfPath": "REPLACE_WITH_PROGRAM_ELF_PATH"
+}

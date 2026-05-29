@@ -131,6 +131,12 @@ Notes:
 - Without `--features real-sp1`, the checked-in host runner stays on the
   deterministic mock path.
 - On Linux, `--features real-sp1` can use the SDK-backed host path directly.
+- E3 transcript capture should use `PRIME_SP1_MODE=local` today; one
+  successful local prove/verify transcript against the pinned ELF and
+  `PRIME_SP1_VKEY_HASH` is enough to close E3.
+- E4 is separate: `PRIME_SP1_MODE=network` is still blocked by the
+  current `sp1-sdk/network` vs `revm` `c-kzg` conflict, and the host
+  runner is expected to fail loudly in that mode.
 - On Windows, native `--features real-sp1` still returns a clear runtime
   error because the upstream `sp1-sdk` dependency pulls Unix-only
   `sp1-jit` pieces.
@@ -142,6 +148,7 @@ Example Windows parity setup via WSL:
 
 ```powershell
 $env:PRIME_SP1_HOST_EXECUTOR = 'wsl'
+$env:PRIME_SP1_MODE = 'local'
 $env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
 $env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
 ```
@@ -150,6 +157,24 @@ The adapters validate the JSON shape that the Rust runtime expects:
 
 - prove response: `vkey_hash_hex`, `public_values_hex`, `proof_bytes_hex`, `proof_system`
 - verify response: `verified`
+
+### Transcript capture request templates
+
+For the E3 release-transcript step, start from these checked-in request
+templates and replace every `REPLACE_*` placeholder before invoking the
+host runner:
+
+- `scripts/zk/sp1-prove-request.template.json`
+- `scripts/zk/sp1-verify-request.template.json`
+
+Notes:
+
+- All hex fields are raw lowercase hex without a `0x` prefix.
+- `blockProgramInputHex` must be the exact bincode serialization fed to
+  the prover for the transcript you intend to record.
+- `vkeyHashHex`, `publicValuesHex`, `proofBytesHex`, and `proofSystem`
+  in the verify request should be copied from the corresponding prove
+  response and wrapped `StateTransitionProof`.
 
 The current SP1 prove request boundary includes canonical
 `BlockProgramInput` fields:
@@ -181,7 +206,7 @@ build of `programs/state-transition`.
 - Canonical ELF path:
   `programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
 - Captured verifying-key hash:
-  `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477`
+  `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`
 - Checked-in pin artifact:
   `crates/zkp/params/sp1/state-transition.vk.hash`
 

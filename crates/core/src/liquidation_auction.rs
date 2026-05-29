@@ -40,6 +40,7 @@ use prime_zkp::{
     Fr, NoteCommitment, Nullifier,
     noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
+    sp1::{LiquidationAuctionEntryWitness, LiquidationAuctionStatsWitness, LiquidationAuctionTickWitness, LiquidationBidWitness, LiquidationClaimValidationContext, LiquidationClaimWitness, LiquidationSettlementWitness, LiquidatorWitness, LiquidationWinnerWitness, RevealedBidBatchWitness, U256Bytes, validate_liquidation_claim_witness, settle_liquidation_entries},
 };
 use revm::primitives::U256;
 use serde::{Deserialize, Serialize};
@@ -199,6 +200,48 @@ impl LiquidationAuction {
         }
     }
 
+    pub fn tick_witness(&self) -> LiquidationAuctionTickWitness {
+        let mut liquidators: Vec<_> = self.liquidators.values().cloned().collect();
+        liquidators.sort_by(|left, right| left.bond_commitment.to_bytes().cmp(&right.bond_commitment.to_bytes()));
+
+        let mut auctions: Vec<_> = self.auctions.iter().collect();
+        auctions.sort_by(|(left, _), (right, _)| left.to_bytes().cmp(&right.to_bytes()));
+
+        LiquidationAuctionTickWitness {
+            liquidators: liquidators
+                .into_iter()
+                .map(|liquidator| LiquidatorWitness {
+                    bond_commitment: liquidator.bond_commitment,
+                    bond_amount: liquidator.bond_amount,
+                    registered_at: liquidator.registered_at,
+                })
+                .collect(),
+            auctions: auctions
+                .into_iter()
+                .map(|(claim_tag, entry)| entry_witness(*claim_tag, entry))
+                .collect(),
+            pending_revelation: self
+                .pending_revelation
+                .iter()
+                .map(|(block_number, bids)| RevealedBidBatchWitness {
+                    block_number: *block_number,
+                    bids: bids
+                        .iter()
+                        .map(bid_witness)
+                        .collect(),
+                })
+                .collect(),
+            insurance_fund: u256_bytes(self.insurance_fund),
+            stats: LiquidationAuctionStatsWitness {
+                claims_received: self.stats.claims_received,
+                claims_rejected: self.stats.claims_rejected,
+                auctions_settled: self.stats.auctions_settled,
+                total_bounty_paid: u256_bytes(self.stats.total_bounty_paid),
+                total_insurance_funded: u256_bytes(self.stats.total_insurance_funded),
+            },
+        }
+    }
+
     /// Rebuild the auction state from a [`LiquidationAuctionSnapshot`].
     /// The verifier + poseidon are taken from the existing instance
     /// (they're not part of the snapshot — they're configuration).
@@ -240,23 +283,17 @@ impl LiquidationAuction {
         state: &ShieldedState,
         claim: LiquidationClaim,
     ) -> Result<Fr, LiquidationError> {
-        if !state.is_recent_root(&claim.anchor_root) {
+        let claim_witness = claim_witness(&claim);
+        let context = LiquidationClaimValidationContext {
+            root_is_recent: state.is_recent_root(&claim.anchor_root),
+            liquidator_registered: self.is_registered(&claim.liquidator_id),
+        };
+        if let Err(error) = validate_liquidation_claim_witness(&claim_witness, &*self.verifier, &context)
+            .map_err(map_block_program_error_to_liquidation_error)
+        {
             self.stats.claims_rejected += 1;
-            return Err(LiquidationError::StaleAnchor);
+            return Err(error);
         }
-        if !self.is_registered(&claim.liquidator_id) {
-            self.stats.claims_rejected += 1;
-            return Err(LiquidationError::UnregisteredLiquidator);
-        }
-        let public_inputs = vec![
-            claim.anchor_root,
-            Fr::from_u64(claim.market_id.0),
-            Fr::from_u64(u256_low(&claim.oracle_price)),
-            claim.liquidator_id,
-            claim.claim_tag,
-        ];
-        self.verifier
-            .verify(&claim.proof, Circuit::LiquidateClaim, &public_inputs)?;
         let tag = claim.claim_tag;
         self.auctions.entry(tag).or_default().claims.push(claim);
         self.stats.claims_received += 1;
@@ -277,25 +314,33 @@ impl LiquidationAuction {
     /// Returns `(claim_tag, winning_liquidator, winning_bid)` tuples
     /// for the chain to emit events.
     pub fn settle_block(&mut self, block: u64) -> Vec<(Fr, Fr, U256)> {
-        let mut winners = Vec::new();
+        self.settle_block_witness(block)
+            .winners
+            .into_iter()
+            .map(|LiquidationWinnerWitness {
+                claim_tag,
+                liquidator_id,
+                bid_price,
+            }| (claim_tag, liquidator_id, u256_from_bytes(bid_price)))
+            .collect()
+    }
+
+    pub fn settle_block_witness(&mut self, block: u64) -> LiquidationSettlementWitness {
+        let mut entry_witnesses = Vec::new();
         let mut all_bids = Vec::new();
-        for (tag, entry) in self.auctions.drain() {
-            let highest = entry
-                .bids
-                .iter()
-                .max_by(|a, b| a.bid_price.cmp(&b.bid_price))
-                .cloned();
-            if let Some(w) = highest {
-                winners.push((tag, w.liquidator_id, w.bid_price));
-                self.stats.auctions_settled += 1;
-            }
+        let mut settled: Vec<_> = self.auctions.drain().collect();
+        settled.sort_by(|(left, _), (right, _)| left.to_bytes().cmp(&right.to_bytes()));
+        for (tag, entry) in settled {
+            entry_witnesses.push(entry_witness(tag, &entry));
             all_bids.extend(entry.bids);
         }
+        let settlement = settle_liquidation_entries(&entry_witnesses);
+        self.stats.auctions_settled += settlement.winners.len() as u64;
         self.pending_revelation.push((block, all_bids));
         // Reveal bids that have aged past BID_REVELATION_DELAY.
         self.pending_revelation
             .retain(|(b, _)| block.saturating_sub(*b) < BID_REVELATION_DELAY);
-        winners
+        settlement
     }
 
     /// Bids that are now public (block - submission >= BID_REVELATION_DELAY).
@@ -342,6 +387,43 @@ impl LiquidationAuction {
     }
 }
 
+fn claim_witness(claim: &LiquidationClaim) -> LiquidationClaimWitness {
+    LiquidationClaimWitness {
+        anchor_root: claim.anchor_root,
+        market_id: claim.market_id.0,
+        oracle_price: u256_bytes(claim.oracle_price),
+        liquidator_id: claim.liquidator_id,
+        claim_tag: claim.claim_tag,
+        encrypted_bid: claim.encrypted_bid.clone(),
+        proof: claim.proof.clone(),
+    }
+}
+
+fn bid_witness(bid: &DecryptedBid) -> LiquidationBidWitness {
+    LiquidationBidWitness {
+        claim_tag: bid.claim_tag,
+        liquidator_id: bid.liquidator_id,
+        bid_price: u256_bytes(bid.bid_price),
+    }
+}
+
+fn entry_witness(claim_tag: Fr, entry: &AuctionEntry) -> LiquidationAuctionEntryWitness {
+    LiquidationAuctionEntryWitness {
+        claim_tag,
+        claims: entry.claims.iter().map(claim_witness).collect(),
+        bids: entry.bids.iter().map(bid_witness).collect(),
+    }
+}
+
+fn u256_from_bytes(value: U256Bytes) -> U256 {
+    let limbs = value
+        .0
+        .chunks_exact(8)
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]])
+}
+
 impl From<crate::shielded_state::ShieldedStateError> for LiquidationError {
     fn from(e: crate::shielded_state::ShieldedStateError) -> Self {
         use crate::shielded_state::ShieldedStateError;
@@ -358,8 +440,27 @@ impl From<crate::shielded_state::ShieldedStateError> for LiquidationError {
     }
 }
 
+fn map_block_program_error_to_liquidation_error(error: prime_zkp::sp1::BlockProgramError) -> LiquidationError {
+    match error {
+        prime_zkp::sp1::BlockProgramError::StaleAnchor => LiquidationError::StaleAnchor,
+        prime_zkp::sp1::BlockProgramError::UnregisteredLiquidator => LiquidationError::UnregisteredLiquidator,
+        prime_zkp::sp1::BlockProgramError::InvalidProof => {
+            LiquidationError::InvalidProof(VerifyError::InvalidProof)
+        }
+        other => panic!("unexpected block-program error in liquidation claim validation: {other:?}"),
+    }
+}
+
 fn u256_low(x: &U256) -> u64 {
     x.as_limbs()[0]
+}
+
+fn u256_bytes(value: U256) -> U256Bytes {
+    let mut out = [0u8; 32];
+    for (index, limb) in value.as_limbs().iter().enumerate() {
+        out[index * 8..(index + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+    }
+    U256Bytes(out)
 }
 
 #[cfg(test)]

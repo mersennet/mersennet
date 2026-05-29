@@ -1,0 +1,11 @@
+{
+  "blockProgramInputHex": "",
+  "prevStateRootHex": "0000000000000000000000000000000000000000000000000000000000000000",
+  "prevNullifierRootHex": "0000000000000000000000000000000000000000000000000000000000000000",
+  "blockNumber": 1,
+  "timestamp": 0,
+  "txsHex": [],
+  "prevMarketStateHex": "",
+  "vkeyHashHex": "0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651",
+  "programElfPath": "/mnt/c/Users/rod_o/Documents/projects/personal/prime-chain/programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition"
+}

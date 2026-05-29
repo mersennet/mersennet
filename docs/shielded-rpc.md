@@ -73,11 +73,15 @@ Cross the shielded → transparent bridge. The payload carries the
 nullifier of the spent shielded note, the recipient EOA, and the
 amount.
 
-### `prime_submitShieldedOrder({ marketId, shieldedOrderBincodeHex })`
+### `prime_submitShieldedOrder({ anchorRootHex, nullifierHex, newCommitmentHex, marketId, side, price, size, ownerPkHex, saltHex, tif?, gasLimit?, maxFeePerGas?, proofBytesHex? })`
 
-Submit a shielded order intent. Goes into the threshold-encrypted
-mempool; decrypted in the next block boundary and routed to the
-shielded CLOB.
+Submit a shielded order intent. The RPC builds the canonical
+`ThresholdOrderIntent { tx, intent }`, wraps the `OrderPlace` proof
+bytes into a `CircuitProof` envelope when provided (or falls back to a
+mock proof in the current SDK path), encrypts the canonical payload via
+the threshold mempool, and returns the resulting `intentId`. The
+decrypted payload is routed through `run_shielded_tick()` at the next
+block boundary and admitted into the shielded CLOB.
 
 ### `prime_submitLiquidationClaim({ claimBincodeHex })`
 

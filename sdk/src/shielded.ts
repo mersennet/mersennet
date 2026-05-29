@@ -220,24 +220,57 @@ export class ShieldedClient {
     price: bigint;
     size: bigint;
   }): Promise<{ intentId: string }> {
-    if (!this.prover) {
-      throw new Error('shielded client has no prover; call setProver first');
+    const shieldedRoot = (await this.provider.request('prime_getShieldedRoot')) as {
+      shieldedStateRoot?: string;
+    };
+    const anchorRoot = shieldedRoot.shieldedStateRoot ?? zeroHex32();
+    const nullifier = zeroHex32();
+    const newCommitment = simpleHash(
+      `${this.viewingKey.spendPk}:${params.marketId}:${params.side}:${params.price}:${params.size}`
+    );
+    const saltHex = simpleHash(`${this.viewingKey.spendPk}:salt:${params.marketId}:${params.side}`);
+    const marketIdU64 = Number(params.marketId);
+    if (!Number.isSafeInteger(marketIdU64)) {
+      throw new Error('marketId exceeds supported u64 range for the current SDK mock path');
     }
-    const proof = await this.prover.proveOrderPlace({
-      anchorRoot: '0x' + '00'.repeat(32),
-      nullifier: '0x' + '00'.repeat(32),
-      newCommitment: '0x' + '00'.repeat(32),
-      marketId: params.marketId,
-      sideHash: '0x' + '00'.repeat(32),
-      priceBand: Number(params.price / 10n),
-      sizeBand: Number(params.size),
-      oraclePrice: 0n,
-      immRequired: 0n,
-    });
-    // Submit via prime_submitShieldedOrder RPC. This RPC is added in
-    // Phase 6.x to crates/rpc.
-    const response = await (this.provider as unknown as { rpc?: (m: string, p: unknown[]) => Promise<unknown> })
-      .rpc?.('prime_submitShieldedOrder', [bytesToHex(proof)]) ?? { intentId: '0x0' };
+    const priceBand = Number(params.price / 10n);
+    const sizeBand = Number(params.size);
+    const oraclePrice = 0n;
+    const immRequired = (params.price * params.size * 500n + 9_999n) / 10_000n;
+
+    let proofBytesHex: string | undefined;
+    if (this.prover) {
+      const proof = await this.prover.proveOrderPlace({
+        anchorRoot,
+        nullifier,
+        newCommitment,
+        marketId: params.marketId,
+        sideHash: zeroHex32(),
+        priceBand,
+        sizeBand,
+        oraclePrice,
+        immRequired,
+      });
+      proofBytesHex = bytesToHex(proof);
+    }
+
+    const response = await this.provider.request('prime_submitShieldedOrder', [
+      {
+        anchorRootHex: anchorRoot,
+        nullifierHex: nullifier,
+        newCommitmentHex: newCommitment,
+        marketId: bigintToHex(params.marketId),
+        side: params.side,
+        price: bigintToHex(params.price),
+        size: bigintToHex(params.size),
+        ownerPkHex: this.viewingKey.spendPk,
+        saltHex,
+        tif: 'gtc',
+        gasLimit: '0x30d40',
+        maxFeePerGas: '0x3b9aca00',
+        ...(proofBytesHex ? { proofBytesHex } : {}),
+      },
+    ]);
     return response as { intentId: string };
   }
 }
@@ -427,6 +460,14 @@ function simpleHash(input: string): string {
   }
   const hex = h.toString(16);
   return '0x' + hex.padStart(64, '0').slice(0, 64);
+}
+
+function zeroHex32(): string {
+  return '0x' + '00'.repeat(32);
+}
+
+function bigintToHex(value: bigint): string {
+  return '0x' + value.toString(16);
 }
 
 function bytesToHex(bytes: Uint8Array): string {

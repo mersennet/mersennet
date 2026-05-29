@@ -23,6 +23,7 @@ pub struct StateTransitionProof {
     pub block_height: u64,
     pub block_hash: B256,
     pub new_market_state_hash: B256,
+    pub shielded_event_root: B256,
     pub tx_count: u64,
     pub proof_data: Vec<u8>,
     pub proof_type: ProofType,
@@ -39,6 +40,7 @@ impl StateTransitionProof {
             block_number: self.block_height,
             block_hash: self.block_hash.0,
             new_market_state_hash: self.new_market_state_hash.0,
+            shielded_event_root: self.shielded_event_root.0,
             tx_count: self.tx_count,
         }
     }
@@ -68,12 +70,7 @@ pub struct ProofVerificationResult {
 
 #[allow(dead_code)]
 pub trait StateProver: Send + Sync {
-    fn prove_state_transition(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof>;
-
-    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
-        let public_output = execute_block_program(program_input);
-        self.prove_state_transition(&public_output)
-    }
+    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof>;
 
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult>;
 
@@ -92,28 +89,7 @@ impl MockProver {
         Self
     }
 
-    fn compute_proof_hash(public_output: &BlockProgramOutput) -> B256 {
-        let mut buf = Vec::with_capacity(32 * 5 + 8 * 2);
-        buf.extend_from_slice(&public_output.prev_state_root);
-        buf.extend_from_slice(&public_output.new_state_root);
-        buf.extend_from_slice(&public_output.prev_nullifier_root);
-        buf.extend_from_slice(&public_output.new_nullifier_root);
-        buf.extend_from_slice(&public_output.block_hash);
-        buf.extend_from_slice(&public_output.block_number.to_be_bytes());
-        buf.extend_from_slice(&public_output.tx_count.to_be_bytes());
-        buf.extend_from_slice(&public_output.new_market_state_hash);
-        keccak256(&buf)
-    }
-}
-
-impl Default for MockProver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl StateProver for MockProver {
-    fn prove_state_transition(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof> {
+    pub fn prove_public_output(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof> {
         let proof_data = Self::compute_proof_hash(public_output).0.to_vec();
 
         let timestamp = std::time::SystemTime::now()
@@ -129,11 +105,39 @@ impl StateProver for MockProver {
             block_height: public_output.block_number,
             block_hash: B256::from(public_output.block_hash),
             new_market_state_hash: B256::from(public_output.new_market_state_hash),
+            shielded_event_root: B256::from(public_output.shielded_event_root),
             tx_count: public_output.tx_count,
             proof_data,
             proof_type: ProofType::Mock,
             timestamp,
         })
+    }
+
+    fn compute_proof_hash(public_output: &BlockProgramOutput) -> B256 {
+        let mut buf = Vec::with_capacity(32 * 6 + 8 * 2);
+        buf.extend_from_slice(&public_output.prev_state_root);
+        buf.extend_from_slice(&public_output.new_state_root);
+        buf.extend_from_slice(&public_output.prev_nullifier_root);
+        buf.extend_from_slice(&public_output.new_nullifier_root);
+        buf.extend_from_slice(&public_output.block_hash);
+        buf.extend_from_slice(&public_output.block_number.to_be_bytes());
+        buf.extend_from_slice(&public_output.tx_count.to_be_bytes());
+        buf.extend_from_slice(&public_output.new_market_state_hash);
+        buf.extend_from_slice(&public_output.shielded_event_root);
+        keccak256(&buf)
+    }
+}
+
+impl Default for MockProver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StateProver for MockProver {
+    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
+        let public_output = execute_block_program(program_input)?;
+        self.prove_public_output(&public_output)
     }
 
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult> {
@@ -214,6 +218,7 @@ impl BatchProofAggregator {
             block_height: last.block_height,
             block_hash: last.block_hash,
             new_market_state_hash: last.new_market_state_hash,
+            shielded_event_root: last.shielded_event_root,
             tx_count: batch.iter().map(|p| p.tx_count).sum(),
             proof_data: aggregated_data,
             proof_type: ProofType::Mock,

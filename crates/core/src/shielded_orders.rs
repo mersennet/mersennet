@@ -64,10 +64,17 @@ use crate::prime_orders::{MarketId, MarketStatus, Side, TimeInForce};
 use crate::shielded_state::ShieldedState;
 use prime_zkp::{
     Fr, NoteCommitment, Nullifier,
-    noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
+    noir::{CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
+    sp1::{
+        MarketFillWitness, MarketTickTransitionWitness, apply_market_tick_witness,
+        BlockProgramError, DecryptedIntentWitness, OrderAdmissionValidationContext,
+        OrderAdmissionWitness, PendingIntentWitness, ShieldedDepthLevelWitness,
+        ShieldedMarketAggregateWitness, ShieldedMarketWitness, ShieldedOrderBookWitness,
+        ShieldedOrdersTickWitness, U256Bytes, validate_order_admission_witness,
+    },
 };
-use revm::primitives::U256;
+use revm::primitives::{U256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use thiserror::Error;
@@ -114,7 +121,7 @@ pub struct ShieldedOrderTx {
 
 /// Plaintext intent recovered after threshold decryption. Carried
 /// only inside the engine; never leaves a validator's hot memory.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecryptedIntent {
     pub side: Side,
     pub price: U256,
@@ -124,6 +131,15 @@ pub struct DecryptedIntent {
     /// Side-hash salt; the engine re-derives `Poseidon(side, salt)`
     /// and compares to the public `side_hash`.
     pub salt: Fr,
+}
+
+/// Canonical decrypted order payload carried by the threshold mempool.
+/// The public order envelope is paired with the decrypted exact-side /
+/// price / size intent so the block tick can re-run admission.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ThresholdOrderIntent {
+    pub tx: ShieldedOrderTx,
+    pub intent: DecryptedIntent,
 }
 
 #[derive(Clone, Debug)]
@@ -273,6 +289,91 @@ impl ShieldedOrdersEngine {
         self.books.entry(id).or_default();
     }
 
+    pub fn tick_witness(&self) -> ShieldedOrdersTickWitness {
+        let mut markets: Vec<_> = self.markets.values().cloned().collect();
+        markets.sort_by_key(|market| market.id.0);
+
+        let market_ids = self.market_ids_in_canonical_order();
+
+        ShieldedOrdersTickWitness {
+            initial_margin_bps: self.initial_margin_bps,
+            maintenance_margin_bps: self.maintenance_margin_bps,
+            next_sequence: self.next_sequence,
+            insurance_fund: u256_bytes(self.insurance_fund),
+            price_tick: u256_bytes(self.price_tick),
+            size_lot: u256_bytes(self.size_lot),
+            markets: markets
+                .into_iter()
+                .map(|market| ShieldedMarketWitness {
+                    market_id: market.id.0,
+                    tick_size: u256_bytes(market.tick_size),
+                    lot_size: u256_bytes(market.lot_size),
+                    last_price: u256_bytes(market.last_price),
+                    oracle_price: u256_bytes(market.last_price),
+                    status: market_status_code(market.status),
+                })
+                .collect(),
+            aggregates: market_ids
+                .iter()
+                .filter_map(|market_id| self.market_aggregate_witness(*market_id))
+                .collect(),
+            books: market_ids
+                .iter()
+                .filter_map(|market_id| self.market_book_witness(*market_id))
+                .collect(),
+        }
+    }
+
+    pub fn market_ids_in_canonical_order(&self) -> Vec<MarketId> {
+        let mut market_ids: Vec<_> = self.aggregates.keys().copied().collect();
+        market_ids.sort_by_key(|market_id| market_id.0);
+        market_ids
+    }
+
+    pub fn order_admission_witnesses(&self) -> Vec<DecryptedIntentWitness> {
+        let mut pending = self
+            .books
+            .values()
+            .flat_map(|book| book.bids.values().chain(book.asks.values()))
+            .flat_map(|level| level.iter())
+            .collect::<Vec<_>>();
+        pending.sort_by_key(|entry| entry.sequence);
+        pending
+            .into_iter()
+            .map(|entry| {
+                let admission = OrderAdmissionWitness {
+                    sequence: entry.sequence,
+                    anchor_root: entry.tx.anchor_root,
+                    nullifier: entry.tx.nullifier,
+                    new_commitment: entry.tx.new_commitment,
+                    market_id: entry.tx.market_id.0,
+                    side_hash: entry.tx.side_hash,
+                    price_band: entry.tx.price_band,
+                    size_band: entry.tx.size_band,
+                    oracle_price: u256_bytes(entry.tx.oracle_price),
+                    imm_required: u256_bytes(entry.tx.imm_required),
+                    tif: time_in_force_code(entry.tx.tif),
+                    proof: entry.tx.proof.clone(),
+                    side: side_code(entry.intent.side),
+                    price: u256_bytes(entry.intent.price),
+                    size: u256_bytes(entry.intent.size),
+                    owner_pk: entry.intent.owner_pk,
+                    salt: entry.intent.salt,
+                };
+                let intent_id = keccak256(bincode::serialize(&admission).unwrap_or_default());
+                DecryptedIntentWitness {
+                    intent_id: intent_id.0,
+                    plaintext: Vec::new(),
+                    order_admission: Some(admission),
+                }
+            })
+            .collect()
+    }
+
+    pub fn oracle_price_for_market(&self, market_id: MarketId) -> Option<U256> {
+        self.markets.get(&market_id).map(|market| market.last_price)
+    }
+
     /// Compute the initial-margin requirement for this band combination.
     /// Deterministic so the chain and the wallet agree.
     pub fn derive_imm_required(
@@ -306,78 +407,63 @@ impl ShieldedOrdersEngine {
         intent: DecryptedIntent,
         current_oracle_price: U256,
     ) -> Result<(), ShieldedOrderError> {
-        // 1. Anchor must be recent.
-        if !state.is_recent_root(&tx.anchor_root) {
-            return Err(ShieldedOrderError::StaleAnchor);
-        }
-        // 2. Market exists and is active.
         let market = self
             .markets
             .get(&tx.market_id)
             .ok_or(ShieldedOrderError::UnknownMarket(tx.market_id))?;
-        if market.status != MarketStatus::Active {
-            return Err(ShieldedOrderError::MarketInactive(tx.market_id));
-        }
-        // 3. Oracle price agrees with the trader's claimed snapshot.
-        // For now we accept exact equality; in production a band is allowed.
-        if tx.oracle_price != current_oracle_price {
-            return Err(ShieldedOrderError::OraclePriceMismatch);
-        }
-        // 4. Initial margin derivation matches the trader's claim.
+        let actual_price_band =
+            u32::try_from((intent.price / self.price_tick).as_limbs()[0]).unwrap_or(u32::MAX);
+        let actual_size_band =
+            u32::try_from(intent.size.div_ceil(self.size_lot).as_limbs()[0]).unwrap_or(u32::MAX);
         let derived_imm = self
             .derive_imm_required(tx.market_id, tx.price_band, tx.size_band, tx.oracle_price)
             .ok_or(ShieldedOrderError::UnknownMarket(tx.market_id))?;
-        if derived_imm != tx.imm_required {
-            return Err(ShieldedOrderError::InitialMarginMismatch {
-                required: tx.imm_required,
-                derived: derived_imm,
-            });
-        }
-        // 5. Price-band binding to plaintext price.
-        let actual_price_band =
-            u32::try_from((intent.price / self.price_tick).as_limbs()[0]).unwrap_or(u32::MAX);
-        if actual_price_band != tx.price_band {
-            return Err(ShieldedOrderError::PriceBandMismatch {
-                claimed: tx.price_band,
-                actual_band: actual_price_band,
-            });
-        }
-        // 6. Size-band binding (size_band must be >= actual ceil(size/lot)).
-        let actual_size_band =
-            u32::try_from(intent.size.div_ceil(self.size_lot).as_limbs()[0]).unwrap_or(u32::MAX);
-        if actual_size_band > tx.size_band {
-            return Err(ShieldedOrderError::SizeBandViolation {
-                claimed: tx.size_band,
-                actual_band: actual_size_band,
-            });
-        }
-        // 7. Side hash binding.
-        let side_fr = match intent.side {
-            Side::Buy => Fr::ZERO,
-            Side::Sell => Fr::ONE,
+        let admission = OrderAdmissionWitness {
+            sequence: self.next_sequence,
+            anchor_root: tx.anchor_root,
+            nullifier: tx.nullifier,
+            new_commitment: tx.new_commitment,
+            market_id: tx.market_id.0,
+            side_hash: tx.side_hash,
+            price_band: tx.price_band,
+            size_band: tx.size_band,
+            oracle_price: u256_bytes(tx.oracle_price),
+            imm_required: u256_bytes(tx.imm_required),
+            tif: time_in_force_code(tx.tif),
+            proof: tx.proof.clone(),
+            side: side_code(intent.side),
+            price: u256_bytes(intent.price),
+            size: u256_bytes(intent.size),
+            owner_pk: intent.owner_pk,
+            salt: intent.salt,
         };
-        let derived_side_hash = self.poseidon.hash_two(&side_fr, &intent.salt);
-        if derived_side_hash != tx.side_hash {
-            return Err(ShieldedOrderError::SideHashMismatch);
-        }
-        // 8. ZK proof verifies against the public inputs.
-        let public_inputs = vec![
-            tx.anchor_root,
-            tx.nullifier,
-            tx.new_commitment,
-            Fr::from_u64(tx.market_id.0),
-            tx.side_hash,
-            Fr::from_u64(tx.price_band as u64),
-            Fr::from_u64(tx.size_band as u64),
-            Fr::from_u64(u256_as_u64(&tx.oracle_price)),
-            Fr::from_u64(u256_as_u64(&tx.imm_required)),
-        ];
-        self.verifier
-            .verify(&tx.proof, Circuit::OrderPlace, &public_inputs)?;
-        // 9. Nullifier must not already be spent.
-        if state.is_spent(&Nullifier(tx.nullifier)) {
-            return Err(ShieldedOrderError::DoubleSpend);
-        }
+        validate_order_admission_witness(
+            &*self.verifier,
+            &self.poseidon,
+            &admission,
+            &OrderAdmissionValidationContext {
+                market_present: true,
+                market_status: market_status_code(market.status),
+                market_oracle_price: u256_bytes(current_oracle_price),
+                initial_margin_bps: self.initial_margin_bps,
+                price_tick: u256_bytes(self.price_tick),
+                size_lot: u256_bytes(self.size_lot),
+                root_is_recent: state.is_recent_root(&tx.anchor_root),
+                nullifier_spent: state.is_spent(&Nullifier(tx.nullifier)),
+            },
+        )
+        .map_err(|error| {
+            Self::map_block_program_error_to_shielded_order_error(
+                error,
+                tx.market_id,
+                tx.price_band,
+                actual_price_band,
+                tx.size_band,
+                actual_size_band,
+                tx.imm_required,
+                derived_imm,
+            )
+        })?;
         // 10. Insert the spend nullifier and the new collateral commitment.
         state.spend(Nullifier(tx.nullifier))?;
         state.insert_note(NoteCommitment(tx.new_commitment))?;
@@ -411,6 +497,40 @@ impl ShieldedOrdersEngine {
         Ok(())
     }
 
+
+fn map_block_program_error_to_shielded_order_error(
+    error: BlockProgramError,
+    market_id: MarketId,
+    claimed_price_band: u32,
+    actual_price_band: u32,
+    claimed_size_band: u32,
+    actual_size_band: u32,
+    required_imm: U256,
+    derived_imm: U256,
+) -> ShieldedOrderError {
+    match error {
+        BlockProgramError::StaleAnchor => ShieldedOrderError::StaleAnchor,
+        BlockProgramError::DoubleSpend => ShieldedOrderError::DoubleSpend,
+        BlockProgramError::UnknownMarket(_) => ShieldedOrderError::UnknownMarket(market_id),
+        BlockProgramError::MarketInactive(_) => ShieldedOrderError::MarketInactive(market_id),
+        BlockProgramError::OraclePriceMismatch => ShieldedOrderError::OraclePriceMismatch,
+        BlockProgramError::PriceBandMismatch => ShieldedOrderError::PriceBandMismatch {
+            claimed: claimed_price_band,
+            actual_band: actual_price_band,
+        },
+        BlockProgramError::SizeBandViolation => ShieldedOrderError::SizeBandViolation {
+            claimed: claimed_size_band,
+            actual_band: actual_size_band,
+        },
+        BlockProgramError::SideHashMismatch => ShieldedOrderError::SideHashMismatch,
+        BlockProgramError::InitialMarginMismatch => ShieldedOrderError::InitialMarginMismatch {
+            required: required_imm,
+            derived: derived_imm,
+        },
+        BlockProgramError::InvalidProof => ShieldedOrderError::InvalidProof(VerifyError::InvalidProof),
+        other => panic!("unexpected block-program error in shielded order admission: {other:?}"),
+    }
+}
     /// Run a Frequent Batch Auction on `market_id`. Returns a
     /// summary; the engine emits public events with `(market_id,
     /// clearing_price, matched_size)` only — no addresses.
@@ -419,21 +539,184 @@ impl ShieldedOrdersEngine {
             .markets
             .get(&market_id)
             .ok_or(ShieldedOrderError::UnknownMarket(market_id))?;
+        let aggregate = self
+            .market_aggregate_witness(market_id)
+            .ok_or(ShieldedOrderError::UnknownMarket(market_id))?;
+        let book = self
+            .market_book_witness(market_id)
+            .ok_or(ShieldedOrderError::UnknownMarket(market_id))?;
+        let transition = apply_market_tick_witness(aggregate, book);
+        self.apply_market_tick_transition(market_id, &transition)?;
+        Ok(ClearingResult {
+            clearing_price: u256_from_bytes(transition.aggregate.last_clearing_price),
+            matched_size: u256_from_bytes(transition.aggregate.last_volume),
+            fills: transition
+                .fills
+                .iter()
+                .map(fill_from_witness)
+                .collect(),
+        })
+    }
+
+    fn market_aggregate_witness(&self, market_id: MarketId) -> Option<ShieldedMarketAggregateWitness> {
+        let aggregate = self.aggregates.get(&market_id)?;
+        Some(ShieldedMarketAggregateWitness {
+            market_id: market_id.0,
+            mark_price: u256_bytes(aggregate.mark_price),
+            funding_rate_bps: aggregate.funding_rate_bps,
+            long_open_interest: u256_bytes(aggregate.long_open_interest),
+            short_open_interest: u256_bytes(aggregate.short_open_interest),
+            last_clearing_price: u256_bytes(aggregate.last_clearing_price),
+            bucketed_depth: aggregate
+                .bucketed_depth
+                .iter()
+                .map(|(price_band, size)| ShieldedDepthLevelWitness {
+                    price_band: *price_band,
+                    size: u256_bytes(*size),
+                })
+                .collect(),
+            liquidatable_count: aggregate.liquidatable_count,
+            last_volume: u256_bytes(aggregate.last_volume),
+        })
+    }
+
+    fn market_book_witness(&self, market_id: MarketId) -> Option<ShieldedOrderBookWitness> {
+        let book = self.books.get(&market_id)?;
+        Some(ShieldedOrderBookWitness {
+            market_id: market_id.0,
+            bids: pending_intents(&book.bids),
+            asks: pending_intents(&book.asks),
+        })
+    }
+
+    fn apply_market_tick_transition(
+        &mut self,
+        market_id: MarketId,
+        transition: &MarketTickTransitionWitness,
+    ) -> Result<(), ShieldedOrderError> {
+        let aggregate = self
+            .aggregates
+            .get_mut(&market_id)
+            .ok_or(ShieldedOrderError::UnknownMarket(market_id))?;
+        aggregate.mark_price = u256_from_bytes(transition.aggregate.mark_price);
+        aggregate.last_clearing_price = u256_from_bytes(transition.aggregate.last_clearing_price);
+        aggregate.last_volume = u256_from_bytes(transition.aggregate.last_volume);
+
         let book = self
             .books
             .get_mut(&market_id)
             .ok_or(ShieldedOrderError::UnknownMarket(market_id))?;
-        let result = uniform_price_auction(book);
-        // Update aggregates atomically.
-        if let Some(agg) = self.aggregates.get_mut(&market_id)
-            && !result.matched_size.is_zero()
-        {
-            agg.last_clearing_price = result.clearing_price;
-            agg.mark_price = result.clearing_price;
-            agg.last_volume = result.matched_size;
-        }
-        Ok(result)
+        apply_level_sizes(&mut book.bids, &transition.book.bids);
+        apply_level_sizes(&mut book.asks, &transition.book.asks);
+        Ok(())
     }
+}
+
+pub fn decode_threshold_order_intent(bytes: &[u8]) -> Result<ThresholdOrderIntent, bincode::Error> {
+    bincode::deserialize(bytes)
+}
+
+fn pending_intents(levels: &BTreeMap<U256, VecDeque<PendingIntent>>) -> Vec<PendingIntentWitness> {
+    levels
+        .values()
+        .flat_map(|level| level.iter())
+        .map(|pending| PendingIntentWitness {
+            sequence: pending.sequence,
+            side: side_code(pending.intent.side),
+            price: u256_bytes(pending.intent.price),
+            size: u256_bytes(pending.intent.size),
+            owner_pk: pending.intent.owner_pk,
+            tif: time_in_force_code(pending.tx.tif),
+            anchor_root: pending.tx.anchor_root,
+            nullifier: pending.tx.nullifier,
+            new_commitment: pending.tx.new_commitment,
+            market_id: pending.tx.market_id.0,
+            side_hash: pending.tx.side_hash,
+            price_band: pending.tx.price_band,
+            size_band: pending.tx.size_band,
+            oracle_price: u256_bytes(pending.tx.oracle_price),
+            imm_required: u256_bytes(pending.tx.imm_required),
+            encrypted_payload: pending.tx.encrypted_payload.clone(),
+            proof: pending.tx.proof.clone(),
+        })
+        .collect()
+}
+
+fn apply_level_sizes(
+    levels: &mut BTreeMap<U256, VecDeque<PendingIntent>>,
+    witness: &[PendingIntentWitness],
+) {
+    let remaining = witness
+        .iter()
+        .map(|pending| ((u256_from_bytes(pending.price), pending.sequence), u256_from_bytes(pending.size)))
+        .collect::<HashMap<_, _>>();
+    for (price, queue) in levels.iter_mut() {
+        for pending in queue.iter_mut() {
+            pending.intent.size = remaining
+                .get(&(*price, pending.sequence))
+                .copied()
+                .unwrap_or(U256::ZERO);
+        }
+        queue.retain(|pending| !pending.intent.size.is_zero());
+    }
+    levels.retain(|_, queue| !queue.is_empty());
+}
+
+fn fill_from_witness(fill: &MarketFillWitness) -> Fill {
+    Fill {
+        market_id: MarketId(fill.market_id),
+        clearing_price: u256_from_bytes(fill.clearing_price),
+        size: u256_from_bytes(fill.size),
+        side: side_from_code(fill.side),
+        recipient: fill.recipient,
+    }
+}
+
+fn market_status_code(status: MarketStatus) -> u8 {
+    match status {
+        MarketStatus::Active => 0,
+        MarketStatus::Halted => 1,
+        MarketStatus::SettleOnly => 2,
+    }
+}
+
+fn side_code(side: Side) -> u8 {
+    match side {
+        Side::Buy => 0,
+        Side::Sell => 1,
+    }
+}
+
+fn side_from_code(side: u8) -> Side {
+    match side {
+        1 => Side::Sell,
+        _ => Side::Buy,
+    }
+}
+
+fn time_in_force_code(tif: TimeInForce) -> u8 {
+    match tif {
+        TimeInForce::Gtc => 0,
+        TimeInForce::Ioc => 1,
+        TimeInForce::Fok => 2,
+    }
+}
+
+fn u256_bytes(value: U256) -> U256Bytes {
+    let mut out = [0u8; 32];
+    for (index, limb) in value.as_limbs().iter().enumerate() {
+        out[index * 8..(index + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+    }
+    U256Bytes(out)
+}
+
+fn u256_from_bytes(value: U256Bytes) -> U256 {
+    let limbs = value
+        .0
+        .chunks_exact(8)
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]])
 }
 
 /// Saturating cast of the low 64 bits of a U256 to u64. Sufficient
@@ -586,6 +869,7 @@ impl From<crate::shielded_state::ShieldedStateError> for ShieldedOrderError {
 mod tests {
     use super::*;
     use crate::prime_orders::Market;
+    use prime_zkp::Circuit;
     use prime_zkp::note::Note;
 
     fn mk_market(id: u64) -> Market {
