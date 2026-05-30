@@ -12,6 +12,21 @@ from pathlib import Path
 from typing import Iterable
 
 
+LOCAL_REAL_SP1_ENV_DEFAULTS = {
+    "PRIME_SP1_PROOF_SYSTEM": "core",
+    "PRIME_SP1_INLINE_VERIFY": "0",
+    "PRIME_SP1_DEFERRED_PROOF_VERIFICATION": "0",
+    "RAYON_NUM_THREADS": "2",
+    "SP1_WORKER_NUM_CORE_WORKERS": "2",
+    "SP1_WORKER_NUM_SETUP_WORKERS": "2",
+    "SP1_WORKER_NUM_PREPARE_REDUCE_WORKERS": "1",
+    "SP1_WORKER_NUM_RECURSION_EXECUTOR_WORKERS": "1",
+    "SP1_WORKER_NUM_RECURSION_PROVER_WORKERS": "1",
+    "SP1_WORKER_NUM_DEFERRED_WORKERS": "1",
+    "SP1_WORKER_NUM_SPLICING_WORKERS": "1",
+}
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -52,7 +67,7 @@ def with_wsl_paths(values: dict[str, object], path_keys: Iterable[str]) -> dict[
     return rendered
 
 
-def build_wsl_command(command: Iterable[str], cwd: Path) -> list[str]:
+def build_wsl_command(command: Iterable[str], cwd: Path, env_overrides: dict[str, str] | None = None) -> list[str]:
     wsl = shutil.which("wsl.exe") or shutil.which("wsl")
     if not wsl:
         raise RuntimeError(
@@ -60,7 +75,12 @@ def build_wsl_command(command: Iterable[str], cwd: Path) -> list[str]:
         )
 
     distro = os.environ.get("PRIME_SP1_WSL_DISTRO", "").strip()
-    script = f"cd {shlex.quote(to_wsl_path(cwd))} && {shlex.join(list(command))}"
+    exports = ""
+    if env_overrides:
+        exports = " ".join(
+            f"{name}={shlex.quote(value)}" for name, value in env_overrides.items()
+        ) + " "
+    script = f"cd {shlex.quote(to_wsl_path(cwd))} && {exports}{shlex.join(list(command))}"
 
     wrapped = [wsl]
     if distro:
@@ -69,22 +89,61 @@ def build_wsl_command(command: Iterable[str], cwd: Path) -> list[str]:
     return wrapped
 
 
+def normalize_real_sp1_command(command: Iterable[str]) -> list[str]:
+    command_list = list(command)
+    if len(command_list) < 2:
+        return command_list
+
+    if command_list[0] != "cargo" or command_list[1] != "run":
+        return command_list
+
+    if "real-sp1" not in command_list:
+        return command_list
+
+    if "--release" in command_list or "--profile" in command_list:
+        return command_list
+
+    return [command_list[0], command_list[1], "--release", *command_list[2:]]
+
+
+def local_real_sp1_env_defaults(command: Iterable[str]) -> dict[str, str]:
+    command_list = list(command)
+    if "real-sp1" not in command_list:
+        return {}
+
+    if "--prove-request" not in command_list:
+        return {}
+
+    if os.environ.get("PRIME_SP1_MODE", "local").strip().lower() != "local":
+        return {}
+
+    return {
+        name: value
+        for name, value in LOCAL_REAL_SP1_ENV_DEFAULTS.items()
+        if not os.environ.get(name, "").strip()
+    }
+
+
 def run_command(
     command: Iterable[str],
     cwd: Path | None = None,
     *,
     executor: str = "native",
 ) -> subprocess.CompletedProcess[str]:
-    command_list = list(command)
+    command_list = normalize_real_sp1_command(command)
+    env_overrides = local_real_sp1_env_defaults(command_list)
     working_dir = cwd or repo_root()
+    env = os.environ.copy()
+    env.update(env_overrides)
 
     if executor == "wsl":
-        command_list = build_wsl_command(command_list, working_dir)
+        command_list = build_wsl_command(command_list, working_dir, env_overrides)
         working_dir = None
 
     result = subprocess.run(
         command_list,
         cwd=str(working_dir) if working_dir else None,
+        env=env,
         capture_output=True,
         text=True,
         check=False,

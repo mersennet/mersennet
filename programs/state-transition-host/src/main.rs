@@ -276,6 +276,36 @@ fn configured_sp1_mode() -> String {
 }
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
+fn configured_sp1_proof_system() -> String {
+    env::var("PRIME_SP1_PROOF_SYSTEM")
+        .unwrap_or_else(|_| "compressed".to_string())
+        .trim()
+        .to_ascii_lowercase()
+}
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
+fn configured_sp1_inline_verify() -> bool {
+    env::var("PRIME_SP1_INLINE_VERIFY")
+        .ok()
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            !value.is_empty() && value != "0" && value != "false" && value != "off"
+        })
+        .unwrap_or(true)
+}
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
+fn configured_sp1_deferred_proof_verification() -> bool {
+    env::var("PRIME_SP1_DEFERRED_PROOF_VERIFICATION")
+        .ok()
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            !value.is_empty() && value != "0" && value != "false" && value != "off"
+        })
+        .unwrap_or(true)
+}
+
+#[cfg(all(feature = "real-sp1", not(windows)))]
 fn trace_real_sp1_stage(stage: &str) {
     let enabled = env::var("PRIME_SP1_STAGE_TRACE")
         .ok()
@@ -317,10 +347,22 @@ where
         );
     }
 
+    let proof_system = configured_sp1_proof_system();
     trace_real_sp1_stage("prove:start");
-    let proof = prover
+    let prove_request = prover
         .prove(&proving_key, stdin)
-        .compressed()
+        .deferred_proof_verification(configured_sp1_deferred_proof_verification());
+    let proof = match proof_system.as_str() {
+        "core" => prove_request.core(),
+        "compressed" => prove_request.compressed(),
+        "plonk" => prove_request.plonk(),
+        "groth16" => prove_request.groth16(),
+        other => {
+            bail!(
+                "unsupported PRIME_SP1_PROOF_SYSTEM={other}; expected one of: core, compressed, plonk, groth16"
+            );
+        }
+    }
         .run()
         .map_err(|err| anyhow::anyhow!("generate SP1 proof: {err}"))?;
     trace_real_sp1_stage("prove:done");
@@ -341,11 +383,13 @@ where
     }
     trace_real_sp1_stage("public-values:check:done");
 
-    trace_real_sp1_stage("verify:start");
-    prover
-        .verify(&proof, verifying_key, None)
-        .context("verify generated SP1 proof")?;
-    trace_real_sp1_stage("verify:done");
+    if configured_sp1_inline_verify() {
+        trace_real_sp1_stage("verify:start");
+        prover
+            .verify(&proof, verifying_key, None)
+            .context("verify generated SP1 proof")?;
+        trace_real_sp1_stage("verify:done");
+    }
 
     trace_real_sp1_stage("serialize:start");
     let proof_bytes = bincode::serialize(&proof).context("serialize SP1 proof envelope")?;
@@ -354,7 +398,7 @@ where
         vkey_hash,
         public_values: proof.public_values.to_vec(),
         proof_bytes,
-        proof_system: "compressed".to_string(),
+        proof_system,
     })
 }
 

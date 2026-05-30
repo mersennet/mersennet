@@ -122,15 +122,25 @@ Example override for the checked-in host runner using the real SDK-backed
 path on supported targets:
 
 ```powershell
-$env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
-$env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
+$env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
+$env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
 ```
 
 Notes:
 
 - Without `--features real-sp1`, the checked-in host runner stays on the
   deterministic mock path.
-- On Linux, `--features real-sp1` can use the SDK-backed host path directly.
+- On Linux, `--features real-sp1` should be run in `--release`; the SP1
+  prover client bootstrap is computationally heavy enough that debug
+  binaries can look hung for minutes during `ProverClient::builder().cpu().build()`.
+- For `PRIME_SP1_MODE=local` prove commands, the adapters now default to
+  a lower-memory lane unless you explicitly override it: they inject
+  `PRIME_SP1_PROOF_SYSTEM=core`, disable inline verify and deferred proof
+  verification, and use a mixed worker profile tuned for WSL: bootstrap-
+  critical workers stay at `2`, while the recursion/deferred/splicing
+  prove-phase workers are capped at `1`. This is the current best-known
+  tradeoff to avoid the compressed-path OOM on a 28 GB memory ceiling
+  without pushing prover bootstrap back into multi-minute startup.
 - E3 transcript capture should use `PRIME_SP1_MODE=local` today; one
   successful local prove/verify transcript against the pinned ELF and
   `PRIME_SP1_VKEY_HASH` is enough to close E3.
@@ -143,14 +153,32 @@ Notes:
 - For Windows/Linux parity, set `PRIME_SP1_HOST_EXECUTOR=wsl` so the
   adapter runs the same host-runner command inside WSL and automatically
   rewrites the request/response/program ELF paths to `/mnt/...` form.
+- The adapters now auto-insert `--release` for `cargo run ... --features real-sp1`
+  templates unless you already supplied `--release` or an explicit
+  `--profile`.
+
+If you want to force a different tradeoff, set any of these yourself and
+the adapters will preserve your explicit values:
+
+- `PRIME_SP1_PROOF_SYSTEM`
+- `PRIME_SP1_INLINE_VERIFY`
+- `PRIME_SP1_DEFERRED_PROOF_VERIFICATION`
+- `RAYON_NUM_THREADS`
+- `SP1_WORKER_NUM_CORE_WORKERS`
+- `SP1_WORKER_NUM_SETUP_WORKERS`
+- `SP1_WORKER_NUM_PREPARE_REDUCE_WORKERS`
+- `SP1_WORKER_NUM_RECURSION_EXECUTOR_WORKERS`
+- `SP1_WORKER_NUM_RECURSION_PROVER_WORKERS`
+- `SP1_WORKER_NUM_DEFERRED_WORKERS`
+- `SP1_WORKER_NUM_SPLICING_WORKERS`
 
 Example Windows parity setup via WSL:
 
 ```powershell
 $env:PRIME_SP1_HOST_EXECUTOR = 'wsl'
 $env:PRIME_SP1_MODE = 'local'
-$env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
-$env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
+$env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
+$env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
 ```
 
 The adapters validate the JSON shape that the Rust runtime expects:
