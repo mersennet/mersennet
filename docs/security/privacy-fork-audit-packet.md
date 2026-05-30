@@ -101,27 +101,30 @@ Current status:
       `processors=16`
       After `wsl.exe --shutdown`, WSL reported `Mem: 27Gi` and `Swap: 16Gi`.
 - Local real-SP1 prove command attempted in WSL:
-      `PROTOC=/home/rodaemonic/.local/bin/protoc PROTOC_INCLUDE=/home/rodaemonic/.local/share/protoc/extracted/include PRIME_SP1_MODE=local cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+      `PROTOC=/home/rodaemonic/.local/bin/protoc PROTOC_INCLUDE=/home/rodaemonic/.local/share/protoc/extracted/include PRIME_SP1_MODE=local cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
 - Lower-concurrency retries attempted:
       `RAYON_NUM_THREADS=4 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
       and later
       `RAYON_NUM_THREADS=2 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
-- Current local blocker after the memory increase:
-      the checked-in host path now isolates the failure to local SP1 SDK client initialization on this WSL host, before prover setup. Stage tracing in `programs/state-transition-host/src/main.rs` reached:
+- Debug-profile reproducer finding:
+      the checked-in host path isolated the slow startup to local SP1 SDK client initialization before prover setup. Stage tracing in `programs/state-transition-host/src/main.rs` reached:
       `[prime-sp1-stage] elf:read:start`
       `[prime-sp1-stage] elf:read:done`
       `[prime-sp1-stage] stdin:build:start`
       `[prime-sp1-stage] stdin:write:start`
       `[prime-sp1-stage] stdin:write:done`
       `[prime-sp1-stage] client:build:start`
-      and never reached `client:build:done`.
+      and the debug run did not reach `client:build:done` within the earlier probe window.
 - Standalone reproducer:
-      `programs/state-transition-host/examples/probe_prover_client.rs` reproduces the same issue without any Prime Chain input handling. Running it in WSL with `--features real-sp1` prints only:
+      `programs/state-transition-host/examples/probe_prover_client.rs` reproduces the same startup cost without any Prime Chain input handling. Running it in WSL with `cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --example probe_prover_client --features real-sp1` now prints:
       `[prime-sp1-probe] client:build:start`
-      and never reaches `client:build:done`, which isolates the blocker to `ProverClient::builder().cpu().build()` on this host.
+      followed by
+      `[prime-sp1-probe] client:build:done`.
+- Current local conclusion:
+      the earlier "hang" was caused by running the real SP1 prover path through debug binaries. The checked-in adapters now normalize `cargo run ... --features real-sp1` commands to `--release` unless an explicit profile is already provided.
 - Transcript artifacts:
       `scripts/zk/sp1-prove-response.json` and `scripts/zk/sp1-verify-request.request.json` were not produced.
-- Transcript: repo-side setup is ready, but local proving on this machine is blocked before prover setup by SP1 SDK client initialization. The next validation step is to run the standalone reproducer on a different Linux/WSL host.
+- Transcript: repo-side setup is ready, and local SP1 client initialization now succeeds on this WSL host when invoked via optimized `--release` binaries. The next validation step is to rerun the full prove/verify transcript in local mode with the release host path.
 
 ### 2. The canonical zkVM executor now covers the current proof boundary
 

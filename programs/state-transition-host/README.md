@@ -40,7 +40,7 @@ clear error because the upstream `sp1-sdk` toolchain pulls Unix-only
 
 If you need Windows/Linux parity today, keep this crate's command line
 unchanged and invoke it from the SP1 adapters with
-`PRIME_SP1_HOST_EXECUTOR=wsl`. That runs the same `cargo run ... --features real-sp1`
+`PRIME_SP1_HOST_EXECUTOR=wsl`. That runs the same `cargo run --release ... --features real-sp1`
 command inside WSL while preserving the request/response JSON contract.
 
 That means the adapters now have a concrete default command path, even
@@ -56,9 +56,14 @@ cargo run --manifest-path programs/state-transition-host/Cargo.toml -- --verify-
 Enable the real SDK-backed path on supported targets:
 
 ```powershell
-cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request request.json --prove-response response.json
-cargo run --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request request.json --verify-response response.json
+cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request request.json --prove-response response.json
+cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request request.json --verify-response response.json
 ```
+
+For `real-sp1`, prefer optimized binaries. The prover client bootstrap
+eagerly builds recursion proving state, so debug binaries can spend
+minutes inside `ProverClient::builder().cpu().build()` before the first
+prove or verify request even starts.
 
 ## Next cut-over
 
