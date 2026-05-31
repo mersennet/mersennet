@@ -427,6 +427,13 @@ pub struct Engine {
     /// When set, block production fails closed if the post-fork SP1
     /// state proof cannot be produced.
     pub sp1_proof_required: bool,
+    /// Canonical shielded-event root for the current block, computed
+    /// in [`Engine::run_shielded_tick`] from the same
+    /// `CanonicalShieldedEvent` list the SP1 executor re-derives. The
+    /// block header reuses this so the host and zkVM agree on the
+    /// `shielded_event_root` byte-for-byte (they must use the same
+    /// encoding, not the `DomainEvent` serialization).
+    shielded_tick_event_root: B256,
     /// Discrete-time uniform-price auction state per shielded
     /// market.
     pub shielded_orders: ShieldedOrdersEngine,
@@ -572,6 +579,7 @@ impl Engine {
             privacy_mode_activated: false,
             privacy_activation_height: None,
             sp1_proof_required: false,
+            shielded_tick_event_root: B256::ZERO,
             shielded_orders: ShieldedOrdersEngine::new(),
             liquidation_auction: LiquidationAuction::new(),
             shielded_evm,
@@ -1260,7 +1268,6 @@ impl Engine {
         let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
             self.shielded_block_header(
                 &transactions,
-                &domain_events,
                 hash,
                 gas_used,
                 Some(&pre_shielded_snapshot),
@@ -1596,7 +1603,6 @@ impl Engine {
         let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
             self.shielded_block_header(
                 &transactions,
-                &domain_events,
                 hash,
                 gas_used,
                 Some(&pre_shielded_snapshot),
@@ -2255,7 +2261,6 @@ impl Engine {
     fn shielded_block_header(
         &self,
         transactions: &[Transaction],
-        domain_events: &[crate::events::DomainEvent],
         block_hash: B256,
         gas_used: u64,
         pre_shielded_snapshot: Option<&crate::shielded_state::ShieldedSnapshot>,
@@ -2279,23 +2284,13 @@ impl Engine {
         nbuf.extend_from_slice(&(self.shielded_evm.state.nullifier_count() as u64).to_le_bytes());
         let nullifier_root = keccak256(&nbuf);
 
-        // Shielded event root: keccak of bincode-serialised
-        // `ShieldedEvent` records, in block-emission order. Light
-        // clients re-derive this from the public event stream.
-        let mut ebuf = Vec::new();
-        for ev in domain_events
-            .iter()
-            .filter(|e| matches!(e, crate::events::DomainEvent::Shielded(_)))
-        {
-            if let Ok(bytes) = bincode::serialize(ev) {
-                ebuf.extend_from_slice(&bytes);
-            }
-        }
-        let host_shielded_event_root = if ebuf.is_empty() {
-            B256::ZERO
-        } else {
-            keccak256(&ebuf)
-        };
+        // Shielded event root: reuse the canonical root pinned in
+        // `run_shielded_tick`, which hashes the same
+        // `CanonicalShieldedEvent` list the SP1 executor re-derives.
+        // Hashing `DomainEvent` bincode here instead would use a
+        // different encoding and make `prove_block`'s event-root
+        // equality check fail on every block with shielded activity.
+        let host_shielded_event_root = self.shielded_tick_event_root;
         let market_state_hash = crate::state_proof::snapshot_subsystem_digests(
             &self.shielded_orders,
             &self.liquidation_auction,
@@ -2424,6 +2419,12 @@ impl Engine {
             &liquidation_events,
             new_root,
         );
+        // Pin the canonical event root from the exact list the SP1
+        // executor re-derives, so `prove_block`'s equality check
+        // against the host root can actually succeed on blocks with
+        // shielded activity.
+        self.shielded_tick_event_root =
+            B256::from(prime_zkp::sp1::shielded_event_root(&events));
         self.pending_events.extend(
             events
                 .into_iter()
