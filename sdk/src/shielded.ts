@@ -227,6 +227,26 @@ export class ShieldedClient {
   }
 
   /**
+   * Scan and decrypt the wallet's OWN notes (Workstream F2).
+   *
+   * The owner mints a self-grant (`prime_viewGrantToken` to their own
+   * viewing key) and passes its id here. This derives the decryptor from
+   * the wallet's own `viewSk`, filters to notes addressed to its `viewPk`,
+   * decrypts them, and refreshes the note cache so {@link getBalance} and
+   * {@link reconstructBalances} reflect the owner's spendable notes.
+   */
+  async scanOwnNotes(
+    grantIdHex: string,
+    options?: GrantedNoteScanOptions
+  ): Promise<GrantedNoteScanResult> {
+    const material = createOwnerViewingMaterial(this.viewingKey, grantIdHex);
+    this.grantedViewingMaterial = material;
+    const scanned = await scanGrantedNotes(this.provider, material, options);
+    this.noteCache = scanned.notes.map((entry) => entry.note);
+    return scanned;
+  }
+
+  /**
    * Place a shielded perp order. Returns the intent id.
    */
   async placeOrder(params: {
@@ -455,6 +475,23 @@ export function parseShieldedNotePlaintext(plaintext: Uint8Array): Note {
  * deterministic shared secret from `viewSecretHex` and `ephemeralPk`,
  * expands that into a byte stream, and XORs it with the ciphertext.
  */
+/**
+ * Build the viewing material a wallet uses to scan its OWN notes
+ * (Workstream F2). The decryptor is keyed by the wallet's secret viewing
+ * scalar and the scan is filtered to notes addressed to its public viewing
+ * key. `grantIdHex` is the wallet's self-grant id.
+ */
+export function createOwnerViewingMaterial(
+  viewingKey: ViewingKey,
+  grantIdHex: string
+): GrantedViewingMaterial {
+  return {
+    grantIdHex,
+    recipientPublicKey: viewingKey.viewPk,
+    decryptNoteCiphertext: createMockNoteDecryptor(viewingKey.viewSk),
+  };
+}
+
 export function createMockNoteDecryptor(
   viewSecretHex: string
 ): GrantedViewingMaterial['decryptNoteCiphertext'] {

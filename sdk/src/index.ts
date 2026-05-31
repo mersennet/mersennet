@@ -59,6 +59,7 @@ export {
   ShieldedClient,
   ViewingKeyHelpers,
   createMockNoteDecryptor,
+  createOwnerViewingMaterial,
   scanGrantedNotes,
   parseEncryptedNotePayload,
   parseShieldedNotePlaintext,
@@ -89,3 +90,27 @@ export type {
   ReconstructedPortfolio,
   ReconstructOptions,
 } from './reconstruction';
+
+// Client-side Noir proving (Workstream F1). The backend is injected by the
+// wallet and wraps @noir-lang/noir_js + @aztec/bb.js.
+export { NoirWasmProver } from './noir-prover';
+export type {
+  NoirCircuitName,
+  NoirInputValue,
+  NoirProvingBackend,
+  NoirWasmProverOptions,
+} from './noir-prover';
+
+// Privacy-fork migration UX helpers (Workstream F4).
+export {
+  deriveMigrationNote,
+  matchesMigrationNote,
+  defaultNoteCommitment,
+  MIGRATION_RHO_LABEL,
+  MIGRATION_PSI_LABEL,
+} from './migration';
+export type {
+  MigrationNote,
+  MigrationNoteParams,
+  NoteCommitmentHasher,
+} from './migration';
