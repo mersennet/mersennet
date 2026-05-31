@@ -123,7 +123,32 @@ Current status:
 - Current local conclusion:
       the earlier "hang" was caused by running the real SP1 prover path through debug binaries. The checked-in adapters now normalize `cargo run ... --features real-sp1` commands to `--release` unless an explicit profile is already provided.
 - Transcript artifacts:
-      `scripts/zk/sp1-prove-response.json` and `scripts/zk/sp1-verify-request.request.json` were not produced.
+      `scripts/zk/sp1-prove-response.json` is not produced yet (needs the
+      real local prove). `scripts/zk/sp1-verify-request.request.json` is
+      now pre-filled with the deterministic public output (below); only
+      `proofBytesHex` (+ the real `programElfPath`) must be pasted in from
+      the prove response.
+- Expected deterministic public output (block 1, empty, pinned input
+      `scripts/zk/sp1-prove-request.request.json`), re-derived offline via
+      the canonical `execute_block_program` executor (host mock path) and
+      round-trip-verified:
+      - `blockHeight` = `1`, `txCount` = `0`
+      - `prevStateRootHex` = `0000…0000`
+      - `newStateRootHex` =
+        `73dc7781dd3c9efc74b22daa99e0477d3315f99d03c850bbce2527ad6c9d2d52`
+      - `prevNullifierRootHex` = `0000…0000`
+      - `newNullifierRootHex` =
+        `011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce`
+      - `blockHashHex` =
+        `b5e597b42a4b31f3a4fc119f055838edce6facf3a4d5138a8b772adac622c343`
+      - `newMarketStateHashHex` = `0000…0000`
+      - `shieldedEventRootHex` =
+        `adaed4dd1e55ac43f334db32a4a185b1762d9e3b5448336ed3a1e697511c2b97`
+      - `publicValuesHex` (bincoded `BlockProgramOutput`) as pinned in the
+        verify request.
+      When the real local prove completes, its `public_values` MUST equal
+      the pinned `publicValuesHex`; if it diverges, the ELF/input drifted
+      from this pin and the transcript is invalid.
 - Transcript: repo-side setup is ready, and local SP1 client initialization now succeeds on this WSL host when invoked via optimized `--release` binaries. The next validation step is to rerun the full prove/verify transcript in local mode with the release host path.
 
 ### 2. The canonical zkVM executor now covers the current proof boundary
