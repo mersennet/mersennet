@@ -144,26 +144,44 @@ The focused regression
 now covers the last stale liquidation replay seam at the SP1 event-root
 boundary.
 
-### 3. Network proving is blocked by the current dependency graph
+### 3. Network proving — dependency conflict resolved (E4)
 
-The requested `ProverClient::network()` cut-over cannot be enabled in
-this host crate today because `sp1-sdk/network` pulls a `c-kzg` version
-that conflicts with the `revm` dependency graph already present here.
+The `c-kzg` link conflict that previously blocked `sp1-sdk/network` has
+been resolved by removing `revm` from the SP1 host crate entirely.
 
-Observed resolver failure:
+Previously the host depended on `prime-chain` (`crates/core`), which pulls
+the full `revm` execution stack and therefore `c-kzg` 1.x. Enabling
+`sp1-sdk/network` additionally pulls the Alloy 1.0 stack (`c-kzg` 2.x),
+and because `c-kzg` declares `links = "ckzg"` the two could not coexist:
 
 ```text
 package `c-kzg` links to the native library `ckzg`, but it conflicts with a previous package which links to `ckzg` as well
 ```
 
-The host runner now surfaces this as an explicit runtime blocker when
-`PRIME_SP1_MODE=network` is requested.
+Fix: the proof-envelope types the host actually needs
+(`StateTransitionProof`, `ProofType`, `SP1Proof`, `SP1ProofVerifier`, …)
+were extracted into a new `revm`-free crate, `prime-state-proof`, that
+depends only on `prime-zkp` + `alloy-primitives`. `prime-chain`
+re-exports them so `prime_chain::zk_proofs` / `prime_chain::zk_sp1` paths
+are unchanged. The host now depends on `prime-state-proof` + `prime-zkp`
++ `alloy-primitives` only — no `revm`, no `c-kzg` 1.x.
 
-This means the honest near-term path is:
+Verification (this environment):
 
-- finish E3 with a local/WSL real-SP1 transcript against the pinned ELF
-- keep `PRIME_SP1_MODE=network` as a loud failure mode until the
-      dependency conflict is resolved
+- `cargo tree -i revm` / `-i c-kzg` in the host: **no matches** (default
+      and `--features real-sp1`).
+- `cargo check --features real-sp1`: compiles.
+- `cargo check --features network`: dependency resolution **succeeds**
+      (single `c-kzg 2.1.7` in the lockfile, no `links` conflict); the
+      build then only stops on crates.io download access in the offline
+      sandbox. The final network compile + an actual delegated proof
+      require registry access and a Succinct prover-network account.
+
+The network path is gated behind a new `network` cargo feature
+(`network = ["real-sp1", "sp1-sdk/network"]`). With it enabled,
+`PRIME_SP1_MODE=network` drives `ProverClient::builder().network().build()`;
+without it, the host still fails loudly telling the operator to rebuild
+with `--features network`.
 
 ## H6 Bake Status
 
