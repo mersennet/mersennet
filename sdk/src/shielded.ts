@@ -22,6 +22,8 @@
 
 import { createHash } from 'crypto';
 import type { PrimeProvider } from './provider';
+import { reconstructPortfolio } from './reconstruction';
+import type { ReconstructOptions, ReconstructedPortfolio } from './reconstruction';
 
 /** BN254 scalar field element, encoded as a 32-byte little-endian hex string. */
 export type Fr = string;
@@ -196,6 +198,19 @@ export class ShieldedClient {
         (result.perAsset[n.assetId] ?? 0n) + n.value;
     }
     return result;
+  }
+
+  /**
+   * Reconstruct spendable balances from the scanned-notes cache, excluding
+   * notes whose nullifiers have been spent on chain (ADR-019 `balances:read`).
+   * The node never sees a decrypted balance; this runs entirely client-side.
+   *
+   * Call {@link scanRecentBlocks} first to populate the note cache, then pass
+   * the set of spent nullifiers (and, for production wallets, your real
+   * `nvk`-based nullifier deriver) via `options`.
+   */
+  reconstructBalances(options: ReconstructOptions = {}): ReconstructedPortfolio {
+    return reconstructPortfolio(this.noteCache, options);
   }
 
   /**

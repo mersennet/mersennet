@@ -77,3 +77,15 @@ export type {
   ShieldedClientOptions,
 } from './shielded';
 export type { Fr } from './shielded';
+
+// Client-side portfolio reconstruction (ADR-019 balances:read).
+export {
+  reconstructPortfolio,
+  defaultNullifierDeriver,
+} from './reconstruction';
+export type {
+  NullifierDeriver,
+  PortfolioNote,
+  ReconstructedPortfolio,
+  ReconstructOptions,
+} from './reconstruction';
