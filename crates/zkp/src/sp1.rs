@@ -410,6 +410,10 @@ pub enum BlockProgramError {
     BlockHashMismatch,
     #[error("replayed market-state hash mismatch")]
     MarketStateHashMismatch,
+    #[error("prev shielded-state root does not match the restored prior state")]
+    PrevStateRootMismatch,
+    #[error("prev nullifier root does not match the restored prior state")]
+    PrevNullifierRootMismatch,
 }
 
 /// Canonical deterministic block executor used by the current SP1
@@ -424,6 +428,24 @@ pub fn execute_block_program(input: &BlockProgramInput) -> Result<BlockProgramOu
         .collect::<HashMap<_, _>>();
     let verifier = default_verifier();
     let poseidon = Poseidon::default();
+
+    // Prev-state continuity: bind the proof to the claimed prior state by
+    // re-deriving the prev roots from the restored witness instead of
+    // echoing the host-supplied values. Once a real prior root has been
+    // published the proof must reproduce it exactly. A zero prev root marks
+    // the activation/genesis boundary: nothing was published pre-fork to
+    // bind to (the migrated shielded state is attested out-of-band by the
+    // governance-approved snapshot import), so that one boundary block is
+    // intentionally left unbound. Every subsequent block binds normally.
+    let restored_state_root = state.current_root().to_bytes();
+    let restored_nullifier_root = state.nullifier_root();
+    if input.prev_state_root != [0u8; 32] && restored_state_root != input.prev_state_root {
+        return Err(BlockProgramError::PrevStateRootMismatch);
+    }
+    if input.prev_nullifier_root != [0u8; 32] && restored_nullifier_root != input.prev_nullifier_root
+    {
+        return Err(BlockProgramError::PrevNullifierRootMismatch);
+    }
 
     for (index, raw_tx) in input.txs.iter().enumerate() {
         let tx: ShieldedBlockTx = bincode::deserialize(raw_tx).map_err(|err| {
@@ -2001,6 +2023,87 @@ mod tests {
             execute_block_program(&input),
             Err(BlockProgramError::BlockHashMismatch)
         ));
+    }
+
+    #[test]
+    fn execute_block_program_rejects_prev_state_root_mismatch() {
+        // Empty restored state but a non-zero, non-matching prev root.
+        let input = BlockProgramInput {
+            prev_state_root: [0xab; 32],
+            prev_nullifier_root: [0u8; 32],
+            block_number: 9,
+            timestamp: 0,
+            header: test_header(0, 0),
+            txs: Vec::new(),
+            prev_market_state: Vec::new(),
+            prev_shielded_state: ShieldedStateWitness::default(),
+            transparent_balances: Vec::new(),
+            pre_tick_witness: ShieldedTickWitness::default(),
+            expected_block_hash: derive_block_hash(9, &test_header(0, 0)),
+            expected_market_state_hash: hash_market_aggregates(&[]),
+        };
+
+        assert!(matches!(
+            execute_block_program(&input),
+            Err(BlockProgramError::PrevStateRootMismatch)
+        ));
+    }
+
+    #[test]
+    fn execute_block_program_rejects_prev_nullifier_root_mismatch() {
+        // A non-zero published prev_nullifier_root that does not match the
+        // root re-derived from the restored prior state.
+        let input = BlockProgramInput {
+            prev_state_root: MerkleTree::new().root().to_bytes(),
+            prev_nullifier_root: [0xab; 32],
+            block_number: 9,
+            timestamp: 0,
+            header: test_header(0, 0),
+            txs: Vec::new(),
+            prev_market_state: Vec::new(),
+            prev_shielded_state: ShieldedStateWitness {
+                leaves: Vec::new(),
+                nullifiers: vec![[0x07; 32]],
+                recent_roots: vec![MerkleTree::new().root().to_bytes()],
+            },
+            transparent_balances: Vec::new(),
+            pre_tick_witness: ShieldedTickWitness::default(),
+            expected_block_hash: derive_block_hash(9, &test_header(0, 0)),
+            expected_market_state_hash: hash_market_aggregates(&[]),
+        };
+
+        assert!(matches!(
+            execute_block_program(&input),
+            Err(BlockProgramError::PrevNullifierRootMismatch)
+        ));
+    }
+
+    #[test]
+    fn execute_block_program_allows_genesis_boundary_with_migrated_state() {
+        // Activation boundary: zero prev roots (nothing published pre-fork)
+        // but the restored state already carries migrated notes. This one
+        // boundary block is intentionally left unbound and must succeed.
+        let leaf = Fr::from_u64(1234).to_bytes();
+        let input = BlockProgramInput {
+            prev_state_root: [0u8; 32],
+            prev_nullifier_root: [0u8; 32],
+            block_number: 5,
+            timestamp: 0,
+            header: test_header(0, 0),
+            txs: Vec::new(),
+            prev_market_state: Vec::new(),
+            prev_shielded_state: ShieldedStateWitness {
+                leaves: vec![leaf],
+                nullifiers: Vec::new(),
+                recent_roots: Vec::new(),
+            },
+            transparent_balances: Vec::new(),
+            pre_tick_witness: ShieldedTickWitness::default(),
+            expected_block_hash: derive_block_hash(5, &test_header(0, 0)),
+            expected_market_state_hash: hash_market_aggregates(&[]),
+        };
+
+        assert!(execute_block_program(&input).is_ok());
     }
 
     fn u64_bytes(value: u64) -> U256Bytes {
