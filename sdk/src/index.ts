@@ -101,6 +101,21 @@ export type {
   NoirWasmProverOptions,
 } from './noir-prover';
 
+// Client-side open-order & position reconstruction (Workstream F5,
+// orders:read / positions:read).
+export {
+  reconstructOpenOrders,
+  reconstructPositions,
+} from './positions';
+export type {
+  OrderSide,
+  OrderRecord,
+  FillRecord,
+  OpenOrder,
+  ReconstructedPosition,
+  ReconstructTradingOptions,
+} from './positions';
+
 // Privacy-fork migration UX helpers (Workstream F4).
 export {
   deriveMigrationNote,

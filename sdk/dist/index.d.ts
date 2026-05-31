@@ -27,6 +27,8 @@ export { reconstructPortfolio, defaultNullifierDeriver, } from './reconstruction
 export type { NullifierDeriver, PortfolioNote, ReconstructedPortfolio, ReconstructOptions, } from './reconstruction';
 export { NoirWasmProver } from './noir-prover';
 export type { NoirCircuitName, NoirInputValue, NoirProvingBackend, NoirWasmProverOptions, } from './noir-prover';
+export { reconstructOpenOrders, reconstructPositions, } from './positions';
+export type { OrderSide, OrderRecord, FillRecord, OpenOrder, ReconstructedPosition, ReconstructTradingOptions, } from './positions';
 export { deriveMigrationNote, matchesMigrationNote, defaultNoteCommitment, MIGRATION_RHO_LABEL, MIGRATION_PSI_LABEL, } from './migration';
 export type { MigrationNote, MigrationNoteParams, NoteCommitmentHasher, } from './migration';
 //# sourceMappingURL=index.d.ts.map

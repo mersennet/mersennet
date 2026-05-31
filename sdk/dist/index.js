@@ -17,7 +17,7 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MIGRATION_PSI_LABEL = exports.MIGRATION_RHO_LABEL = exports.defaultNoteCommitment = exports.matchesMigrationNote = exports.deriveMigrationNote = exports.NoirWasmProver = exports.defaultNullifierDeriver = exports.reconstructPortfolio = exports.parseShieldedNotePlaintext = exports.parseEncryptedNotePayload = exports.scanGrantedNotes = exports.createOwnerViewingMaterial = exports.createMockNoteDecryptor = exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
+exports.MIGRATION_PSI_LABEL = exports.MIGRATION_RHO_LABEL = exports.defaultNoteCommitment = exports.matchesMigrationNote = exports.deriveMigrationNote = exports.reconstructPositions = exports.reconstructOpenOrders = exports.NoirWasmProver = exports.defaultNullifierDeriver = exports.reconstructPortfolio = exports.parseShieldedNotePlaintext = exports.parseEncryptedNotePayload = exports.scanGrantedNotes = exports.createOwnerViewingMaterial = exports.createMockNoteDecryptor = exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
 var provider_1 = require("./provider");
 Object.defineProperty(exports, "PrimeProvider", { enumerable: true, get: function () { return provider_1.PrimeProvider; } });
 var orders_1 = require("./orders");
@@ -54,6 +54,11 @@ Object.defineProperty(exports, "defaultNullifierDeriver", { enumerable: true, ge
 // wallet and wraps @noir-lang/noir_js + @aztec/bb.js.
 var noir_prover_1 = require("./noir-prover");
 Object.defineProperty(exports, "NoirWasmProver", { enumerable: true, get: function () { return noir_prover_1.NoirWasmProver; } });
+// Client-side open-order & position reconstruction (Workstream F5,
+// orders:read / positions:read).
+var positions_1 = require("./positions");
+Object.defineProperty(exports, "reconstructOpenOrders", { enumerable: true, get: function () { return positions_1.reconstructOpenOrders; } });
+Object.defineProperty(exports, "reconstructPositions", { enumerable: true, get: function () { return positions_1.reconstructPositions; } });
 // Privacy-fork migration UX helpers (Workstream F4).
 var migration_1 = require("./migration");
 Object.defineProperty(exports, "deriveMigrationNote", { enumerable: true, get: function () { return migration_1.deriveMigrationNote; } });
