@@ -245,6 +245,11 @@ pub struct LiquidationWinnerWitness {
     pub claim_tag: Fr,
     pub liquidator_id: Fr,
     pub bid_price: U256Bytes,
+    /// Market the settled auction belongs to. Sourced from the
+    /// winning claim so the canonical `LiquidationSettled` event
+    /// carries the real market id on both the runtime and zk-replay
+    /// paths instead of a hard-coded zero.
+    pub market_id: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -438,7 +443,15 @@ pub fn execute_block_program(input: &BlockProgramInput) -> Result<BlockProgramOu
             &input.pre_tick_witness,
         )?
     } else {
-        (input.expected_market_state_hash, Vec::new())
+        // No tick-replay inputs: derive the market-state hash from the
+        // (empty) witness aggregates rather than echoing the
+        // chain-claimed value. This keeps the public output fully
+        // re-derived inside the executor instead of trusting a
+        // host-supplied digest.
+        (
+            hash_market_aggregates(&input.pre_tick_witness.orders.aggregates),
+            Vec::new(),
+        )
     };
     let liquidation_events = replay_liquidation_events(&state, &*verifier, &input.pre_tick_witness)?;
     let shielded_event_root = derive_shielded_event_root(
@@ -720,6 +733,10 @@ pub fn select_liquidation_winner(
             claim_tag: entry.claim_tag,
             liquidator_id: winner.liquidator_id,
             bid_price: winner.bid_price,
+            // An auction entry settles a single position, so all of
+            // its claims share one market. Use the first claim's
+            // market id (zero only when the entry carries no claim).
+            market_id: entry.claims.first().map(|claim| claim.market_id).unwrap_or(0),
         })
 }
 
@@ -764,7 +781,7 @@ pub fn liquidation_events_from_winners(
     winners
         .iter()
         .map(|winner| CanonicalShieldedEvent::LiquidationSettled {
-            market_id: 0,
+            market_id: winner.market_id,
             winner_bond_commitment: winner.liquidator_id.to_bytes(),
             winning_bid: winner.bid_price,
         })
@@ -1554,7 +1571,7 @@ mod tests {
             transparent_balances: Vec::new(),
             pre_tick_witness: ShieldedTickWitness::default(),
             expected_block_hash: derive_block_hash(7, &test_header(0, 0)),
-            expected_market_state_hash: [8u8; 32],
+            expected_market_state_hash: hash_market_aggregates(&[]),
         };
 
         let first = execute_block_program(&input).unwrap();
@@ -1585,7 +1602,7 @@ mod tests {
             transparent_balances: Vec::new(),
             pre_tick_witness: ShieldedTickWitness::default(),
             expected_block_hash: derive_block_hash(7, &test_header(0, 0)),
-            expected_market_state_hash: [8u8; 32],
+            expected_market_state_hash: hash_market_aggregates(&[]),
         };
         let first = execute_block_program(&input).unwrap();
 
@@ -1612,7 +1629,7 @@ mod tests {
         assert_ne!(first.new_state_root, second.new_state_root);
         assert_ne!(first.new_nullifier_root, second.new_nullifier_root);
         assert_eq!(second.block_hash, derive_block_hash(input.block_number, &input.header));
-        assert_eq!(second.new_market_state_hash, [8u8; 32]);
+        assert_eq!(second.new_market_state_hash, hash_market_aggregates(&[]));
         assert_eq!(second.tx_count, 1);
     }
 
@@ -1656,12 +1673,12 @@ mod tests {
             }],
             pre_tick_witness: ShieldedTickWitness::default(),
             expected_block_hash: derive_block_hash(1, &test_header(1, 0)),
-            expected_market_state_hash: [0xbb; 32],
+            expected_market_state_hash: hash_market_aggregates(&[]),
         };
 
         let output = execute_block_program(&input).unwrap();
         assert_eq!(output.block_hash, derive_block_hash(1, &test_header(1, 0)));
-        assert_eq!(output.new_market_state_hash, [0xbb; 32]);
+        assert_eq!(output.new_market_state_hash, hash_market_aggregates(&[]));
         assert_eq!(output.tx_count, 1);
     }
 
@@ -1818,7 +1835,7 @@ mod tests {
                 ..Default::default()
             },
             expected_block_hash: derive_block_hash(5, &test_header(0, 0)),
-            expected_market_state_hash: [0u8; 32],
+            expected_market_state_hash: hash_market_aggregates(&[]),
         };
         let output = execute_block_program(&input).unwrap();
         assert_ne!(output.shielded_event_root, [0u8; 32]);
@@ -1890,7 +1907,7 @@ mod tests {
 
         let output = execute_block_program(&input).unwrap();
         let expected_events = vec![CanonicalShieldedEvent::LiquidationSettled {
-            market_id: 0,
+            market_id: 3,
             winner_bond_commitment: liquidator_id.to_bytes(),
             winning_bid,
         }];

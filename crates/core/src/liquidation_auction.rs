@@ -321,6 +321,7 @@ impl LiquidationAuction {
                 claim_tag,
                 liquidator_id,
                 bid_price,
+                ..
             }| (claim_tag, liquidator_id, u256_from_bytes(bid_price)))
             .collect()
     }
