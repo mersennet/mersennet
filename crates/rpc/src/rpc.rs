@@ -598,8 +598,7 @@ fn dispatch(
                 let eng = engine
                     .lock()
                     .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
-                require_transparent_event_access_enabled(&eng)
-                    .map_err(|err| (id.clone(), err))?;
+                require_transparent_event_access_enabled(&eng).map_err(|err| (id.clone(), err))?;
             }
             let filter = parse_log_filter(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
@@ -1569,12 +1568,8 @@ mod tests {
         let engine = Arc::new(Mutex::new(engine));
         let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
 
-        let log_err = dispatch(
-            test_request("eth_getLogs", json!([{}])),
-            &engine,
-            &filters,
-        )
-        .expect_err("eth_getLogs should be disabled");
+        let log_err = dispatch(test_request("eth_getLogs", json!([{}])), &engine, &filters)
+            .expect_err("eth_getLogs should be disabled");
         assert_eq!(log_err.1.code, -32605);
         assert!(log_err.1.message.contains("event/log RPC disabled"));
 
@@ -1594,7 +1589,12 @@ mod tests {
         )
         .expect_err("pending tx filter should be disabled");
         assert_eq!(pending_err.1.code, -32605);
-        assert!(pending_err.1.message.contains("pending-transaction RPC disabled"));
+        assert!(
+            pending_err
+                .1
+                .message
+                .contains("pending-transaction RPC disabled")
+        );
     }
 
     #[test]
@@ -1620,13 +1620,13 @@ mod tests {
             fs.install(FilterKind::PendingTx, 0)
         };
 
-        engine
-            .lock()
-            .expect("engine lock")
-            .activate_privacy_mode();
+        engine.lock().expect("engine lock").activate_privacy_mode();
 
         let log_changes_err = dispatch(
-            test_request("eth_getFilterChanges", json!([format!("0x{log_filter_id:x}")])),
+            test_request(
+                "eth_getFilterChanges",
+                json!([format!("0x{log_filter_id:x}")]),
+            ),
             &engine,
             &filters,
         )
@@ -1653,10 +1653,12 @@ mod tests {
         )
         .expect_err("pending filter changes should be disabled");
         assert_eq!(pending_changes_err.1.code, -32605);
-        assert!(pending_changes_err
-            .1
-            .message
-            .contains("pending-transaction RPC disabled"));
+        assert!(
+            pending_changes_err
+                .1
+                .message
+                .contains("pending-transaction RPC disabled")
+        );
     }
 
     #[test]
@@ -1694,7 +1696,12 @@ mod tests {
         )
         .expect_err("tx metadata should be disabled");
         assert_eq!(tx_err.1.code, -32605);
-        assert!(tx_err.1.message.contains("transaction/receipt metadata RPC disabled"));
+        assert!(
+            tx_err
+                .1
+                .message
+                .contains("transaction/receipt metadata RPC disabled")
+        );
 
         let receipt_err = dispatch(
             test_request("eth_getTransactionReceipt", json!([hex_b256(hash)])),
@@ -1703,10 +1710,12 @@ mod tests {
         )
         .expect_err("receipt metadata should be disabled");
         assert_eq!(receipt_err.1.code, -32605);
-        assert!(receipt_err
-            .1
-            .message
-            .contains("transaction/receipt metadata RPC disabled"));
+        assert!(
+            receipt_err
+                .1
+                .message
+                .contains("transaction/receipt metadata RPC disabled")
+        );
 
         let block_err = dispatch(
             test_request("eth_getBlockByNumber", json!(["latest", true])),
@@ -1715,10 +1724,12 @@ mod tests {
         )
         .expect_err("full block tx metadata should be disabled");
         assert_eq!(block_err.1.code, -32605);
-        assert!(block_err
-            .1
-            .message
-            .contains("transaction/receipt metadata RPC disabled"));
+        assert!(
+            block_err
+                .1
+                .message
+                .contains("transaction/receipt metadata RPC disabled")
+        );
 
         let block_ok = dispatch(
             test_request("eth_getBlockByNumber", json!(["latest", false])),

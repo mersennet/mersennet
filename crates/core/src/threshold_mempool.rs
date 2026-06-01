@@ -30,8 +30,8 @@
 #![allow(dead_code)]
 
 use prime_zkp::{
-    DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError, threshold::DummyThreshold,
-    sp1::DecryptedIntentWitness,
+    DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError,
+    sp1::DecryptedIntentWitness, threshold::DummyThreshold,
 };
 use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
@@ -227,7 +227,7 @@ impl ThresholdMempool {
                 order_admission: None,
             })
             .collect();
-        intents.sort_by(|left, right| left.intent_id.cmp(&right.intent_id));
+        intents.sort_by_key(|intent| intent.intent_id);
         intents
     }
 

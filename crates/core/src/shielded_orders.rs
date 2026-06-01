@@ -67,11 +67,11 @@ use prime_zkp::{
     noir::{CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
     sp1::{
-        MarketFillWitness, MarketTickTransitionWitness, apply_market_tick_witness,
-        BlockProgramError, DecryptedIntentWitness, OrderAdmissionValidationContext,
-        OrderAdmissionWitness, PendingIntentWitness, ShieldedDepthLevelWitness,
-        ShieldedMarketAggregateWitness, ShieldedMarketWitness, ShieldedOrderBookWitness,
-        ShieldedOrdersTickWitness, U256Bytes, validate_order_admission_witness,
+        BlockProgramError, DecryptedIntentWitness, MarketFillWitness, MarketTickTransitionWitness,
+        OrderAdmissionValidationContext, OrderAdmissionWitness, PendingIntentWitness,
+        ShieldedDepthLevelWitness, ShieldedMarketAggregateWitness, ShieldedMarketWitness,
+        ShieldedOrderBookWitness, ShieldedOrdersTickWitness, U256Bytes, apply_market_tick_witness,
+        validate_order_admission_witness,
     },
 };
 use revm::primitives::{U256, keccak256};
@@ -277,6 +277,16 @@ impl Default for ShieldedOrdersEngine {
     }
 }
 
+struct ShieldedOrderAdmissionErrorContext {
+    market_id: MarketId,
+    claimed_price_band: u32,
+    actual_price_band: u32,
+    claimed_size_band: u32,
+    actual_size_band: u32,
+    required_imm: U256,
+    derived_imm: U256,
+}
+
 impl ShieldedOrdersEngine {
     pub fn new() -> Self {
         Self::default()
@@ -455,13 +465,15 @@ impl ShieldedOrdersEngine {
         .map_err(|error| {
             Self::map_block_program_error_to_shielded_order_error(
                 error,
-                tx.market_id,
-                tx.price_band,
-                actual_price_band,
-                tx.size_band,
-                actual_size_band,
-                tx.imm_required,
-                derived_imm,
+                ShieldedOrderAdmissionErrorContext {
+                    market_id: tx.market_id,
+                    claimed_price_band: tx.price_band,
+                    actual_price_band,
+                    claimed_size_band: tx.size_band,
+                    actual_size_band,
+                    required_imm: tx.imm_required,
+                    derived_imm,
+                },
             )
         })?;
         // 10. Insert the spend nullifier and the new collateral commitment.
@@ -497,40 +509,41 @@ impl ShieldedOrdersEngine {
         Ok(())
     }
 
-
-fn map_block_program_error_to_shielded_order_error(
-    error: BlockProgramError,
-    market_id: MarketId,
-    claimed_price_band: u32,
-    actual_price_band: u32,
-    claimed_size_band: u32,
-    actual_size_band: u32,
-    required_imm: U256,
-    derived_imm: U256,
-) -> ShieldedOrderError {
-    match error {
-        BlockProgramError::StaleAnchor => ShieldedOrderError::StaleAnchor,
-        BlockProgramError::DoubleSpend => ShieldedOrderError::DoubleSpend,
-        BlockProgramError::UnknownMarket(_) => ShieldedOrderError::UnknownMarket(market_id),
-        BlockProgramError::MarketInactive(_) => ShieldedOrderError::MarketInactive(market_id),
-        BlockProgramError::OraclePriceMismatch => ShieldedOrderError::OraclePriceMismatch,
-        BlockProgramError::PriceBandMismatch => ShieldedOrderError::PriceBandMismatch {
-            claimed: claimed_price_band,
-            actual_band: actual_price_band,
-        },
-        BlockProgramError::SizeBandViolation => ShieldedOrderError::SizeBandViolation {
-            claimed: claimed_size_band,
-            actual_band: actual_size_band,
-        },
-        BlockProgramError::SideHashMismatch => ShieldedOrderError::SideHashMismatch,
-        BlockProgramError::InitialMarginMismatch => ShieldedOrderError::InitialMarginMismatch {
-            required: required_imm,
-            derived: derived_imm,
-        },
-        BlockProgramError::InvalidProof => ShieldedOrderError::InvalidProof(VerifyError::InvalidProof),
-        other => panic!("unexpected block-program error in shielded order admission: {other:?}"),
+    fn map_block_program_error_to_shielded_order_error(
+        error: BlockProgramError,
+        context: ShieldedOrderAdmissionErrorContext,
+    ) -> ShieldedOrderError {
+        match error {
+            BlockProgramError::StaleAnchor => ShieldedOrderError::StaleAnchor,
+            BlockProgramError::DoubleSpend => ShieldedOrderError::DoubleSpend,
+            BlockProgramError::UnknownMarket(_) => {
+                ShieldedOrderError::UnknownMarket(context.market_id)
+            }
+            BlockProgramError::MarketInactive(_) => {
+                ShieldedOrderError::MarketInactive(context.market_id)
+            }
+            BlockProgramError::OraclePriceMismatch => ShieldedOrderError::OraclePriceMismatch,
+            BlockProgramError::PriceBandMismatch => ShieldedOrderError::PriceBandMismatch {
+                claimed: context.claimed_price_band,
+                actual_band: context.actual_price_band,
+            },
+            BlockProgramError::SizeBandViolation => ShieldedOrderError::SizeBandViolation {
+                claimed: context.claimed_size_band,
+                actual_band: context.actual_size_band,
+            },
+            BlockProgramError::SideHashMismatch => ShieldedOrderError::SideHashMismatch,
+            BlockProgramError::InitialMarginMismatch => ShieldedOrderError::InitialMarginMismatch {
+                required: context.required_imm,
+                derived: context.derived_imm,
+            },
+            BlockProgramError::InvalidProof => {
+                ShieldedOrderError::InvalidProof(VerifyError::InvalidProof)
+            }
+            other => {
+                panic!("unexpected block-program error in shielded order admission: {other:?}")
+            }
+        }
     }
-}
     /// Run a Frequent Batch Auction on `market_id`. Returns a
     /// summary; the engine emits public events with `(market_id,
     /// clearing_price, matched_size)` only — no addresses.
@@ -550,15 +563,13 @@ fn map_block_program_error_to_shielded_order_error(
         Ok(ClearingResult {
             clearing_price: u256_from_bytes(transition.aggregate.last_clearing_price),
             matched_size: u256_from_bytes(transition.aggregate.last_volume),
-            fills: transition
-                .fills
-                .iter()
-                .map(fill_from_witness)
-                .collect(),
+            fills: transition.fills.iter().map(fill_from_witness).collect(),
         })
     }
-
-    fn market_aggregate_witness(&self, market_id: MarketId) -> Option<ShieldedMarketAggregateWitness> {
+    fn market_aggregate_witness(
+        &self,
+        market_id: MarketId,
+    ) -> Option<ShieldedMarketAggregateWitness> {
         let aggregate = self.aggregates.get(&market_id)?;
         Some(ShieldedMarketAggregateWitness {
             market_id: market_id.0,
@@ -648,7 +659,12 @@ fn apply_level_sizes(
 ) {
     let remaining = witness
         .iter()
-        .map(|pending| ((u256_from_bytes(pending.price), pending.sequence), u256_from_bytes(pending.size)))
+        .map(|pending| {
+            (
+                (u256_from_bytes(pending.price), pending.sequence),
+                u256_from_bytes(pending.size),
+            )
+        })
         .collect::<HashMap<_, _>>();
     for (price, queue) in levels.iter_mut() {
         for pending in queue.iter_mut() {

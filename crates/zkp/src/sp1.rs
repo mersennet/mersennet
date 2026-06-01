@@ -419,7 +419,9 @@ pub enum BlockProgramError {
 /// Canonical deterministic block executor used by the current SP1
 /// proving path. This consumes the private witness and derives the
 /// public output without relying on host-supplied post-state fields.
-pub fn execute_block_program(input: &BlockProgramInput) -> Result<BlockProgramOutput, BlockProgramError> {
+pub fn execute_block_program(
+    input: &BlockProgramInput,
+) -> Result<BlockProgramOutput, BlockProgramError> {
     let mut state = ReplayShieldedState::restore(&input.prev_shielded_state);
     let mut transparent_balances = input
         .transparent_balances
@@ -442,28 +444,23 @@ pub fn execute_block_program(input: &BlockProgramInput) -> Result<BlockProgramOu
     if input.prev_state_root != [0u8; 32] && restored_state_root != input.prev_state_root {
         return Err(BlockProgramError::PrevStateRootMismatch);
     }
-    if input.prev_nullifier_root != [0u8; 32] && restored_nullifier_root != input.prev_nullifier_root
+    if input.prev_nullifier_root != [0u8; 32]
+        && restored_nullifier_root != input.prev_nullifier_root
     {
         return Err(BlockProgramError::PrevNullifierRootMismatch);
     }
 
     for (index, raw_tx) in input.txs.iter().enumerate() {
-        let tx: ShieldedBlockTx = bincode::deserialize(raw_tx).map_err(|err| {
-            BlockProgramError::InvalidTxEncoding {
+        let tx: ShieldedBlockTx =
+            bincode::deserialize(raw_tx).map_err(|err| BlockProgramError::InvalidTxEncoding {
                 index,
                 message: err.to_string(),
-            }
-        })?;
+            })?;
         apply_block_tx(&mut state, &mut transparent_balances, &*verifier, &tx)?;
     }
 
     let (new_market_state_hash, fba_events) = if has_tick_replay_inputs(&input.pre_tick_witness) {
-        replay_tick_market_state(
-            &mut state,
-            &*verifier,
-            &poseidon,
-            &input.pre_tick_witness,
-        )?
+        replay_tick_market_state(&mut state, &*verifier, &poseidon, &input.pre_tick_witness)?
     } else {
         // No tick-replay inputs: derive the market-state hash from the
         // (empty) witness aggregates rather than echoing the
@@ -475,7 +472,8 @@ pub fn execute_block_program(input: &BlockProgramInput) -> Result<BlockProgramOu
             Vec::new(),
         )
     };
-    let liquidation_events = replay_liquidation_events(&state, &*verifier, &input.pre_tick_witness)?;
+    let liquidation_events =
+        replay_liquidation_events(&state, &*verifier, &input.pre_tick_witness)?;
     let shielded_event_root = derive_shielded_event_root(
         input.block_number,
         state.current_root().to_bytes(),
@@ -572,12 +570,14 @@ fn replay_tick_market_state(
             orders.books.get(&market_id),
             orders.aggregates.get(&market_id),
         ) {
-            let transition = apply_market_tick_witness(
-                aggregate.clone(),
-                book.to_witness(market_id),
-            );
-            orders.aggregates.insert(market_id, transition.aggregate.clone());
-            orders.books.insert(market_id, ReplayOrderBook::from_witness(&transition.book));
+            let transition =
+                apply_market_tick_witness(aggregate.clone(), book.to_witness(market_id));
+            orders
+                .aggregates
+                .insert(market_id, transition.aggregate.clone());
+            orders
+                .books
+                .insert(market_id, ReplayOrderBook::from_witness(&transition.book));
             if let Some(event) = transition.event {
                 events.push(event);
             }
@@ -624,27 +624,30 @@ fn replay_order_admission(
         1 => &mut book.asks,
         _ => unreachable!(),
     };
-    levels.entry(admission.price).or_default().push(ReplayPendingIntent {
-        pending: PendingIntentWitness {
-            sequence: admission.sequence,
-            side: admission.side,
-            price: admission.price,
-            size: admission.size,
-            owner_pk: admission.owner_pk,
-            tif: admission.tif,
-            anchor_root: admission.anchor_root,
-            nullifier: admission.nullifier,
-            new_commitment: admission.new_commitment,
-            market_id: admission.market_id,
-            side_hash: admission.side_hash,
-            price_band: admission.price_band,
-            size_band: admission.size_band,
-            oracle_price: admission.oracle_price,
-            imm_required: admission.imm_required,
-            encrypted_payload: Vec::new(),
-            proof: admission.proof.clone(),
-        },
-    });
+    levels
+        .entry(admission.price)
+        .or_default()
+        .push(ReplayPendingIntent {
+            pending: PendingIntentWitness {
+                sequence: admission.sequence,
+                side: admission.side,
+                price: admission.price,
+                size: admission.size,
+                owner_pk: admission.owner_pk,
+                tif: admission.tif,
+                anchor_root: admission.anchor_root,
+                nullifier: admission.nullifier,
+                new_commitment: admission.new_commitment,
+                market_id: admission.market_id,
+                side_hash: admission.side_hash,
+                price_band: admission.price_band,
+                size_band: admission.size_band,
+                oracle_price: admission.oracle_price,
+                imm_required: admission.imm_required,
+                encrypted_payload: Vec::new(),
+                proof: admission.proof.clone(),
+            },
+        });
     if let Some(aggregate) = orders.aggregates.get_mut(&admission.market_id) {
         if let Some(depth) = aggregate
             .bucketed_depth
@@ -718,7 +721,12 @@ pub fn validate_order_admission_witness(
     let side_fr = match admission.side {
         0 => Fr::ZERO,
         1 => Fr::ONE,
-        _ => return Err(BlockProgramError::InvalidTxEncoding { index: 0, message: "invalid order side".to_string() }),
+        _ => {
+            return Err(BlockProgramError::InvalidTxEncoding {
+                index: 0,
+                message: "invalid order side".to_string(),
+            });
+        }
     };
     let derived_side_hash = poseidon.hash_two(&side_fr, &admission.salt);
     if derived_side_hash != admission.side_hash {
@@ -758,7 +766,11 @@ pub fn select_liquidation_winner(
             // An auction entry settles a single position, so all of
             // its claims share one market. Use the first claim's
             // market id (zero only when the entry carries no claim).
-            market_id: entry.claims.first().map(|claim| claim.market_id).unwrap_or(0),
+            market_id: entry
+                .claims
+                .first()
+                .map(|claim| claim.market_id)
+                .unwrap_or(0),
         })
 }
 
@@ -958,12 +970,7 @@ fn apply_block_tx(
             if !state.is_recent_root(&tx.anchor_root) {
                 return Err(BlockProgramError::StaleAnchor);
             }
-            let public_inputs = vec![
-                tx.anchor_root,
-                tx.nullifier,
-                tx.output_commitment,
-                Fr::ZERO,
-            ];
+            let public_inputs = vec![tx.anchor_root, tx.nullifier, tx.output_commitment, Fr::ZERO];
             verifier
                 .verify(&tx.proof, Circuit::Spend, &public_inputs)
                 .map_err(|_| BlockProgramError::InvalidProof)?;
@@ -1171,12 +1178,17 @@ impl ReplayShieldedOrders {
     }
 }
 
-fn replay_levels(intents: &[PendingIntentWitness]) -> BTreeMap<U256Bytes, Vec<ReplayPendingIntent>> {
+fn replay_levels(
+    intents: &[PendingIntentWitness],
+) -> BTreeMap<U256Bytes, Vec<ReplayPendingIntent>> {
     let mut levels = BTreeMap::<U256Bytes, Vec<ReplayPendingIntent>>::new();
     for intent in intents {
-        levels.entry(intent.price).or_default().push(ReplayPendingIntent {
-            pending: intent.clone(),
-        });
+        levels
+            .entry(intent.price)
+            .or_default()
+            .push(ReplayPendingIntent {
+                pending: intent.clone(),
+            });
     }
     for level in levels.values_mut() {
         level.sort_by_key(|intent| intent.pending.sequence);
@@ -1194,7 +1206,9 @@ fn replay_pending_witnesses(
         .collect()
 }
 
-fn apply_uniform_price_auction_witness(book: &ReplayOrderBook) -> (ReplayOrderBook, ReplayClearingResult) {
+fn apply_uniform_price_auction_witness(
+    book: &ReplayOrderBook,
+) -> (ReplayOrderBook, ReplayClearingResult) {
     if book.bids.is_empty() || book.asks.is_empty() {
         return (book.clone(), ReplayClearingResult::default());
     }
@@ -1212,13 +1226,17 @@ fn apply_uniform_price_auction_witness(book: &ReplayOrderBook) -> (ReplayOrderBo
             .iter()
             .filter(|(level_price, _)| *level_price >= price)
             .flat_map(|(_, intents)| intents.iter())
-            .fold(U256Bytes::default(), |acc, intent| acc.saturating_add(intent.pending.size));
+            .fold(U256Bytes::default(), |acc, intent| {
+                acc.saturating_add(intent.pending.size)
+            });
         let cum_asks = book
             .asks
             .iter()
             .filter(|(level_price, _)| *level_price <= price)
             .flat_map(|(_, intents)| intents.iter())
-            .fold(U256Bytes::default(), |acc, intent| acc.saturating_add(intent.pending.size));
+            .fold(U256Bytes::default(), |acc, intent| {
+                acc.saturating_add(intent.pending.size)
+            });
         let matched = cum_bids.min(cum_asks);
         if matched > best_volume {
             best_volume = matched;
@@ -1237,7 +1255,11 @@ fn apply_uniform_price_auction_witness(book: &ReplayOrderBook) -> (ReplayOrderBo
     let mut fill_count = 0u64;
     let mut fills = Vec::new();
 
-    let mut bid_prices = bids.keys().copied().filter(|price| *price >= best_price).collect::<Vec<_>>();
+    let mut bid_prices = bids
+        .keys()
+        .copied()
+        .filter(|price| *price >= best_price)
+        .collect::<Vec<_>>();
     bid_prices.sort();
     bid_prices.reverse();
     for price in bid_prices {
@@ -1260,13 +1282,21 @@ fn apply_uniform_price_auction_witness(book: &ReplayOrderBook) -> (ReplayOrderBo
                         recipient: pending.pending.owner_pk,
                     });
                 }
-                pending.pending.size = pending.pending.size.checked_sub(fill_size).unwrap_or_default();
+                pending.pending.size = pending
+                    .pending
+                    .size
+                    .checked_sub(fill_size)
+                    .unwrap_or_default();
                 remaining_bid = remaining_bid.checked_sub(fill_size).unwrap_or_default();
             }
         }
     }
 
-    let mut ask_prices = asks.keys().copied().filter(|price| *price <= best_price).collect::<Vec<_>>();
+    let mut ask_prices = asks
+        .keys()
+        .copied()
+        .filter(|price| *price <= best_price)
+        .collect::<Vec<_>>();
     ask_prices.sort();
     for price in ask_prices {
         if remaining_ask.is_zero() {
@@ -1288,7 +1318,11 @@ fn apply_uniform_price_auction_witness(book: &ReplayOrderBook) -> (ReplayOrderBo
                         recipient: pending.pending.owner_pk,
                     });
                 }
-                pending.pending.size = pending.pending.size.checked_sub(fill_size).unwrap_or_default();
+                pending.pending.size = pending
+                    .pending
+                    .size
+                    .checked_sub(fill_size)
+                    .unwrap_or_default();
                 remaining_ask = remaining_ask.checked_sub(fill_size).unwrap_or_default();
             }
         }
@@ -1318,7 +1352,8 @@ pub fn apply_market_tick_witness(
     mut aggregate: ShieldedMarketAggregateWitness,
     book: ShieldedOrderBookWitness,
 ) -> MarketTickTransitionWitness {
-    let (next_book, result) = apply_uniform_price_auction_witness(&ReplayOrderBook::from_witness(&book));
+    let (next_book, result) =
+        apply_uniform_price_auction_witness(&ReplayOrderBook::from_witness(&book));
     if !result.matched_size.is_zero() {
         aggregate.last_clearing_price = result.clearing_price;
         aggregate.mark_price = result.clearing_price;
@@ -1453,11 +1488,7 @@ impl U256Bytes {
     }
 
     pub fn min(self, rhs: Self) -> Self {
-        if self <= rhs {
-            self
-        } else {
-            rhs
-        }
+        if self <= rhs { self } else { rhs }
     }
 
     pub fn div_floor_u64(self, rhs: u64) -> u64 {
@@ -1650,7 +1681,10 @@ mod tests {
 
         assert_ne!(first.new_state_root, second.new_state_root);
         assert_ne!(first.new_nullifier_root, second.new_nullifier_root);
-        assert_eq!(second.block_hash, derive_block_hash(input.block_number, &input.header));
+        assert_eq!(
+            second.block_hash,
+            derive_block_hash(input.block_number, &input.header)
+        );
         assert_eq!(second.new_market_state_hash, hash_market_aggregates(&[]));
         assert_eq!(second.tx_count, 1);
     }
@@ -1792,7 +1826,8 @@ mod tests {
                         oracle_price: u64_bytes(100),
                         imm_required: u64_bytes(1),
                         encrypted_payload: Vec::new(),
-                        proof: crate::noir::MockVerifier::new().prove(Circuit::OrderPlace, vec![Fr::ZERO; 9]),
+                        proof: crate::noir::MockVerifier::new()
+                            .prove(Circuit::OrderPlace, vec![Fr::ZERO; 9]),
                     }],
                 }],
             },
@@ -1805,14 +1840,10 @@ mod tests {
         });
         let verifier = default_verifier();
         let poseidon = Poseidon::default();
-        let expected_market_state_hash = replay_tick_market_state(
-            &mut state,
-            &*verifier,
-            &poseidon,
-            &pre_tick_witness,
-        )
-        .unwrap()
-        .0;
+        let expected_market_state_hash =
+            replay_tick_market_state(&mut state, &*verifier, &poseidon, &pre_tick_witness)
+                .unwrap()
+                .0;
         let input = BlockProgramInput {
             prev_state_root: MerkleTree::new().root().to_bytes(),
             prev_nullifier_root: [0u8; 32],

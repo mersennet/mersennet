@@ -159,10 +159,7 @@ impl SP1Prover {
     }
 
     /// Prove multiple state transitions (batch).
-    pub fn batch_prove(
-        &self,
-        transitions: &[SP1ProgramOutput],
-    ) -> Result<Vec<SP1Proof>> {
+    pub fn batch_prove(&self, transitions: &[SP1ProgramOutput]) -> Result<Vec<SP1Proof>> {
         let mut proofs = Vec::with_capacity(transitions.len());
         for output in transitions {
             #[cfg(feature = "sp1")]
@@ -181,7 +178,8 @@ impl SP1Prover {
         output: &SP1ProgramOutput,
         sp1_proof: SP1Proof,
     ) -> StateTransitionProof {
-        let proof_data = bincode::serialize(&sp1_proof).unwrap_or_else(|_| sp1_proof.proof_bytes.clone());
+        let proof_data =
+            bincode::serialize(&sp1_proof).unwrap_or_else(|_| sp1_proof.proof_bytes.clone());
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -206,7 +204,10 @@ impl SP1Prover {
 }
 
 impl StateProver for SP1Prover {
-    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
+    fn prove_block_program(
+        &self,
+        program_input: &BlockProgramInput,
+    ) -> Result<StateTransitionProof> {
         let public_output = execute_block_program(program_input)?;
         let output = SP1ProgramOutput::from(&public_output);
 
@@ -458,7 +459,10 @@ fn unique_temp_dir(label: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    env::temp_dir().join(format!("prime-chain-sp1-{label}-{}-{now}", std::process::id()))
+    env::temp_dir().join(format!(
+        "prime-chain-sp1-{label}-{}-{now}",
+        std::process::id()
+    ))
 }
 
 #[cfg(feature = "sp1")]
@@ -591,7 +595,7 @@ mod tests {
         let proof = prover
             .prove_block_program(&BlockProgramInput {
                 prev_state_root: [0u8; 32],
-                prev_nullifier_root: [1u8; 32],
+                prev_nullifier_root: [0u8; 32],
                 block_number: 3,
                 timestamp: 0,
                 header: header.clone(),
@@ -601,7 +605,7 @@ mod tests {
                 transparent_balances: Vec::new(),
                 pre_tick_witness: prime_zkp::sp1::ShieldedTickWitness::default(),
                 expected_block_hash: prime_zkp::sp1::derive_block_hash(3, &header),
-                expected_market_state_hash: [0u8; 32],
+                expected_market_state_hash: prime_zkp::sp1::hash_market_aggregates(&[]),
             })
             .unwrap();
         let verified = prover.verify_proof(&proof).unwrap();

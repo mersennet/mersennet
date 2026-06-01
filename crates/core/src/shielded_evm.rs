@@ -559,7 +559,10 @@ mod tests {
         evm.apply_shield(&tx).unwrap();
         assert_eq!(evm.transparent_balance(&alice), U256::ZERO);
         assert_eq!(evm.state.note_count(), 1);
-        assert_eq!(evm.encrypted_note_payload(&cm.to_bytes()), Some(&[1, 2, 3, 4][..]));
+        assert_eq!(
+            evm.encrypted_note_payload(&cm.to_bytes()),
+            Some(&[1, 2, 3, 4][..])
+        );
     }
 
     #[test]
@@ -658,7 +661,10 @@ mod tests {
         };
         evm.apply_shielded_transfer(&tx).unwrap();
         assert_eq!(evm.state.note_count(), 2);
-        assert_eq!(evm.encrypted_note_payload(&out_cm.to_bytes()), Some(&[9, 8, 7][..]));
+        assert_eq!(
+            evm.encrypted_note_payload(&out_cm.to_bytes()),
+            Some(&[9, 8, 7][..])
+        );
     }
 
     #[test]
