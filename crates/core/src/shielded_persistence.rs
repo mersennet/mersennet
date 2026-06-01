@@ -143,10 +143,7 @@ impl ShieldedPersistence {
         Ok(())
     }
 
-    fn save_encrypted_note_payloads(
-        &self,
-        payloads: &HashMap<[u8; 32], Vec<u8>>,
-    ) -> Result<()> {
+    fn save_encrypted_note_payloads(&self, payloads: &HashMap<[u8; 32], Vec<u8>>) -> Result<()> {
         let write_txn = self.db.begin_write()?;
         {
             let mut payload_t = write_txn.open_table(ENCRYPTED_NOTE_PAYLOADS)?;
@@ -393,6 +390,9 @@ mod tests {
         p.save_shielded_evm(&evm, 1).unwrap();
 
         let payloads = p.load_encrypted_note_payloads().unwrap();
-        assert_eq!(payloads.get(&Fr::from_u64(0xabc).to_bytes()), Some(&vec![1, 2, 3, 4]));
+        assert_eq!(
+            payloads.get(&Fr::from_u64(0xabc).to_bytes()),
+            Some(&vec![1, 2, 3, 4])
+        );
     }
 }

@@ -26,13 +26,13 @@
 
 use prime_chain::engine::Engine;
 use prime_chain::liquidation_auction::{LiquidationClaim, LiquidationExecute};
+use prime_chain::prime_orders::{MarketId, Side, TimeInForce};
 use prime_chain::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
 use prime_chain::shielded_evm::{ViewingGrantScope, ViewingGrantToken};
-use prime_chain::prime_orders::{MarketId, Side, TimeInForce};
 use prime_chain::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
+use prime_zkp::Fr;
 use prime_zkp::noir::{Circuit, CircuitProof, MockVerifier};
 use prime_zkp::poseidon::Poseidon;
-use prime_zkp::Fr;
 use revm::primitives::{U256, keccak256};
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -312,7 +312,7 @@ fn read_view_portfolio_digest(engine: &Engine, params: Value) -> ShieldedRouteRe
     )?;
 
     let root = engine.shielded_evm.state.current_root().to_bytes();
-    let note_count = engine.shielded_evm.state.note_count() as u64;
+    let note_count = engine.shielded_evm.state.note_count();
     let nullifier_count = engine.shielded_evm.state.nullifier_count() as u64;
     let block_number = engine.latest_height();
     let digest = derive_portfolio_digest(token, &root, block_number, note_count, nullifier_count);
@@ -342,21 +342,22 @@ fn read_view_notes(engine: &Engine, params: Value) -> ShieldedRouteResult {
         None => None,
     };
 
-    let mut notes: Vec<(&[u8; 32], &Vec<u8>)> = engine
-        .shielded_evm
-        .encrypted_note_payloads
-        .iter()
-        .collect();
+    let mut notes: Vec<(&[u8; 32], &Vec<u8>)> =
+        engine.shielded_evm.encrypted_note_payloads.iter().collect();
     notes.sort_by_key(|(commitment, _)| **commitment);
 
     let start = match cursor {
-        Some(cursor_commitment) => notes.partition_point(|(commitment, _)| **commitment <= cursor_commitment),
+        Some(cursor_commitment) => {
+            notes.partition_point(|(commitment, _)| **commitment <= cursor_commitment)
+        }
         None => 0,
     };
     let end = start.saturating_add(limit).min(notes.len());
     let window = &notes[start..end];
     let next_cursor = if end < notes.len() {
-        window.last().map(|(commitment, _)| hex_bytes(commitment.as_slice()))
+        window
+            .last()
+            .map(|(commitment, _)| hex_bytes(commitment.as_slice()))
     } else {
         None
     };
@@ -659,8 +660,8 @@ fn grant_view_token(engine: &mut Engine, params: Value) -> ShieldedRouteResult {
     }
 
     let start_block = parse_u64_field(obj, "startBlock")?.unwrap_or_else(|| engine.latest_height());
-    let end_block = parse_u64_field(obj, "endBlock")?
-        .ok_or_else(|| invalid_params("missing endBlock"))?;
+    let end_block =
+        parse_u64_field(obj, "endBlock")?.ok_or_else(|| invalid_params("missing endBlock"))?;
     if end_block < start_block {
         return Err(invalid_params("endBlock must be >= startBlock"));
     }
@@ -798,12 +799,11 @@ fn resolve_active_viewing_grant<'a>(
     Ok((grant_id, token))
 }
 
-fn first_param_object<'a>(params: &'a Value) -> Result<&'a Value, ShieldedRpcError> {
+fn first_param_object(params: &Value) -> Result<&Value, ShieldedRpcError> {
     let arr = params
         .as_array()
         .ok_or_else(|| invalid_params("expected single-element array"))?;
-    arr.first()
-        .ok_or_else(|| invalid_params("missing object"))
+    arr.first().ok_or_else(|| invalid_params("missing object"))
 }
 
 fn decode_hex_field(obj: &Value, key: &str) -> Result<Vec<u8>, ShieldedRpcError> {
@@ -814,7 +814,11 @@ fn decode_hex_field(obj: &Value, key: &str) -> Result<Vec<u8>, ShieldedRpcError>
     decode_hex(value)
 }
 
-fn decode_fixed_hex_field(obj: &Value, key: &str, expected_len: usize) -> Result<[u8; 32], ShieldedRpcError> {
+fn decode_fixed_hex_field(
+    obj: &Value,
+    key: &str,
+    expected_len: usize,
+) -> Result<[u8; 32], ShieldedRpcError> {
     let value = obj
         .get(key)
         .and_then(Value::as_str)
@@ -903,9 +907,12 @@ fn unix_timestamp_secs() -> u64 {
 }
 
 fn parse_usize_field(obj: &Value, key: &str) -> Result<Option<usize>, ShieldedRpcError> {
-    parse_u64_field(obj, key)?.map(|value| {
-        usize::try_from(value).map_err(|_| invalid_params(format!("bad {key}: value too large")))
-    }).transpose()
+    parse_u64_field(obj, key)?
+        .map(|value| {
+            usize::try_from(value)
+                .map_err(|_| invalid_params(format!("bad {key}: value too large")))
+        })
+        .transpose()
 }
 
 fn parse_viewing_scopes(obj: &Value) -> Result<Vec<ViewingGrantScope>, ShieldedRpcError> {
@@ -936,7 +943,11 @@ fn parse_viewing_scope(scope: &str) -> Result<ViewingGrantScope, ShieldedRpcErro
     }
 }
 
-fn derive_capabilities_hash(scopes: &[ViewingGrantScope], start_block: u64, end_block: u64) -> [u8; 32] {
+fn derive_capabilities_hash(
+    scopes: &[ViewingGrantScope],
+    start_block: u64,
+    end_block: u64,
+) -> [u8; 32] {
     let mut payload = Vec::new();
     for scope in scopes {
         payload.extend_from_slice(scope.as_str().as_bytes());
@@ -1197,7 +1208,11 @@ mod tests {
                     status: prime_chain::prime_orders::MarketStatus::Active,
                 };
                 e.shielded_orders.add_market(market.clone());
-                e.shielded_orders.markets.get_mut(&market.id).unwrap().last_price = U256::from(1_000u64);
+                e.shielded_orders
+                    .markets
+                    .get_mut(&market.id)
+                    .unwrap()
+                    .last_price = U256::from(1_000u64);
                 market.id
             });
         if let Some(entry) = e.shielded_orders.markets.get_mut(&market) {
@@ -1237,7 +1252,10 @@ mod tests {
             e.chain_id,
             [0x11; 32],
             vec![0x22; 33],
-            vec![ViewingGrantScope::BalancesRead, ViewingGrantScope::OrdersRead],
+            vec![
+                ViewingGrantScope::BalancesRead,
+                ViewingGrantScope::OrdersRead,
+            ],
             5,
             10,
         );
@@ -1379,7 +1397,7 @@ mod tests {
 
         try_dispatch(
             "prime_viewGrantToken",
-            json!([{ 
+            json!([{
                 "grantorCommitmentHex": format!("0x{}", "42".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
                 "granteePubkeyHex": format!("0x{}", "24".repeat(33)),
@@ -1441,7 +1459,7 @@ mod tests {
 
         try_dispatch(
             "prime_viewGrantToken",
-            json!([{ 
+            json!([{
                 "grantorCommitmentHex": format!("0x{}", "52".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
                 "granteePubkeyHex": format!("0x{}", "35".repeat(33)),
@@ -1485,7 +1503,7 @@ mod tests {
 
         try_dispatch(
             "prime_viewGrantToken",
-            json!([{ 
+            json!([{
                 "grantorCommitmentHex": format!("0x{}", "62".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
                 "granteePubkeyHex": format!("0x{}", "46".repeat(33)),
@@ -1688,7 +1706,10 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.code, ERR_FORBIDDEN);
-        assert!(err.message.contains("missing exports:portfolio_digest scope"));
+        assert!(
+            err.message
+                .contains("missing exports:portfolio_digest scope")
+        );
     }
 
     #[test]

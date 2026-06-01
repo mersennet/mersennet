@@ -1265,8 +1265,8 @@ impl Engine {
         // Privacy-redesign Phase 4 — compute shielded roots + the SP1
         // state-transition proof. Pre-fork the roots stay
         // `B256::ZERO` and no proof is generated.
-        let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
-            self.shielded_block_header(
+        let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) = self
+            .shielded_block_header(
                 &transactions,
                 hash,
                 gas_used,
@@ -1600,8 +1600,8 @@ impl Engine {
             .unwrap_or_default()
             .as_secs();
 
-        let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) =
-            self.shielded_block_header(
+        let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) = self
+            .shielded_block_header(
                 &transactions,
                 hash,
                 gas_used,
@@ -2348,7 +2348,9 @@ impl Engine {
         let state_proof = match state_proof_result {
             Ok(proof) => Some(proof),
             Err(err) if proof_required => {
-                return Err(anyhow::anyhow!("mandatory SP1 proof generation failed: {err}"));
+                return Err(anyhow::anyhow!(
+                    "mandatory SP1 proof generation failed: {err}"
+                ));
             }
             Err(err) => {
                 tracing::warn!(error = ?err, block = self.block_number, "SP1 proof generation failed; falling back to host-derived shielded header fields");
@@ -2365,7 +2367,11 @@ impl Engine {
                     proof.shielded_event_root,
                 )
             })
-            .unwrap_or((shielded_state_root, nullifier_root, host_shielded_event_root));
+            .unwrap_or((
+                shielded_state_root,
+                nullifier_root,
+                host_shielded_event_root,
+            ));
 
         Ok((
             shielded_state_root,
@@ -2423,8 +2429,7 @@ impl Engine {
         // executor re-derives, so `prove_block`'s equality check
         // against the host root can actually succeed on blocks with
         // shielded activity.
-        self.shielded_tick_event_root =
-            B256::from(prime_zkp::sp1::shielded_event_root(&events));
+        self.shielded_tick_event_root = B256::from(prime_zkp::sp1::shielded_event_root(&events));
         self.pending_events.extend(
             events
                 .into_iter()
@@ -2433,11 +2438,10 @@ impl Engine {
     }
 
     fn admit_decrypted_threshold_orders(&mut self) -> u64 {
-
         // Step 1 — drain decrypted intents and replay canonical
         // order admission from the recovered plaintext payloads.
         let mut drained = self.threshold_mempool.drain_decrypted(usize::MAX);
-        drained.sort_by(|(left, _), (right, _)| left.0.cmp(&right.0));
+        drained.sort_by_key(|(intent_id, _)| intent_id.0);
         if !drained.is_empty() {
             metrics::counter!(
                 "prime_chain_threshold_mempool_admitted_total",
@@ -2517,7 +2521,9 @@ impl Engine {
         // Step 3 — settle sealed-bid liquidations. Runtime and zk replay
         // now consume the same witness-level settlement result, including
         // canonical event emission.
-        let settlement = self.liquidation_auction.settle_block_witness(self.block_number);
+        let settlement = self
+            .liquidation_auction
+            .settle_block_witness(self.block_number);
         for winner in &settlement.winners {
             metrics::counter!("prime_chain_liquidation_auctions_settled_total", 1);
             let _ = winner;
@@ -2529,65 +2535,65 @@ impl Engine {
         settlement.events
     }
 
-fn domain_event_from_canonical_shielded_event(event: CanonicalShieldedEvent) -> DomainEvent {
-    DomainEvent::Shielded(match event {
-        CanonicalShieldedEvent::FbaCleared {
-            market_id,
-            clearing_price,
-            matched_size,
-            intent_count,
-        } => crate::events::ShieldedEvent::FbaCleared {
-            market_id: MarketId(market_id),
-            clearing_price: Self::u256_from_bytes(clearing_price),
-            matched_size: Self::u256_from_bytes(matched_size),
-            intent_count,
-        },
-        CanonicalShieldedEvent::MempoolBatchAdmitted {
-            block_number,
-            intent_count,
-        } => crate::events::ShieldedEvent::MempoolBatchAdmitted {
-            block_number,
-            intent_count,
-        },
-        CanonicalShieldedEvent::LiquidationSettled {
-            market_id,
-            winner_bond_commitment,
-            winning_bid,
-        } => crate::events::ShieldedEvent::LiquidationSettled {
-            market_id: MarketId(market_id),
-            winner_bond_commitment,
-            winning_bid: Self::u256_from_bytes(winning_bid),
-        },
-        CanonicalShieldedEvent::ShieldedRootAdvanced {
-            block_number,
-            new_root,
-            notes_added,
-            nullifiers_added,
-        } => crate::events::ShieldedEvent::ShieldedRootAdvanced {
-            block_number,
-            new_root,
-            notes_added,
-            nullifiers_added,
-        },
-    })
-}
-
-fn u256_bytes(value: U256) -> U256Bytes {
-    let mut out = [0u8; 32];
-    for (index, limb) in value.as_limbs().iter().enumerate() {
-        out[index * 8..(index + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+    fn domain_event_from_canonical_shielded_event(event: CanonicalShieldedEvent) -> DomainEvent {
+        DomainEvent::Shielded(match event {
+            CanonicalShieldedEvent::FbaCleared {
+                market_id,
+                clearing_price,
+                matched_size,
+                intent_count,
+            } => crate::events::ShieldedEvent::FbaCleared {
+                market_id: MarketId(market_id),
+                clearing_price: Self::u256_from_bytes(clearing_price),
+                matched_size: Self::u256_from_bytes(matched_size),
+                intent_count,
+            },
+            CanonicalShieldedEvent::MempoolBatchAdmitted {
+                block_number,
+                intent_count,
+            } => crate::events::ShieldedEvent::MempoolBatchAdmitted {
+                block_number,
+                intent_count,
+            },
+            CanonicalShieldedEvent::LiquidationSettled {
+                market_id,
+                winner_bond_commitment,
+                winning_bid,
+            } => crate::events::ShieldedEvent::LiquidationSettled {
+                market_id: MarketId(market_id),
+                winner_bond_commitment,
+                winning_bid: Self::u256_from_bytes(winning_bid),
+            },
+            CanonicalShieldedEvent::ShieldedRootAdvanced {
+                block_number,
+                new_root,
+                notes_added,
+                nullifiers_added,
+            } => crate::events::ShieldedEvent::ShieldedRootAdvanced {
+                block_number,
+                new_root,
+                notes_added,
+                nullifiers_added,
+            },
+        })
     }
-    U256Bytes(out)
-}
 
-fn u256_from_bytes(value: U256Bytes) -> U256 {
-    let limbs = value
-        .0
-        .chunks_exact(8)
-        .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
-        .collect::<Vec<_>>();
-    U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]])
-}
+    fn u256_bytes(value: U256) -> U256Bytes {
+        let mut out = [0u8; 32];
+        for (index, limb) in value.as_limbs().iter().enumerate() {
+            out[index * 8..(index + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+        }
+        U256Bytes(out)
+    }
+
+    fn u256_from_bytes(value: U256Bytes) -> U256 {
+        let limbs = value
+            .0
+            .chunks_exact(8)
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]])
+    }
 
     fn execute_tx(&mut self, tx: &Transaction) -> Result<TxExecution> {
         let mut env = Env::default();
@@ -2772,9 +2778,10 @@ mod tests {
     use crate::events::{DomainEvent, ShieldedEvent};
     use crate::prime_orders::{Market, MarketStatus};
     use crate::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
+    use prime_zkp::Fr;
     use prime_zkp::noir::{Circuit, MockVerifier};
     use prime_zkp::note::Note;
-    use prime_zkp::Fr;
+    #[cfg(feature = "sp1")]
     use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
@@ -2871,8 +2878,10 @@ mod tests {
             psi: Fr::from_u64(seed + 101),
         };
         let new_commitment = new_collateral.commit(poseidon).0;
-        let price_band = u32::try_from((price / engine.shielded_orders.price_tick).as_limbs()[0]).unwrap();
-        let size_band = u32::try_from(size.div_ceil(engine.shielded_orders.size_lot).as_limbs()[0]).unwrap();
+        let price_band =
+            u32::try_from((price / engine.shielded_orders.price_tick).as_limbs()[0]).unwrap();
+        let size_band =
+            u32::try_from(size.div_ceil(engine.shielded_orders.size_lot).as_limbs()[0]).unwrap();
         let oracle_price = U256::from(1_000u64);
         let imm_required = engine
             .shielded_orders
@@ -2927,7 +2936,12 @@ mod tests {
         let mut engine = fresh_engine();
         let market = market(7);
         engine.shielded_orders.add_market(market.clone());
-        engine.shielded_orders.markets.get_mut(&market.id).unwrap().last_price = U256::from(1_000u64);
+        engine
+            .shielded_orders
+            .markets
+            .get_mut(&market.id)
+            .unwrap()
+            .last_price = U256::from(1_000u64);
 
         let threshold_intent = build_threshold_order_intent(
             &engine,
@@ -2962,8 +2976,14 @@ mod tests {
     #[test]
     fn execute_block_fails_closed_when_privacy_fork_enables_required_sp1_proofs() {
         let _env_guard = env_lock().lock().unwrap();
-        let _prove_adapter = EnvVarGuard::set("PRIME_SP1_PROVE_ADAPTER", "definitely-not-a-real-sp1-prover");
-        let _verify_adapter = EnvVarGuard::set("PRIME_SP1_VERIFY_ADAPTER", "definitely-not-a-real-sp1-verifier");
+        let _prove_adapter = EnvVarGuard::set(
+            "PRIME_SP1_PROVE_ADAPTER",
+            "definitely-not-a-real-sp1-prover",
+        );
+        let _verify_adapter = EnvVarGuard::set(
+            "PRIME_SP1_VERIFY_ADAPTER",
+            "definitely-not-a-real-sp1-verifier",
+        );
         let _mode = EnvVarGuard::set("PRIME_SP1_MODE", "local");
 
         let mut engine = fresh_inactive_engine();
