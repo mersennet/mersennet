@@ -70,7 +70,10 @@ pub struct ProofVerificationResult {
 
 #[allow(dead_code)]
 pub trait StateProver: Send + Sync {
-    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof>;
+    fn prove_block_program(
+        &self,
+        program_input: &BlockProgramInput,
+    ) -> Result<StateTransitionProof>;
 
     fn verify_proof(&self, proof: &StateTransitionProof) -> Result<ProofVerificationResult>;
 
@@ -89,7 +92,10 @@ impl MockProver {
         Self
     }
 
-    pub fn prove_public_output(&self, public_output: &BlockProgramOutput) -> Result<StateTransitionProof> {
+    pub fn prove_public_output(
+        &self,
+        public_output: &BlockProgramOutput,
+    ) -> Result<StateTransitionProof> {
         let proof_data = Self::compute_proof_hash(public_output).0.to_vec();
 
         let timestamp = std::time::SystemTime::now()
@@ -135,7 +141,10 @@ impl Default for MockProver {
 }
 
 impl StateProver for MockProver {
-    fn prove_block_program(&self, program_input: &BlockProgramInput) -> Result<StateTransitionProof> {
+    fn prove_block_program(
+        &self,
+        program_input: &BlockProgramInput,
+    ) -> Result<StateTransitionProof> {
         let public_output = execute_block_program(program_input)?;
         self.prove_public_output(&public_output)
     }
