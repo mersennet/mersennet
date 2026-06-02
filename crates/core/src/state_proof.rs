@@ -24,8 +24,10 @@
 
 use crate::liquidation_auction::LiquidationAuction;
 use crate::liquidation_auction::LiquidationExecute;
-use crate::shielded_evm::{SHIELDED_TX_TYPE, ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
 use crate::shielded_evm::ShieldedEvm;
+use crate::shielded_evm::{
+    SHIELDED_TX_TYPE, ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx,
+};
 use crate::shielded_orders::ShieldedOrdersEngine;
 use crate::shielded_state::ShieldedSnapshot;
 use crate::shielded_state::{ShieldedRootDigest, ShieldedState};
@@ -34,14 +36,13 @@ use crate::zk_proofs::{StateProver, StateTransitionProof};
 use crate::zk_sp1::SP1Prover;
 use prime_zkp::sp1::{
     BlockHeaderWitness, BlockProgramInput, BlockProgramOutput, LiquidationExecuteBlockTx,
-    ShieldBlockTx,
-    ShieldedBlockTx, ShieldedStateWitness, ShieldedTickWitness, ShieldedTransferBlockTx,
-    TransparentBalanceEntry, U256Bytes, UnshieldBlockTx, execute_block_program,
-    hash_liquidation_auction_stats, hash_market_aggregates,
+    ShieldBlockTx, ShieldedBlockTx, ShieldedStateWitness, ShieldedTickWitness,
+    ShieldedTransferBlockTx, TransparentBalanceEntry, U256Bytes, UnshieldBlockTx,
+    execute_block_program, hash_liquidation_auction_stats, hash_market_aggregates,
 };
 use revm::primitives::{Address, B256, U256, keccak256};
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockProofRequest {
@@ -62,33 +63,20 @@ pub struct BlockProofRequest {
 /// Aggregate the state-transition inputs for a block. The chain calls
 /// this after `apply_block` completes and before broadcasting the
 /// proof request to the SP1 prover.
-pub fn collect_block_input(
-    block_number: u64,
-    timestamp: u64,
-    prev_root: B256,
-    prev_nullifier_root: B256,
-    txs: Vec<Vec<u8>>,
-    prev_market_state: Vec<u8>,
-    header: BlockHeaderWitness,
-    prev_shielded_state: ShieldedStateWitness,
-    transparent_balances: Vec<TransparentBalanceEntry>,
-    pre_tick_witness: ShieldedTickWitness,
-    expected_block_hash: B256,
-    expected_market_state_hash: B256,
-) -> BlockProgramInput {
+pub fn collect_block_input(request: &BlockProofRequest) -> BlockProgramInput {
     BlockProgramInput {
-        prev_state_root: prev_root.0,
-        prev_nullifier_root: prev_nullifier_root.0,
-        block_number,
-        timestamp,
-        header,
-        txs,
-        prev_market_state,
-        prev_shielded_state,
-        transparent_balances,
-        pre_tick_witness,
-        expected_block_hash: expected_block_hash.0,
-        expected_market_state_hash: expected_market_state_hash.0,
+        prev_state_root: request.prev_state_root.0,
+        prev_nullifier_root: request.prev_nullifier_root.0,
+        block_number: request.block_number,
+        timestamp: request.timestamp,
+        header: request.header.clone(),
+        txs: request.txs.clone(),
+        prev_market_state: request.prev_market_state.clone(),
+        prev_shielded_state: request.prev_shielded_state.clone(),
+        transparent_balances: request.transparent_balances.clone(),
+        pre_tick_witness: request.pre_tick_witness.clone(),
+        expected_block_hash: request.block_hash.0,
+        expected_market_state_hash: request.expected_market_state_hash.0,
     }
 }
 
@@ -96,9 +84,7 @@ pub fn collect_block_input(
 /// program "proves about". With the mock prover, the chain computes
 /// this directly; with the real prover, the chain computes it and
 /// the SP1 program redundantly re-derives it inside the zkVM.
-pub fn compute_block_output(
-    input: &BlockProgramInput,
-) -> anyhow::Result<BlockProgramOutput> {
+pub fn compute_block_output(input: &BlockProgramInput) -> anyhow::Result<BlockProgramOutput> {
     Ok(execute_block_program(input)?)
 }
 
@@ -110,20 +96,7 @@ pub fn prove_block(
     host_shielded_event_root: B256,
 ) -> anyhow::Result<StateTransitionProof> {
     let prover = SP1Prover::runtime_default();
-    let input = collect_block_input(
-        request.block_number,
-        request.timestamp,
-        request.prev_state_root,
-        request.prev_nullifier_root,
-        request.txs.clone(),
-        request.prev_market_state.clone(),
-        request.header.clone(),
-        request.prev_shielded_state.clone(),
-        request.transparent_balances.clone(),
-        request.pre_tick_witness.clone(),
-        request.block_hash,
-        request.expected_market_state_hash,
-    );
+    let input = collect_block_input(request);
     let output = compute_block_output(&input)?;
     if B256::from(output.block_hash) != request.block_hash {
         anyhow::bail!("state proof block hash mismatch");
@@ -167,7 +140,7 @@ pub fn transparent_balance_entries(
             balance: U256Bytes(u256_to_le_bytes(balance)),
         })
         .collect();
-    entries.sort_by(|left, right| left.address.cmp(&right.address));
+    entries.sort_by_key(|entry| entry.address);
     entries
 }
 
@@ -301,13 +274,24 @@ pub struct SubsystemDigests {
     pub auction_stats_hash: B256,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prime_zkp::Nullifier;
     use crate::zk_proofs::ProofType;
+    use prime_zkp::Nullifier;
     use revm::primitives::B256;
+
+    fn expected_host_shielded_event_root(block_number: u64, state: &ShieldedState) -> B256 {
+        B256::from(prime_zkp::sp1::shielded_event_root(
+            &prime_zkp::sp1::build_shielded_tick_events(
+                block_number,
+                0,
+                &[],
+                &[],
+                state.current_root().to_bytes(),
+            ),
+        ))
+    }
 
     #[test]
     fn prove_then_verify_round_trip() {
@@ -318,23 +302,24 @@ mod tests {
             gas_used: 0,
             base_fee_be: [0u8; 32],
             coinbase: [0x11; 20],
-            tx_count: 2,
+            tx_count: 0,
         };
         let req = BlockProofRequest {
             block_number: 42,
             timestamp: 1_700_000_000,
             prev_state_root: B256::ZERO,
             prev_nullifier_root: B256::ZERO,
-            txs: vec![vec![1, 2, 3], vec![4, 5, 6]],
+            txs: Vec::new(),
             prev_market_state: Vec::new(),
             header: header.clone(),
             block_hash: B256::from(prime_zkp::sp1::derive_block_hash(42, &header)),
-            expected_market_state_hash: B256::ZERO,
+            expected_market_state_hash: B256::from(hash_market_aggregates(&[])),
             prev_shielded_state: ShieldedStateWitness::default(),
             transparent_balances: Vec::new(),
             pre_tick_witness: ShieldedTickWitness::default(),
         };
-        let proof = prove_block(&req, &state, B256::ZERO).unwrap();
+        let proof =
+            prove_block(&req, &state, expected_host_shielded_event_root(42, &state)).unwrap();
         assert_eq!(proof.proof_type, ProofType::SP1);
         assert!(verify_block_proof(&proof));
     }
@@ -359,12 +344,13 @@ mod tests {
             prev_market_state: Vec::new(),
             header: header.clone(),
             block_hash: B256::from(prime_zkp::sp1::derive_block_hash(1, &header)),
-            expected_market_state_hash: B256::ZERO,
+            expected_market_state_hash: B256::from(hash_market_aggregates(&[])),
             prev_shielded_state: ShieldedStateWitness::default(),
             transparent_balances: Vec::new(),
             pre_tick_witness: ShieldedTickWitness::default(),
         };
-        let mut proof = prove_block(&req, &state, B256::ZERO).unwrap();
+        let mut proof =
+            prove_block(&req, &state, expected_host_shielded_event_root(1, &state)).unwrap();
         // Tamper with the proof data.
         if let Some(byte) = proof.proof_data.first_mut() {
             *byte ^= 0xff;
@@ -394,13 +380,17 @@ mod tests {
             prev_market_state: Vec::new(),
             header: header.clone(),
             block_hash: B256::from(prime_zkp::sp1::derive_block_hash(9, &header)),
-            expected_market_state_hash: B256::ZERO,
+            expected_market_state_hash: B256::from(hash_market_aggregates(&[])),
             prev_shielded_state: ShieldedStateWitness::default(),
             transparent_balances: Vec::new(),
             pre_tick_witness: ShieldedTickWitness::default(),
         };
 
         let error = prove_block(&req, &state, B256::ZERO).unwrap_err();
-        assert!(error.to_string().contains("state proof nullifier root mismatch"));
+        assert!(
+            error
+                .to_string()
+                .contains("state proof nullifier root mismatch")
+        );
     }
 }

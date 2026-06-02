@@ -219,7 +219,9 @@ pub fn decode_encrypted_note_payloads(
     out
 }
 
-pub fn decode_viewing_grants(entries: &[ViewingGrantToken]) -> HashMap<[u8; 32], ViewingGrantToken> {
+pub fn decode_viewing_grants(
+    entries: &[ViewingGrantToken],
+) -> HashMap<[u8; 32], ViewingGrantToken> {
     let mut out = HashMap::with_capacity(entries.len());
     for entry in entries {
         out.insert(entry.grant_id, entry.clone());

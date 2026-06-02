@@ -4,6 +4,7 @@ const test = require('node:test');
 
 const {
   createMockNoteDecryptor,
+  createOwnerViewingMaterial,
   parseEncryptedNotePayload,
   parseShieldedNotePlaintext,
 } = require('../dist');
@@ -46,6 +47,47 @@ test('createMockNoteDecryptor round-trips a note payload', async () => {
   assert.equal(parsed.ownerPk, RECIPIENT_HEX);
   assert.equal(parsed.rho, note.rho);
   assert.equal(parsed.psi, note.psi);
+});
+
+test('createOwnerViewingMaterial keys the decryptor to the owner and round-trips', async () => {
+  const viewingKey = {
+    spendPk: '0x' + '11'.repeat(32),
+    spendSk: '0x' + '12'.repeat(32),
+    viewPk: RECIPIENT_HEX,
+    viewSk: VIEW_SECRET_HEX,
+  };
+  const material = createOwnerViewingMaterial(viewingKey, '0xabc');
+  assert.equal(material.grantIdHex, '0xabc');
+  assert.equal(material.recipientPublicKey, RECIPIENT_HEX);
+
+  const note = {
+    value: 777n,
+    assetId: 3,
+    ownerPk: RECIPIENT_HEX,
+    rho: '0x' + '55'.repeat(32),
+    psi: '0x' + '66'.repeat(32),
+  };
+  const plaintext = encodeNotePlaintext(note);
+  const ciphertext = xorBytes(
+    plaintext,
+    expandKey(deriveSharedSecret(VIEW_SECRET_HEX, EPHEMERAL_PK_HEX), plaintext.length)
+  );
+  const payloadHex = encodeEncryptedNotePayload({
+    recipient: RECIPIENT_HEX,
+    ciphertext,
+    ephemeralPk: EPHEMERAL_PK_HEX,
+  });
+  const envelope = parseEncryptedNotePayload(payloadHex);
+  const decrypted = await material.decryptNoteCiphertext({
+    noteCommitment: '0x' + '99'.repeat(32),
+    encryptedNoteHex: payloadHex,
+    envelope,
+  });
+
+  assert.ok(decrypted);
+  const parsed = parseShieldedNotePlaintext(decrypted);
+  assert.equal(parsed.value, 777n);
+  assert.equal(parsed.assetId, 3);
 });
 
 test('parseEncryptedNotePayload rejects malformed payloads', () => {
