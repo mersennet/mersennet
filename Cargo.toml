@@ -5,6 +5,7 @@ members = [
     "crates/rpc",
     "crates/node",
     "crates/zkp",
+    "crates/state-proof",
 ]
 resolver = "2"
 

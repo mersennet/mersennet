@@ -1,14 +1,12 @@
-//! Re-export of the revm-free SP1 proof glue.
+//! SP1 ZK integration for Prime Chain.
 //!
-//! The implementation moved to the `prime-state-proof` crate (see
-//! `zk_proofs` for the rationale). The public path `prime_chain::zk_sp1::*`
-//! is preserved here unchanged. The CLI adapter backend is gated by
-//! prime-chain's `sp1` feature, which forwards to `prime-state-proof/sp1`.
+//! Production-ready interface for SP1-compatible proofs. Uses a deterministic
+//! simulation in mock mode; can be swapped to real SP1 SDK when deployed.
 
 use crate::zk_proofs::{ProofType, ProofVerificationResult, StateProver, StateTransitionProof};
+use alloy_primitives::{B256, keccak256};
 use anyhow::Result;
 use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
-use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 

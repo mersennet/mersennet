@@ -144,9 +144,13 @@ Notes:
 - E3 transcript capture should use `PRIME_SP1_MODE=local` today; one
   successful local prove/verify transcript against the pinned ELF and
   `PRIME_SP1_VKEY_HASH` is enough to close E3.
-- E4 is separate: `PRIME_SP1_MODE=network` is still blocked by the
-  current `sp1-sdk/network` vs `revm` `c-kzg` conflict, and the host
-  runner is expected to fail loudly in that mode.
+- E4: the `sp1-sdk/network` vs `revm` `c-kzg` conflict is resolved — the
+  SP1 host no longer depends on `revm` (proof types moved to the
+  `prime-state-proof` crate). Build the host with `--features network` to
+  enable `PRIME_SP1_MODE=network`
+  (`ProverClient::builder().network().build()`, credentials from
+  `NETWORK_PRIVATE_KEY` / `NETWORK_RPC_URL`). Without the `network`
+  feature the host still fails loudly in that mode.
 - On Windows, native `--features real-sp1` still returns a clear runtime
   error because the upstream `sp1-sdk` dependency pulls Unix-only
   `sp1-jit` pieces.

@@ -7,7 +7,11 @@ edition = "2024"
 
 [features]
 default = []
-real-sp1 = ["dep:sp1-sdk"]
+real-sp1 = ["dep:sp1-sdk", "prime-state-proof/sp1"]
+# Enables the SP1 prover-network path. Pulls the Alloy 1.0 / c-kzg 2.x
+# stack via sp1-sdk; this is conflict-free only because this crate no
+# longer depends on revm (which pins c-kzg 1.x). See README.
+network = ["real-sp1", "sp1-sdk/network"]
 
 [[bin]]
 name = "prime-chain-state-transition-host"
@@ -20,8 +24,10 @@ clap = { version = "4.5", features = ["derive"] }
 hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-revm = { version = "12", default-features = false, features = ["std", "serde"] }
-prime-chain = { path = "../../crates/core" }
+# revm-free proof envelopes + primitive types only. Dropping the revm
+# dependency is what unblocks sp1-sdk/network (no c-kzg 1.x vs 2.x clash).
+alloy-primitives = { version = "0.7", features = ["serde"] }
+prime-state-proof = { path = "../../crates/state-proof" }
 prime-zkp = { path = "../../crates/zkp" }
 
 [target.'cfg(not(windows))'.dependencies]
