@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1
+#
+# Prime Chain development image (Workstream K4).
+#
+# A single reproducible toolchain for the whole repo:
+#   - Rust stable + clippy + rustfmt + cargo-audit + cargo-llvm-cov
+#   - Node 20 + pnpm (SDK)
+#   - Foundry (forge/cast/anvil) for the Solidity contracts + ZK bridge
+#   - Noir (nargo) + Barretenberg (bb) for the client privacy circuits
+#   - SP1 (sp1up / cargo-prove) + protobuf for the state-transition prover
+#
+# Build:   docker build -f Dockerfile.dev -t prime-chain-dev .
+# Use:     docker run --rm -it -v "$PWD":/workspace prime-chain-dev
+#
+# The toolchain installers (foundryup/noirup/sp1up) fetch release binaries
+# at build time, so the image must be built with network access.
+
+FROM rust:1-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── System dependencies ──────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        ca-certificates \
+        build-essential \
+        pkg-config \
+        libssl-dev \
+        protobuf-compiler \
+        clang \
+        cmake \
+        ripgrep \
+        jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Node 20 + pnpm (SDK) ─────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g pnpm
+
+# ── Rust components + tooling (clippy, fmt, audit, coverage) ──────────
+RUN rustup component add clippy rustfmt \
+    && cargo install --locked cargo-audit cargo-llvm-cov
+
+# ── Foundry (forge / cast / anvil) ───────────────────────────────────
+ENV PATH="/root/.foundry/bin:${PATH}"
+RUN curl -L https://foundry.paradigm.xyz | bash \
+    && foundryup
+
+# ── Noir (nargo) + Barretenberg (bb) for client privacy circuits ─────
+ENV PATH="/root/.nargo/bin:/root/.bb:${PATH}"
+RUN curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash \
+    && noirup
+
+# ── SP1 (sp1up / cargo-prove) for the state-transition prover ────────
+ENV PATH="/root/.sp1/bin:${PATH}"
+RUN curl -L https://sp1up.succinct.xyz | bash \
+    && sp1up
+
+WORKDIR /workspace
+CMD ["bash"]
