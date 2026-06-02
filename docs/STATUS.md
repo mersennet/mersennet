@@ -64,13 +64,13 @@ external dep (e.g. `nargo`, `sp1up`, audit).
 | E1 | SP1 RISC-V toolchain | ✅ | WSL toolchain bootstrap + `cargo-prove prove build` |
 | E2 | SP1 prove path now consumes full witness-bearing `BlockProgramInput`, re-derives `BlockProgramOutput`, replays the shielded transfer / shield / unshield / liquidation-execute sub-path, replays deterministic pre-tick FBA market clearing, replays order admission from canonical decrypted-intent witnesses bound to an explicit oracle snapshot, replays liquidation claim/settle from the pre-tick witness, and proves `shielded_event_root`; the remaining parity gap is full header/public-output derivation hardening plus release-grade prove/verify plumbing | 🟡 | `crates/core/src/engine.rs`, `crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `crates/zkp/src/sp1.rs`, `programs/state-transition/`, `programs/state-transition-host/` |
 | E3 | Vkey pin procedure + release-artifact capture | 🟡 | `scripts/zk/README.md`, `crates/zkp/params/sp1/state-transition.vk.hash`, `docs/runbooks/zk-fork-activation.md` |
-| E4 | `ProverClient::network()` integration — c-kzg conflict resolved by making the SP1 host revm-free (proof types extracted to `prime-state-proof`); network path gated behind the `network` feature. Resolution verified (single `c-kzg 2.1.7`, no link conflict); full network compile + delegated proof need crates.io access + a Succinct account | 🟡 | `crates/state-proof/`, `programs/state-transition-host/`, `crates/core/src/zk_sp1.rs` |
+| E4 | `ProverClient::network()` integration — c-kzg conflict resolved by making the SP1 host revm-free (proof types extracted to `prime-state-proof`); network path gated behind the `network` feature. Local `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network` now passes; remaining close-out is a delegated `PRIME_SP1_MODE=network` proof with Succinct credentials/account access | 🟡 | `crates/state-proof/`, `programs/state-transition-host/`, `crates/core/src/zk_sp1.rs` |
 | E5 | Groth16 wrap for Ethereum bridge verifier | 🔒 | `contracts/`, `crates/core/src/precompiles.rs` |
 
-Remaining E blockers are the release-grade prove/verify transcript (E3) and
-the Groth16 wrap (E5). The network-prover c-kzg conflict (E4) is resolved;
-what remains for E4 is the offline-blocked final network compile and a
-delegated proof against the Succinct network.
+Remaining E close-out items are the release-grade prove/verify transcript (E3),
+one delegated network proof against the Succinct network (E4), and the
+Groth16 wrap (E5). The network-prover c-kzg conflict is resolved and the
+host `--features network` compile lane now passes locally.
 
 ## F — Client / SDK / UX
 
@@ -133,9 +133,9 @@ All I* gated on the remaining E blockers being cleared and the privacy-fork audi
 |---|---|---|---|
 | K1 | Expanded `.github/workflows/ci.yml` (prover feature, SP1 node/program/host lanes, tsc, forge, audit) | ✅ | `.github/workflows/ci.yml` |
 | K2 | Privacy-invariant grep guard | ✅ | `scripts/ci/check-privacy-invariants.sh` + `docs/security/privacy-invariants.md` |
-| K3 | `cargo llvm-cov` coverage in CI artifacts | ⬜ |
-| K4 | `Dockerfile.dev` (Rust + Foundry + nargo + sp1up + Node 20) | ⬜ |
-| K5 | `cargo doc` publish | ⬜ |
+| K3 | `cargo llvm-cov` coverage in CI artifacts | ✅ |
+| K4 | `Dockerfile.dev` validation in CI | ✅ |
+| K5 | `cargo doc` publish artifact | ✅ |
 
 ---
 
@@ -152,7 +152,7 @@ E3 through E5.
 | Item | Owner | Files | Commands | Exit criteria |
 |---|---|---|---|---|
 | E3. Release-grade SP1 transcript and pin artifacts | `@PrimeNumbersLabs/zk`, `@PrimeNumbersLabs/docs` | `scripts/zk/README.md`, `scripts/zk/sp1-prove-request.template.json`, `scripts/zk/sp1-verify-request.template.json`, `crates/zkp/params/sp1/state-transition.vk.hash`, `docs/runbooks/zk-fork-activation.md`, `docs/security/privacy-fork-audit-packet.md` | WSL:<br>`cd programs/state-transition && cargo-prove prove build`<br>`cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`<br>`cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1`<br>Host prove/verify capture in local mode:<br>`PRIME_SP1_MODE=local cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`<br>`PRIME_SP1_MODE=local cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request scripts/zk/sp1-verify-request.request.json --verify-response scripts/zk/sp1-verify-response.json`<br>On Windows, drive those same commands through `PRIME_SP1_HOST_EXECUTOR=wsl`. Populate the request files from `scripts/zk/sp1-prove-request.template.json` and `scripts/zk/sp1-verify-request.template.json`. | Audit packet contains ELF provenance, pinned `PRIME_SP1_VKEY_HASH`, and one successful real prove/verify transcript against the exact release artifact set. E3 is independent of the E4 network-prover cut-over. |
-| E4. `ProverClient::network()` cut-over | `@PrimeNumbersLabs/zk` | `crates/state-proof/`, `programs/state-transition-host/src/main.rs`, `scripts/zk/README.md`, `docs/security/privacy-fork-audit-packet.md` | `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1`<br>`cd programs/state-transition-host && cargo tree -i c-kzg` (default/real-sp1: no match)<br>`cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network` (resolves to a single `c-kzg 2.1.7`) | **Conflict resolved**: the SP1 host is now revm-free (proof types live in `prime-state-proof`), so `sp1-sdk/network` no longer collides on the `ckzg` native link. Remaining: run `cargo check --features network` with crates.io access and a delegated `PRIME_SP1_MODE=network` proof against the Succinct network (needs a network account). Without the `network` feature the host still fails loudly. |
+| E4. `ProverClient::network()` cut-over | `@PrimeNumbersLabs/zk` | `crates/state-proof/`, `programs/state-transition-host/src/main.rs`, `scripts/zk/README.md`, `docs/security/privacy-fork-audit-packet.md` | `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1`<br>`cd programs/state-transition-host && cargo tree -i c-kzg` (default/real-sp1: no match)<br>`cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network` | **Compile conflict resolved and verified locally**: the SP1 host is revm-free (proof types live in `prime-state-proof`), so `sp1-sdk/network` no longer collides on the `ckzg` native link. Remaining: run one delegated `PRIME_SP1_MODE=network` proof against the Succinct network with real credentials/account access. Without the `network` feature the host still fails loudly. |
 | E5. Groth16 wrap for Ethereum verifier path | `@PrimeNumbersLabs/contracts`, `@PrimeNumbersLabs/core` | `contracts/`, `crates/core/src/precompiles.rs` | `Set-Location contracts; forge build --sizes`<br>`Set-Location contracts; forge test -vvv` | Groth16 verifier and bridge contracts exist, pass Foundry tests, and are wired to the chain-side proof verification path. |
 
 #### E2 Completed Scope

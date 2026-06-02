@@ -22,6 +22,15 @@
 
 set -uo pipefail
 
+if command -v rg >/dev/null 2>&1; then
+    RG_BIN=$(command -v rg)
+elif command -v rg.exe >/dev/null 2>&1; then
+    RG_BIN=$(command -v rg.exe)
+else
+    echo "Privacy-invariant CI check requires ripgrep ('rg') on PATH." >&2
+    exit 1
+fi
+
 # Workspace root.
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -60,7 +69,10 @@ check() {
     fi
 
     local matches
-    matches=$(rg --line-number --no-heading "$pattern" "${existing[@]}" 2>/dev/null | rg -v "privacy-allow:") || true
+    matches=$(
+        "$RG_BIN" --line-number --no-heading "$pattern" "${existing[@]}" 2>/dev/null |
+            "$RG_BIN" -v "privacy-allow:"
+    ) || true
 
     if [[ -n "$matches" ]]; then
         VIOLATIONS=$((VIOLATIONS + 1))
@@ -124,7 +136,10 @@ check \
 ZKP_FILES=$(find "$ZKP_SUBSYSTEM_DIR" -name "*.rs" 2>/dev/null || true)
 if [[ -n "$ZKP_FILES" ]]; then
     while IFS= read -r f; do
-        m=$(rg --line-number "(\b|::)Address\b" "$f" 2>/dev/null | rg -v "privacy-allow:") || true
+        m=$(
+            "$RG_BIN" --line-number "(\b|::)Address\b" "$f" 2>/dev/null |
+                "$RG_BIN" -v "privacy-allow:"
+        ) || true
         if [[ -n "$m" ]]; then
             VIOLATIONS=$((VIOLATIONS + 1))
             FAIL_LIST+=("prime-zkp module $f references Address")

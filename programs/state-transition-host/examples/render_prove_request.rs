@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use alloy_primitives::B256;
-use prime_zkp::sp1::{BlockHeaderWitness, BlockProgramInput, derive_block_hash};
+use prime_zkp::sp1::{
+    BlockHeaderWitness, BlockProgramInput, derive_block_hash, hash_market_aggregates,
+};
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 
@@ -35,13 +37,15 @@ fn main() -> Result<()> {
     let mut request: ProveRequest = serde_json::from_slice(&fs::read(&request_path)?)
         .with_context(|| format!("read prove request at {}", request_path.display()))?;
 
-    let program_input = if request.block_program_input_hex.trim().is_empty() {
+    let mut program_input = if request.block_program_input_hex.trim().is_empty() {
         build_fallback_input(&request)?
     } else {
         let bytes = hex::decode(request.block_program_input_hex.trim())
             .context("invalid block_program_input_hex")?;
         bincode::deserialize(&bytes).context("deserialize block program input")?
     };
+
+    normalize_program_input(&mut program_input);
 
     request.block_program_input_hex = hex::encode(
         bincode::serialize(&program_input).context("serialize BlockProgramInput")?,
@@ -82,8 +86,15 @@ fn build_fallback_input(request: &ProveRequest) -> Result<BlockProgramInput> {
         transparent_balances: Vec::new(),
         pre_tick_witness: Default::default(),
         expected_block_hash: derive_block_hash(request.block_number, &header),
-        expected_market_state_hash: [0u8; 32],
+        expected_market_state_hash: hash_market_aggregates(&[]),
     })
+}
+
+fn normalize_program_input(program_input: &mut BlockProgramInput) {
+    program_input.expected_block_hash =
+        derive_block_hash(program_input.block_number, &program_input.header);
+    program_input.expected_market_state_hash =
+        hash_market_aggregates(&program_input.pre_tick_witness.orders.aggregates);
 }
 
 fn decode_b256(raw: &str) -> Result<B256> {

@@ -88,8 +88,16 @@ Current status:
       materializes the exact serialized `BlockProgramInput` into
       `blockProgramInputHex`, so the transcript request no longer relies
       on host-side fallback reconstruction.
-- Last local prove failure:
-      stale repo pin `00cee367b911744ff17d8fad9e2954e272df4a1e571edbe49634321796161477` did not match the current ELF verifying key `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`; the pin and request were updated to the current ELF.
+- Last stale-request failure now resolved:
+      the checked-in request path had preserved a stale `BlockProgramInput`
+      commitment with `expected_market_state_hash = 0x00..00`, but the
+      current executor derives `hash_market_aggregates(&[])` for the
+      empty-tick boundary. `programs/state-transition-host/examples/render_prove_request.rs`
+      and `programs/state-transition-host/src/main.rs` now normalize the
+      derived `expected_block_hash` and `expected_market_state_hash` fields,
+      and `scripts/zk/sp1-prove-request.request.json` was regenerated with
+      `expected_market_state_hash =
+      c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`.
 - Latest local real-SP1 runtime blocker:
       WSL OOM-killed `prime-chain-state-transition-host` during proving even after the pin mismatch was fixed. The most recent kernel evidence was:
       `Out of memory: Killed process 832 (prime-chain-sta) total-vm:21708000kB, anon-rss:15662908kB, ...`
@@ -123,11 +131,13 @@ Current status:
 - Current local conclusion:
       the earlier "hang" was caused by running the real SP1 prover path through debug binaries. The checked-in adapters now normalize `cargo run ... --features real-sp1` commands to `--release` unless an explicit profile is already provided.
 - Transcript artifacts:
-      `scripts/zk/sp1-prove-response.json` is not produced yet (needs the
-      real local prove). `scripts/zk/sp1-verify-request.request.json` is
-      now pre-filled with the deterministic public output (below); only
-      `proofBytesHex` (+ the real `programElfPath`) must be pasted in from
-      the prove response.
+      `scripts/zk/sp1-prove-response.json` is not produced yet. After the
+      request-normalization fix above, the latest `PRIME_SP1_MODE=local`
+      prove run launched successfully in WSL against the pinned ELF and
+      had not produced the response artifact before this session closed.
+      `scripts/zk/sp1-verify-request.request.json` still needs to be
+      regenerated from the eventual prove response via
+      `programs/state-transition-host/examples/render_verify_request.rs`.
 - Expected deterministic public output (block 1, empty, pinned input
       `scripts/zk/sp1-prove-request.request.json`), re-derived offline via
       the canonical `execute_block_program` executor (host mock path) and
@@ -149,7 +159,7 @@ Current status:
       When the real local prove completes, its `public_values` MUST equal
       the pinned `publicValuesHex`; if it diverges, the ELF/input drifted
       from this pin and the transcript is invalid.
-- Transcript: repo-side setup is ready, and local SP1 client initialization now succeeds on this WSL host when invoked via optimized `--release` binaries. The next validation step is to rerun the full prove/verify transcript in local mode with the release host path.
+- Transcript: repo-side setup is ready, local SP1 client initialization succeeds on this WSL host when invoked via optimized `--release` binaries, and the stale request-commitment mismatch is fixed. The remaining E3 step is to let the real local prove finish, render the verify request from its response, and record the matching verify transcript.
 
 ### 2. The canonical zkVM executor now covers the current proof boundary
 
@@ -196,11 +206,9 @@ Verification (this environment):
 - `cargo tree -i revm` / `-i c-kzg` in the host: **no matches** (default
       and `--features real-sp1`).
 - `cargo check --features real-sp1`: compiles.
-- `cargo check --features network`: dependency resolution **succeeds**
-      (single `c-kzg 2.1.7` in the lockfile, no `links` conflict); the
-      build then only stops on crates.io download access in the offline
-      sandbox. The final network compile + an actual delegated proof
-      require registry access and a Succinct prover-network account.
+- `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network`:
+      compiles locally on this host. The remaining E4 close-out is one
+      delegated proof against the Succinct network with real credentials.
 
 The network path is gated behind a new `network` cargo feature
 (`network = ["real-sp1", "sp1-sdk/network"]`). With it enabled,
@@ -230,7 +238,7 @@ preconditions are cleared.
       `BlockProgramInput` re-execution.
 - [x] Replace the simplified shared executor with the current
       `BlockProgramInput`-authoritative zkVM block execution path.
-- [ ] Resolve the `sp1-sdk/network` vs `revm` `c-kzg` conflict before
+- [x] Resolve the `sp1-sdk/network` vs `revm` `c-kzg` conflict before
       enabling `PRIME_SP1_MODE=network` in production.
 - [ ] Start the actual H6 bake window only after the items above are complete.
 
