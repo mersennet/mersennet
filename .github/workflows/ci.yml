@@ -138,7 +138,7 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
       - name: Install forge-std
         run: forge install foundry-rs/forge-std@v1.15.0 --no-git
       - name: Show forge version
