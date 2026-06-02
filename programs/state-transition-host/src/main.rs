@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use prime_chain::zk_proofs::{ProofType, StateTransitionProof};
-use prime_chain::zk_sp1::{SP1Proof, SP1ProofVerifier};
+use alloy_primitives::{B256, keccak256};
+use prime_state_proof::zk_proofs::{ProofType, StateTransitionProof};
+use prime_state_proof::zk_sp1::{SP1Proof, SP1ProofVerifier};
 use prime_zkp::sp1::{BlockHeaderWitness, BlockProgramInput, BlockProgramOutput, derive_block_hash, execute_block_program};
-use revm::primitives::{B256, keccak256};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
@@ -468,9 +468,24 @@ fn build_real_sp1_proof(
     trace_real_sp1_stage("stdin:write:done");
 
     match configured_sp1_mode().as_str() {
-        "network" => bail!(
-            "PRIME_SP1_MODE=network is currently blocked in this host crate because sp1-sdk/network conflicts with the revm c-kzg dependency graph"
-        ),
+        "network" => {
+            #[cfg(feature = "network")]
+            {
+                trace_real_sp1_stage("client:network:start");
+                // Credentials are read from the environment by the SDK
+                // (NETWORK_PRIVATE_KEY / NETWORK_RPC_URL).
+                let prover = ProverClient::builder().network().build();
+                trace_real_sp1_stage("client:network:done");
+                build_real_sp1_proof_with(&prover, elf_bytes, stdin, expected_output, vkey_hash_hex)
+            }
+            #[cfg(not(feature = "network"))]
+            {
+                let _ = (elf_bytes, stdin, expected_output, vkey_hash_hex);
+                bail!(
+                    "PRIME_SP1_MODE=network requires building this host with --features network"
+                )
+            }
+        }
         "local" => {
             trace_real_sp1_stage("client:build:start");
             let prover = ProverClient::builder().cpu().build();
@@ -505,9 +520,20 @@ fn verify_real_sp1(request: &VerifyRequest, expected_output: &BlockProgramOutput
     let elf_bytes = fs::read(program_elf_path)
         .with_context(|| format!("read program ELF at {program_elf_path}"))?;
     match configured_sp1_mode().as_str() {
-        "network" => bail!(
-            "PRIME_SP1_MODE=network is currently blocked in this host crate because sp1-sdk/network conflicts with the revm c-kzg dependency graph"
-        ),
+        "network" => {
+            #[cfg(feature = "network")]
+            {
+                let prover = ProverClient::builder().network().build();
+                verify_real_sp1_with(&prover, elf_bytes, request, expected_output)
+            }
+            #[cfg(not(feature = "network"))]
+            {
+                let _ = (elf_bytes, request, expected_output);
+                bail!(
+                    "PRIME_SP1_MODE=network requires building this host with --features network"
+                )
+            }
+        }
         "local" => {
             let prover = ProverClient::builder().cpu().build();
             verify_real_sp1_with(&prover, elf_bytes, request, expected_output)

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
+use alloy_primitives::B256;
 use prime_zkp::sp1::{BlockHeaderWitness, BlockProgramInput, derive_block_hash};
-use revm::primitives::B256;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 
