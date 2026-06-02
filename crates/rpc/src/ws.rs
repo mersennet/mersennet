@@ -712,7 +712,10 @@ mod tests {
         let pending_err = manager
             .subscribe(SubscriptionKind::NewPendingTransactions)
             .expect_err("pending transactions subscription should be rejected");
-        assert_eq!(pending_err, SubscriptionError::TransparentEthSubscriptionDisabled);
+        assert_eq!(
+            pending_err,
+            SubscriptionError::TransparentEthSubscriptionDisabled
+        );
 
         let logs_err = manager
             .subscribe(SubscriptionKind::Logs {
@@ -720,7 +723,10 @@ mod tests {
                 address: None,
             })
             .expect_err("logs subscription should be rejected");
-        assert_eq!(logs_err, SubscriptionError::TransparentEthSubscriptionDisabled);
+        assert_eq!(
+            logs_err,
+            SubscriptionError::TransparentEthSubscriptionDisabled
+        );
 
         manager
             .subscribe(SubscriptionKind::NewHeads)

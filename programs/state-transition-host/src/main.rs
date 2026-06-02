@@ -593,29 +593,45 @@ mod tests {
 
     #[test]
     fn prove_and_verify_round_trip() {
-        let proof = build_proof(
-            &hex::encode([1u8; 32]),
-            &hex::encode([2u8; 32]),
-            &hex::encode([3u8; 32]),
-            &hex::encode([4u8; 32]),
-            12,
-            &hex::encode([5u8; 32]),
-            &hex::encode([6u8; 32]),
-            4,
-            &hex::encode([9u8; 32]),
-            None,
-        )
+        let header = BlockHeaderWitness::default();
+        let program_input = BlockProgramInput {
+            prev_state_root: [0u8; 32],
+            prev_nullifier_root: [0u8; 32],
+            block_number: 12,
+            timestamp: 0,
+            header: header.clone(),
+            txs: Vec::new(),
+            prev_market_state: Vec::new(),
+            prev_shielded_state: Default::default(),
+            transparent_balances: Vec::new(),
+            pre_tick_witness: Default::default(),
+            expected_block_hash: derive_block_hash(12, &header),
+            expected_market_state_hash: prime_zkp::sp1::hash_market_aggregates(&[]),
+        };
+        let proof = build_proof(&ProveRequest {
+            block_program_input_hex: hex::encode(bincode::serialize(&program_input).unwrap()),
+            prev_state_root_hex: String::new(),
+            prev_nullifier_root_hex: String::new(),
+            block_number: 12,
+            timestamp: 0,
+            txs_hex: Vec::new(),
+            prev_market_state_hex: String::new(),
+            vkey_hash_hex: hex::encode([9u8; 32]),
+            program_elf_path: None,
+        })
         .unwrap();
+        let output: BlockProgramOutput = bincode::deserialize(&proof.public_values).unwrap();
 
         let request = VerifyRequest {
-            prev_state_root_hex: hex::encode([1u8; 32]),
-            new_state_root_hex: hex::encode([2u8; 32]),
-            prev_nullifier_root_hex: hex::encode([3u8; 32]),
-            new_nullifier_root_hex: hex::encode([4u8; 32]),
-            block_height: 12,
-            block_hash_hex: hex::encode([5u8; 32]),
-            new_market_state_hash_hex: hex::encode([6u8; 32]),
-            tx_count: 4,
+            prev_state_root_hex: hex::encode(output.prev_state_root),
+            new_state_root_hex: hex::encode(output.new_state_root),
+            prev_nullifier_root_hex: hex::encode(output.prev_nullifier_root),
+            new_nullifier_root_hex: hex::encode(output.new_nullifier_root),
+            block_height: output.block_number,
+            block_hash_hex: hex::encode(output.block_hash),
+            new_market_state_hash_hex: hex::encode(output.new_market_state_hash),
+            shielded_event_root_hex: hex::encode(output.shielded_event_root),
+            tx_count: output.tx_count,
             vkey_hash_hex: hex::encode([9u8; 32]),
             public_values_hex: hex::encode(&proof.public_values),
             proof_bytes_hex: hex::encode(&proof.proof_bytes),
