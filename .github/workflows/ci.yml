@@ -164,6 +164,64 @@ jobs:
         run: cargo audit
 
   # ────────────────────────────────────────────────────────────────
+  # K3 — Coverage. cargo-llvm-cov over the default-feature workspace,
+  # uploaded as an lcov artifact so reviewers can track coverage trends.
+  # ────────────────────────────────────────────────────────────────
+  coverage:
+    name: cargo llvm-cov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage (lcov)
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+      - name: Coverage summary
+        run: cargo llvm-cov --workspace --summary-only
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
+
+  # ────────────────────────────────────────────────────────────────
+  # K5 — API docs. Build rustdoc for the workspace and publish it as a
+  # downloadable artifact (the GitHub Pages deploy is wired separately).
+  # ────────────────────────────────────────────────────────────────
+  docs:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build rustdoc
+        run: cargo doc --workspace --no-deps
+      - name: Upload rustdoc artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdoc
+          path: target/doc
+
+  # ────────────────────────────────────────────────────────────────
+  # K4 — Validate the reproducible dev image. A full build pulls the
+  # entire toolchain (Rust + Node + Foundry + Noir + SP1) and is too
+  # heavy for every push, so CI validates the Dockerfile with BuildKit's
+  # static checker; the full build is run on demand.
+  # ────────────────────────────────────────────────────────────────
+  dev_image:
+    name: validate Dockerfile.dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Static check Dockerfile.dev
+        run: docker build --check -f Dockerfile.dev .
+
+  # ────────────────────────────────────────────────────────────────
   # K2 — Privacy-invariant grep checks. These are the
   # non-negotiable rules from `docs/security/privacy-invariants.md`.
   # Any pattern below appearing in `crates/core/src/shielded_*.rs`
