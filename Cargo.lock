@@ -2063,6 +2063,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "once_cell",
+ "prime-state-proof",
  "prime-zkp",
  "rand 0.8.5",
  "redb",
@@ -2141,6 +2142,20 @@ dependencies = [
  "tiny_http",
  "tracing",
  "tungstenite",
+]
+
+[[package]]
+name = "prime-state-proof"
+version = "0.7.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "bincode",
+ "hex",
+ "prime-zkp",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

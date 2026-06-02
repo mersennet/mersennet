@@ -7,6 +7,8 @@
 //! configured. Every circuit's public-input shape must remain stable
 //! byte-for-byte.
 
+#[cfg(feature = "prover")]
+use prime_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
 use prime_zkp::{
     Fr,
     merkle::MerkleTree,
@@ -15,8 +17,6 @@ use prime_zkp::{
     nullifier::Nullifier,
     poseidon::Poseidon,
 };
-#[cfg(feature = "prover")]
-use prime_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
 #[cfg(feature = "prover")]
 use std::env;
 
@@ -287,7 +287,10 @@ fn real_toolchain_spend_and_order_place_round_trip_when_configured() {
     let spend_proof = prover
         .prove(Circuit::Spend, spend_public_inputs.clone(), &spend_witness)
         .expect("configured Noir toolchain should produce a spend proof");
-    assert_ne!(spend_proof.vk_hash, MockVerifier::vk_hash_for(Circuit::Spend));
+    assert_ne!(
+        spend_proof.vk_hash,
+        MockVerifier::vk_hash_for(Circuit::Spend)
+    );
     verifier
         .verify(&spend_proof, Circuit::Spend, &spend_public_inputs)
         .expect("configured verifier should accept the spend proof");
@@ -320,9 +323,16 @@ fn real_toolchain_spend_and_order_place_round_trip_when_configured() {
         side,
     );
     let order_proof = prover
-        .prove(Circuit::OrderPlace, order_public_inputs.clone(), &order_witness)
+        .prove(
+            Circuit::OrderPlace,
+            order_public_inputs.clone(),
+            &order_witness,
+        )
         .expect("configured Noir toolchain should produce an order proof");
-    assert_ne!(order_proof.vk_hash, MockVerifier::vk_hash_for(Circuit::OrderPlace));
+    assert_ne!(
+        order_proof.vk_hash,
+        MockVerifier::vk_hash_for(Circuit::OrderPlace)
+    );
     verifier
         .verify(&order_proof, Circuit::OrderPlace, &order_public_inputs)
         .expect("configured verifier should accept the order proof");
@@ -344,7 +354,10 @@ fn spend_witness(
     witness.insert("root", membership.root(&poseidon()));
     witness.insert("nullifier", spent.nullifier(&poseidon(), &spend_sk).0);
     witness.insert("new_commitment", output.commit(&poseidon()).0);
-    witness.insert("public_amount", Fr::from_u64((spent.value - output.value) as u64));
+    witness.insert(
+        "public_amount",
+        Fr::from_u64((spent.value - output.value) as u64),
+    );
     witness.insert(
         "spent_note",
         WitnessValue::structure([("note", note_witness(spent))]),
@@ -355,9 +368,19 @@ fn spend_witness(
     );
     witness.insert(
         "merkle_path",
-        WitnessValue::array(membership.siblings.iter().copied().map(WitnessValue::from).collect()),
+        WitnessValue::array(
+            membership
+                .siblings
+                .iter()
+                .copied()
+                .map(WitnessValue::from)
+                .collect(),
+        ),
     );
-    witness.insert("merkle_index_bits", WitnessValue::from(index_bits(membership.index)));
+    witness.insert(
+        "merkle_index_bits",
+        WitnessValue::from(index_bits(membership.index)),
+    );
     witness.insert("spend_sk", spend_sk);
     witness
 }
@@ -386,9 +409,19 @@ fn order_place_witness(
     witness.insert("output", note_witness(output));
     witness.insert(
         "spent_path",
-        WitnessValue::array(membership.siblings.iter().copied().map(WitnessValue::from).collect()),
+        WitnessValue::array(
+            membership
+                .siblings
+                .iter()
+                .copied()
+                .map(WitnessValue::from)
+                .collect(),
+        ),
     );
-    witness.insert("spent_index_bits", WitnessValue::from(index_bits(membership.index)));
+    witness.insert(
+        "spent_index_bits",
+        WitnessValue::from(index_bits(membership.index)),
+    );
     witness.insert("spend_sk", spend_sk);
     witness.insert("side_salt", side_salt);
     witness.insert("side", side);

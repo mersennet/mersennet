@@ -432,7 +432,10 @@ impl NoirToolchain {
         Ok(out)
     }
 
-    pub fn compile_circuit(&self, circuit: Circuit) -> Result<CircuitArtifacts, NoirToolchainError> {
+    pub fn compile_circuit(
+        &self,
+        circuit: Circuit,
+    ) -> Result<CircuitArtifacts, NoirToolchainError> {
         let package_dir = self.materialize_temp_package(circuit)?;
         let status = Command::new(&self.nargo_bin)
             .arg("compile")
@@ -719,9 +722,10 @@ fn map_toolchain_error_to_prove(error: NoirToolchainError) -> ProveError {
         NoirToolchainError::MissingArtifact(path) => {
             ProveError::BackendFailure(format!("missing artifact: {}", path.display()))
         }
-        NoirToolchainError::InvalidVkHash { path, message } => ProveError::BackendFailure(
-            format!("invalid vk hash contents in {}: {message}", path.display()),
-        ),
+        NoirToolchainError::InvalidVkHash { path, message } => ProveError::BackendFailure(format!(
+            "invalid vk hash contents in {}: {message}",
+            path.display()
+        )),
     }
 }
 
@@ -810,10 +814,7 @@ fn collect_files(
 #[cfg(feature = "prover")]
 fn parse_vk_hash(path: &Path, raw: &str) -> Result<[u8; 32], VerifyError> {
     let bytes = hex::decode(raw).map_err(|error| {
-        VerifyError::BackendFailure(format!(
-            "invalid vk hash in {}: {error}",
-            path.display()
-        ))
+        VerifyError::BackendFailure(format!("invalid vk hash in {}: {error}", path.display()))
     })?;
     if bytes.len() != 32 {
         return Err(VerifyError::BackendFailure(format!(
