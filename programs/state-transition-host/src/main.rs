@@ -98,37 +98,15 @@ fn main() -> Result<()> {
 }
 
 fn run_prove(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
-    trace_stage("prove:request:read:start");
     let request: ProveRequest = read_json(request_path)?;
-    trace_stage("prove:request:read:done");
-    trace_stage_value(
-        "prove:request:summary",
-        format!(
-            "block={} txs={} elf={} input_hex_len={}",
-            request.block_number,
-            request.txs_hex.len(),
-            request
-                .program_elf_path
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .unwrap_or("<none>"),
-            request.block_program_input_hex.trim().len()
-        ),
-    );
-
-    trace_stage("prove:build:start");
     let proof = build_proof(&request)?;
-    trace_stage("prove:build:done");
     let response = ProveResponse {
         vkey_hash_hex: hex::encode(proof.vkey_hash.as_slice()),
         public_values_hex: hex::encode(&proof.public_values),
         proof_bytes_hex: hex::encode(&proof.proof_bytes),
         proof_system: proof.proof_system,
     };
-    trace_stage("prove:response:write:start");
-    let result = write_json(response_path, &response);
-    trace_stage("prove:response:write:done");
-    result
+    write_json(response_path, &response)
 }
 
 fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
@@ -140,6 +118,14 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
     let block_hash = decode_b256(&request.block_hash_hex)?;
     let new_market_state_hash = decode_b256(&request.new_market_state_hash_hex)?;
     let shielded_event_root = decode_b256(&request.shielded_event_root_hex)?;
+    // Under real-sp1, `vkeyHashHex` is the SP1 verifying-key hash (checked
+    // against the ELF-derived key inside `verify_real_sp1`). The mock path
+    // instead treats it as `keccak256(ELF)` via `resolve_vkey_hash`. Keeping
+    // the keccak enforcement here would make the real ELF verify path
+    // unreachable, so only apply it for non-real-sp1 builds.
+    #[cfg(feature = "real-sp1")]
+    let vkey_hash = decode_b256(&request.vkey_hash_hex)?;
+    #[cfg(not(feature = "real-sp1"))]
     let vkey_hash = resolve_vkey_hash(&request.vkey_hash_hex, request.program_elf_path.as_deref())?;
     let public_values = hex::decode(request.public_values_hex.trim())
         .context("invalid public_values_hex")?;
@@ -199,7 +185,6 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
 fn build_proof(
     request: &ProveRequest,
 ) -> Result<SP1Proof> {
-    trace_stage("prove:input:build:start");
     let mut program_input = if request.block_program_input_hex.trim().is_empty() {
         let prev_root = decode_b256(&request.prev_state_root_hex)?;
         let prev_nullifier_root = decode_b256(&request.prev_nullifier_root_hex)?;
@@ -232,41 +217,10 @@ fn build_proof(
             .context("invalid block_program_input_hex")?;
         bincode::deserialize(&bytes).context("deserialize block program input")?
     };
-    trace_stage("prove:input:build:done");
 
-    trace_stage("prove:input:normalize:start");
     normalize_program_input(&mut program_input);
-    trace_stage("prove:input:normalize:done");
-    trace_stage_value(
-        "prove:input:summary",
-        format!(
-            "block={} tx_count={} expected_block_hash={} expected_market_state_hash={}",
-            program_input.block_number,
-            program_input.header.tx_count,
-            hex::encode(program_input.expected_block_hash),
-            hex::encode(program_input.expected_market_state_hash),
-        ),
-    );
 
-    trace_stage("prove:executor:start");
-    let output = match execute_block_program(&program_input) {
-        Ok(output) => output,
-        Err(err) => {
-            trace_stage_value("prove:executor:error", err.to_string());
-            return Err(err.into());
-        }
-    };
-    trace_stage("prove:executor:done");
-    trace_stage_value(
-        "prove:output:summary",
-        format!(
-            "new_state_root={} new_nullifier_root={} new_market_state_hash={} shielded_event_root={}",
-            hex::encode(output.new_state_root),
-            hex::encode(output.new_nullifier_root),
-            hex::encode(output.new_market_state_hash),
-            hex::encode(output.shielded_event_root),
-        ),
-    );
+    let output = execute_block_program(&program_input)?;
 
     #[cfg(all(feature = "real-sp1", not(windows)))]
     if let Some(program_elf_path) = request.program_elf_path.as_deref().filter(|value| !value.is_empty()) {
@@ -307,32 +261,6 @@ fn compute_mock_proof_bytes(output: &BlockProgramOutput) -> Vec<u8> {
     buf.extend_from_slice(&output.new_market_state_hash);
     buf.extend_from_slice(&output.shielded_event_root);
     keccak256(&buf).0.to_vec()
-}
-
-fn trace_stage(stage: &str) {
-    let enabled = std::env::var("PRIME_SP1_STAGE_TRACE")
-        .ok()
-        .map(|value| {
-            let value = value.trim().to_ascii_lowercase();
-            !value.is_empty() && value != "0" && value != "false" && value != "off"
-        })
-        .unwrap_or(false);
-    if enabled {
-        eprintln!("[prime-sp1-stage] {stage}");
-    }
-}
-
-fn trace_stage_value(stage: &str, value: impl AsRef<str>) {
-    let enabled = std::env::var("PRIME_SP1_STAGE_TRACE")
-        .ok()
-        .map(|value| {
-            let value = value.trim().to_ascii_lowercase();
-            !value.is_empty() && value != "0" && value != "false" && value != "off"
-        })
-        .unwrap_or(false);
-    if enabled {
-        eprintln!("[prime-sp1-stage] {stage}: {}", value.as_ref());
-    }
 }
 
 fn normalize_program_input(program_input: &mut BlockProgramInput) {
