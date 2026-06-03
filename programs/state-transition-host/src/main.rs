@@ -140,6 +140,14 @@ fn run_verify(request_path: &PathBuf, response_path: &PathBuf) -> Result<()> {
     let block_hash = decode_b256(&request.block_hash_hex)?;
     let new_market_state_hash = decode_b256(&request.new_market_state_hash_hex)?;
     let shielded_event_root = decode_b256(&request.shielded_event_root_hex)?;
+    // Under real-sp1, `vkeyHashHex` is the SP1 verifying-key hash (checked
+    // against the ELF-derived key inside `verify_real_sp1`). The mock path
+    // instead treats it as `keccak256(ELF)` via `resolve_vkey_hash`. Keeping
+    // the keccak enforcement here would make the real ELF verify path
+    // unreachable, so only apply it for non-real-sp1 builds.
+    #[cfg(feature = "real-sp1")]
+    let vkey_hash = decode_b256(&request.vkey_hash_hex)?;
+    #[cfg(not(feature = "real-sp1"))]
     let vkey_hash = resolve_vkey_hash(&request.vkey_hash_hex, request.program_elf_path.as_deref())?;
     let public_values = hex::decode(request.public_values_hex.trim())
         .context("invalid public_values_hex")?;

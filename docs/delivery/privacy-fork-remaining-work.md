@@ -33,11 +33,13 @@ Concretely:
   auto-activates privacy at a configured height, and runs the full
   shielded flow — orders/FBA, sealed-bid liquidations, transfers,
   shield/unshield — over RPC/WS, with Prometheus + Grafana metrics.
-- The **single biggest hard engineering blocker** is that no real
-  `PRIME_SP1_MODE=local` prove/verify transcript has been captured yet.
-  The audit packet's Release-Pin Checklist shows the ELF is built and the
-  verifying-key hash is pinned (`0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`),
-  but the transcript line is still unchecked.
+- The real `PRIME_SP1_MODE=local` prove/verify transcript (previously the
+  single biggest hard engineering blocker) is now **captured**: a
+  reproducible Docker ELF (verifying-key hash
+  `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`) was
+  proved (`core`) and cryptographically verified
+  (`scripts/zk/sp1-prove-response.json`, `scripts/zk/sp1-verify-response.json`).
+  E3 is closed.
 - The **client / wallet layer** (F1 WASM prover, F2 note scanner, F4
   migration UX) and the **Ethereum bridge** (G1–G4) are not started.
 - **Audits (I)** and **governance (J)** are calendar / external gates.

@@ -6,6 +6,6 @@
   "timestamp": 0,
   "txsHex": [],
   "prevMarketStateHex": "",
-  "vkeyHashHex": "0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651",
-  "programElfPath": "/mnt/c/Users/rod_o/Documents/projects/personal/prime-chain/programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition"
+  "vkeyHashHex": "0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d",
+  "programElfPath": "programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition"
 }
