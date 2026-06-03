@@ -1,0 +1,32 @@
+    Finished `release` profile [optimized] target(s) in 0.37s
+     Running `programs/state-transition-host/target/release/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+[prime-sp1-stage] prove:request:read:start
+[prime-sp1-stage] prove:request:read:done
+[prime-sp1-stage] prove:request:summary: block=1 txs=0 elf=programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition input_hex_len=1160
+[prime-sp1-stage] prove:build:start
+[prime-sp1-stage] prove:input:build:start
+[prime-sp1-stage] prove:input:build:done
+[prime-sp1-stage] prove:input:normalize:start
+[prime-sp1-stage] prove:input:normalize:done
+[prime-sp1-stage] prove:input:summary: block=1 tx_count=0 expected_block_hash=b5e597b42a4b31f3a4fc119f055838edce6facf3a4d5138a8b772adac622c343 expected_market_state_hash=c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+[prime-sp1-stage] prove:executor:start
+[prime-sp1-stage] prove:executor:done
+[prime-sp1-stage] prove:output:summary: new_state_root=73dc7781dd3c9efc74b22daa99e0477d3315f99d03c850bbce2527ad6c9d2d52 new_nullifier_root=011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce new_market_state_hash=c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470 shielded_event_root=adaed4dd1e55ac43f334db32a4a185b1762d9e3b5448336ed3a1e697511c2b97
+[prime-sp1-stage] elf:read:start
+[prime-sp1-stage] elf:read:done
+[prime-sp1-stage] stdin:build:start
+[prime-sp1-stage] stdin:write:start
+[prime-sp1-stage] stdin:write:done
+[prime-sp1-stage] client:build:start
+[prime-sp1-stage] client:build:done
+[prime-sp1-stage] setup:start
+[prime-sp1-stage] setup:done
+[prime-sp1-stage] prove:start
+[prime-sp1-stage] prove:done
+[prime-sp1-stage] public-values:check:start
+[prime-sp1-stage] public-values:check:done
+[prime-sp1-stage] serialize:start
+[prime-sp1-stage] serialize:done
+[prime-sp1-stage] prove:build:done
+[prime-sp1-stage] prove:response:write:start
+[prime-sp1-stage] prove:response:write:done

@@ -1,24 +1,27 @@
 # Privacy-Fork Audit Packet
 
-Date: 2026-05-28
-Branch: `feat/zk-privacy`
-Status: pre-audit packet assembled, not yet release-complete
+Date: 2026-06-03
+Branch: `feat/zk-e3-transcript`
+Status: pre-audit packet assembled, E3 transcript captured, not yet release-complete
 
 ## Scope
 
 This packet is the repo-side handoff for the privacy-fork audit path
 described in [SECURITY_AUDIT.md](../../SECURITY_AUDIT.md). It captures
 what is already evidenced in-repo, what was attempted in this session,
-and the exact blockers that still prevent claiming E completion or
+and the exact blockers that still prevent claiming full E completion or
 starting the real H6 bake clock.
 
 ## Included Evidence
 
 - Public-output contract alignment landed across the chain proof
   envelope, host runner, zkVM program, and RPC response surface.
-- Canonical SP1 ELF build succeeded in WSL via `cargo-prove prove build`.
+- Canonical SP1 ELF built reproducibly via
+      `cargo-prove prove build --docker --tag v6.2.2 --workspace-directory <repo>`.
 - Real SP1 verifying-key hash was captured from that ELF and pinned as
-      `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`.
+      `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`.
+- Real local `PRIME_SP1_MODE=local` core prove/verify transcript captured
+      (`scripts/zk/sp1-prove-response.json`, `scripts/zk/sp1-verify-response.json`).
 - Real-SP1 host runner now passes `cargo check --manifest-path
       programs/state-transition-host/Cargo.toml --features real-sp1` in WSL.
 - Host-side real-SP1 path now has explicit mode handling:
@@ -65,20 +68,47 @@ cargo check --manifest-path programs/state-transition-host/Cargo.toml --features
 
 ## Current Blockers
 
-### 1. Release-grade prove/verify transcript is not captured yet
+### 1. Release-grade prove/verify transcript — CAPTURED (E3 closed)
 
-The canonical ELF is built, the real verifying-key hash is captured, and
-the real-SP1 host runner compiles in WSL. What is still missing is one
-completed local prove/verify transcript against the pinned artifact set.
-That transcript should be captured with `PRIME_SP1_MODE=local`; it does
-not depend on the blocked E4 network-prover path.
+The release-grade local SP1 prove/verify transcript has now been captured
+end to end with `PRIME_SP1_MODE=local` against a reproducible ELF:
 
-Current status:
+- Guest ELF built reproducibly via
+  `cargo-prove prove build --docker --tag v6.2.2 --workspace-directory <repo>`
+  (SP1 toolchain 6.2.2). Building with `--docker` makes the ELF
+  location-independent (compiled at the canonical `/root/program` path
+  inside the container), so the verifying key is reproducible by any
+  auditor instead of being tied to one developer's absolute build path.
+  - ELF sha256: `9debe1cc1267c4f51a1e15885a051a6cd70dcd05b48e0995b6324f43ae22bd89`
+  - SP1 verifying-key hash (pinned):
+    `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`
+- Real core proof produced: `scripts/zk/sp1-prove-response.json`
+  (`proof_system = core`, ~8.8 MB), trace in `scripts/zk/sp1-prove.trace.log`.
+- Real cryptographic verify: `scripts/zk/sp1-verify-response.json` →
+  `{ "verified": true }` via the real-SP1 ELF verify path.
+- The proof's `public_values` matched the pinned deterministic output
+  exactly (state/nullifier/event roots and block hash below).
 
-- ELF path:
-      `/mnt/c/Users/rod_o/Documents/projects/personal/prime-chain/programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+> Note on the prior pin: the earlier hash
+> `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`
+> came from a non-`--docker` local build whose ELF embedded a
+> developer-specific absolute path, so it could not be reproduced on
+> another machine. It has been replaced everywhere by the reproducible
+> docker vkey above.
+
+> Verify-tool fix: `run_verify` in
+> `programs/state-transition-host/src/main.rs` previously forced
+> `vkeyHashHex == keccak256(ELF)` via `resolve_vkey_hash` even on the
+> real-SP1 ELF path, which made the real verify path unreachable (the
+> real path requires `vkeyHashHex == SP1 verifying-key hash`). The keccak
+> enforcement is now scoped to non-real-sp1 (mock) builds only.
+
+Capture details:
+
+- ELF path (reproducible docker build, relative to repo root):
+      `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
 - Pinned hash:
-      `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`
+      `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`
 - Checked-in artifact:
       `crates/zkp/params/sp1/state-transition.vk.hash`
 - Prepared prove request:
@@ -131,13 +161,14 @@ Current status:
 - Current local conclusion:
       the earlier "hang" was caused by running the real SP1 prover path through debug binaries. The checked-in adapters now normalize `cargo run ... --features real-sp1` commands to `--release` unless an explicit profile is already provided.
 - Transcript artifacts:
-      `scripts/zk/sp1-prove-response.json` is not produced yet. After the
-      request-normalization fix above, the latest `PRIME_SP1_MODE=local`
-      prove run launched successfully in WSL against the pinned ELF and
-      had not produced the response artifact before this session closed.
-      `scripts/zk/sp1-verify-request.request.json` still needs to be
-      regenerated from the eventual prove response via
-      `programs/state-transition-host/examples/render_verify_request.rs`.
+      `scripts/zk/sp1-prove-response.json` (real core proof) and
+      `scripts/zk/sp1-verify-response.json` (`{"verified": true}`) are now
+      captured, with the prove stage trace in
+      `scripts/zk/sp1-prove.trace.log`. `scripts/zk/sp1-verify-request.request.json`
+      carries the matching public values, vkey, and proof system; its
+      `proofBytesHex` field points at the proof bytes in
+      `scripts/zk/sp1-prove-response.json` (the ~8.8 MB proof is not
+      duplicated in the request).
 - Expected deterministic public output (block 1, empty, pinned input
       `scripts/zk/sp1-prove-request.request.json`), re-derived offline via
       the canonical `execute_block_program` executor (host mock path) and
@@ -151,15 +182,19 @@ Current status:
         `011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce`
       - `blockHashHex` =
         `b5e597b42a4b31f3a4fc119f055838edce6facf3a4d5138a8b772adac622c343`
-      - `newMarketStateHashHex` = `0000…0000`
+      - `newMarketStateHashHex` =
+        `c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`
       - `shieldedEventRootHex` =
         `adaed4dd1e55ac43f334db32a4a185b1762d9e3b5448336ed3a1e697511c2b97`
       - `publicValuesHex` (bincoded `BlockProgramOutput`) as pinned in the
         verify request.
-      When the real local prove completes, its `public_values` MUST equal
-      the pinned `publicValuesHex`; if it diverges, the ELF/input drifted
-      from this pin and the transcript is invalid.
-- Transcript: repo-side setup is ready, local SP1 client initialization succeeds on this WSL host when invoked via optimized `--release` binaries, and the stale request-commitment mismatch is fixed. The remaining E3 step is to let the real local prove finish, render the verify request from its response, and record the matching verify transcript.
+      The real local prove output's `public_values` equalled this pinned
+      `publicValuesHex` exactly, confirming the ELF/input did not drift.
+- Transcript: CAPTURED. The real `PRIME_SP1_MODE=local` core prove
+  completed on a 47 GB host (the `core` proof system is far lighter than
+  the recursion/wrap paths that previously OOM-killed a 28-32 GB WSL box),
+  and the rendered verify request verified cryptographically
+  (`{"verified": true}`). E3 is closed.
 
 ### 2. The canonical zkVM executor now covers the current proof boundary
 
@@ -222,8 +257,8 @@ The actual 8-week H6 bake window has not started.
 
 Reason:
 
-- no completed prove/verify transcript against the pinned artifact set
-- no network prover cut-over
+- no delegated network proof cut-over
+- no Groth16 bridge wrap / verifier path close-out
 
 It would be inaccurate to mark the bake window as started before those
 preconditions are cleared.
@@ -233,7 +268,7 @@ preconditions are cleared.
 - [x] Build `programs/state-transition` ELF on Linux or WSL.
 - [x] Capture the SP1 verifying-key hash from the built ELF and record
       it as the release pin.
-- [ ] Produce one successful real prove/verify transcript.
+- [x] Produce one successful real prove/verify transcript.
 - [x] Replace the host-echo zkVM program with canonical
       `BlockProgramInput` re-execution.
 - [x] Replace the simplified shared executor with the current

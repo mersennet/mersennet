@@ -78,7 +78,7 @@ Every two weeks:
       `scripts/zk/sp1-verify-request.template.json` as the request
       skeletons. On Windows, run the checked-in host runner through
       `PRIME_SP1_HOST_EXECUTOR=wsl`; keep `PRIME_SP1_MODE=local` until
-      the E4 network-prover dependency conflict is resolved.
+      the delegated E4 network-prover path is qualified for release use.
 - [ ] Confirm the SP1 state-proof prover backend is healthy
       (latest checkpoint <2 minutes old).
 - [ ] Confirm the threshold-decryption ceremony succeeded for the
