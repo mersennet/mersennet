@@ -241,15 +241,22 @@ The current SP1 verify/public-values boundary remains the full
 
 ## Current vkey pinning boundary
 
-The checked-in SP1 release pin is now captured from a real Linux/WSL ELF
-build of `programs/state-transition`.
+The checked-in SP1 release pin is captured from a reproducible Docker ELF
+build of `programs/state-transition`
+(`cargo-prove prove build --docker --tag v6.2.2 --workspace-directory <repo>`),
+so the verifying key is reproducible by any auditor rather than tied to a
+single developer's absolute build path.
 
 - Canonical ELF path:
-  `programs/state-transition/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+  `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+- ELF sha256:
+  `9debe1cc1267c4f51a1e15885a051a6cd70dcd05b48e0995b6324f43ae22bd89`
 - Captured verifying-key hash:
-  `0047c7a71a6cb605ffddafdf3c32d73dc7b0bb3d707da87293cbfdd02e5ce651`
+  `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`
 - Checked-in pin artifact:
   `crates/zkp/params/sp1/state-transition.vk.hash`
+- Captured transcript: `scripts/zk/sp1-prove-response.json` (real `core`
+  proof) + `scripts/zk/sp1-verify-response.json` (`{"verified": true}`).
 
 Recommended setup:
 
