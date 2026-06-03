@@ -1,15 +1,15 @@
 # Privacy-Fork Audit Packet
 
-Date: 2026-05-28
-Branch: `feat/zk-privacy`
-Status: pre-audit packet assembled, not yet release-complete
+Date: 2026-06-03
+Branch: `feat/zk-e3-transcript`
+Status: pre-audit packet assembled, E3 transcript captured, not yet release-complete
 
 ## Scope
 
 This packet is the repo-side handoff for the privacy-fork audit path
 described in [SECURITY_AUDIT.md](../../SECURITY_AUDIT.md). It captures
 what is already evidenced in-repo, what was attempted in this session,
-and the exact blockers that still prevent claiming E completion or
+and the exact blockers that still prevent claiming full E completion or
 starting the real H6 bake clock.
 
 ## Included Evidence
@@ -257,8 +257,8 @@ The actual 8-week H6 bake window has not started.
 
 Reason:
 
-- no completed prove/verify transcript against the pinned artifact set
-- no network prover cut-over
+- no delegated network proof cut-over
+- no Groth16 bridge wrap / verifier path close-out
 
 It would be inaccurate to mark the bake window as started before those
 preconditions are cleared.
@@ -268,7 +268,7 @@ preconditions are cleared.
 - [x] Build `programs/state-transition` ELF on Linux or WSL.
 - [x] Capture the SP1 verifying-key hash from the built ELF and record
       it as the release pin.
-- [ ] Produce one successful real prove/verify transcript.
+- [x] Produce one successful real prove/verify transcript.
 - [x] Replace the host-echo zkVM program with canonical
       `BlockProgramInput` re-execution.
 - [x] Replace the simplified shared executor with the current
