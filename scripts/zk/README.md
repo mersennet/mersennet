@@ -202,8 +202,15 @@ Prerequisites:
   delegated prover account.
 - The reproducible Docker ELF and pinned vkey hash from the E3 release
   artifact set are available.
-- `scripts/zk/sp1-prove-request.request.json` has been refreshed from
-  the exact `BlockProgramInput` you intend to prove.
+- A staged delegated prove request is checked in at
+  `scripts/zk/sp1-network-prove-request.request.json` (a copy of the E3
+  block-1 input). Refresh it from the exact `BlockProgramInput` you intend
+  to prove if you want a different block.
+
+Status: the `network` feature **compiles** (`cargo check … --features
+network` is green on this branch) and both prove and verify dispatch
+`ProverClient::builder().network().build()`. The single remaining step is
+the credentialed execution below.
 
 Recommended sequence:
 
@@ -212,7 +219,7 @@ cargo check --manifest-path programs/state-transition-host/Cargo.toml --features
 
 PRIME_SP1_MODE=network \
 cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- \
-  --prove-request scripts/zk/sp1-prove-request.request.json \
+  --prove-request scripts/zk/sp1-network-prove-request.request.json \
   --prove-response scripts/zk/sp1-network-prove-response.json
 
 cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_verify_request -- \

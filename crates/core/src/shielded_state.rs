@@ -121,6 +121,17 @@ impl ShieldedState {
         self.nullifiers.len()
     }
 
+    /// Export the spent-nullifier set as raw 32-byte values, sorted for a
+    /// stable wire order. Used by the grant-gated `balances:read`
+    /// reconstruction export so a grantee can mark which owned notes are
+    /// still unspent. Nullifiers are public chain data, so exporting them
+    /// under a grant leaks nothing beyond the public nullifier stream.
+    pub fn spent_nullifiers(&self) -> Vec<[u8; 32]> {
+        let mut out: Vec<[u8; 32]> = self.nullifiers.iter().map(|n| n.0.to_bytes()).collect();
+        out.sort_unstable();
+        out
+    }
+
     fn push_root(&mut self, root: Fr) {
         if self.recent_roots.back().copied() != Some(root) {
             self.recent_roots.push_back(root);

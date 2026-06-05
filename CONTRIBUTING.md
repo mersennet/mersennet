@@ -111,8 +111,8 @@ for the full plan.
 | 2. Shielded CLOB | **Done** |
 | 3. Liquidation auctions | **Done** |
 | 4. Shielded EVM accounts | **Done** |
-| 5. Real SP1 state proofs | In progress (E1-E3 complete; E4 delegated network proof and E5 bridge wrap remain) |
-| 6. SDK / RPC / wallet | In progress (Rust RPC done, wallet/SDK tracked in F1–F6) |
+| 5. Real SP1 state proofs | In progress (E1-E3 complete; E4 network path complete + turnkey, credential-gated; E5 bridge verifier/contracts/chain-export complete + tested, wrapping circuit/VK out-of-repo) |
+| 6. SDK / RPC / wallet | Complete in-repo (Rust RPC + grant-gated reconstruction reads done; F1, F2, F4, F5 SDK done; F3 UI tracked in prime-trade) |
 | 7. Hard fork + testnet bake | **Testnet ready** (8-week bake gated on E completion) |
 
 ### Workstreams (granular)
@@ -126,9 +126,11 @@ for the full plan.
 | D5 | Barretenberg verifier + prover adapters | **Done** |
 | D6 | Noir circuit compilation | **Done** |
 | D7 | Cryptography spec for auditor | **Done** ([here](docs/security/cryptography-spec.md)) |
-| E1–E5 | SP1 toolchain + program body | E1-E3 complete; E4-E5 pending |
-| F1–F6 | WASM Noir prover + UI + SDKs | Tracked separately |
-| G1–G4 | Solidity bridge + Foundry tests | Tracked separately |
+| E1–E5 | SP1 toolchain + program body | E1-E3 complete; E4 complete + turnkey (credential-gated execution); E5 contracts/chain-export complete + tested (wrapping circuit/VK out-of-repo) |
+| F1, F2, F4, F5 | Noir prover, note scanner, migration UX, grant-gated reads | **Done** (`sdk/`, `crates/rpc/`) |
+| F3 | PrimeTrade shielded order UI | External ([prime-trade](https://github.com/PrimeNumbersLabs/prime-trade)); repo-local SDK/API support complete |
+| F6 | Go / Python SDK shielded extensions | **Done** (`sdk-go/`, `sdk-python/`) |
+| G1–G4 | Solidity bridge + Foundry tests | G1-G3 **Done** (21 tests); G4 audit-prep pending E5 VK |
 | H1–H7 | Testnet bring-up | **Done** ([runbook](docs/runbooks/privacy-testnet-bootstrap.md)) |
 | I1–I6 | Third-party audit | Awaiting E |
 | J1–J6 | Governance activation | Awaiting audit |
