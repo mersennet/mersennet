@@ -111,7 +111,7 @@ for the full plan.
 | 2. Shielded CLOB | **Done** |
 | 3. Liquidation auctions | **Done** |
 | 4. Shielded EVM accounts | **Done** |
-| 5. Real SP1 state proofs | In progress (mock today, sp1up integration tracked in E1–E5) |
+| 5. Real SP1 state proofs | In progress (E1-E3 complete; E4 delegated network proof and E5 bridge wrap remain) |
 | 6. SDK / RPC / wallet | In progress (Rust RPC done, wallet/SDK tracked in F1–F6) |
 | 7. Hard fork + testnet bake | **Testnet ready** (8-week bake gated on E completion) |
 
@@ -126,13 +126,13 @@ for the full plan.
 | D5 | Barretenberg verifier + prover adapters | **Done** |
 | D6 | Noir circuit compilation | **Done** |
 | D7 | Cryptography spec for auditor | **Done** ([here](docs/security/cryptography-spec.md)) |
-| E1–E5 | SP1 toolchain + program body | Pending sp1up install |
+| E1–E5 | SP1 toolchain + program body | E1-E3 complete; E4-E5 pending |
 | F1–F6 | WASM Noir prover + UI + SDKs | Tracked separately |
 | G1–G4 | Solidity bridge + Foundry tests | Tracked separately |
 | H1–H7 | Testnet bring-up | **Done** ([runbook](docs/runbooks/privacy-testnet-bootstrap.md)) |
 | I1–I6 | Third-party audit | Awaiting E |
 | J1–J6 | Governance activation | Awaiting audit |
-| K1–K5 | CI / coverage / dev container | **K1–K2 done**, K3–K5 pending |
+| K1–K5 | CI / coverage / dev container | **Done** |
 
 At each phase boundary, `feat/zk-privacy` is merged into `main` and tagged
 `zk-phase-<n>-rc.<x>`.

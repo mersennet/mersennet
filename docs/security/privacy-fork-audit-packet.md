@@ -214,7 +214,7 @@ The focused regression
 now covers the last stale liquidation replay seam at the SP1 event-root
 boundary.
 
-### 3. Network proving — dependency conflict resolved (E4)
+### 3. Network proving — dependency conflict resolved, delegated transcript still required (E4)
 
 The `c-kzg` link conflict that previously blocked `sp1-sdk/network` has
 been resolved by removing `revm` from the SP1 host crate entirely.
@@ -245,6 +245,17 @@ Verification (this environment):
       compiles locally on this host. The remaining E4 close-out is one
       delegated proof against the Succinct network with real credentials.
 
+Delegated-proof evidence still required to close E4:
+
+- one successful `PRIME_SP1_MODE=network` prove response captured from
+      the network-enabled host
+- one rendered network verify request derived from that prove response
+- one successful `PRIME_SP1_MODE=network` verify response
+- proof/vkey/public-values equality against the pinned E3 Docker ELF
+      artifact set
+- operator notes identifying the prover-network account / environment
+      used for the delegated run
+
 The network path is gated behind a new `network` cargo feature
 (`network = ["real-sp1", "sp1-sdk/network"]`). With it enabled,
 `PRIME_SP1_MODE=network` drives `ProverClient::builder().network().build()`;
@@ -257,7 +268,7 @@ The actual 8-week H6 bake window has not started.
 
 Reason:
 
-- no delegated network proof cut-over
+- no delegated network proof cut-over evidence captured yet
 - no Groth16 bridge wrap / verifier path close-out
 
 It would be inaccurate to mark the bake window as started before those

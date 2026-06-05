@@ -79,6 +79,13 @@ Every two weeks:
       skeletons. On Windows, run the checked-in host runner through
       `PRIME_SP1_HOST_EXECUTOR=wsl`; keep `PRIME_SP1_MODE=local` until
       the delegated E4 network-prover path is qualified for release use.
+- [ ] Record one delegated `PRIME_SP1_MODE=network` prove + verify round-trip
+      for the candidate artifact set and archive:
+      - `scripts/zk/sp1-network-prove-response.json`
+      - `scripts/zk/sp1-network-verify-request.request.json`
+      - `scripts/zk/sp1-network-verify-response.json`
+      - ELF provenance + pinned `PRIME_SP1_VKEY_HASH`
+      - delegated prover account / environment notes
 - [ ] Confirm the SP1 state-proof prover backend is healthy
       (latest checkpoint <2 minutes old).
 - [ ] Confirm the threshold-decryption ceremony succeeded for the
