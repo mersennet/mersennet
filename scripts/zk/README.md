@@ -190,6 +190,60 @@ The adapters validate the JSON shape that the Rust runtime expects:
 - prove response: `vkey_hash_hex`, `public_values_hex`, `proof_bytes_hex`, `proof_system`
 - verify response: `verified`
 
+### E4 delegated network proof checklist
+
+Use this when closing the remaining network-prover cut-over after the
+local E3 transcript is already captured.
+
+Prerequisites:
+
+- `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network` passes.
+- `NETWORK_PRIVATE_KEY` and `NETWORK_RPC_URL` are set for the
+  delegated prover account.
+- The reproducible Docker ELF and pinned vkey hash from the E3 release
+  artifact set are available.
+- `scripts/zk/sp1-prove-request.request.json` has been refreshed from
+  the exact `BlockProgramInput` you intend to prove.
+
+Recommended sequence:
+
+```bash
+cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network
+
+PRIME_SP1_MODE=network \
+cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- \
+  --prove-request scripts/zk/sp1-prove-request.request.json \
+  --prove-response scripts/zk/sp1-network-prove-response.json
+
+cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_verify_request -- \
+  scripts/zk/sp1-network-prove-response.json \
+  scripts/zk/sp1-network-verify-request.request.json \
+  programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition
+
+PRIME_SP1_MODE=network \
+cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- \
+  --verify-request scripts/zk/sp1-network-verify-request.request.json \
+  --verify-response scripts/zk/sp1-network-verify-response.json
+```
+
+Artifacts to retain in the audit packet:
+
+- `scripts/zk/sp1-network-prove-response.json`
+- `scripts/zk/sp1-network-verify-request.request.json`
+- `scripts/zk/sp1-network-verify-response.json`
+- The exact prove request used for the delegated proof
+- The ELF path / sha256 / pinned `PRIME_SP1_VKEY_HASH`
+- The delegated prover account metadata needed to identify which
+  network lane produced the proof
+
+Exit criteria:
+
+- The network-enabled host compiles on the candidate release.
+- One delegated `PRIME_SP1_MODE=network` prove completes successfully.
+- The rendered verify request verifies successfully.
+- The proof's `public_values` and `vkey_hash_hex` match the pinned E3
+  artifact set.
+
 ### Transcript capture request templates
 
 For the E3 release-transcript step, start from these checked-in request
