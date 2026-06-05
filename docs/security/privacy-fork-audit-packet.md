@@ -258,18 +258,54 @@ Delegated-proof evidence still required to close E4:
 
 The network path is gated behind a new `network` cargo feature
 (`network = ["real-sp1", "sp1-sdk/network"]`). With it enabled,
-`PRIME_SP1_MODE=network` drives `ProverClient::builder().network().build()`;
-without it, the host still fails loudly telling the operator to rebuild
-with `--features network`.
+`PRIME_SP1_MODE=network` drives `ProverClient::builder().network().build()`
+on **both** the prove and verify paths; without it, the host still fails
+loudly telling the operator to rebuild with `--features network`. A staged
+delegated prove request is checked in at
+`scripts/zk/sp1-network-prove-request.request.json`, and the exact
+credentialed run sequence is in `scripts/zk/README.md` (E4 checklist).
+
+### 4. Ethereum bridge — Groth16 verifier + bridge complete and tested (E5 / G1–G4)
+
+The Ethereum-side bridge is implemented and tested in-repo:
+
+- `contracts/src/zk/Groth16Verifier.sol` — a real BN254 Groth16 verifier
+  using the `ecAdd` (0x06), `ecMul` (0x07) and `ecPairing` (0x08)
+  precompiles, with a settable + permanently lockable verifying key
+  (`PUBLIC_INPUT_COUNT = 9`).
+- `contracts/src/zk/PrimeChainBridge.sol` — consumes Groth16-wrapped
+  state-transition proofs to advance the canonical shielded/nullifier
+  roots (block monotonicity + prev→new root continuity), and runs a
+  deposit/withdraw message bus with single-spend, sorted-pair keccak
+  Merkle withdrawal authorization.
+- `contracts/test/zk/*` — **21 Foundry tests pass** (`forge test
+  --match-path 'test/zk/*' -vvv`).
+- Chain side: `crates/core/src/precompiles.rs` exposes `verifyStateProof`
+  (`0x0300`); `crates/core/src/bridge_export.rs` converts a
+  `BlockProgramOutput` + Groth16 proof blob into the bridge's
+  `submitStateProof(uint256[8], uint256[])` calldata (public-input order
+  matches `PrimeChainBridge.PI_*` and `BlockProgramOutput::to_field_elements`),
+  with 4 unit tests (`cargo test -p prime-chain --lib bridge_export`).
+
+Still required to fully close E5 (out-of-repo):
+
+- the SP1→Groth16 wrapping circuit that re-exposes the 9
+  `BlockProgramOutput` public inputs,
+- its trusted-setup verifying key (installed via
+  `Groth16Verifier.setVerifyingKey`, then `lockVerifyingKey`),
+- one real wrapped proof verified end-to-end through `submitStateProof`.
 
 ## H6 Bake Status
 
 The actual 8-week H6 bake window has not started.
 
-Reason:
+Reason (both remaining preconditions are external/out-of-repo):
 
-- no delegated network proof cut-over evidence captured yet
-- no Groth16 bridge wrap / verifier path close-out
+- no delegated Succinct network proof transcript captured yet (E4 —
+  credential-gated; code + turnkey runbook complete)
+- the Groth16 bridge verifier/contracts/chain-export path is complete and
+  tested, but the SP1→Groth16 wrapping circuit + verifying key + one real
+  wrapped proof are still outstanding (E5 — wrapping-toolchain-gated)
 
 It would be inaccurate to mark the bake window as started before those
 preconditions are cleared.
@@ -296,3 +332,6 @@ preconditions are cleared.
 - [programs/state-transition/src/main.rs](../../programs/state-transition/src/main.rs)
 - [programs/state-transition-host/src/main.rs](../../programs/state-transition-host/src/main.rs)
 - [scripts/zk/README.md](../../scripts/zk/README.md)
+- [crates/core/src/bridge_export.rs](../../crates/core/src/bridge_export.rs)
+- [contracts/src/zk/Groth16Verifier.sol](../../contracts/src/zk/Groth16Verifier.sol)
+- [contracts/src/zk/PrimeChainBridge.sol](../../contracts/src/zk/PrimeChainBridge.sol)

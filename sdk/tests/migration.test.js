@@ -1,7 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { deriveMigrationNote, matchesMigrationNote, defaultNoteCommitment } = require('../dist');
+const {
+  deriveMigrationNote,
+  matchesMigrationNote,
+  defaultNoteCommitment,
+  planMigration,
+  confirmMigration,
+} = require('../dist');
 
 const viewingKey = {
   spendPk: '0x' + 'aa'.repeat(32),
@@ -55,4 +61,35 @@ test('custom commitmentHasher is honored', () => {
   const out = deriveMigrationNote({ viewingKey, assetId: 1, balance: 1n, commitmentHasher: fixed });
   assert.equal(out.commitment, '0x' + 'ff'.repeat(32));
   assert.notEqual(out.commitment, defaultNoteCommitment(out.note));
+});
+
+test('planMigration previews notes and totals per asset', () => {
+  const accounts = [
+    { viewingKey, assetId: 1, balance: 1000n },
+    { viewingKey, assetId: 1, balance: 250n, account: 1 },
+    { viewingKey, assetId: 2, balance: 7n },
+  ];
+  const plan = planMigration(accounts);
+  assert.equal(plan.notes.length, 3);
+  assert.equal(plan.totalsByAsset[1], 1250n);
+  assert.equal(plan.totalsByAsset[2], 7n);
+});
+
+test('confirmMigration detects landed and missing notes post-fork', () => {
+  const accounts = [
+    { viewingKey, assetId: 1, balance: 1000n },
+    { viewingKey, assetId: 2, balance: 7n },
+  ];
+  const plan = planMigration(accounts);
+  const scanned = [plan.notes[0].note]; // only the first note landed
+
+  const confirmation = confirmMigration(accounts, scanned);
+  assert.equal(confirmation.confirmedCount, 1);
+  assert.equal(confirmation.complete, false);
+  assert.equal(confirmation.results[0].confirmed, true);
+  assert.equal(confirmation.results[1].confirmed, false);
+
+  const full = confirmMigration(accounts, plan.notes.map((n) => n.note));
+  assert.equal(full.complete, true);
+  assert.equal(full.confirmedCount, 2);
 });

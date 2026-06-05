@@ -1,7 +1,7 @@
 # Prime Chain — Workstream Status
 
-**Branch:** `feat/zk-privacy`
-**Last sync:** 2026-05-28 (commit `460b002`)
+**Branch:** `feat/zk-privacy` (close-out work on `feat/zk-e4-e5-f-closeout`)
+**Last sync:** 2026-06-05
 
 This is the live tracker for the privacy-fork redesign. The
 naming (A, B, C, …) matches the original architecture plan; each
@@ -64,33 +64,35 @@ external dep (e.g. `nargo`, `sp1up`, audit).
 | E1 | SP1 RISC-V toolchain | ✅ | WSL toolchain bootstrap + `cargo-prove prove build` |
 | E2 | SP1 prove path now consumes full witness-bearing `BlockProgramInput`, re-derives `BlockProgramOutput`, replays the shielded transfer / shield / unshield / liquidation-execute sub-path, replays deterministic pre-tick FBA market clearing, replays order admission from canonical decrypted-intent witnesses bound to an explicit oracle snapshot, replays liquidation claim/settle from the pre-tick witness, and proves `shielded_event_root` | ✅ | `crates/core/src/engine.rs`, `crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `crates/zkp/src/sp1.rs`, `programs/state-transition/`, `programs/state-transition-host/` |
 | E3 | Vkey pin + release-artifact capture — DONE. Reproducible Docker ELF (vkey `0013c6c7…`) proved (`core`) and cryptographically verified (`{"verified": true}`) via `PRIME_SP1_MODE=local`. | ✅ | `scripts/zk/sp1-prove-response.json`, `scripts/zk/sp1-verify-response.json`, `scripts/zk/sp1-prove.trace.log`, `crates/zkp/params/sp1/state-transition.vk.hash`, `scripts/zk/README.md` |
-| E4 | `ProverClient::network()` integration — c-kzg conflict resolved by making the SP1 host revm-free (proof types extracted to `prime-state-proof`); network path gated behind the `network` feature. Local `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network` now passes; remaining close-out is a delegated `PRIME_SP1_MODE=network` proof with Succinct credentials/account access | 🟡 | `crates/state-proof/`, `programs/state-transition-host/`, `crates/core/src/zk_sp1.rs` |
-| E5 | Groth16 wrap for Ethereum bridge verifier | 🔒 | `contracts/`, `crates/core/src/precompiles.rs` |
+| E4 | `ProverClient::network()` integration — c-kzg conflict resolved by making the SP1 host revm-free (proof types extracted to `prime-state-proof`). Both prove and verify dispatch `ProverClient::builder().network().build()` behind the `network` feature; `cargo check --features network` passes. Turnkey: `scripts/zk/sp1-network-prove-request.request.json` is staged and the one-command delegated flow is documented. **Only the credentialed `PRIME_SP1_MODE=network` execution remains** (gated on Succinct `NETWORK_PRIVATE_KEY` / `NETWORK_RPC_URL`). | 🟡 | `crates/state-proof/`, `programs/state-transition-host/`, `scripts/zk/sp1-network-prove-request.request.json` |
+| E5 | Groth16 wrap for Ethereum bridge verifier — verifier + bridge contracts complete and tested (21 Foundry tests), chain-side `verifyStateProof` precompile wired, and a tested chain-side `bridge_export` helper emits the `submitStateProof(uint256[8], uint256[])` calldata. **Remaining: the SP1→Groth16 wrapping circuit + verifying key + one real wrapped proof** (out-of-repo: needs the wrapping-circuit toolchain / trusted setup). | 🟡 | `contracts/src/zk/`, `crates/core/src/bridge_export.rs`, `crates/core/src/precompiles.rs` |
 
-Remaining E close-out items are
-one delegated network proof against the Succinct network (E4), and the
-Groth16 wrap (E5). The network-prover c-kzg conflict is resolved and the
-host `--features network` compile lane now passes locally.
+Remaining E close-out items are both external/out-of-repo: one delegated
+network proof against the Succinct network (E4, gated on credentials), and
+the SP1→Groth16 wrapping circuit + verifying key (E5, gated on the wrapping
+toolchain / trusted setup). All in-repo code, tests, calldata helpers, and
+docs for both are complete; the network-prover c-kzg conflict is resolved
+and the host `--features network` compile lane passes locally.
 
 ## F — Client / SDK / UX
 
 | ID | Description | Status |
 |---|---|---|
-| F1 | WASM Noir prover | ⬜ |
-| F2 | Wallet note scanner | ⬜ |
-| F3 | PrimeTrade shielded order UI | ⬜ (tracked in [prime-trade](https://github.com/PrimeNumbersLabs/prime-trade)) |
-| F4 | Migration UX | ⬜ |
-| F5 | Selective-disclosure grant lifecycle (ADR-019) | 🟡 (`prime_viewGrantToken` / `prime_viewRevokeToken` now verify secp256k1 grant signatures, persist grants + revocations, expose `prime_viewGrantStatus`, gate `prime_viewPortfolioDigest`, retain encrypted note payloads for shield / transfer / unshield-change notes, and expose grant-gated `prime_viewNotes` ciphertext export; balance / position / order reconstruction reads still pending) |
+| F1 | WASM Noir prover — `NoirWasmProver` (`ZkProver`) maps typed calls to named Noir circuit inputs via an injected `NoirProvingBackend`; exported + typed + tested + wiring example (`sdk/examples/noir-prover-wiring.js`). Real `@noir-lang/noir_js` + `@aztec/bb.js` backend is wired by the wallet. | ✅ (`sdk/src/noir-prover.ts`) |
+| F2 | Wallet note scanner — `scanGrantedNotes` (grant-gated ciphertext scan + decrypt) + `scanAndReconstructBalances` (paged `viewBalances`, nullifier-aware spendable balance reconstruction) + `reconstructPortfolio`; tested end-to-end. | ✅ (`sdk/src/reconstruction.ts`, `sdk/src/shielded.ts`) |
+| F3 | PrimeTrade shielded order UI | ⬜ external (tracked in [prime-trade](https://github.com/PrimeNumbersLabs/prime-trade)); all repo-local SDK/API support complete — `ShieldedClient.placeOrder` (`prime_submitShieldedOrder`), `NoirWasmProver` injection, and grant-gated reads are exported and tested |
+| F4 | Migration UX — `deriveMigrationNote` / `matchesMigrationNote` plus `planMigration` (pre-fork preview + per-asset totals) / `confirmMigration` (post-fork landed-note confirmation); tested + example (`sdk/examples/migration-drive.js`). | ✅ (`sdk/src/migration.ts`) |
+| F5 | Selective-disclosure grant lifecycle (ADR-019) — grant signature verification, persistence + revocation, `prime_viewGrantStatus`, gated `prime_viewPortfolioDigest` / `prime_viewNotes`, and the reconstruction reads `prime_viewBalances` (`balances:read`, notes + spent nullifiers), `prime_viewPositions` (`positions:read`), `prime_viewOrders` (`orders:read`); SDK `provider.viewBalances/viewPositions/viewOrders` + `scanAndReconstructBalances`; tested. | ✅ (`crates/rpc/src/rpc_shielded.rs`, `sdk/src/provider.ts`) |
 | F6 | Go / Python SDK shielded extensions | ✅ (`sdk-go/`, `sdk-python/`) |
 
 ## G — Ethereum bridge
 
-| ID | Description | Status |
-|---|---|---|
-| G1 | `PrimeChainVerifier.sol` — Groth16 verifier on Ethereum | ⬜ |
-| G2 | `PrimeChainBridge.sol` — state proof verifier + message bus | ⬜ |
-| G3 | Foundry test suite | ⬜ |
-| G4 | Audit-prep pass | ⬜ |
+| ID | Description | Status | Reference |
+|---|---|---|---|
+| G1 | `Groth16Verifier.sol` — BN254 Groth16 verifier on Ethereum (ecAdd/ecMul/ecPairing precompiles, settable+lockable VK) | ✅ | `contracts/src/zk/Groth16Verifier.sol` |
+| G2 | `PrimeChainBridge.sol` — state-proof verifier + deposit/withdraw message bus (monotonic block + root continuity, sorted-pair Merkle withdrawals) | ✅ | `contracts/src/zk/PrimeChainBridge.sol` |
+| G3 | Foundry test suite (21 tests passing) | ✅ | `contracts/test/zk/Groth16Verifier.t.sol`, `contracts/test/zk/PrimeChainBridge.t.sol` |
+| G4 | Audit-prep pass | 🟡 (verifier/bridge frozen + tested; final pass pending the E5 wrapping VK) | `contracts/src/zk/README.md` |
 
 ## H — Testnet bring-up
 
@@ -152,7 +154,7 @@ work is E4 through E5.
 | Item | Owner | Files | Commands | Exit criteria |
 |---|---|---|---|---|
 | E4. `ProverClient::network()` cut-over | `@PrimeNumbersLabs/zk` | `crates/state-proof/`, `programs/state-transition-host/src/main.rs`, `scripts/zk/README.md`, `docs/security/privacy-fork-audit-packet.md`, `docs/runbooks/zk-fork-activation.md` | `cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1`<br>`cd programs/state-transition-host && cargo tree -i c-kzg` (default/real-sp1: no match)<br>`cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network`<br>`PRIME_SP1_MODE=network cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-network-prove-response.json`<br>`cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_verify_request -- scripts/zk/sp1-network-prove-response.json scripts/zk/sp1-network-verify-request.request.json <program-elf-path>`<br>`PRIME_SP1_MODE=network cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- --verify-request scripts/zk/sp1-network-verify-request.request.json --verify-response scripts/zk/sp1-network-verify-response.json` | **Compile conflict resolved and verified locally**: the SP1 host is revm-free (proof types live in `prime-state-proof`), so `sp1-sdk/network` no longer collides on the `ckzg` native link. Remaining: capture one delegated network prove/verify transcript with real Succinct credentials and archive the response, verify response, and request/ELF provenance in the audit packet. |
-| E5. Groth16 wrap for Ethereum verifier path | `@PrimeNumbersLabs/contracts`, `@PrimeNumbersLabs/core` | `contracts/`, `crates/core/src/precompiles.rs` | `Set-Location contracts; forge build --sizes`<br>`Set-Location contracts; forge test -vvv` | Groth16 verifier and bridge contracts exist, pass Foundry tests, and are wired to the chain-side proof verification path. |
+| E5. Groth16 wrap for Ethereum verifier path | `@PrimeNumbersLabs/contracts`, `@PrimeNumbersLabs/core` | `contracts/src/zk/`, `crates/core/src/bridge_export.rs`, `crates/core/src/precompiles.rs` | `cd contracts && forge build --sizes`<br>`cd contracts && forge test --match-path 'test/zk/*' -vvv`<br>`cargo test -p prime-chain --lib bridge_export` | **In-repo done**: Groth16 verifier + bridge contracts pass 21 Foundry tests, the chain-side `verifyStateProof` precompile is wired, and `bridge_export` emits the `submitStateProof(uint256[8], uint256[])` calldata (4 unit tests). **Remaining (out-of-repo)**: build the SP1→Groth16 wrapping circuit, run its trusted setup to produce the verifying key for `Groth16Verifier.setVerifyingKey`, and capture one real wrapped proof. |
 
 #### E2 Completed Scope
 
@@ -194,9 +196,13 @@ work is E4 through E5.
   (D5/D6) is wired through the checked-in adapters and compile
   pipeline. The SP1 prove path now carries canonical witness data and
   replays the shielded tx + tick path end to end, including order
-  admission, liquidation settle, and `shielded_event_root`; the
-  remaining blockers before a hard-fork rehearsal are the delegated
-  network prover cut-over and Groth16 bridge integration.
+  admission, liquidation settle, and `shielded_event_root`. The client
+  SDK surfaces (F1–F5) are complete and tested. The two remaining
+  blockers before a hard-fork rehearsal are both external: capturing one
+  delegated Succinct network proof (E4, credential-gated) and producing
+  the SP1→Groth16 wrapping circuit + verifying key (E5); the bridge
+  verifier/contracts, chain-side verify precompile, and `bridge_export`
+  calldata helper are already complete and tested.
 - **Bake clock.** The 8-week pre-mainnet bake (H6) starts on the
   day E lands and the audit cycle (I) is funded.
 

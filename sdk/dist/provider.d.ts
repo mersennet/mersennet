@@ -2,7 +2,7 @@
  * PrimeProvider - JSON-RPC client for Prime Chain.
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
-import type { Block, CallParams, CodeAttestation, ContractPublicationStatus, Receipt, TransactionParams, ViewNotesResult } from './types';
+import type { Block, CallParams, CodeAttestation, ContractPublicationStatus, Receipt, TransactionParams, ViewBalancesResult, ViewNotesResult, ViewTradingResult } from './types';
 /**
  * Prime Chain JSON-RPC provider.
  * Connects to the RPC endpoint via HTTP.
@@ -55,6 +55,27 @@ export declare class PrimeProvider {
         limit?: number;
         cursorHex?: string;
     }): Promise<ViewNotesResult>;
+    /**
+     * prime_viewBalances — grant-gated (`balances:read`) balance-reconstruction
+     * read. Returns the encrypted note page plus the spent-nullifier set; pair
+     * with `reconstructPortfolio` to derive spendable balances client-side.
+     */
+    viewBalances(grantIdHex: string, options?: {
+        limit?: number;
+        cursorHex?: string;
+    }): Promise<ViewBalancesResult>;
+    /**
+     * prime_viewPositions — grant-gated (`positions:read`) read. Returns the
+     * public market context + grant binding; pair with `reconstructPositions`
+     * over the wallet's local fill records.
+     */
+    viewPositions(grantIdHex: string): Promise<ViewTradingResult>;
+    /**
+     * prime_viewOrders — grant-gated (`orders:read`) read. Returns the public
+     * market context + grant binding; pair with `reconstructOpenOrders` over the
+     * wallet's local order records.
+     */
+    viewOrders(grantIdHex: string): Promise<ViewTradingResult>;
     /** eth_gasPrice / prime_gasPrice */
     getGasPrice(): Promise<string>;
     /** Get the WebSocket URL if configured */

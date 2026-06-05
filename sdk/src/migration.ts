@@ -95,6 +95,59 @@ export function defaultNoteCommitment(note: Note): Fr {
   return '0x' + h.digest('hex');
 }
 
+/** A wallet's full pre-fork migration plan across one or more accounts. */
+export interface MigrationPlan {
+  /** Expected note + commitment for each migrating account. */
+  notes: MigrationNote[];
+  /** Total migrating balance per asset id (UI: "you'll receive …"). */
+  totalsByAsset: Record<number, bigint>;
+}
+
+/** Result of confirming, post-fork, that each planned note landed on chain. */
+export interface MigrationConfirmation {
+  /** Per-account confirmation, in the same order as the plan. */
+  results: Array<{ commitment: Fr; confirmed: boolean }>;
+  confirmedCount: number;
+  /** True iff every planned note was found among the scanned notes. */
+  complete: boolean;
+}
+
+/**
+ * Build the full pre-fork migration plan for a wallet that is migrating one
+ * or more transparent accounts. Lets the UI preview every shielded note the
+ * fork will mint and the total credited per asset, before activation.
+ */
+export function planMigration(accounts: MigrationNoteParams[]): MigrationPlan {
+  const notes = accounts.map((account) => deriveMigrationNote(account));
+  const totalsByAsset: Record<number, bigint> = {};
+  for (const account of accounts) {
+    totalsByAsset[account.assetId] = (totalsByAsset[account.assetId] ?? 0n) + account.balance;
+  }
+  return { notes, totalsByAsset };
+}
+
+/**
+ * Confirm, post-fork, that each planned migration note appears among the
+ * notes the wallet scanned (e.g. via `scanGrantedNotes`). Drives the
+ * "migration complete" UX state.
+ */
+export function confirmMigration(
+  accounts: MigrationNoteParams[],
+  scannedNotes: Note[]
+): MigrationConfirmation {
+  const results = accounts.map((account) => {
+    const { commitment } = deriveMigrationNote(account);
+    const confirmed = scannedNotes.some((scanned) => matchesMigrationNote(scanned, account));
+    return { commitment, confirmed };
+  });
+  const confirmedCount = results.filter((result) => result.confirmed).length;
+  return {
+    results,
+    confirmedCount,
+    complete: confirmedCount === accounts.length,
+  };
+}
+
 function labelledField(label: string, base: string): Fr {
   const h = createHash('sha256');
   h.update(label);

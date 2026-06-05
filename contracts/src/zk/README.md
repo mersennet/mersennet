@@ -65,6 +65,22 @@ the bridge cannot accept proofs prematurely.
 On success it advances `shieldedStateRoot`, `nullifierRoot`, and
 `latestProvenBlock`, and emits `StateProofAccepted`.
 
+### Chain-side calldata export
+
+`crates/core/src/bridge_export.rs` builds the `submitStateProof(uint256[8],
+uint256[])` calldata from a proven `BlockProgramOutput` and a Groth16 proof
+blob:
+
+- `bridge_public_inputs(output)` emits the 9 public inputs in the `PI_*`
+  order above (roots as raw big-endian `bytes32`, counters left-padded);
+- `decode_groth16_proof(bytes)` strips SP1's 4-byte vkey selector and
+  returns the `uint256[8]` proof words;
+- `build_bridge_submission(output, proof_bytes)` combines both and
+  `to_hex()` renders relayer-ready hex words.
+
+This is unit-tested (`cargo test -p prime-chain --lib bridge_export`); it
+encodes the same public-input contract the wrapping circuit must expose.
+
 ## Deposit / withdraw bus
 
 - `deposit(shieldedRecipient)` locks ETH and emits `DepositLocked(nonce,

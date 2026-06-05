@@ -10,7 +10,9 @@ import type {
   ContractPublicationStatus,
   Receipt,
   TransactionParams,
+  ViewBalancesResult,
   ViewNotesResult,
+  ViewTradingResult,
 } from './types';
 
 /** Parse hex string to number */
@@ -205,6 +207,43 @@ export class PrimeProvider {
       request.cursorHex = options.cursorHex;
     }
     return (await this.request('prime_viewNotes', [request])) as ViewNotesResult;
+  }
+
+  /**
+   * prime_viewBalances — grant-gated (`balances:read`) balance-reconstruction
+   * read. Returns the encrypted note page plus the spent-nullifier set; pair
+   * with `reconstructPortfolio` to derive spendable balances client-side.
+   */
+  async viewBalances(
+    grantIdHex: string,
+    options: { limit?: number; cursorHex?: string } = {}
+  ): Promise<ViewBalancesResult> {
+    const request: Record<string, unknown> = { grantIdHex };
+    if (options.limit !== undefined) {
+      request.limit = options.limit;
+    }
+    if (options.cursorHex) {
+      request.cursorHex = options.cursorHex;
+    }
+    return (await this.request('prime_viewBalances', [request])) as ViewBalancesResult;
+  }
+
+  /**
+   * prime_viewPositions — grant-gated (`positions:read`) read. Returns the
+   * public market context + grant binding; pair with `reconstructPositions`
+   * over the wallet's local fill records.
+   */
+  async viewPositions(grantIdHex: string): Promise<ViewTradingResult> {
+    return (await this.request('prime_viewPositions', [{ grantIdHex }])) as ViewTradingResult;
+  }
+
+  /**
+   * prime_viewOrders — grant-gated (`orders:read`) read. Returns the public
+   * market context + grant binding; pair with `reconstructOpenOrders` over the
+   * wallet's local order records.
+   */
+  async viewOrders(grantIdHex: string): Promise<ViewTradingResult> {
+    return (await this.request('prime_viewOrders', [{ grantIdHex }])) as ViewTradingResult;
   }
 
   /** eth_gasPrice / prime_gasPrice */

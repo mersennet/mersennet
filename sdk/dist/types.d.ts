@@ -160,4 +160,43 @@ export interface ViewNotesResult {
     notes: ViewNotesEntry[];
     signatureVerified: boolean;
 }
+/**
+ * Response payload returned by prime_viewBalances (grant scope
+ * `balances:read`). Carries the encrypted note page plus the spent-nullifier
+ * set so a grantee can run client-side `reconstructPortfolio`.
+ */
+export interface ViewBalancesResult {
+    grantId: string;
+    grantorCommitment: string;
+    blockNumber: number;
+    shieldedStateRoot: string;
+    totalEncryptedNoteCount: number;
+    returnedEncryptedNoteCount: number;
+    nextCursor: string | null;
+    notes: ViewNotesEntry[];
+    spentNullifiers: string[];
+    spentNullifierCount: number;
+    reconstruction: string;
+    signatureVerified: boolean;
+}
+/** Per-market aggregate context returned alongside the trading reads. */
+export interface ViewMarketAggregates {
+    markets: unknown[];
+}
+/**
+ * Response payload returned by prime_viewPositions (grant scope
+ * `positions:read`) / prime_viewOrders (grant scope `orders:read`). Position
+ * and open-order attribution is performed client-side over the wallet's local
+ * order/fill records (see `reconstructPositions` / `reconstructOpenOrders`);
+ * the node returns the public market context plus the grant binding.
+ */
+export interface ViewTradingResult {
+    grantId: string;
+    grantorCommitment: string;
+    blockNumber: number;
+    shieldedStateRoot: string;
+    marketAggregates: ViewMarketAggregates;
+    reconstruction: string;
+    signatureVerified: boolean;
+}
 //# sourceMappingURL=types.d.ts.map

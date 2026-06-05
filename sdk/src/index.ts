@@ -83,12 +83,15 @@ export type { Fr } from './shielded';
 export {
   reconstructPortfolio,
   defaultNullifierDeriver,
+  scanAndReconstructBalances,
 } from './reconstruction';
 export type {
   NullifierDeriver,
   PortfolioNote,
   ReconstructedPortfolio,
   ReconstructOptions,
+  ScanReconstructOptions,
+  BalanceReconstructionResult,
 } from './reconstruction';
 
 // Client-side Noir proving (Workstream F1). The backend is injected by the
@@ -121,11 +124,15 @@ export {
   deriveMigrationNote,
   matchesMigrationNote,
   defaultNoteCommitment,
+  planMigration,
+  confirmMigration,
   MIGRATION_RHO_LABEL,
   MIGRATION_PSI_LABEL,
 } from './migration';
 export type {
   MigrationNote,
   MigrationNoteParams,
+  MigrationPlan,
+  MigrationConfirmation,
   NoteCommitmentHasher,
 } from './migration';

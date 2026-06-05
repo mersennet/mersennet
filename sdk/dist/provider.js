@@ -158,6 +158,37 @@ class PrimeProvider {
         }
         return (await this.request('prime_viewNotes', [request]));
     }
+    /**
+     * prime_viewBalances — grant-gated (`balances:read`) balance-reconstruction
+     * read. Returns the encrypted note page plus the spent-nullifier set; pair
+     * with `reconstructPortfolio` to derive spendable balances client-side.
+     */
+    async viewBalances(grantIdHex, options = {}) {
+        const request = { grantIdHex };
+        if (options.limit !== undefined) {
+            request.limit = options.limit;
+        }
+        if (options.cursorHex) {
+            request.cursorHex = options.cursorHex;
+        }
+        return (await this.request('prime_viewBalances', [request]));
+    }
+    /**
+     * prime_viewPositions — grant-gated (`positions:read`) read. Returns the
+     * public market context + grant binding; pair with `reconstructPositions`
+     * over the wallet's local fill records.
+     */
+    async viewPositions(grantIdHex) {
+        return (await this.request('prime_viewPositions', [{ grantIdHex }]));
+    }
+    /**
+     * prime_viewOrders — grant-gated (`orders:read`) read. Returns the public
+     * market context + grant binding; pair with `reconstructOpenOrders` over the
+     * wallet's local order records.
+     */
+    async viewOrders(grantIdHex) {
+        return (await this.request('prime_viewOrders', [{ grantIdHex }]));
+    }
     /** eth_gasPrice / prime_gasPrice */
     async getGasPrice() {
         const result = (await this.request('eth_gasPrice'));

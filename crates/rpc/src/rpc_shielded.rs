@@ -123,6 +123,18 @@ pub fn try_dispatch(method: &str, params: Value, engine: &mut Engine) -> Shielde
             require_active(active)?;
             read_view_notes(engine, params)
         }
+        "prime_viewBalances" => {
+            require_active(active)?;
+            read_view_balances(engine, params)
+        }
+        "prime_viewPositions" => {
+            require_active(active)?;
+            read_view_positions(engine, params)
+        }
+        "prime_viewOrders" => {
+            require_active(active)?;
+            read_view_orders(engine, params)
+        }
         "prime_viewGrantStatus" => {
             require_active(active)?;
             read_view_grant_status(engine, params)
@@ -165,6 +177,9 @@ fn is_shielded_method(method: &str) -> bool {
             | "prime_viewRevokeToken"
             | "prime_viewPortfolioDigest"
             | "prime_viewNotes"
+            | "prime_viewBalances"
+            | "prime_viewPositions"
+            | "prime_viewOrders"
             | "prime_viewGrantStatus"
     )
 }
@@ -374,6 +389,130 @@ fn read_view_notes(engine: &Engine, params: Value) -> ShieldedRouteResult {
             "noteCommitment": hex_bytes(commitment.as_slice()),
             "encryptedNote": hex_bytes(payload),
         })).collect::<Vec<_>>(),
+        "signatureVerified": true,
+    })))
+}
+
+/// Shared encrypted-note pagination used by the grant-gated reconstruction
+/// reads (`prime_viewNotes` / `prime_viewBalances`). Returns
+/// `(notes_json, total_count, next_cursor)`.
+fn paginate_encrypted_notes(
+    engine: &Engine,
+    obj: &Value,
+) -> Result<(Vec<Value>, usize, Option<String>), ShieldedRpcError> {
+    let limit = parse_usize_field(obj, "limit")?
+        .unwrap_or(DEFAULT_VIEW_NOTES_LIMIT)
+        .min(MAX_VIEW_NOTES_LIMIT);
+    let cursor = match obj.get("cursorHex").and_then(Value::as_str) {
+        Some(value) => Some(decode_fixed_hex(value, 32)?),
+        None => None,
+    };
+
+    let mut notes: Vec<(&[u8; 32], &Vec<u8>)> =
+        engine.shielded_evm.encrypted_note_payloads.iter().collect();
+    notes.sort_by_key(|(commitment, _)| **commitment);
+
+    let start = match cursor {
+        Some(cursor_commitment) => {
+            notes.partition_point(|(commitment, _)| **commitment <= cursor_commitment)
+        }
+        None => 0,
+    };
+    let end = start.saturating_add(limit).min(notes.len());
+    let window = &notes[start..end];
+    let next_cursor = if end < notes.len() {
+        window
+            .last()
+            .map(|(commitment, _)| hex_bytes(commitment.as_slice()))
+    } else {
+        None
+    };
+    let json_notes = window
+        .iter()
+        .map(|(commitment, payload)| {
+            json!({
+                "noteCommitment": hex_bytes(commitment.as_slice()),
+                "encryptedNote": hex_bytes(payload),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok((json_notes, notes.len(), next_cursor))
+}
+
+/// `prime_viewBalances(grantIdHex, [limit], [cursorHex])` — grant-gated
+/// (`balances:read`) balance-reconstruction read. Returns the encrypted
+/// note set plus the spent-nullifier set so a grantee can run the SDK's
+/// `reconstructPortfolio` client-side. The node never decrypts a balance:
+/// nullifiers are public chain data and notes stay ciphertext.
+fn read_view_balances(engine: &Engine, params: Value) -> ShieldedRouteResult {
+    let (grant_id, token) = resolve_active_viewing_grant(
+        engine,
+        &params,
+        &ViewingGrantScope::BalancesRead,
+        "balances:read",
+    )?;
+    let obj = first_param_object(&params)?;
+    let (notes, total, next_cursor) = paginate_encrypted_notes(engine, obj)?;
+    let spent_nullifiers = engine.shielded_evm.state.spent_nullifiers();
+
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "grantorCommitment": hex_bytes(&token.grantor_commitment),
+        "blockNumber": engine.latest_height(),
+        "shieldedStateRoot": hex_bytes(&engine.shielded_evm.state.current_root().to_bytes()),
+        "totalEncryptedNoteCount": total,
+        "returnedEncryptedNoteCount": notes.len(),
+        "nextCursor": next_cursor,
+        "notes": notes,
+        "spentNullifiers": spent_nullifiers.iter().map(|n| hex_bytes(n)).collect::<Vec<_>>(),
+        "spentNullifierCount": spent_nullifiers.len(),
+        "reconstruction": "client-side: reconstructPortfolio over decrypted notes, excluding spentNullifiers",
+        "signatureVerified": true,
+    })))
+}
+
+/// `prime_viewPositions(grantIdHex)` — grant-gated (`positions:read`)
+/// position-reconstruction read. Returns the public per-market clearing
+/// context plus the grant binding. Position attribution itself is performed
+/// client-side via the SDK's `reconstructPositions` over the wallet's local
+/// order/fill records, authorized by this grant.
+fn read_view_positions(engine: &Engine, params: Value) -> ShieldedRouteResult {
+    let (grant_id, token) = resolve_active_viewing_grant(
+        engine,
+        &params,
+        &ViewingGrantScope::PositionsRead,
+        "positions:read",
+    )?;
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "grantorCommitment": hex_bytes(&token.grantor_commitment),
+        "blockNumber": engine.latest_height(),
+        "shieldedStateRoot": hex_bytes(&engine.shielded_evm.state.current_root().to_bytes()),
+        "marketAggregates": read_market_aggregates(engine),
+        "reconstruction": "client-side: reconstructPositions over local order/fill records, authorized by this positions:read grant",
+        "signatureVerified": true,
+    })))
+}
+
+/// `prime_viewOrders(grantIdHex)` — grant-gated (`orders:read`) open-order
+/// reconstruction read. Returns the public per-market clearing context plus
+/// the grant binding. Open-order attribution is performed client-side via
+/// the SDK's `reconstructOpenOrders` over the wallet's local order records,
+/// authorized by this grant.
+fn read_view_orders(engine: &Engine, params: Value) -> ShieldedRouteResult {
+    let (grant_id, token) = resolve_active_viewing_grant(
+        engine,
+        &params,
+        &ViewingGrantScope::OrdersRead,
+        "orders:read",
+    )?;
+    Ok(Some(json!({
+        "grantId": hex_bytes(&grant_id),
+        "grantorCommitment": hex_bytes(&token.grantor_commitment),
+        "blockNumber": engine.latest_height(),
+        "shieldedStateRoot": hex_bytes(&engine.shielded_evm.state.current_root().to_bytes()),
+        "marketAggregates": read_market_aggregates(engine),
+        "reconstruction": "client-side: reconstructOpenOrders over local order records, authorized by this orders:read grant",
         "signatureVerified": true,
     })))
 }
@@ -1438,6 +1577,126 @@ mod tests {
         assert_eq!(second_page["returnedEncryptedNoteCount"], 1);
         assert_eq!(second_page["nextCursor"], Value::Null);
         assert_eq!(second_page["notes"][0]["encryptedNote"], "0x0909");
+    }
+
+    #[test]
+    fn view_reconstruction_reads_are_grant_gated() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(4), &[0x04]);
+        e.shielded_evm
+            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(8), &[0x08]);
+        e.shielded_evm
+            .state
+            .spend(prime_zkp::Nullifier(prime_zkp::Fr::from_u64(7)))
+            .unwrap();
+
+        let signing_key = SigningKey::from_bytes((&[21u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x63; 32],
+            vec![0x46; 33],
+            vec![
+                ViewingGrantScope::BalancesRead,
+                ViewingGrantScope::PositionsRead,
+                ViewingGrantScope::OrdersRead,
+            ],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "63".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "46".repeat(33)),
+                "scopes": ["balances:read", "positions:read", "orders:read"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let balances = try_dispatch(
+            "prime_viewBalances",
+            json!([{ "grantIdHex": grant_id_hex.clone() }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(balances["signatureVerified"], true);
+        assert_eq!(balances["totalEncryptedNoteCount"], 2);
+        assert_eq!(balances["returnedEncryptedNoteCount"], 2);
+        assert_eq!(balances["spentNullifierCount"], 1);
+        assert_eq!(balances["spentNullifiers"].as_array().unwrap().len(), 1);
+        assert_eq!(balances["notes"].as_array().unwrap().len(), 2);
+
+        let positions = try_dispatch(
+            "prime_viewPositions",
+            json!([{ "grantIdHex": grant_id_hex.clone() }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(positions["signatureVerified"], true);
+        assert!(positions["marketAggregates"].is_object());
+
+        let orders = try_dispatch(
+            "prime_viewOrders",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(orders["signatureVerified"], true);
+        assert!(orders["marketAggregates"].is_object());
+    }
+
+    #[test]
+    fn view_balances_rejects_wrong_scope() {
+        let mut e = fresh_engine();
+        e.activate_privacy_mode();
+        let signing_key = SigningKey::from_bytes((&[22u8; 32]).into()).unwrap();
+        let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
+            &signing_key,
+            e.chain_id,
+            [0x71; 32],
+            vec![0x17; 33],
+            vec![ViewingGrantScope::NotesRead],
+            e.latest_height(),
+            e.latest_height() + 5,
+        );
+
+        try_dispatch(
+            "prime_viewGrantToken",
+            json!([{
+                "grantorCommitmentHex": format!("0x{}", "71".repeat(32)),
+                "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
+                "granteePubkeyHex": format!("0x{}", "17".repeat(33)),
+                "scopes": ["notes:read"],
+                "startBlock": format!("0x{:x}", e.latest_height()),
+                "endBlock": format!("0x{:x}", e.latest_height() + 5),
+                "grantIdHex": grant_id_hex.clone(),
+                "signatureHex": signature_hex,
+            }]),
+            &mut e,
+        )
+        .unwrap();
+
+        let err = try_dispatch(
+            "prime_viewBalances",
+            json!([{ "grantIdHex": grant_id_hex }]),
+            &mut e,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ERR_FORBIDDEN);
+        assert!(err.message.contains("missing balances:read scope"));
     }
 
     #[test]

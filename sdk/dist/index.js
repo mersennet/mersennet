@@ -17,7 +17,7 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MIGRATION_PSI_LABEL = exports.MIGRATION_RHO_LABEL = exports.defaultNoteCommitment = exports.matchesMigrationNote = exports.deriveMigrationNote = exports.reconstructPositions = exports.reconstructOpenOrders = exports.NoirWasmProver = exports.defaultNullifierDeriver = exports.reconstructPortfolio = exports.parseShieldedNotePlaintext = exports.parseEncryptedNotePayload = exports.scanGrantedNotes = exports.createOwnerViewingMaterial = exports.createMockNoteDecryptor = exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
+exports.MIGRATION_PSI_LABEL = exports.MIGRATION_RHO_LABEL = exports.confirmMigration = exports.planMigration = exports.defaultNoteCommitment = exports.matchesMigrationNote = exports.deriveMigrationNote = exports.reconstructPositions = exports.reconstructOpenOrders = exports.NoirWasmProver = exports.scanAndReconstructBalances = exports.defaultNullifierDeriver = exports.reconstructPortfolio = exports.parseShieldedNotePlaintext = exports.parseEncryptedNotePayload = exports.scanGrantedNotes = exports.createOwnerViewingMaterial = exports.createMockNoteDecryptor = exports.ViewingKeyHelpers = exports.ShieldedClient = exports.encodeGetBestBidAsk = exports.encodeIsLiquidatable = exports.encodeGetCollateral = exports.encodeGetPosition = exports.encodeWithdrawCollateral = exports.encodeDepositCollateral = exports.encodeCancelOrder = exports.encodePlaceOrder = exports.SELECTORS = exports.PRECOMPILE_ADDRESS = exports.PrimePrecompile = exports.PrimeSubscription = exports.PrimeOrders = exports.PrimeProvider = void 0;
 var provider_1 = require("./provider");
 Object.defineProperty(exports, "PrimeProvider", { enumerable: true, get: function () { return provider_1.PrimeProvider; } });
 var orders_1 = require("./orders");
@@ -50,6 +50,7 @@ Object.defineProperty(exports, "parseShieldedNotePlaintext", { enumerable: true,
 var reconstruction_1 = require("./reconstruction");
 Object.defineProperty(exports, "reconstructPortfolio", { enumerable: true, get: function () { return reconstruction_1.reconstructPortfolio; } });
 Object.defineProperty(exports, "defaultNullifierDeriver", { enumerable: true, get: function () { return reconstruction_1.defaultNullifierDeriver; } });
+Object.defineProperty(exports, "scanAndReconstructBalances", { enumerable: true, get: function () { return reconstruction_1.scanAndReconstructBalances; } });
 // Client-side Noir proving (Workstream F1). The backend is injected by the
 // wallet and wraps @noir-lang/noir_js + @aztec/bb.js.
 var noir_prover_1 = require("./noir-prover");
@@ -64,5 +65,7 @@ var migration_1 = require("./migration");
 Object.defineProperty(exports, "deriveMigrationNote", { enumerable: true, get: function () { return migration_1.deriveMigrationNote; } });
 Object.defineProperty(exports, "matchesMigrationNote", { enumerable: true, get: function () { return migration_1.matchesMigrationNote; } });
 Object.defineProperty(exports, "defaultNoteCommitment", { enumerable: true, get: function () { return migration_1.defaultNoteCommitment; } });
+Object.defineProperty(exports, "planMigration", { enumerable: true, get: function () { return migration_1.planMigration; } });
+Object.defineProperty(exports, "confirmMigration", { enumerable: true, get: function () { return migration_1.confirmMigration; } });
 Object.defineProperty(exports, "MIGRATION_RHO_LABEL", { enumerable: true, get: function () { return migration_1.MIGRATION_RHO_LABEL; } });
 Object.defineProperty(exports, "MIGRATION_PSI_LABEL", { enumerable: true, get: function () { return migration_1.MIGRATION_PSI_LABEL; } });

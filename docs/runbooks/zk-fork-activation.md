@@ -86,6 +86,13 @@ Every two weeks:
       - `scripts/zk/sp1-network-verify-response.json`
       - ELF provenance + pinned `PRIME_SP1_VKEY_HASH`
       - delegated prover account / environment notes
+- [ ] Ethereum bridge (E5 / G1–G4): re-run `cd contracts && forge build
+      --sizes && forge test --match-path 'test/zk/*' -vvv` (21 tests) and
+      `cargo test -p prime-chain --lib bridge_export` (4 tests). Before
+      mainnet bridging, install the SP1→Groth16 wrapping verifying key via
+      `Groth16Verifier.setVerifyingKey` + `lockVerifyingKey`, then archive
+      one real `submitStateProof` calldata set produced by
+      `bridge_export::build_bridge_submission`.
 - [ ] Confirm the SP1 state-proof prover backend is healthy
       (latest checkpoint <2 minutes old).
 - [ ] Confirm the threshold-decryption ceremony succeeded for the

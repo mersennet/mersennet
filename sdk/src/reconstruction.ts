@@ -16,7 +16,15 @@
  */
 
 import { createHash } from 'crypto';
-import type { Note } from './shielded';
+import type { PrimeProvider } from './provider';
+import {
+  parseEncryptedNotePayload,
+  parseShieldedNotePlaintext,
+  type EncryptedNote,
+  type GrantedNoteScanOptions,
+  type GrantedViewingMaterial,
+  type Note,
+} from './shielded';
 
 /** Maps an owned note to its on-chain nullifier (hex, 0x-prefixed). */
 export type NullifierDeriver = (note: Note) => string;
@@ -134,4 +142,115 @@ function hexToBytes(hex: string): Uint8Array {
     out[index] = parseInt(normalized.slice(index * 2, index * 2 + 2), 16);
   }
   return out;
+}
+
+export interface ScanReconstructOptions extends GrantedNoteScanOptions {
+  /** Nullifier deriver. Defaults to {@link defaultNullifierDeriver}. */
+  deriveNullifier?: NullifierDeriver;
+}
+
+/** Spendable portfolio reconstructed from a grant-gated `balances:read`. */
+export interface BalanceReconstructionResult extends ReconstructedPortfolio {
+  grantId: string;
+  blockNumber: number;
+  shieldedStateRoot: string;
+  totalEncryptedNoteCount: number;
+  fetchedEncryptedNoteCount: number;
+  skippedMalformedCount: number;
+  spentNullifierCount: number;
+}
+
+/**
+ * End-to-end balance read (Workstream F2 + F5).
+ *
+ * Pages through the grant-gated `prime_viewBalances` RPC, decrypts the notes
+ * addressed to the grantor via the supplied viewing material, collects the
+ * on-chain spent-nullifier set, and reconstructs spendable per-asset balances
+ * locally. The node never sees a decrypted balance.
+ *
+ * The wallet must supply a `deriveNullifier` that matches the chain's
+ * nullifier scheme so unspent notes are filtered correctly; the default
+ * mirrors the mock scheme used in tests.
+ */
+export async function scanAndReconstructBalances(
+  provider: PrimeProvider,
+  grantedViewingMaterial: GrantedViewingMaterial,
+  options: ScanReconstructOptions = {}
+): Promise<BalanceReconstructionResult> {
+  const maxPages = options.maxPages ?? Number.MAX_SAFE_INTEGER;
+  let cursorHex = options.cursorHex;
+  let pageCount = 0;
+  let blockNumber = 0;
+  let shieldedStateRoot = '0x';
+  let totalEncryptedNoteCount = 0;
+  let fetchedEncryptedNoteCount = 0;
+  let skippedMalformedCount = 0;
+  const ownedNotes: Note[] = [];
+  const spentNullifiers = new Set<string>();
+
+  while (pageCount < maxPages) {
+    const page = await provider.viewBalances(grantedViewingMaterial.grantIdHex, {
+      limit: options.limit,
+      cursorHex,
+    });
+    blockNumber = page.blockNumber;
+    shieldedStateRoot = page.shieldedStateRoot;
+    totalEncryptedNoteCount = page.totalEncryptedNoteCount;
+    fetchedEncryptedNoteCount += page.returnedEncryptedNoteCount;
+    for (const nullifier of page.spentNullifiers) {
+      spentNullifiers.add(normalizeHex(nullifier));
+    }
+
+    for (const entry of page.notes) {
+      let envelope: EncryptedNote;
+      try {
+        envelope = parseEncryptedNotePayload(entry.encryptedNote);
+      } catch (error) {
+        if (options.ignoreMalformed ?? true) {
+          skippedMalformedCount += 1;
+          continue;
+        }
+        throw error;
+      }
+
+      if (
+        grantedViewingMaterial.recipientPublicKey &&
+        envelope.recipient.toLowerCase() !== grantedViewingMaterial.recipientPublicKey.toLowerCase()
+      ) {
+        continue;
+      }
+
+      const plaintext = await grantedViewingMaterial.decryptNoteCiphertext({
+        noteCommitment: entry.noteCommitment,
+        encryptedNoteHex: entry.encryptedNote,
+        envelope,
+      });
+      if (!plaintext) {
+        continue;
+      }
+      ownedNotes.push(parseShieldedNotePlaintext(plaintext));
+    }
+
+    pageCount += 1;
+    if (!page.nextCursor) {
+      break;
+    }
+    cursorHex = page.nextCursor;
+  }
+
+  const portfolio = reconstructPortfolio(ownedNotes, {
+    deriveNullifier: options.deriveNullifier,
+    spentNullifiers,
+  });
+
+  return {
+    ...portfolio,
+    grantId: grantedViewingMaterial.grantIdHex,
+    blockNumber,
+    shieldedStateRoot,
+    totalEncryptedNoteCount,
+    fetchedEncryptedNoteCount,
+    skippedMalformedCount,
+    spentNullifierCount: spentNullifiers.size,
+  };
 }

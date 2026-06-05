@@ -23,12 +23,12 @@ export type { Block, Transaction, Receipt, LogEntry, Order, OrderBook, OrderBook
 export { ShieldedClient, ViewingKeyHelpers, createMockNoteDecryptor, createOwnerViewingMaterial, scanGrantedNotes, parseEncryptedNotePayload, parseShieldedNotePlaintext, } from './shielded';
 export type { Note, EncryptedNote, GrantedDecryptedNote, GrantedNoteScanOptions, GrantedNoteScanResult, GrantedViewingMaterial, ShieldedBalance, ViewingKey, OrderPlacePublicInputs, ZkProver, ShieldedClientOptions, } from './shielded';
 export type { Fr } from './shielded';
-export { reconstructPortfolio, defaultNullifierDeriver, } from './reconstruction';
-export type { NullifierDeriver, PortfolioNote, ReconstructedPortfolio, ReconstructOptions, } from './reconstruction';
+export { reconstructPortfolio, defaultNullifierDeriver, scanAndReconstructBalances, } from './reconstruction';
+export type { NullifierDeriver, PortfolioNote, ReconstructedPortfolio, ReconstructOptions, ScanReconstructOptions, BalanceReconstructionResult, } from './reconstruction';
 export { NoirWasmProver } from './noir-prover';
 export type { NoirCircuitName, NoirInputValue, NoirProvingBackend, NoirWasmProverOptions, } from './noir-prover';
 export { reconstructOpenOrders, reconstructPositions, } from './positions';
 export type { OrderSide, OrderRecord, FillRecord, OpenOrder, ReconstructedPosition, ReconstructTradingOptions, } from './positions';
-export { deriveMigrationNote, matchesMigrationNote, defaultNoteCommitment, MIGRATION_RHO_LABEL, MIGRATION_PSI_LABEL, } from './migration';
-export type { MigrationNote, MigrationNoteParams, NoteCommitmentHasher, } from './migration';
+export { deriveMigrationNote, matchesMigrationNote, defaultNoteCommitment, planMigration, confirmMigration, MIGRATION_RHO_LABEL, MIGRATION_PSI_LABEL, } from './migration';
+export type { MigrationNote, MigrationNoteParams, MigrationPlan, MigrationConfirmation, NoteCommitmentHasher, } from './migration';
 //# sourceMappingURL=index.d.ts.map
