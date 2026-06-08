@@ -318,7 +318,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(format!("0x{:x}", count)))
         }
         "net_listening" => Ok(Value::Bool(true)),
-        "web3_clientVersion" => Ok(Value::String("PrimeChain/0.1.0".to_string())),
+        "web3_clientVersion" => Ok(Value::String("Mersennet/0.1.0".to_string())),
         "txpool_status" => {
             let pending = engine.mempool_pending_count();
             let queued = engine.mempool_queued_count();
