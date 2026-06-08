@@ -6,11 +6,11 @@ title: "EVM Compatibility"
 
 # EVM Compatibility
 
-Prime Chain implements an **EVM-compatible** execution environment, allowing developers to deploy and run existing Ethereum smart contracts with minimal or no modification. This document describes the EVM implementation, supported features, and differences from Ethereum mainnet.
+Mersennet implements an **EVM-compatible** execution environment, allowing developers to deploy and run existing Ethereum smart contracts with minimal or no modification. This document describes the EVM implementation, supported features, and differences from Ethereum mainnet.
 
 ## Overview
 
-| Aspect | Prime Chain |
+| Aspect | Mersennet |
 |--------|-------------|
 | **EVM Version** | Shanghai |
 | **Chain ID** | 7919 |
@@ -19,7 +19,7 @@ Prime Chain implements an **EVM-compatible** execution environment, allowing dev
 
 ## Shanghai EVM
 
-Prime Chain targets the **Shanghai** EVM specification, which includes:
+Mersennet targets the **Shanghai** EVM specification, which includes:
 
 - All pre-Shanghai opcodes and semantics
 - **PUSH0** (EIP-3855) — Push constant 0 onto the stack
@@ -29,7 +29,7 @@ This ensures compatibility with the vast majority of Solidity contracts and tool
 
 ## Supported Opcodes
 
-Prime Chain supports the standard Ethereum opcodes defined in the Shanghai spec, including:
+Mersennet supports the standard Ethereum opcodes defined in the Shanghai spec, including:
 
 - **Arithmetic**: ADD, SUB, MUL, DIV, MOD, etc.
 - **Comparison**: LT, GT, SLT, SGT, EQ, etc.
@@ -44,7 +44,7 @@ Prime Chain supports the standard Ethereum opcodes defined in the Shanghai spec,
 
 ### Standard Ethereum Precompiles
 
-Prime Chain supports all standard Ethereum precompiles:
+Mersennet supports all standard Ethereum precompiles:
 
 | Address | Precompile | Description |
 |---------|------------|-------------|
@@ -57,9 +57,9 @@ Prime Chain supports all standard Ethereum precompiles:
 | 0x07 | ecMul | Elliptic curve scalar multiplication |
 | 0x08 | ecPairing | BN254 pairing |
 
-### Prime Chain Extension: PrimeOrders
+### Mersennet Extension: PrimeOrders
 
-Prime Chain adds a **custom precompile** for the native order matching engine:
+Mersennet adds a **custom precompile** for the native order matching engine:
 
 | Address | Precompile | Description |
 |---------|------------|-------------|
@@ -69,7 +69,7 @@ See [PrimeOrders (On-chain CLOB)](/architecture/prime-orders) for full documenta
 
 ## Gas Metering
 
-Prime Chain uses gas metering consistent with Ethereum:
+Mersennet uses gas metering consistent with Ethereum:
 
 - Each opcode has a cost (e.g. ADD = 3, SSTORE = 20,000 for cold)
 - Transactions specify a `gasLimit`; execution stops if gas is exhausted
@@ -81,7 +81,7 @@ Gas costs align with Ethereum's Shanghai spec for predictable behavior when port
 
 ### Transaction Format
 
-Prime Chain may use a **custom transaction format** that differs from Ethereum's legacy or EIP-1559 formats. Key points:
+Mersennet may use a **custom transaction format** that differs from Ethereum's legacy or EIP-1559 formats. Key points:
 
 - Transactions still include: `from`, `to`, `value`, `data`, `gasLimit`, `gasPrice` (or equivalent)
 - **EIP-1559** (dynamic base fee + priority fee) may not be fully implemented yet—check the current network configuration
@@ -89,16 +89,16 @@ Prime Chain may use a **custom transaction format** that differs from Ethereum's
 
 ### No EIP-1559 Dynamic Fees (Yet)
 
-As of the current implementation, Prime Chain may not support EIP-1559's dynamic base fee:
+As of the current implementation, Mersennet may not support EIP-1559's dynamic base fee:
 
 - **Ethereum**: Base fee adjusts per block based on target utilization
-- **Prime Chain**: May use a fixed or simpler fee model
+- **Mersennet**: May use a fixed or simpler fee model
 
 Validators earn primarily from **block rewards**, not transaction fees. Fee market parameters can be updated via governance.
 
 ### Block Structure
 
-Prime Chain blocks include additional fields beyond standard Ethereum:
+Mersennet blocks include additional fields beyond standard Ethereum:
 
 - **Rewards**: Per-validator block reward distribution
 - **PrimeOrders events**: Order submissions, trades, liquidations (if applicable)
@@ -108,7 +108,7 @@ The RPC and block structure expose these for explorers and indexers.
 ### Native Token
 
 - **Ethereum**: ETH (18 decimals)
-- **Prime Chain**: PRIM (18 decimals)
+- **Mersennet**: PRIM (18 decimals)
 
 Same decimal precision, so contract logic that assumes 18 decimals works unchanged.
 
@@ -124,4 +124,4 @@ Same decimal precision, so contract logic that assumes 18 decimals works unchang
 | EIP-1559 | ⚠️ Check network config |
 | Gas metering | ✅ Ethereum-compatible |
 
-Prime Chain is designed for **EVM ecosystem compatibility**—deploy your contracts, use your tools, and leverage the native PrimeOrders precompile for advanced DeFi strategies.
+Mersennet is designed for **EVM ecosystem compatibility**—deploy your contracts, use your tools, and leverage the native PrimeOrders precompile for advanced DeFi strategies.

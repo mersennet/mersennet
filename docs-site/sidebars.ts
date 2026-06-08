@@ -50,6 +50,30 @@ const sidebars: SidebarsConfig = {
         'developers/sdks/python',
       ],
     },
+    {
+      type: 'category',
+      label: 'Privacy & ZK',
+      items: [
+        'developers/privacy/shielded-sdk',
+        'developers/privacy/shielded-rpc',
+      ],
+    },
+  ],
+  privacy: [
+    {
+      type: 'category',
+      label: 'Privacy',
+      collapsed: false,
+      items: [
+        'privacy/overview',
+        'privacy/shielded-accounts',
+        'privacy/zk-risk-checks',
+        'privacy/selective-disclosure',
+        'privacy/note-scanning',
+        'privacy/state-proofs',
+        'privacy/migration',
+      ],
+    },
   ],
   validators: [
     {

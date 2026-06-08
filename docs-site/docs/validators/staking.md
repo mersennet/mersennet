@@ -6,11 +6,11 @@ title: "Staking Guide"
 
 # Staking Guide
 
-Staking is how you participate in Prime Chain consensus and earn rewards. This guide covers how staking works, delegation, rewards, unbonding, and slashing conditions.
+Staking is how you participate in Mersennet consensus and earn rewards. This guide covers how staking works, delegation, rewards, unbonding, and slashing conditions.
 
 ## How Staking Works
 
-In Prime Chain's Delegated Proof-of-Stake (DPoS) model:
+In Mersennet's Delegated Proof-of-Stake (DPoS) model:
 
 1. **Validators** stake PRIM to join the validator set and produce blocks.
 2. **Delegators** stake PRIM with validators to share in rewards without running a node.

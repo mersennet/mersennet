@@ -6,7 +6,7 @@ title: "Deployed Contracts"
 
 # Deployed Contracts
 
-Complete reference of smart contracts deployed on Prime Chain testnet (Chain ID 7919). All addresses are verified for the current testnet deployment.
+Complete reference of smart contracts deployed on Mersennet testnet (Chain ID 7919). All addresses are verified for the current testnet deployment.
 
 ## Foundation
 
@@ -56,7 +56,7 @@ Mock tokens (MockUSDC, MockUSDT, MockDAI) include a public `faucet()` function. 
 | **AtomicArbitrage** | `0x77c6de42d5629ac7e454910a46d06fab34be8f14` | Atomic arbitrage across CLOB and AMM pools. Buy on CLOB, sell on AMM (or vice versa) in a single transaction. |
 
 :::tip
-These contracts demonstrate Prime Chain's unique capability: **atomic composability between EVM smart contracts and the native CLOB**. This is impossible on other order book chains like Hyperliquid or dYdX where the order book is off-chain.
+These contracts demonstrate Mersennet's unique capability: **atomic composability between EVM smart contracts and the native CLOB**. This is impossible on other order book chains like Hyperliquid or dYdX where the order book is off-chain.
 :::
 
 ## Quick Reference (Copy-Paste)
@@ -81,7 +81,7 @@ AtomicArbitrage:     0x77c6de42d5629ac7e454910a46d06fab34be8f14
 Contract ABIs can be obtained from:
 
 - **Block Explorer** — [http://46.225.30.187](http://46.225.30.187) — Search by address and view contract details.
-- **Source Code** — Prime Chain contracts repository (see [GitHub](https://github.com/PrimeNumbersLabs/prime-chain)).
+- **Source Code** — Mersennet contracts repository (see [GitHub](https://github.com/PrimeNumbersLabs/prime-chain)).
 - **Multicall3** — Standard [Multicall3](https://github.com/mds1/multicall) ABI; compatible with wagmi/viem defaults.
 
 ## Usage Examples

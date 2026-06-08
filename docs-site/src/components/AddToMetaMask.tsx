@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 
 const NETWORK_CONFIG = {
   chainId: '0x1eef',
-  chainName: 'Prime Chain Testnet',
+  chainName: 'Mersennet Testnet',
   rpcUrls: ['http://46.225.30.187:8545'],
   blockExplorerUrls: ['http://46.225.30.187'],
   nativeCurrency: {
@@ -44,7 +44,7 @@ export default function AddToMetaMask(): React.ReactElement {
         ? 'Added!'
         : status === 'error'
           ? 'Failed — try manually'
-          : 'Add Prime Chain to MetaMask';
+          : 'Add Mersennet to MetaMask';
 
   return (
     <button
@@ -57,16 +57,16 @@ export default function AddToMetaMask(): React.ReactElement {
         padding: '0.6rem 1.25rem',
         fontSize: '0.9rem',
         fontWeight: 600,
-        fontFamily: 'var(--prime-font-ui, Inter, sans-serif)',
-        color: status === 'success' ? '#00e5a0' : '#060910',
+        fontFamily: 'var(--prime-font-mono, monospace)',
+        color: status === 'success' ? '#7dff9b' : '#03150a',
         background:
           status === 'success'
-            ? 'rgba(0,229,160,0.12)'
+            ? 'rgba(125,255,155,0.12)'
             : status === 'error'
               ? '#ef4444'
-              : '#00e5a0',
+              : '#7dff9b',
         border:
-          status === 'success' ? '1px solid rgba(0,229,160,0.3)' : 'none',
+          status === 'success' ? '1px solid rgba(125,255,155,0.3)' : 'none',
         borderRadius: '8px',
         cursor: status === 'pending' ? 'wait' : 'pointer',
         transition: 'all 200ms ease',

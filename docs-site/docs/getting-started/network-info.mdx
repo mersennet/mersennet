@@ -6,14 +6,14 @@ title: "Network Information"
 
 # Network Information
 
-Use the following configuration to connect to Prime Chain testnet.
+Use the following configuration to connect to Mersennet testnet.
 
 ## Testnet Configuration
 
 | Parameter | Value |
 |-----------|-------|
 | **Chain ID** | 7919 |
-| **Network Name** | Prime Chain Testnet |
+| **Network Name** | Mersennet Testnet |
 | **RPC URL** | `http://46.225.30.187:8545` |
 | **WebSocket URL** | `ws://46.225.30.187:8546` |
 | **Block Explorer** | http://46.225.30.187 |
@@ -25,7 +25,7 @@ Use the following configuration to connect to Prime Chain testnet.
 The WebSocket endpoint may not be enabled on all nodes. If subscriptions fail, use HTTP RPC for polling.
 :::
 
-## Add Prime Chain to MetaMask
+## Add Mersennet to MetaMask
 
 import AddToMetaMask from '@site/src/components/AddToMetaMask';
 
@@ -38,7 +38,7 @@ await window.ethereum.request({
   method: 'wallet_addEthereumChain',
   params: [{
     chainId: '0x1EEF', // 7919 in hex
-    chainName: 'Prime Chain Testnet',
+    chainName: 'Mersennet Testnet',
     nativeCurrency: {
       name: 'PRIM',
       symbol: 'PRIM',
@@ -56,7 +56,7 @@ Chain ID `7919` in decimal equals `0x1EEF` in hexadecimal.
 
 ## Deployed Contract Addresses
 
-The following contracts are deployed on Prime Chain testnet and ready for integration:
+The following contracts are deployed on Mersennet testnet and ready for integration:
 
 | Contract | Address |
 |----------|---------|
@@ -77,7 +77,7 @@ The following contracts are deployed on Prime Chain testnet and ready for integr
 
 ## Ecosystem Applications
 
-The following applications are live on Prime Chain testnet:
+The following applications are live on Mersennet testnet:
 
 | Application | URL | Description |
 |-------------|-----|-------------|

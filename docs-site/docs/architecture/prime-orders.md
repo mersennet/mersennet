@@ -6,7 +6,7 @@ title: "PrimeOrders (On-chain CLOB)"
 
 # PrimeOrders (On-chain CLOB)
 
-PrimeOrders is Prime Chain's **native on-chain central limit order book (CLOB)** -- a key differentiator that enables atomic DeFi strategies impossible on traditional chains. It is accessible to smart contracts via an EVM precompile at address `0x0000000000000000000000000000000000000100`.
+PrimeOrders is Mersennet's **native on-chain central limit order book (CLOB)** -- a key differentiator that enables atomic DeFi strategies impossible on traditional chains. It is accessible to smart contracts via an EVM precompile at address `0x0000000000000000000000000000000000000100`.
 
 ## Overview
 
@@ -235,4 +235,4 @@ Price-time priority:
 | **Shared state** | EVM and CLOB see the same balances and positions |
 | **8 functions** | Complete trading lifecycle via standard Solidity calls |
 
-No other L1 offers atomic EVM + CLOB interaction in a single transaction. Prime Chain enables institutional-grade DeFi strategies -- vaults, arbitrage, market making -- that are infeasible elsewhere.
+No other L1 offers atomic EVM + CLOB interaction in a single transaction. Mersennet enables institutional-grade DeFi strategies -- vaults, arbitrage, market making -- that are infeasible elsewhere.

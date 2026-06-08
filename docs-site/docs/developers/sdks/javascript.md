@@ -6,11 +6,15 @@ title: "JavaScript SDK"
 
 # JavaScript SDK
 
-The Prime Chain JavaScript SDK (`@prime-chain/sdk`) provides a typed interface for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
+The Mersennet JavaScript SDK (`@prime-chain/sdk`) provides a typed interface for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
+
+:::tip Privacy / shielded features
+This page covers the **transparent** surface (`eth_*` / `prime_*` / `primeorders_*`). For shielded transfers and orders, client-side Noir proving, note scanning, balance/position reconstruction, selective-disclosure reads, and migration, see the dedicated **[Shielded SDK](/developers/privacy/shielded-sdk)**.
+:::
 
 ## Installation
 
-From the Prime Chain monorepo:
+From the Mersennet monorepo:
 
 ```bash
 cd sdk
@@ -88,12 +92,12 @@ console.log("Tx hash:", txHash);
 ```
 
 :::tip
-For transactions from a wallet (e.g., browser), use ethers.js or viem with the Prime Chain RPC. The SDK's `sendTransaction` is for server-side flows with unlocked accounts.
+For transactions from a wallet (e.g., browser), use ethers.js or viem with the Mersennet RPC. The SDK's `sendTransaction` is for server-side flows with unlocked accounts.
 :::
 
 ## Interacting with PrimeOrders
 
-PrimeOrders is Prime Chain's on-chain order book (CLOB). Use it for limit orders, positions, and collateral.
+PrimeOrders is Mersennet's on-chain order book (CLOB). Use it for limit orders, positions, and collateral.
 
 ### Get Order Book
 
@@ -239,6 +243,12 @@ WebSocket may not be enabled on all nodes. If subscriptions fail, use HTTP polli
 | | `sendTransaction(tx)` | eth_sendTransaction |
 | | `getChainId()` | Chain ID |
 | | `getGasPrice()` | Gas price (hex) |
+| | `getCode(address)` / `getCodeHash(address)` | Contract bytecode / code hash |
+| | `getCodeAttestation(address)` | Code-publication attestation |
+| | `getStorageAt(address, slot)` | Storage slot value |
+| | `viewNotes(grantIdHex, opts?)` | Grant-gated encrypted notes (selective disclosure) |
+| | `viewBalances(grantIdHex, opts?)` | Grant-gated notes + spent nullifiers for reconstruction |
+| | `viewPositions(grantIdHex)` / `viewOrders(grantIdHex)` | Grant-gated trading reconstruction context |
 | `PrimeOrders` | `getOrderBook(marketId)` | Order book |
 | | `getOpenOrders(owner)` | Open orders |
 | | `getPosition(owner, marketId)` | Position |

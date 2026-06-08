@@ -10,7 +10,7 @@ This guide walks you through sending PRIM, deploying a simple contract, and view
 
 ## Prerequisites
 
-- [Wallet configured](/getting-started/wallet-setup) with Prime Chain testnet
+- [Wallet configured](/getting-started/wallet-setup) with Mersennet testnet
 - [Testnet PRIM](/getting-started/faucet) from the faucet
 
 ---

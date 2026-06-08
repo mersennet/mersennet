@@ -6,7 +6,7 @@ title: "Monitoring & Alerts"
 
 # Monitoring & Alerts
 
-Running a validator requires 24/7 visibility into node health, consensus participation, and resource usage. This guide covers setting up Prometheus and Grafana for Prime Chain monitoring, plus recommended alert rules.
+Running a validator requires 24/7 visibility into node health, consensus participation, and resource usage. This guide covers setting up Prometheus and Grafana for Mersennet monitoring, plus recommended alert rules.
 
 ## Overview
 
@@ -14,13 +14,13 @@ A typical monitoring stack includes:
 
 | Component | Purpose |
 |-----------|---------|
-| **Prometheus** | Scrapes metrics from the Prime Chain node |
+| **Prometheus** | Scrapes metrics from the Mersennet node |
 | **Grafana** | Dashboards and visualization |
 | **Alertmanager** | Routes alerts (email, Slack, PagerDuty) |
 
 ## Key Metrics
 
-Prime Chain exposes metrics that you should monitor:
+Mersennet exposes metrics that you should monitor:
 
 | Metric | Description |
 |--------|-------------|
@@ -62,10 +62,10 @@ global:
 scrape_configs:
   - job_name: 'prime-chain'
     static_configs:
-      - targets: ['localhost:9091']  # Prime Chain metrics port
+      - targets: ['localhost:9091']  # Mersennet metrics port
 ```
 
-Ensure your Prime Chain node exposes metrics on the configured port (e.g. 9091). The exact port is set in the node config.
+Ensure your Mersennet node exposes metrics on the configured port (e.g. 9091). The exact port is set in the node config.
 
 ### 3. Start Prometheus
 
@@ -121,17 +121,17 @@ groups:
   - name: prime-chain
     rules:
       # Block production stalled
-      - alert: PrimeChainBlockStalled
+      - alert: MersennetBlockStalled
         expr: increase(prime_chain_block_height[5m]) == 0
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: "Prime Chain block production stalled"
+          summary: "Mersennet block production stalled"
           description: "No new blocks in 5 minutes. Node may be out of sync or consensus may be stuck."
 
       # Missed blocks (slashing risk)
-      - alert: PrimeChainMissedBlocks
+      - alert: MersennetMissedBlocks
         expr: increase(prime_chain_validator_missed_blocks[1h]) > 0
         for: 5m
         labels:
@@ -141,17 +141,17 @@ groups:
           description: "Validator has missed blocks in the last hour. Risk of downtime slashing."
 
       # Low disk space
-      - alert: PrimeChainLowDiskSpace
+      - alert: MersennetLowDiskSpace
         expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Low disk space on Prime Chain node"
+          summary: "Low disk space on Mersennet node"
           description: "Less than 10% disk space remaining. Node may stop if disk fills."
 
       # Peer count too low
-      - alert: PrimeChainLowPeerCount
+      - alert: MersennetLowPeerCount
         expr: prime_chain_peer_count < 3
         for: 10m
         labels:

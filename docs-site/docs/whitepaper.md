@@ -7,17 +7,17 @@ format: md
 ---
 
 
-# Prime Chain: A Hybrid Blockchain Architecture Combining EVM Execution with Deterministic Order Matching
+# Mersennet: A Hybrid Blockchain Architecture Combining EVM Execution with Deterministic Order Matching
 
 **Version 7.0**  
 **Date: March 2026**  
-**Authors: Prime Chain Development Team**
+**Authors: Mersennet Development Team**
 
 ---
 
 ## Preface
 
-This document is a technical whitepaper describing the Prime Chain protocol—a Layer 1 blockchain that unifies EVM execution with native order matching. It is intended as a specification of the system's design, architecture, and rationale. It is not a formal specification in the sense of the Ethereum Yellow Paper; parameters and mechanisms may evolve based on implementation experience and community feedback. Non-core aspects such as API bindings, client libraries, and operator tooling are documented elsewhere. This whitepaper draws structural inspiration from foundational works including the [Bitcoin whitepaper](https://bitcoin.org/bitcoin.pdf) [1], [Ethereum whitepaper](https://ethereum.org/whitepaper/) [2], [Solana](https://solana.com/solana-whitepaper.pdf) [3], and [Polkadot](https://polkadot.network/PolkaDotPaper.pdf) [4].
+This document is a technical whitepaper describing the Mersennet protocol—a Layer 1 blockchain that unifies EVM execution with native order matching. It is intended as a specification of the system's design, architecture, and rationale. It is not a formal specification in the sense of the Ethereum Yellow Paper; parameters and mechanisms may evolve based on implementation experience and community feedback. Non-core aspects such as API bindings, client libraries, and operator tooling are documented elsewhere. This whitepaper draws structural inspiration from foundational works including the [Bitcoin whitepaper](https://bitcoin.org/bitcoin.pdf) [1], [Ethereum whitepaper](https://ethereum.org/whitepaper/) [2], [Solana](https://solana.com/solana-whitepaper.pdf) [3], and [Polkadot](https://polkadot.network/PolkaDotPaper.pdf) [4].
 
 **Version History:** v1.0 (initial draft), v2.0 (comprehensive technical), v3.0 (Ethereum-style expansion), v4.0 (incorporates patterns from top blockchain whitepapers), v5.0 (formula fixes, technical depth), v6.0 (parallel EVM execution, HotStuff-2 consensus, CLOB precompile, Frequent Batch Auctions, MEV protection, comprehensive benchmarks), v7.0 (production storage engine, WebSocket subscriptions, block pipeline, Noise P2P encryption, ZK state proofs, Account Abstraction, cross-chain bridges, TypeScript SDK, block explorer).
 
@@ -25,13 +25,13 @@ This document is a technical whitepaper describing the Prime Chain protocol—a 
 
 ## Abstract
 
-We propose Prime Chain, a novel Layer 1 blockchain that **decouples the consensus layer from a multi-domain execution model**. Unlike single-domain chains (Bitcoin, Ethereum) or multi-chain frameworks (Polkadot, Cosmos), Prime Chain embeds a deterministic order matching engine (PrimeOrders) alongside the EVM within a **single canonical state**—enabling atomic cross-domain workflows that are infeasible on separate chains. The system achieves sub-200ms BFT finality via **HotStuff-2** two-phase consensus with escalating slashing, implements EIP-1559 fee markets, and provides a cross-domain bridge for ordered message passing.
+We propose Mersennet, a novel Layer 1 blockchain that **decouples the consensus layer from a multi-domain execution model**. Unlike single-domain chains (Bitcoin, Ethereum) or multi-chain frameworks (Polkadot, Cosmos), Mersennet embeds a deterministic order matching engine (PrimeOrders) alongside the EVM within a **single canonical state**—enabling atomic cross-domain workflows that are infeasible on separate chains. The system finalizes blocks via **BFT proof-of-stake** consensus (two-round prevote/precommit with stake-weighted proposer election) and escalating slashing, implements EIP-1559 fee markets, and provides a cross-domain bridge for ordered message passing. A two-phase **HotStuff-2** pipeline is implemented in the node as the optimized upgrade path (benchmarked at sub-200ms finality).
 
 **v7.0 builds on v6.0's five breakthrough capabilities with production-grade infrastructure:**
 
 1. **Parallel EVM Execution**: Optimistic concurrency control (Block-STM / Grevm pattern) with static dependency analysis, multi-version memory, and conflict detection—enabling multi-core transaction processing while maintaining sequential semantics.
 2. **CLOB Precompile** (`0x0100`): The first EVM precompile that gives Solidity smart contracts direct, atomic access to a native order book—enabling composable DeFi strategies (vault → order → fill → callback) in a single transaction.
-3. **HotStuff-2 Consensus**: Two-phase BFT protocol reducing finality latency by 33% compared to three-phase CometBFT, with linear message complexity and optimistic responsiveness.
+3. **BFT Proof-of-Stake Consensus**: Two-round prevote/precommit finality with stake-weighted proposer rotation and escalating slashing. A two-phase **HotStuff-2** pipeline is implemented as the optimized upgrade path (≈33% lower latency than three-phase CometBFT, with linear message complexity and optimistic responsiveness), exercised in benchmarks.
 4. **Frequent Batch Auctions (FBA)**: Uniform-price discrete auctions that eliminate front-running and MEV extraction from order matching—transactions within a batch window are indistinguishable by arrival time.
 5. **Commit-Reveal MEV Protection**: Two-phase transaction submission for EVM where users commit a hash before revealing the transaction, preventing sandwich attacks and information leakage.
 
@@ -47,7 +47,7 @@ We propose Prime Chain, a novel Layer 1 blockchain that **decouples the consensu
 13. **TypeScript SDK**: Full client library for JSON-RPC, WebSocket subscriptions, and ABI-encoded CLOB precompile interaction.
 14. **Block Explorer**: Standalone web UI for visualizing blocks, transactions, order books, and validator status.
 
-By unifying general-purpose smart contracts with institutional-grade order books, parallel execution, and MEV-resistant matching, Prime Chain enables new applications in real-world asset tokenization, institutional credit, and decentralized derivatives trading.
+By unifying general-purpose smart contracts with institutional-grade order books, parallel execution, and MEV-resistant matching, Mersennet enables new applications in real-world asset tokenization, institutional credit, and decentralized derivatives trading.
 
 **Keywords:** Blockchain, EVM, Order Matching, Proof-of-Stake, Cross-Domain Bridge, Deterministic Execution, Fee Markets, RWA, Institutional Credit, Parallel Execution, HotStuff-2, CLOB Precompile, Frequent Batch Auctions, MEV Protection
 
@@ -71,11 +71,11 @@ By unifying general-purpose smart contracts with institutional-grade order books
 | **BASE** | Optimistic Rollup | EVM (L2) | Contract-based | No | N/A | L2 finality depends on L1 |
 | **XDC Network** | XDPoS | EVM-compatible | Contract-based | No | N/A | Limited DeFi ecosystem |
 | **TRON** | DPoS | TVM (EVM-like) | Contract-based | No | N/A | Centralization concerns |
-| **Prime Chain** | **HotStuff-2 BFT** | **Parallel EVM + PrimeOrders + Bridge** | **Native, same state + FBA** | **Yes (Block-STM)** | **Precompile (atomic)** | New architecture, unproven at scale |
+| **Mersennet** | **BFT PoS (HotStuff-2 path)** | **Parallel EVM + PrimeOrders + Bridge** | **Native, same state + FBA** | **Yes (Block-STM)** | **Precompile (atomic)** | New architecture, unproven at scale |
 
-**Decoupling insight (Polkadot):** Polkadot separates *canonicality* (which history is valid) from *validity* (whether state transitions are correct). Prime Chain adopts a related insight: *execution domains* (EVM, PrimeOrders) can be distinct while sharing a single canonicality layer and state root.
+**Decoupling insight (Polkadot):** Polkadot separates *canonicality* (which history is valid) from *validity* (whether state transitions are correct). Mersennet adopts a related insight: *execution domains* (EVM, PrimeOrders) can be distinct while sharing a single canonicality layer and state root.
 
-**Prime Chain's contribution:** The first L1 to embed a **parallel EVM** and a native CLOB in **one block, one state, one finality**—with a precompile enabling **atomic** EVM ↔ CLOB interaction in a **single transaction**. This avoids the composability gap of separate chains (dYdX), the async latency of dual-execution designs (Hyperliquid's HyperEVM reads previous-block state and CoreWriter actions are delayed by seconds), the performance gap of EVM-only CLOBs, and the centralization of off-chain matching (Vertex). The combination of parallel execution (Monad/Sei-class throughput), native order matching (12x faster than Hyperliquid), true atomic composability (no other chain achieves this), MEV-resistant batch auctions, and full EVM ecosystem compatibility is unique among all existing architectures.
+**Mersennet's contribution:** The first L1 to embed a **parallel EVM** and a native CLOB in **one block, one state, one finality**—with a precompile enabling **atomic** EVM ↔ CLOB interaction in a **single transaction**. This avoids the composability gap of separate chains (dYdX), the async latency of dual-execution designs (Hyperliquid's HyperEVM reads previous-block state and CoreWriter actions are delayed by seconds), the performance gap of EVM-only CLOBs, and the centralization of off-chain matching (Vertex). The combination of parallel execution (Monad/Sei-class throughput), native order matching (12x faster than Hyperliquid), true atomic composability (no other chain achieves this), MEV-resistant batch auctions, and full EVM ecosystem compatibility is unique among all existing architectures.
 
 ---
 
@@ -83,7 +83,7 @@ By unifying general-purpose smart contracts with institutional-grade order books
 
 ### Blockchain as a State Transition System
 
-From a technical standpoint, the ledger of a blockchain can be thought of as a **state transition system**. There is a "state" consisting of the current snapshot of all accounts, balances, and program state, and a "state transition function" that takes a state and a set of transactions (or operations) and outputs a new state. In a standard banking system, for example, the state is a balance sheet, a transaction is a request to move $X from A to B, and the state transition function reduces the value in A's account by $X and increases the value in B's account by $X. If A's account has less than $X, the state transition function returns an error. Formally:
+From a technical standpoint, the ledger of a blockchain can be thought of as a **state transition system**. There is a "state" consisting of the current snapshot of all accounts, balances, and program state, and a "state transition function" that takes a state and a set of transactions (or operations) and outputs a new state. In a standard banking system, for example, the state is a balance sheet, a transaction is a request to move $X$ from $A$ to $B$, and the state transition function reduces the value in $A$'s account by $X$ and increases the value in $B$'s account by $X$. If $A$'s account has less than $X$, the state transition function returns an error. Formally:
 
 $$\text{APPLY}(S, \text{TX}) \rightarrow S' \text{ or ERROR}$$
 
@@ -95,7 +95,7 @@ But:
 
 $$\text{APPLY}(\{ \text{Alice}: \$50, \text{Bob}: \$50 \}, \text{"send \$70 from Alice to Bob"}) = \text{ERROR}$$
 
-In **Bitcoin**, the state is the collection of unspent transaction outputs (UTXOs), each with a denomination and an owner. Transactions consume UTXOs and create new ones. In **Ethereum**, the state comprises accounts—each with a balance, nonce, code, and storage—and state transitions execute arbitrary contract code. **Prime Chain** extends this paradigm by introducing a **multi-domain state**: in addition to EVM accounts (balance, nonce, code, storage), Prime Chain maintains **PrimeOrders state** (markets, order books, positions, collateral) and **Bridge state** (cross-domain message queues). The state transition function $\mathcal{T}$ of Prime Chain therefore operates over a tuple:
+In **Bitcoin**, the state is the collection of unspent transaction outputs (UTXOs), each with a denomination and an owner. Transactions consume UTXOs and create new ones. In **Ethereum**, the state comprises accounts—each with a balance, nonce, code, and storage—and state transitions execute arbitrary contract code. **Mersennet** extends this paradigm by introducing a **multi-domain state**: in addition to EVM accounts (balance, nonce, code, storage), Mersennet maintains **PrimeOrders state** (markets, order books, positions, collateral) and **Bridge state** (cross-domain message queues). The state transition function $\mathcal{T}$ of Mersennet therefore operates over a tuple:
 
 $$S = (S_{evm}, S_{orders}, S_{bridge})$$
 
@@ -112,9 +112,9 @@ Satoshi Nakamoto's Bitcoin demonstrated that decentralized consensus over a shar
 
 Implementing a full-featured order matching engine purely in EVM bytecode is possible but inefficient: gas costs, block times, and lack of specialized data structures (e.g., price-time priority order books) make it impractical for high-throughput trading. Conversely, specialized chains built only for order matching lack the composability of smart contracts—they cannot easily integrate with DeFi protocols, token standards, or cross-chain bridges.
 
-### Prime Chain's Solution: Unified Multi-Domain Architecture
+### Mersennet's Solution: Unified Multi-Domain Architecture
 
-Prime Chain addresses this tension by architecting a **single blockchain** with **multiple execution domains**:
+Mersennet addresses this tension by architecting a **single blockchain** with **multiple execution domains**:
 
 1. **PrimeEVM**: Full EVM compatibility (Shanghai spec) for general computation
 2. **PrimeOrders**: A native, deterministic order matching engine with price-time priority
@@ -129,7 +129,7 @@ All three domains share one consensus layer, one canonical state, and one block 
 
 ### History and Precedents
 
-The idea of combining blockchain consensus with specialized execution layers has precedents. **Colored coins** (2012) assigned metadata to Bitcoin UTXOs to represent custom assets. **Mastercoin** (2013) layered a protocol on top of Bitcoin for tokens and simple contracts. **Ethereum** (2015) introduced a general-purpose VM. **Cosmos** (2017) and **Polkadot** (2020) pioneered multi-chain architectures with shared security. **dYdX** and **Vertex** built order matching into Layer 2 rollups. Prime Chain adopts a different approach: instead of a separate chain or rollup, it embeds the order matching engine directly into the Layer 1 state and consensus, ensuring that EVM and PrimeOrders share the same block, the same finality, and the same state root.
+The idea of combining blockchain consensus with specialized execution layers has precedents. **Colored coins** (2012) assigned metadata to Bitcoin UTXOs to represent custom assets. **Mastercoin** (2013) layered a protocol on top of Bitcoin for tokens and simple contracts. **Ethereum** (2015) introduced a general-purpose VM. **Cosmos** (2017) and **Polkadot** (2020) pioneered multi-chain architectures with shared security. **dYdX** and **Vertex** built order matching into Layer 2 rollups. Mersennet adopts a different approach: instead of a separate chain or rollup, it embeds the order matching engine directly into the Layer 1 state and consensus, ensuring that EVM and PrimeOrders share the same block, the same finality, and the same state root.
 
 ---
 
@@ -183,7 +183,7 @@ The blockchain industry has evolved from Bitcoin's simple UTXO model to Ethereum
 
 Traditional blockchain architectures therefore face a fundamental tension: **general-purpose programmability vs. specialized high-performance execution**. Ethereum's EVM provides universal computation but struggles with latency-sensitive applications like order matching. Specialized chains optimized for trading (e.g., dYdX v4 on Cosmos) lack the composability and ecosystem of general-purpose blockchains—they cannot easily interoperate with DeFi protocols, NFT marketplaces, or cross-chain bridges without additional infrastructure.
 
-Prime Chain addresses this by architecting a **unified system** that maintains full EVM compatibility while embedding a deterministic, high-throughput order matching engine. This dual-domain approach enables:
+Mersennet addresses this by architecting a **unified system** that maintains full EVM compatibility while embedding a deterministic, high-throughput order matching engine. This dual-domain approach enables:
 
 - **Composability**: Smart contracts can interact with order books, positions, and market data
 - **Performance**: Deterministic matching with sub-second finality suitable for trading
@@ -219,12 +219,12 @@ Prime Chain addresses this by architecting a **unified system** that maintains f
 
 ### 2.1 High-Level Overview
 
-Prime Chain consists of four primary execution domains unified under a single consensus layer:
+Mersennet consists of four primary execution domains unified under a single consensus layer:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    HotStuff-2 Consensus Layer                       │
-│  (2-Phase BFT, PoS, QC Formation, Slashing, Optimistic Response)   │
+│                    BFT Proof-of-Stake Consensus Layer               │
+│  (Prevote/Precommit BFT, stake-weighted proposer, slashing)         │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
           ┌─────────────────────┼─────────────────────┐
@@ -488,7 +488,7 @@ Following conventions from Tendermint, Solana, and Ethereum 2.0:
 
 ### 4.2 Proof-of-Stake Overview
 
-Prime Chain uses a Proof-of-Stake (PoS) consensus mechanism with the following properties:
+Mersennet uses a Proof-of-Stake (PoS) consensus mechanism with the following properties:
 
 - **Validator Set**: Dynamic set of staked validators
 - **Proposer Selection**: Round-robin based on block height
@@ -637,7 +637,7 @@ Changes are applied in order: slashes → unbonds → stakes.
 
 ### 4.10 HotStuff-2 Protocol *(v6.0)*
 
-Prime Chain v6.0 introduces HotStuff-2 [12] as the primary consensus protocol, replacing the three-phase CometBFT-style mechanism with a **two-phase** protocol that reduces finality latency by 33% while maintaining identical safety guarantees.
+Mersennet implements HotStuff-2 [12] as a two-phase BFT consensus pipeline. **The live testnet currently finalizes blocks via the two-round BFT proof-of-stake path (prevote → precommit) with stake-weighted proposer election; HotStuff-2 is implemented in the node (`crates/core/src/hotstuff2.rs`) and exercised in benchmarks as the optimized two-phase upgrade path.** It reduces finality latency by ~33% versus a three-phase CometBFT-style mechanism while maintaining identical safety guarantees.
 
 #### 4.10.1 Protocol Overview
 
@@ -738,7 +738,7 @@ On first invocation, the HotStuff-2 state machine is initialized from the curren
 
 ### 5.1 EVM Compatibility
 
-Prime Chain maintains full EVM compatibility using **revm** (Rust EVM):
+Mersennet maintains full EVM compatibility using **revm** (Rust EVM):
 
 - **Spec ID**: Shanghai (latest EVM specification)
 - **Opcodes**: All standard EVM opcodes supported
@@ -871,7 +871,7 @@ Block execution proceeds as:
 
 ### 5.8 Parallel EVM Execution *(v6.0)*
 
-Prime Chain v6.0 introduces parallel transaction execution using optimistic concurrency control, inspired by Block-STM [10], Grevm [13], and Monad's [8] pipelining architecture. This enables multi-core utilization while preserving sequential execution semantics.
+Mersennet v6.0 introduces parallel transaction execution using optimistic concurrency control, inspired by Block-STM [10], Grevm [13], and Monad's [8] pipelining architecture. This enables multi-core utilization while preserving sequential execution semantics.
 
 #### 5.8.1 Architecture
 
@@ -949,13 +949,13 @@ The parallel executor automatically falls back to sequential execution when:
 | Monad | Optimistic + pipeline | Runtime | Re-execute |
 | Sei v2 | Optimistic | Runtime | Re-execute |
 | Grevm/Block-STM | DAG + optimistic | Static + runtime | Re-execute |
-| **Prime Chain** | **Static analysis + MVCC** | **Static (heuristic) + runtime validation** | **Fallback to sequential** |
+| **Mersennet** | **Static analysis + MVCC** | **Static (heuristic) + runtime validation** | **Fallback to sequential** |
 
-Prime Chain's approach prioritizes correctness: static analysis groups most independent transactions correctly, MVCC validation catches edge cases, and sequential fallback guarantees correctness even in adversarial scenarios.
+Mersennet's approach prioritizes correctness: static analysis groups most independent transactions correctly, MVCC validation catches edge cases, and sequential fallback guarantees correctness even in adversarial scenarios.
 
 ### 5.9 CLOB Precompile *(v6.0)*
 
-The CLOB Precompile is Prime Chain's defining innovation: a custom EVM precompile at address `0x0000000000000000000000000000000000000100` that gives Solidity smart contracts **direct, atomic access** to the PrimeOrders matching engine.
+The CLOB Precompile is Mersennet's defining innovation: a custom EVM precompile at address `0x0000000000000000000000000000000000000100` that gives Solidity smart contracts **direct, atomic access** to the PrimeOrders matching engine.
 
 #### 5.9.1 Motivation
 
@@ -1288,7 +1288,7 @@ Position updates on fills:
 
 ### 6.9 Frequent Batch Auctions *(v6.0)*
 
-Prime Chain v6.0 introduces Frequent Batch Auctions (FBA) as an alternative matching mode for PrimeOrders markets. FBA eliminates front-running and MEV extraction by executing all orders within a batch window at a single uniform clearing price.
+Mersennet v6.0 introduces Frequent Batch Auctions (FBA) as an alternative matching mode for PrimeOrders markets. FBA eliminates front-running and MEV extraction by executing all orders within a batch window at a single uniform clearing price.
 
 #### 6.9.1 Motivation
 
@@ -1514,7 +1514,7 @@ Maximal Extractable Value (MEV) arises when validators or block builders can obs
 - **Front-running**: Copying a profitable transaction and executing it first
 - **Back-running**: Executing immediately after a price-moving transaction
 
-In 2024, estimated MEV extraction on Ethereum exceeded $600M [14]. For a chain like Prime Chain that targets institutional use, MEV protection is essential.
+In 2024, estimated MEV extraction on Ethereum exceeded $600M [14]. For a chain like Mersennet that targets institutional use, MEV protection is essential.
 
 #### 7.8.2 Commit-Reveal Scheme
 
@@ -1550,7 +1550,7 @@ $$validUntil = commitBlock + commitWindow$$
 
 #### 7.8.5 Combined MEV Protection
 
-Prime Chain's MEV protection is comprehensive:
+Mersennet's MEV protection is comprehensive:
 
 | Attack Vector | Protection Mechanism |
 |---------------|---------------------|
@@ -1566,7 +1566,7 @@ Prime Chain's MEV protection is comprehensive:
 
 ### 8.1 EIP-1559 Fee Market
 
-Prime Chain implements an EIP-1559-style fee market with adaptive base fee:
+Mersennet implements an EIP-1559-style fee market with adaptive base fee:
 
 #### 8.1.1 Base Fee Calculation
 
@@ -1673,7 +1673,7 @@ Validator security is maintained through:
 
 ### 9.1 Overview
 
-Prime Chain includes an on-chain governance system for parameter updates without hard forks.
+Mersennet includes an on-chain governance system for parameter updates without hard forks.
 
 ### 9.2 Proposal Types
 
@@ -1757,7 +1757,7 @@ Execution applies the proposal parameters to the engine.
 
 ### 10.1 Network Architecture
 
-Prime Chain uses a hybrid networking approach:
+Mersennet uses a hybrid networking approach:
 
 - **UDP Gossip**: Fast message broadcasting
 - **TCP Sync**: Reliable state synchronization
@@ -1831,7 +1831,7 @@ Snapshot header:
 $$Header = (magic, version, chunkSize, totalLen, hash)$$
 
 Where:
-- $magic = "PSNP"$ (Prime Chain Snapshot Protocol)
+- $magic = "PSNP"$ (Mersennet Snapshot Protocol)
 - $version = 1$
 - $chunkSize$: Bytes per chunk (default: 256 KB)
 - $totalLen$: Total snapshot size
@@ -2008,7 +2008,7 @@ $$Result = \{events: [EventRecord], total: count\}$$
 
 #### 13.1.1 Byzantine Fault Tolerance
 
-Prime Chain's consensus provides BFT guarantees:
+Mersennet's consensus provides BFT guarantees:
 
 - **Safety**: No two valid blocks can be finalized at the same height (assuming < 1/3 Byzantine stake)
 - **Liveness**: Blocks will eventually finalize (assuming network eventually synchronizes)
@@ -2112,7 +2112,7 @@ Finality is *irreversible* under honest majority. No conflicting block can gain 
 
 **Bitcoin comparison** [1]: In Nakamoto consensus, attacker success probability follows a Gambler's Ruin. For $q < 0.5$ and $z$ confirmations:
 $$P_{\text{catch-up}} \approx \left(\frac{q}{p}\right)^z$$
-e.g., $q=0.3$, $z=6$ → $P \approx 0.0012$. Prime Chain's BFT yields $P=0$ after 1 finality round (no probabilistic waiting).
+e.g., $q=0.3$, $z=6$ → $P \approx 0.0012$. Mersennet's BFT yields $P=0$ after 1 finality round (no probabilistic waiting).
 
 #### 13.5.2 Nothing-at-Stake (PoS)
 
@@ -2334,7 +2334,7 @@ Bandwidth: Burst during sync
 
 ### 14.6 Benchmarks (Reference)
 
-The following benchmarks are from the Prime Chain reference implementation (Rust, commodity hardware: 8-core CPU, 16 GB RAM, SSD). v6.0 benchmarks include parallel execution.
+The following benchmarks are from the Mersennet reference implementation (Rust, commodity hardware: 8-core CPU, 16 GB RAM, SSD). v6.0 benchmarks include parallel execution.
 
 | Benchmark | Configuration | v5.0 Result | v6.0 Result | Unit |
 |-----------|---------------|-------------|-------------|------|
@@ -2377,13 +2377,13 @@ The following benchmarks are from the Prime Chain reference implementation (Rust
 | **BASE** | Op Stack | ~2s (L2) | ~2K | N/A | N/A | No | No |
 | **XDC** | XDPoS | ~2s | ~2K | N/A | N/A | No | No |
 | **TRON** | DPoS | ~3s | ~2K | N/A | N/A | No | No |
-| **Prime Chain v6** | **HotStuff-2** | **~200ms** | **~60K+** | **1.5M ops/s** | **Precompile (atomic)** | **FBA + Commit-Reveal** | **Block-STM** |
+| **Mersennet v6** | **HotStuff-2** | **~200ms** | **~60K+** | **1.5M ops/s** | **Precompile (atomic)** | **FBA + Commit-Reveal** | **Block-STM** |
 
-**Prime Chain's unique position**: The only chain combining parallel EVM execution (Monad/Solana-class throughput), native high-performance CLOB (Hyperliquid-class matching), atomic EVM ↔ CLOB composability (unique), and comprehensive MEV protection (FBA + commit-reveal).
+**Mersennet's unique position**: The only chain combining parallel EVM execution (Monad/Solana-class throughput), native high-performance CLOB (Hyperliquid-class matching), atomic EVM ↔ CLOB composability (unique), and comprehensive MEV protection (FBA + commit-reveal).
 
-### 14.7 Deep Comparison: Prime Chain vs. Hyperliquid HyperEVM *(v6.0)*
+### 14.7 Deep Comparison: Mersennet vs. Hyperliquid HyperEVM *(v6.0)*
 
-Hyperliquid is Prime Chain's closest competitor, having launched HyperEVM (Cancun-spec EVM) in Q1 2025. However, their architecture has fundamental composability limitations that Prime Chain solves.
+Hyperliquid is Mersennet's closest competitor, having launched HyperEVM (Cancun-spec EVM) in Q1 2025. However, their architecture has fundamental composability limitations that Mersennet solves.
 
 #### 14.7.1 Hyperliquid's Dual-Execution Architecture
 
@@ -2397,7 +2397,7 @@ These execute **sequentially in separate environments**. Smart contracts on Hype
 
 #### 14.7.2 The Composability Gap
 
-| Capability | Hyperliquid HyperEVM | Prime Chain Precompile |
+| Capability | Hyperliquid HyperEVM | Mersennet Precompile |
 |-----------|---------------------|----------------------|
 | Place order from Solidity | CoreWriter → queued → next block (seconds) | `placeOrder()` → **instant in same tx** |
 | Read current order book | Previous block state (stale) | **Current state** (same tx) |
@@ -2412,11 +2412,11 @@ These execute **sequentially in separate environments**. Smart contracts on Hype
 
 The most valuable DeFi applications require atomic composability:
 
-**Automated Market Making**: A smart contract MM must read the current order book, compute optimal bid/ask, submit orders, and react to fills — all atomically. On Hyperliquid, each step happens in a different block with seconds of delay. On Prime Chain, it's one function call.
+**Automated Market Making**: A smart contract MM must read the current order book, compute optimal bid/ask, submit orders, and react to fills — all atomically. On Hyperliquid, each step happens in a different block with seconds of delay. On Mersennet, it's one function call.
 
-**Structured Products**: A vault that borrows collateral, places hedging orders, and adjusts positions based on fills requires atomic execution. On Hyperliquid, the fills arrive blocks later; the vault cannot react in time. On Prime Chain, the vault sees fills instantly.
+**Structured Products**: A vault that borrows collateral, places hedging orders, and adjusts positions based on fills requires atomic execution. On Hyperliquid, the fills arrive blocks later; the vault cannot react in time. On Mersennet, the vault sees fills instantly.
 
-**Liquidation + Hedging**: Checking if an account is liquidatable and placing a hedging order in response must be atomic to be safe. On Hyperliquid, the market can move between the check and the hedge. On Prime Chain, both happen in one transaction.
+**Liquidation + Hedging**: Checking if an account is liquidatable and placing a hedging order in response must be atomic to be safe. On Hyperliquid, the market can move between the check and the hedge. On Mersennet, both happen in one transaction.
 
 #### 14.7.4 Structural vs. Fixable
 
@@ -2425,7 +2425,7 @@ Hyperliquid's composability gap is **structural**, not a bug to be patched. Thei
 2. Allow EVM calls to synchronously invoke CLOB operations
 3. Remove the intentional CoreWriter delay
 
-This is a fundamental architecture change that risks destabilizing their $10B+ production system. Prime Chain was designed from day one with this integration in mind.
+This is a fundamental architecture change that risks destabilizing their $10B+ production system. Mersennet was designed from day one with this integration in mind.
 
 ---
 
@@ -2459,7 +2459,7 @@ This is a fundamental architecture change that risks destabilizing their $10B+ p
 
 #### 15.2.1 Storage Backends
 
-Prime Chain supports two storage backends via the `StateBackend` trait, selectable at runtime via configuration:
+Mersennet supports two storage backends via the `StateBackend` trait, selectable at runtime via configuration:
 
 **Sled** (legacy/development):
 - `accounts`: Address → AccountRecord
@@ -2719,13 +2719,13 @@ The following items from v5.0's roadmap have been implemented:
 
 ## 17. Applications
 
-Prime Chain's unified architecture—combining EVM programmability with native order matching—enables a wide range of applications. We categorize them into financial, semi-financial, and non-financial use cases, following the framework established in the [Ethereum whitepaper](https://ethereum.org/whitepaper/).
+Mersennet's unified architecture—combining EVM programmability with native order matching—enables a wide range of applications. We categorize them into financial, semi-financial, and non-financial use cases, following the framework established in the [Ethereum whitepaper](https://ethereum.org/whitepaper/).
 
 ### 17.1 Real-World Asset (RWA) Tokenization and Trading
 
 **Problem**: Traditional assets—bonds, equities, real estate, commodities—are illiquid, opaque, and difficult to fractionalize. Settlement takes days; custody is expensive; ownership transfer requires intermediaries.
 
-**Prime Chain Solution**: Tokenize RWAs as EVM-compatible assets (ERC-20 or custom contracts) and trade them on PrimeOrders. The native order book provides:
+**Mersennet Solution**: Tokenize RWAs as EVM-compatible assets (ERC-20 or custom contracts) and trade them on PrimeOrders. The native order book provides:
 
 - **Deterministic matching**: Price-time priority with provable correctness
 - **Atomic settlement**: Trades and token transfers occur in the same block
@@ -2737,13 +2737,13 @@ Prime Chain's unified architecture—combining EVM programmability with native o
 3. Matching engine executes trades; EVM updates token balances
 4. Bridge messages can trigger off-chain settlement (e.g., delivery vs. payment) via EVM callbacks
 
-**Market Opportunity**: The global RWA tokenization market is projected to exceed $16 trillion by 2030 (source: industry estimates). Prime Chain's dual-domain design is well-suited for regulated asset classes requiring both programmability (compliance, KYC hooks) and high-performance order execution.
+**Market Opportunity**: The global RWA tokenization market is projected to exceed $16 trillion by 2030 (source: industry estimates). Mersennet's dual-domain design is well-suited for regulated asset classes requiring both programmability (compliance, KYC hooks) and high-performance order execution.
 
 ### 17.2 Institutional Credit On-Chain
 
 **Problem**: Institutional credit markets—bonds, loans, credit default swaps (CDS), asset-backed securities (ABS)—are fragmented, over-the-counter, and lack transparent pricing. On-chain credit protocols (e.g., Centrifuge, Maple, Goldfinch) have emerged but typically lack native order books; trading occurs via AMMs or OTC.
 
-**Prime Chain Solution**: PrimeOrders can host **credit instrument order books**:
+**Mersennet Solution**: PrimeOrders can host **credit instrument order books**:
 
 - **Bond trading**: Tokenized bonds with limit order books for price discovery
 - **Loan syndication**: Primary issuance and secondary trading of loan tokens
@@ -2759,13 +2759,13 @@ The bridge enables EVM contracts (e.g., collateral managers, oracles) to interac
 4. Trades execute with price-time priority; EVM records ownership
 5. Coupon payments and principal redemption are triggered by EVM logic (oracle or time-based)
 
-**Market Opportunity**: On-chain credit markets are estimated at $2.5T+ and growing. Prime Chain's deterministic matching and EVM composability position it for institutional adoption.
+**Market Opportunity**: On-chain credit markets are estimated at $2.5T+ and growing. Mersennet's deterministic matching and EVM composability position it for institutional adoption.
 
 ### 17.3 Decentralized Perpetual and Derivative Exchanges
 
 **Problem**: Decentralized perpetual exchanges (e.g., dYdX, GMX, Hyperliquid) require either off-chain order books with on-chain settlement (hybrid) or AMM-based pricing. Hybrid models introduce centralization; AMMs suffer from impermanent loss and poor execution for large orders.
 
-**Prime Chain Solution**: **Fully on-chain order books** with PrimeOrders:
+**Mersennet Solution**: **Fully on-chain order books** with PrimeOrders:
 
 - **Perpetual futures**: Market per asset (e.g., BTC-PERP, ETH-PERP); users deposit collateral, open long/short positions via limit or market orders
 - **Options**: Markets for strike/expiry combinations; matching engine handles bid/ask
@@ -2775,16 +2775,16 @@ Margin and liquidation are native to PrimeOrders; no need for separate vault con
 
 ### 17.4 Token Systems and Sub-Currencies
 
-As with Ethereum, token systems are straightforward on Prime Chain. The key operation is: subtract X units from A and give X units to B, with A's approval. Prime Chain adds:
+As with Ethereum, token systems are straightforward on Mersennet. The key operation is: subtract X units from A and give X units to B, with A's approval. Mersennet adds:
 
 - **Trading**: Tokens can be listed on PrimeOrders for limit order trading
 - **Collateral**: Tokens can back PrimeOrders collateral for leveraged positions
 
-Example: A stablecoin (e.g., USDC) is deployed as an ERC-20. A market is created for USDC/ETH. Users deposit USDC as collateral, trade ETH-perpetuals, and settle in USDC—all within Prime Chain's unified state.
+Example: A stablecoin (e.g., USDC) is deployed as an ERC-20. A market is created for USDC/ETH. Users deposit USDC as collateral, trade ETH-perpetuals, and settle in USDC—all within Mersennet's unified state.
 
 ### 17.5 Financial Derivatives and Hedging
 
-Prime Chain supports derivatives beyond perps:
+Mersennet supports derivatives beyond perps:
 
 - **Hedging contracts**: User A is long ETH, User B is short; they enter a swap contract (EVM) that references PrimeOrders positions
 - **Structured products**: Tranched products where each tranche trades on PrimeOrders
@@ -2792,7 +2792,7 @@ Prime Chain supports derivatives beyond perps:
 
 ### 17.6 Decentralized Autonomous Organizations (DAOs)
 
-DAOs can use Prime Chain for:
+DAOs can use Mersennet for:
 
 - **Treasury management**: DAO holds tokens; governance votes on orders to execute via PrimeOrders
 - **Token distribution**: Vesting contracts (EVM) release tokens; recipients trade on PrimeOrders
@@ -2806,7 +2806,7 @@ DAOs can use Prime Chain for:
 
 ### 17.8 Cross-Chain and Bridged Assets
 
-Prime Chain can serve as a **trading hub** for bridged assets:
+Mersennet can serve as a **trading hub** for bridged assets:
 
 - Assets bridged from Ethereum, Cosmos, etc., appear as EVM tokens
 - PrimeOrders provides deep liquidity and price discovery
@@ -2818,7 +2818,7 @@ Prime Chain can serve as a **trading hub** for bridged assets:
 
 ### 18.1 Fee Market Design and EIP-1559 Rationale
 
-As in Ethereum, transaction fees serve two purposes: (1) compensate validators for processing and (2) prevent spam. Prime Chain adopts EIP-1559's adaptive base fee:
+As in Ethereum, transaction fees serve two purposes: (1) compensate validators for processing and (2) prevent spam. Mersennet adopts EIP-1559's adaptive base fee:
 
 - **Target gas**: $G_{target} = G_{limit} / \gamma$
 - **Base fee adjustment**: Increases when $G_{used} > G_{target}$, decreases when $G_{used} < G_{target}$
@@ -2830,7 +2830,7 @@ This design ensures the network self-regulates: high demand raises fees and disc
 
 ### 18.2 Computation and Determinism
 
-Prime Chain's EVM is Turing-complete. As with Ethereum, malicious or buggy contracts could theoretically cause infinite loops. The gas mechanism bounds execution: each operation consumes gas; when gas is exhausted, execution halts and reverts (but the sender still pays for gas consumed). This ensures:
+Mersennet's EVM is Turing-complete. As with Ethereum, malicious or buggy contracts could theoretically cause infinite loops. The gas mechanism bounds execution: each operation consumes gas; when gas is exhausted, execution halts and reverts (but the sender still pays for gas consumed). This ensures:
 
 - **Bounded computation**: No transaction can run indefinitely
 - **Predictable cost**: Senders know maximum cost upfront (gas_limit × gas_price)
@@ -2839,7 +2839,7 @@ PrimeOrders, by contrast, is **not** Turing-complete. Its logic is fixed: order 
 
 ### 18.3 Scalability Considerations
 
-Like Ethereum and Bitcoin, Prime Chain requires every full node to process every transaction. Throughput is therefore bounded by:
+Like Ethereum and Bitcoin, Mersennet requires every full node to process every transaction. Throughput is therefore bounded by:
 
 - Block gas limit (30M default)
 - Block time (sub-second target)
@@ -2849,14 +2849,14 @@ Like Ethereum and Bitcoin, Prime Chain requires every full node to process every
 
 **Future directions**:
 - **Sharding**: Partition state and transactions across shards; more complex, requires cross-shard messaging
-- **Rollups**: Execute transactions off-chain, post commitments to Prime Chain; inherits security from L1
+- **Rollups**: Execute transactions off-chain, post commitments to Mersennet; inherits security from L1
 - **Light clients**: Nodes that verify blocks without full state; rely on state roots and Merkle proofs
 
 ### 18.4 Centralization Risks
 
 **Validator concentration**: If a small number of entities control >1/3 of stake, they could theoretically halt finality. Mitigations: (1) broad validator set, (2) stake limits per validator (governance), (3) slashing for absenteeism.
 
-**Mining/validation centralization**: Unlike Bitcoin's ASIC-dominated mining, Prime Chain's PoS does not favor specialized hardware. Validators need only standard servers with reliable connectivity.
+**Mining/validation centralization**: Unlike Bitcoin's ASIC-dominated mining, Mersennet's PoS does not favor specialized hardware. Validators need only standard servers with reliable connectivity.
 
 **Governance centralization**: Parameter changes require governance votes. If governance is captured, parameters could be altered to benefit insiders. Mitigation: transparent governance, timelocks, and community participation.
 
@@ -2872,7 +2872,7 @@ Like Ethereum and Bitcoin, Prime Chain requires every full node to process every
 
 ### 18.6 Comparison with Existing Systems
 
-| Feature | Bitcoin | Ethereum | Solana | Hyperliquid | dYdX v4 | **Prime Chain v7** |
+| Feature | Bitcoin | Ethereum | Solana | Hyperliquid | dYdX v4 | **Mersennet v7** |
 |--------|---------|----------|--------|------------|---------|-------------|
 | Consensus | PoW | Gasper PoS | PoH+Tower | HyperBFT | CometBFT | **HotStuff-2** |
 | Execution | Script | Sequential EVM | Parallel BPF | HyperCore + HyperEVM (dual) | EVM-like | **Parallel EVM + Pipeline** |
@@ -2888,13 +2888,13 @@ Like Ethereum and Bitcoin, Prime Chain requires every full node to process every
 | ZK Proofs | No | No | No | No | No | **State proof framework** |
 | TPS | ~7 | ~15 | ~65K | ~200K ops | ~1K | **~72K EVM + 2.4M CLOB** |
 
-Prime Chain's distinguishing feature is **TRUE atomic composability** — the CLOB precompile at `0x0100` allows Solidity smart contracts to place orders, receive fill results, and react to them in a **single transaction**. Hyperliquid's HyperEVM, while a major step forward, fundamentally cannot achieve this: CoreWriter actions are queued for the next block and intentionally delayed by seconds. This structural difference means Prime Chain can support DeFi use cases (smart contract MMs, vault strategies, atomic liquidation+hedge) that are impossible on any other chain, including Hyperliquid.
+Mersennet's distinguishing feature is **TRUE atomic composability** — the CLOB precompile at `0x0100` allows Solidity smart contracts to place orders, receive fill results, and react to them in a **single transaction**. Hyperliquid's HyperEVM, while a major step forward, fundamentally cannot achieve this: CoreWriter actions are queued for the next block and intentionally delayed by seconds. This structural difference means Mersennet can support DeFi use cases (smart contract MMs, vault strategies, atomic liquidation+hedge) that are impossible on any other chain, including Hyperliquid.
 
 ---
 
 ## 19. Conclusion
 
-Prime Chain v7.0 represents a production-grade blockchain architecture that unifies parallel EVM execution, native high-performance order matching, MEV-resistant trade execution, account abstraction, cross-chain bridges, and ZK state proofs within a single canonical state. No other blockchain combines all of these capabilities.
+Mersennet v7.0 represents a production-grade blockchain architecture that unifies parallel EVM execution, native high-performance order matching, MEV-resistant trade execution, account abstraction, cross-chain bridges, and ZK state proofs within a single canonical state. No other blockchain combines all of these capabilities.
 
 **Key achievements (v6.0 → v7.0):**
 
@@ -2915,7 +2915,7 @@ Prime Chain v7.0 represents a production-grade blockchain architecture that unif
 
 **Competitive positioning:**
 
-| Capability | Best-in-Class Competitor | Prime Chain v7 |
+| Capability | Best-in-Class Competitor | Mersennet v7 |
 |-----------|--------------------------|----------------|
 | EVM Throughput | Monad (~10K TPS) | ~72K TPS (parallel + pipeline) |
 | Order Matching | Hyperliquid (200K ops/s) | 2.4M ops/s |
@@ -2927,16 +2927,16 @@ Prime Chain v7.0 represents a production-grade blockchain architecture that unif
 | ZK Proofs | zkSync (validity proofs) | State proof framework |
 | Smart Contracts | Ethereum (full EVM) | Full EVM + precompile |
 
-The concept of a multi-domain state transition function with parallel execution, atomic cross-domain precompiles, account abstraction, and cross-chain bridges provides a platform with unique potential. Rather than choosing between a general-purpose chain (Ethereum), a parallel chain (Monad), or a specialized trading chain (Hyperliquid), Prime Chain offers all three in a single, coherent system—now with the production infrastructure to back it.
+The concept of a multi-domain state transition function with parallel execution, atomic cross-domain precompiles, account abstraction, and cross-chain bridges provides a platform with unique potential. Rather than choosing between a general-purpose chain (Ethereum), a parallel chain (Monad), or a specialized trading chain (Hyperliquid), Mersennet offers all three in a single, coherent system—now with the production infrastructure to back it.
 
-We believe Prime Chain is well-positioned to capture the intersection of:
+We believe Mersennet is well-positioned to capture the intersection of:
 - **Real-world asset tokenization** ($16T+ market by 2030): Programmable compliance + institutional-grade order books
 - **On-chain derivatives** ($2.5T+ market): Full EVM DeFi composability + native CLOB performance
 - **Institutional credit** ($2.5T+ market): Transparent price discovery + EVM settlement logic
 
 The implementation comprises ~10,600 lines of Rust across 28 source files, with comprehensive test coverage, Docker-based multi-node testnet deployment, CI/CD, and Prometheus observability.
 
-As Prime Chain continues to evolve toward mainnet, we welcome contributions from researchers, developers, and the broader blockchain community.
+As Mersennet continues to evolve toward mainnet, we welcome contributions from researchers, developers, and the broader blockchain community.
 
 ---
 
@@ -2972,7 +2972,7 @@ As Prime Chain continues to evolve toward mainnet, we welcome contributions from
 - revm: Rust EVM implementation. https://github.com/bluealloy/revm
 - sled: Embedded database. https://github.com/spacejam/sled
 - Ethereum Yellow Paper: Formal specification of Ethereum. https://ethereum.github.io/yellowpaper/paper.pdf
-- Prime Chain Technical Reference: docs/TECHNICAL_REFERENCE.md (this repository)
+- Mersennet Technical Reference: docs/TECHNICAL_REFERENCE.md (this repository)
 
 ### 20.4 Further Reading
 
@@ -3173,7 +3173,7 @@ $n$ = mempool/batch size, $k$ = txs per sender or parallel groups, $m$ = selecte
 
 ## Appendix F: RPC Method Quick Reference
 
-**Prime Chain Native Methods:**
+**Mersennet Native Methods:**
 
 | Method | Description |
 |--------|-------------|

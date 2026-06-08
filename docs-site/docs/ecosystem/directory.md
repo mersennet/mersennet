@@ -6,7 +6,7 @@ title: "Ecosystem Directory"
 
 # Ecosystem Directory
 
-Complete directory of live services, endpoints, and deployed contracts on Prime Chain testnet (Chain ID 7919).
+Complete directory of live services, endpoints, and deployed contracts on Mersennet testnet (Chain ID 7919).
 
 ## Live Services
 

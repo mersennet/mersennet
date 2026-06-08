@@ -6,7 +6,7 @@ title: "ERC-20 Token Guide"
 
 # ERC-20 Token Guide
 
-This guide walks you through deploying and interacting with an ERC-20 token on Prime Chain (Chain ID 7919).
+This guide walks you through deploying and interacting with an ERC-20 token on Mersennet (Chain ID 7919).
 
 ## Network Details
 
@@ -24,7 +24,7 @@ Here is a complete ERC-20 implementation you can deploy:
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract PrimeChainToken {
+contract MersennetToken {
     string public name;
     string public symbol;
     uint8 public decimals = 18;
@@ -85,13 +85,13 @@ contract PrimeChainToken {
 
 ### Option 1: Hardhat
 
-1. Create a Hardhat project and add the Prime Chain network (see [Deploy with Hardhat](/developers/quick-start/hardhat)).
-2. Save the contract as `contracts/PrimeChainToken.sol`.
+1. Create a Hardhat project and add the Mersennet network (see [Deploy with Hardhat](/developers/quick-start/hardhat)).
+2. Save the contract as `contracts/MersennetToken.sol`.
 3. Deploy:
 
 ```typescript
-const PrimeChainToken = await ethers.getContractFactory("PrimeChainToken");
-const token = await PrimeChainToken.deploy("My Token", "MTK", 1_000_000);
+const MersennetToken = await ethers.getContractFactory("MersennetToken");
+const token = await MersennetToken.deploy("My Token", "MTK", 1_000_000);
 await token.waitForDeployment();
 console.log("Deployed:", await token.getAddress());
 ```
@@ -101,7 +101,7 @@ console.log("Deployed:", await token.getAddress());
 1. Go to [Remix](https://remix.ethereum.org).
 2. Create a new file, paste the contract, and compile.
 3. In the Deploy tab, select **Injected Provider - MetaMask**.
-4. Add Prime Chain to MetaMask (Chain ID 7919, RPC `http://46.225.30.187:8545`).
+4. Add Mersennet to MetaMask (Chain ID 7919, RPC `http://46.225.30.187:8545`).
 5. Get testnet PRIM from the [faucet](http://46.225.30.187:4003).
 6. Deploy and enter constructor args: `"My Token"`, `"MTK"`, `1000000`.
 
@@ -167,7 +167,7 @@ await token.approve(ROUTER, ethers.MaxUint256);
 
 ## Deployed Token Addresses
 
-These are pre-deployed tokens on Prime Chain testnet:
+These are pre-deployed tokens on Mersennet testnet:
 
 | Token | Address | Use Case |
 |-------|---------|----------|

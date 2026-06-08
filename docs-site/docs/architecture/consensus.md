@@ -6,7 +6,7 @@ title: "Consensus Mechanism"
 
 # Consensus Mechanism
 
-Prime Chain uses **Delegated Proof-of-Stake (DPoS)** with round-robin proposer selection and priority-based weighting. This document provides a deep dive into how consensus works, from validator selection to block finalization and slashing.
+Mersennet uses **Delegated Proof-of-Stake (DPoS)** with round-robin proposer selection and priority-based weighting. This document provides a deep dive into how consensus works, from validator selection to block finalization and slashing.
 
 ## Overview
 
@@ -127,7 +127,7 @@ Finalized blocks are **irreversible**—there are no chain reorganizations. This
 
 ## Epoch Transitions
 
-Prime Chain may use **epochs** for validator set updates (e.g. applying pending stake changes, unbonding completions). At epoch boundaries:
+Mersennet may use **epochs** for validator set updates (e.g. applying pending stake changes, unbonding completions). At epoch boundaries:
 
 - Pending validator additions/removals are applied
 - Unbonding queues are processed
@@ -270,7 +270,7 @@ Nonces enforce strict transaction ordering per account:
 
 ## State Management
 
-Prime Chain maintains EVM-compatible world state using a Merkle trie structure.
+Mersennet maintains EVM-compatible world state using a Merkle trie structure.
 
 ### State Trie
 
@@ -321,7 +321,7 @@ After each block, the state root is computed using a sorted Merkle tree:
 
 ## Network Protocol
 
-Prime Chain nodes communicate using a custom peer-to-peer protocol built on TCP and UDP.
+Mersennet nodes communicate using a custom peer-to-peer protocol built on TCP and UDP.
 
 ### Message Types
 
@@ -527,7 +527,7 @@ Complete reference of all configuration parameters with their default values.
 
 ## Summary
 
-Prime Chain's DPoS consensus provides:
+Mersennet's DPoS consensus provides:
 
 - **Fast finality** (~1s block time)
 - **Fair proposer rotation** (stake-weighted round-robin)

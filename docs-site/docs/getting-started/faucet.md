@@ -6,16 +6,16 @@ title: "Get Testnet PRIM"
 
 # Get Testnet PRIM
 
-Use the Prime Chain faucet to receive testnet PRIM for development and testing.
+Use the Mersennet faucet to receive testnet PRIM for development and testing.
 
 ## Web Interface
 
 1. Open the faucet: **http://46.225.30.187:4003**
-2. Enter your wallet address (the one you'll use on Prime Chain).
+2. Enter your wallet address (the one you'll use on Mersennet).
 3. Click the request button to receive testnet PRIM.
 
 :::tip
-Ensure your wallet is connected to Prime Chain (Chain ID 7919) before requesting. The faucet sends PRIM to the address you provide.
+Ensure your wallet is connected to Mersennet (Chain ID 7919) before requesting. The faucet sends PRIM to the address you provide.
 :::
 
 ## Programmatic Access

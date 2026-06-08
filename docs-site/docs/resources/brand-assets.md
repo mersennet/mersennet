@@ -6,15 +6,15 @@ title: "Brand Assets"
 
 # Brand Assets
 
-Brand guidelines for Prime Chain — colors, typography, logo usage, and downloadable assets for developers, partners, and community members.
+Brand guidelines for Mersennet — colors, typography, logo usage, and downloadable assets for developers, partners, and community members.
 
 ## Logo
 
-The Prime Chain logo is a **double-helix** symbol representing interconnected value chains. It uses a violet-to-cyan gradient that defines the entire brand identity.
+The Mersennet logo is a **double-helix** symbol representing interconnected value chains. It uses a violet-to-cyan gradient that defines the entire brand identity.
 
 ### Guidelines
 
-- Use the official Prime Chain double-helix logo for all Prime Chain–related materials.
+- Use the official Mersennet double-helix logo for all Mersennet–related materials.
 - Maintain clear space around the logo (minimum: the height of the central ellipse).
 - Do not stretch, rotate, or alter the logo proportions.
 - Use the gradient version on dark backgrounds; use a white solid version on light backgrounds.
@@ -57,7 +57,7 @@ The Prime Chain logo is a **double-helix** symbol representing interconnected va
 
 ### Brand Gradient
 
-The signature Prime Chain gradient flows from **Violet** through **Violet Light** to **Cyan**:
+The signature Mersennet gradient flows from **Violet** through **Violet Light** to **Cyan**:
 
 ```css
 background: linear-gradient(135deg, #4901FF 0%, #6d2fff 50%, #00FFF9 100%);
@@ -112,12 +112,12 @@ All logo files are available in the [docs-site repository](https://github.com/Pr
 
 ## Integration Guide
 
-When building dApps or documentation for Prime Chain:
+When building dApps or documentation for Mersennet:
 
 1. Use the **violet-to-cyan gradient** for primary actions and hero elements.
 2. Use **Cyan (`#00FFF9`)** for links, active states, and accent highlights.
 3. Use **Sora** for UI text and **JetBrains Mono** for code.
-4. Prefer dark backgrounds (`#0b0b12` base) for a consistent Prime Chain look.
+4. Prefer dark backgrounds (`#0b0b12` base) for a consistent Mersennet look.
 5. Import fonts via Google Fonts:
 
 ```html
@@ -126,4 +126,4 @@ When building dApps or documentation for Prime Chain:
 
 ## Contact
 
-For custom brand requests, partnerships, or asset access, reach out via the [Prime Chain GitHub](https://github.com/PrimeNumbersLabs/prime-chain) or community channels.
+For custom brand requests, partnerships, or asset access, reach out via the [Mersennet GitHub](https://github.com/PrimeNumbersLabs/prime-chain) or community channels.

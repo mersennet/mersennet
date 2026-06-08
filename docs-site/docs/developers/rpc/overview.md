@@ -6,7 +6,7 @@ title: "JSON-RPC Overview"
 
 # JSON-RPC Overview
 
-Prime Chain exposes a JSON-RPC API compatible with the Ethereum JSON-RPC specification, plus Prime Chain–specific extensions. Use it to query chain state, send transactions, and interact with smart contracts.
+Mersennet exposes a JSON-RPC API compatible with the Ethereum JSON-RPC specification, plus Mersennet–specific extensions. Use it to query chain state, send transactions, and interact with smart contracts.
 
 ## Endpoints
 
@@ -56,37 +56,42 @@ Response:
 
 ### Standard Ethereum Methods
 
-Prime Chain supports the core Ethereum JSON-RPC methods:
+Mersennet supports the core Ethereum JSON-RPC methods:
 
 - **Block/Chain:** `eth_blockNumber`, `eth_chainId`, `eth_getBlockByNumber`, `eth_getBlockByHash`
 - **Account:** `eth_getBalance`, `eth_getTransactionCount`, `eth_getCode`, `eth_getStorageAt`
 - **Transaction:** `eth_getTransactionByHash`, `eth_getTransactionReceipt`, `eth_sendTransaction`, `eth_sendRawTransaction`
-- **Execution:** `eth_call`, `eth_estimateGas`, `eth_gasPrice`
+- **Execution:** `eth_call`, `eth_estimateGas`, `eth_gasPrice`, `eth_feeHistory`, `eth_maxPriorityFeePerGas`
 - **Logs:** `eth_getLogs`
+- **Filters:** `eth_newFilter`, `eth_newBlockFilter`, `eth_newPendingTransactionFilter`, `eth_getFilterChanges`, `eth_getFilterLogs`, `eth_uninstallFilter`
 
 See [RPC Methods Reference](/developers/rpc/methods) for full details.
 
-### Prime Chain Extensions
+### Mersennet Extensions
 
 | Method | Description |
 |--------|-------------|
 | `prime_sendTransaction` | Send a transaction (alternative to `eth_sendTransaction`) |
 | `prime_validators` | Get list of validators |
 | `prime_getDomainEvents` | Get domain events for a block range |
+| `prime_getCodeAttestation` / `prime_getCodeHash` | On-chain contract code-publication registry lookups |
 | `primeorders_*` | PrimeOrders trading methods (addMarket, submitOrder, cancelOrder, getOrderBook, etc.) |
 | `primebridge_*` | PrimeBridge bridge methods (enqueueOrdersToEvm, enqueueEvmToOrders, dequeueOrdersToEvm, dequeueEvmToOrders) |
+| **Shielded / ZK** | Shielded transfers & orders, SP1 state proofs, and selective-disclosure reads — see the [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc) |
+| **WebSocket** | `eth_subscribe` and `prime_subscribe` push notifications (new heads, trades, shielded roots, state proofs) |
 
-### Unsupported Methods
+### Notes on specific methods
 
 | Method | Notes |
 |--------|-------|
-| `eth_feeHistory` | Not supported. Use `eth_gasPrice` for legacy transactions. |
-| `eth_subscribe` / `eth_unsubscribe` | WebSocket subscriptions may not be available on all nodes. |
+| `eth_subscribe` / `eth_unsubscribe` | Available over **WebSocket connections only** (not HTTP). May be disabled on some public nodes — fall back to filters/polling. |
+| `eth_maxPriorityFeePerGas` | Returns `0x0` — Mersennet uses an EIP-1559 base fee with no separate priority tip. |
+| `debug_*` / `trace_*` / `personal_*` | Not implemented. |
 
 ## Transaction Format
 
 :::important
-Prime Chain uses a **custom raw transaction format** (not standard RLP). Standard tools that sign and send via `eth_sendRawTransaction` (e.g., `forge create`, some wallet libraries) may not work. Use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked, or ensure your client uses the Prime Chain transaction format.
+Mersennet uses a **custom raw transaction format** (not standard RLP). Standard tools that sign and send via `eth_sendRawTransaction` (e.g., `forge create`, some wallet libraries) may not work. Use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked, or ensure your client uses the Mersennet transaction format.
 :::
 
 For deployment and sending transactions, prefer:

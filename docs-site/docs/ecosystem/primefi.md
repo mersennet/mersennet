@@ -6,7 +6,7 @@ title: "PrimeFi Lending"
 
 # PrimeFi Lending
 
-**PrimeFi** is an Aave-style lending and borrowing protocol built for Prime Chain. It enables users to supply assets to earn interest and borrow against collateral—powering the DeFi credit layer of the ecosystem.
+**PrimeFi** is an Aave-style lending and borrowing protocol built for Mersennet. It enables users to supply assets to earn interest and borrow against collateral—powering the DeFi credit layer of the ecosystem.
 
 ## Overview
 
@@ -19,7 +19,7 @@ title: "PrimeFi Lending"
 | **Status** | Contracts built, ready for deployment |
 
 :::info
-PrimeFi smart contracts are built and audited. They are ready for deployment to Prime Chain testnet. The PrimeFi UI (v2) and liquidator bot are also built and will be deployed alongside the contracts.
+PrimeFi smart contracts are built and audited. They are ready for deployment to Mersennet testnet. The PrimeFi UI (v2) and liquidator bot are also built and will be deployed alongside the contracts.
 :::
 
 ## How It Works
@@ -54,7 +54,7 @@ When a borrower's **health factor** drops below 1 (e.g., collateral value falls 
 
 ## Supported Assets (Planned)
 
-PrimeFi will support the core Prime Chain assets:
+PrimeFi will support the core Mersennet assets:
 
 | Asset | Use Case |
 |-------|----------|
@@ -89,7 +89,7 @@ Exact support depends on deployment configuration and oracle integration.
 | **PrimeFi Liquidator** | Node.js bot for monitoring and liquidating unhealthy positions |
 | **PrimeFi Omni** | Cross-chain lending via LayerZero v2 (contracts ready) |
 
-## Integration with Prime Chain
+## Integration with Mersennet
 
 - **PrimeSwap** — Borrow stablecoins, swap on PrimeSwap, supply for yield.
 - **PrimeOrders** — Future: collateralize positions, use CLOB for hedging.

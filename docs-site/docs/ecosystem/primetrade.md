@@ -6,7 +6,7 @@ title: "PrimeTrade"
 
 # PrimeTrade
 
-**PrimeTrade** is the order book trading terminal for Prime Chain, providing a professional-grade interface for trading against the native on-chain Central Limit Order Book (CLOB) powered by [PrimeOrders](/architecture/prime-orders).
+**PrimeTrade** is the order book trading terminal for Mersennet, providing a professional-grade interface for trading against the native on-chain Central Limit Order Book (CLOB) powered by [PrimeOrders](/architecture/prime-orders).
 
 :::tip Live on Testnet
 PrimeTrade is live at **[http://46.225.30.187:4004](http://46.225.30.187:4004)**
@@ -19,7 +19,7 @@ PrimeTrade is live at **[http://46.225.30.187:4004](http://46.225.30.187:4004)**
 | **Type** | Order book trading terminal |
 | **Order Engine** | PrimeOrders native precompile (`0x0100`) |
 | **Order Types** | Limit, Market |
-| **Chain** | Prime Chain Testnet (Chain ID 7919) |
+| **Chain** | Mersennet Testnet (Chain ID 7919) |
 | **Wallet** | MetaMask or any EVM-compatible wallet |
 
 ## How It Works
@@ -51,7 +51,7 @@ PrimeTrade supports any pair listed on the PrimeOrders book. Current testnet pai
 ## Getting Started
 
 1. Visit [http://46.225.30.187:4004](http://46.225.30.187:4004)
-2. Connect your MetaMask wallet to Prime Chain (Chain ID 7919)
+2. Connect your MetaMask wallet to Mersennet (Chain ID 7919)
 3. Get testnet PRIM from the [Faucet](/getting-started/faucet)
 4. Get test stablecoins by calling `faucet()` on the [mock token contracts](/resources/contracts)
 5. Approve the token you want to trade

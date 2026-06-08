@@ -6,7 +6,7 @@ title: "NFT (ERC-721) Guide"
 
 # NFT (ERC-721) Guide
 
-This guide walks you through deploying and interacting with an NFT collection on Prime Chain (Chain ID 7919).
+This guide walks you through deploying and interacting with an NFT collection on Mersennet (Chain ID 7919).
 
 ## Network Details
 
@@ -24,7 +24,7 @@ Here is a complete ERC-721 implementation with metadata, minting, and transfer:
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract PrimeChainNFT {
+contract MersennetNFT {
     string public name;
     string public symbol;
     string public baseTokenURI;
@@ -147,7 +147,7 @@ For each token, host a JSON file at `{baseTokenURI}{tokenId}.json`:
 ```json
 {
   "name": "Prime NFT #1",
-  "description": "A unique NFT on Prime Chain",
+  "description": "A unique NFT on Mersennet",
   "image": "ipfs://Qm...",
   "attributes": [
     { "trait_type": "Rarity", "value": "Common" }
@@ -160,8 +160,8 @@ For each token, host a JSON file at `{baseTokenURI}{tokenId}.json`:
 ### Using Hardhat
 
 ```typescript
-const PrimeChainNFT = await ethers.getContractFactory("PrimeChainNFT");
-const nft = await PrimeChainNFT.deploy(
+const MersennetNFT = await ethers.getContractFactory("MersennetNFT");
+const nft = await MersennetNFT.deploy(
   "Prime Collectibles",
   "PRIME",
   "https://api.mysite.com/metadata/"
@@ -173,7 +173,7 @@ console.log("NFT deployed to:", await nft.getAddress());
 ### Using Remix
 
 1. Compile the contract in Remix.
-2. Connect MetaMask to Prime Chain (Chain ID 7919).
+2. Connect MetaMask to Mersennet (Chain ID 7919).
 3. Deploy with constructor args: `"Prime Collectibles"`, `"PRIME"`, `"https://api.mysite.com/metadata/"`.
 
 ## Interacting with the NFT
@@ -223,7 +223,7 @@ await nft.transferFrom(wallet.address, "0xNewOwner", tokenId);
 
 ## Integration with Primeport
 
-[Primeport](/ecosystem/primeport) is the NFT marketplace on Prime Chain. To list your collection:
+[Primeport](/ecosystem/primeport) is the NFT marketplace on Mersennet. To list your collection:
 
 1. Deploy your NFT contract.
 2. Mint tokens and host metadata (IPFS or your API).

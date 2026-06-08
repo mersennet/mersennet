@@ -6,7 +6,7 @@ title: "PrimeSwap V2 DEX"
 
 # PrimeSwap V2 DEX
 
-**PrimeSwap V2** is the native automated market maker (AMM) and decentralized exchange (DEX) on Prime Chain. Built as a Uniswap V2 fork, it provides permissionless token swaps, liquidity provision, and LP token mechanics—enabling the core DeFi primitives that power the Prime Chain ecosystem.
+**PrimeSwap V2** is the native automated market maker (AMM) and decentralized exchange (DEX) on Mersennet. Built as a Uniswap V2 fork, it provides permissionless token swaps, liquidity provision, and LP token mechanics—enabling the core DeFi primitives that power the Mersennet ecosystem.
 
 :::tip PrimeSwap V3 is live
 **[PrimeSwap V3](/ecosystem/primeswap-v3)** adds concentrated liquidity with the Uniswap V3 protocol. Choose V2 for simple swaps and full-range liquidity, or V3 for capital-efficient concentrated positions.
@@ -20,7 +20,7 @@ title: "PrimeSwap V2 DEX"
 | **Swap Fee** | 0.3% |
 | **Pair Model** | Constant product (x × y = k) |
 | **LP Tokens** | ERC-20, proportional to pool share |
-| **Chain** | Prime Chain Testnet (Chain ID 7919) |
+| **Chain** | Mersennet Testnet (Chain ID 7919) |
 
 ## Factory + Router Architecture
 

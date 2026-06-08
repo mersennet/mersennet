@@ -6,7 +6,7 @@ title: "Deploy with Foundry"
 
 # Deploy with Foundry
 
-This guide explains how to build and deploy smart contracts to Prime Chain using Foundry. **Important:** Prime Chain uses a custom raw transaction format (not standard RLP), so `forge create` with `eth_sendRawTransaction` will not work. Use `eth_sendTransaction` or `prime_sendTransaction` instead.
+This guide explains how to build and deploy smart contracts to Mersennet using Foundry. **Important:** Mersennet uses a custom raw transaction format (not standard RLP), so `forge create` with `eth_sendRawTransaction` will not work. Use `eth_sendTransaction` or `prime_sendTransaction` instead.
 
 ## Prerequisites
 
@@ -45,12 +45,12 @@ forge build --legacy
 
 ## Deployment Limitation
 
-Prime Chain does **not** support standard RLP-encoded raw transactions via `eth_sendRawTransaction`. Tools that sign transactions locally and send them as raw hex (including `forge create`) will fail.
+Mersennet does **not** support standard RLP-encoded raw transactions via `eth_sendRawTransaction`. Tools that sign transactions locally and send them as raw hex (including `forge create`) will fail.
 
 **Supported deployment methods:**
 
 - `eth_sendTransaction` — Requires the RPC node to have the deployer account unlocked
-- `prime_sendTransaction` — Prime Chain–specific method for sending transactions
+- `prime_sendTransaction` — Mersennet–specific method for sending transactions
 
 ## Node.js Deployment Helper
 
@@ -134,7 +134,7 @@ PRIVATE_KEY=0x_your_key node deploy-with-forge-artifacts.js
 ```
 
 :::tip
-ethers.js v6 uses `eth_sendTransaction` under the hood when you call `contract.deploy()`. The library signs the transaction and sends it. However, if Prime Chain expects a custom format for `eth_sendRawTransaction`, ethers may still use that. In that case, ensure your RPC supports `eth_sendTransaction` with a signed payload, or use a node with an unlocked account for deployment.
+ethers.js v6 uses `eth_sendTransaction` under the hood when you call `contract.deploy()`. The library signs the transaction and sends it. However, if Mersennet expects a custom format for `eth_sendRawTransaction`, ethers may still use that. In that case, ensure your RPC supports `eth_sendTransaction` with a signed payload, or use a node with an unlocked account for deployment.
 :::
 
 ## Alternative: Cast for Read-Only Operations
@@ -162,4 +162,4 @@ cast chain-id --rpc-url http://46.225.30.187:8545
 | `cast call` | ✅ | Read-only |
 | `cast send` | ❌ | Same limitation as `forge create` |
 | `eth_sendTransaction` | ✅ | Use for deployment |
-| `eth_feeHistory` | ❌ | Not supported on Prime Chain |
+| `eth_feeHistory` | ❌ | Not supported on Mersennet |

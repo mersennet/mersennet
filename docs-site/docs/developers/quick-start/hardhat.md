@@ -6,7 +6,7 @@ title: "Deploy with Hardhat"
 
 # Deploy with Hardhat
 
-This guide walks you through setting up Hardhat and deploying a smart contract to Prime Chain testnet (Chain ID 7919).
+This guide walks you through setting up Hardhat and deploying a smart contract to Mersennet testnet (Chain ID 7919).
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ Select **Create a TypeScript project** when prompted.
 
 ## Network Configuration
 
-Add Prime Chain to your `hardhat.config.ts`:
+Add Mersennet to your `hardhat.config.ts`:
 
 ```typescript
 import { HardhatUserConfig } from "hardhat/config";
@@ -49,7 +49,7 @@ export default config;
 ```
 
 :::note HttpNetworkConfig
-Prime Chain uses standard JSON-RPC. If you encounter issues with gas estimation or fee history (e.g., `eth_feeHistory` is not supported), you may need to add `httpHeaders` or adjust `timeout` in the network config. For deployment, the default config works with `eth_sendTransaction`.
+Mersennet uses standard JSON-RPC. If you encounter issues with gas estimation or fee history (e.g., `eth_feeHistory` is not supported), you may need to add `httpHeaders` or adjust `timeout` in the network config. For deployment, the default config works with `eth_sendTransaction`.
 :::
 
 ## Sample ERC-20 Contract
@@ -103,7 +103,7 @@ main()
   });
 ```
 
-## Deploy to Prime Chain
+## Deploy to Mersennet
 
 1. **Set your private key** (never commit this):
 
@@ -148,7 +148,7 @@ Or use the [block explorer](http://46.225.30.187) to view the transaction and co
 
 | Issue | Solution |
 |-------|----------|
-| `eth_feeHistory` not supported | Prime Chain does not support EIP-1559 fee history. Use `--legacy` or ensure your tooling uses legacy transactions. |
+| `eth_feeHistory` not supported | Mersennet does not support EIP-1559 fee history. Use `--legacy` or ensure your tooling uses legacy transactions. |
 | Gas estimation fails | Try increasing `gasLimit` in the deployment script or use a fixed value (e.g., `3000000`). |
 | Connection refused | Ensure the RPC URL `http://46.225.30.187:8545` is reachable from your network. |
 | Insufficient funds | Get testnet PRIM from the [faucet](http://46.225.30.187:4003). |

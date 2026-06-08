@@ -6,13 +6,13 @@ title: "Token Economics"
 
 # Token Economics
 
-This document provides complete tokenomics documentation for Prime Chain (PRIM), including supply, allocation, emission schedule, and validator reward distribution.
+This document provides complete tokenomics documentation for Mersennet (PRIM), including supply, allocation, emission schedule, and validator reward distribution.
 
 ## Overview
 
 | Parameter | Value |
 |-----------|-------|
-| **Token Name** | Prime Chain |
+| **Token Name** | Mersennet |
 | **Ticker** | PRIM |
 | **Max Supply** | 1,000,000,000 (1 billion) |
 | **Decimals** | 18 |

@@ -6,7 +6,7 @@ title: "Run a Validator Node"
 
 # Run a Validator Node
 
-This guide walks you through building, configuring, and running a Prime Chain validator node from source.
+This guide walks you through building, configuring, and running a Mersennet validator node from source.
 
 ## Prerequisites
 
@@ -50,10 +50,10 @@ rustc --version  # Should be 1.75+
 
 ## Build from Source
 
-Clone the Prime Chain repository and build the release binary:
+Clone the Mersennet repository and build the release binary:
 
 ```bash
-git clone https://github.com/prime-chain/prime-chain.git
+git clone https://github.com/PrimeNumbersLabs/prime-chain.git
 cd prime-chain
 cargo build --release
 ```
@@ -62,7 +62,7 @@ The binary will be at `target/release/prime-chain` (or `prime-chain-node` depend
 
 ## Configuration
 
-Prime Chain uses a JSON configuration file. Create `config.json` with the sections relevant to your deployment.
+Mersennet uses a JSON configuration file. Create `config.json` with the sections relevant to your deployment.
 
 ### Minimal Validator Configuration
 
@@ -245,8 +245,8 @@ Create `/etc/systemd/system/prime-chain.service`:
 
 ```ini
 [Unit]
-Description=Prime Chain Validator Node
-Documentation=https://docs.primechain.io
+Description=Mersennet Validator Node
+Documentation=https://docs.mersennet.io
 After=network-online.target
 Wants=network-online.target
 
@@ -364,7 +364,7 @@ Understanding node log messages helps diagnose issues quickly.
 
 ## Monitoring Setup
 
-Prime Chain exposes Prometheus-compatible metrics at the `/metrics` endpoint on the RPC port.
+Mersennet exposes Prometheus-compatible metrics at the `/metrics` endpoint on the RPC port.
 
 ### Available Metrics
 
@@ -434,7 +434,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "Prime Chain node is down"
+          summary: "Mersennet node is down"
 
       - alert: BlockProductionStalled
         expr: increase(prime_chain_blocks_produced_total[5m]) == 0

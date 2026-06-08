@@ -6,7 +6,7 @@ title: "Validator Overview"
 
 # Validator Overview
 
-Validators are the backbone of Prime Chain. They run full nodes, participate in consensus, produce blocks, and earn block rewards in proportion to their stake. This guide explains what validators do, how the Delegated Proof-of-Stake (DPoS) consensus works, and what you need to become one.
+Validators are the backbone of Mersennet. They run full nodes, participate in consensus, produce blocks, and earn block rewards in proportion to their stake. This guide explains what validators do, how the Delegated Proof-of-Stake (DPoS) consensus works, and what you need to become one.
 
 ## What Validators Do
 
@@ -20,7 +20,7 @@ Validators perform three critical functions:
 
 ## Delegated Proof-of-Stake (DPoS)
 
-Prime Chain uses **Delegated Proof-of-Stake** with the following characteristics:
+Mersennet uses **Delegated Proof-of-Stake** with the following characteristics:
 
 | Aspect | Description |
 |--------|-------------|

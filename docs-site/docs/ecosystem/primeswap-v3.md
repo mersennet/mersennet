@@ -6,7 +6,7 @@ title: "PrimeSwap V3 DEX"
 
 # PrimeSwap V3 DEX
 
-**PrimeSwap V3** is a concentrated liquidity DEX on Prime Chain, built on the Uniswap V3 protocol. It enables capital-efficient liquidity positions with custom price ranges and multiple fee tiers—giving liquidity providers fine-grained control over where their capital is deployed.
+**PrimeSwap V3** is a concentrated liquidity DEX on Mersennet, built on the Uniswap V3 protocol. It enables capital-efficient liquidity positions with custom price ranges and multiple fee tiers—giving liquidity providers fine-grained control over where their capital is deployed.
 
 ## Overview
 
@@ -16,7 +16,7 @@ title: "PrimeSwap V3 DEX"
 | **Liquidity** | Concentrated (custom price ranges) |
 | **Fee Tiers** | 0.05%, 0.3%, 1% |
 | **Position Type** | NFT-based (ERC-721) |
-| **Chain** | Prime Chain Testnet (Chain ID 7919) |
+| **Chain** | Mersennet Testnet (Chain ID 7919) |
 | **Frontend** | [http://46.225.30.187:4002](http://46.225.30.187:4002) |
 
 ## V3 vs V2

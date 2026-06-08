@@ -6,9 +6,9 @@ title: "RPC Methods Reference"
 
 # RPC Methods Reference
 
-Complete reference for JSON-RPC methods supported by Prime Chain. All examples use `http://46.225.30.187:8545` as the RPC URL.
+Complete reference for JSON-RPC methods supported by Mersennet. All examples use `http://46.225.30.187:8545` as the RPC URL.
 
-Prime Chain implements **63 RPC methods** across 7 namespaces: `eth_`, `net_`, `web3_`, `txpool_`, `prime_`, `primeorders_`, and `primebridge_`.
+Mersennet implements the standard `eth_` namespace plus native extensions across `net_`, `web3_`, `txpool_`, `prime_`, `primeorders_`, and `primebridge_`. The privacy/ZK methods (shielded transfers, SP1 state proofs, selective-disclosure reads) also live in the `prime_` namespace and are documented separately in the [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc).
 
 ---
 
@@ -345,7 +345,7 @@ Sends a transaction signed by the node.
 Sends a pre-signed raw transaction.
 
 :::caution
-Prime Chain accepts **both** standard Ethereum RLP-encoded transactions (EIP-155) and its own custom binary format. MetaMask-signed transactions work natively.
+Mersennet accepts **both** standard Ethereum RLP-encoded transactions (EIP-155) and its own custom binary format. MetaMask-signed transactions work natively.
 :::
 
 **Parameters:**
@@ -356,7 +356,7 @@ Prime Chain accepts **both** standard Ethereum RLP-encoded transactions (EIP-155
 
 ### eth_getUncleCountByBlockNumber
 
-Returns `"0x0"` (Prime Chain uses BFT consensus with no uncles).
+Returns `"0x0"` (Mersennet uses BFT consensus with no uncles).
 
 **Parameters:**
 
@@ -376,7 +376,7 @@ Returns `"0x0"` (no uncles in BFT consensus).
 
 ## Filter Methods
 
-Prime Chain supports stateful log/block/tx filters for polling-based event subscription.
+Mersennet supports stateful log/block/tx filters for polling-based event subscription.
 
 ### eth_newFilter
 
@@ -481,7 +481,7 @@ Returns the client version string.
 **Response:**
 
 ```json
-{ "jsonrpc": "2.0", "id": 1, "result": "PrimeChain/0.1.0" }
+{ "jsonrpc": "2.0", "id": 1, "result": "Mersennet/0.1.0" }
 ```
 
 ---
@@ -512,9 +512,9 @@ curl -X POST http://46.225.30.187:8545 \
 
 ---
 
-## Prime Chain–Specific Methods
+## Mersennet–Specific Methods
 
-These methods mirror their `eth_` counterparts but use Prime Chain's native format.
+These methods mirror their `eth_` counterparts but use Mersennet's native format.
 
 ### prime_chainId
 
@@ -566,7 +566,7 @@ Same as `eth_call`.
 
 ### prime_getBlockByNumber
 
-Same as `eth_getBlockByNumber`, using Prime Chain block format.
+Same as `eth_getBlockByNumber`, using Mersennet block format.
 
 ---
 
@@ -621,6 +621,30 @@ curl -X POST http://46.225.30.187:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"prime_getDomainEvents","params":[{"fromBlock":"0x0","toBlock":"latest"}],"id":1}'
 ```
+
+---
+
+### prime_getCodeAttestation
+
+Returns the on-chain code-publication attestation for a contract, or `null` if none was published.
+
+**Parameters:**
+
+1. `address` — Contract address (hex)
+2. `blockNumber` (optional) — Block number or `"latest"`
+
+**Returns:** `{ contract, deployer, codeHash, metadataUri, publishedAtBlock }` or `null`.
+
+---
+
+### prime_getCodeHash
+
+Returns the keccak-256 code hash at an address (or `null` if there is no code).
+
+**Parameters:**
+
+1. `address` — Contract address (hex)
+2. `blockNumber` (optional) — Block number or `"latest"`
 
 ---
 
@@ -797,37 +821,45 @@ Cross-domain bridge between the EVM execution environment and the PrimeOrders CL
 
 ### primebridge_enqueueOrdersToEvm
 
-Queue an asset transfer from the CLOB domain to the EVM domain.
+Enqueue a cross-domain message from the PrimeOrders domain to the EVM domain.
 
 **Parameters:**
 
-1. `bridgeObject` — `{ from, to, amount }`
+1. `payload` — Hex-encoded message payload (`0x…`)
+
+**Returns:** The enqueued bridge message — `{ nonce, from, to, payload }` (`from: "primeorders"`, `to: "primeevm"`).
 
 ---
 
 ### primebridge_enqueueEvmToOrders
 
-Queue an asset transfer from the EVM domain to the CLOB domain.
+Enqueue a cross-domain message from the EVM domain to the PrimeOrders domain.
 
 **Parameters:**
 
-1. `bridgeObject` — `{ from, to, amount }`
+1. `payload` — Hex-encoded message payload (`0x…`)
+
+**Returns:** The enqueued bridge message — `{ nonce, from, to, payload }` (`from: "primeevm"`, `to: "primeorders"`).
 
 ---
 
 ### primebridge_dequeueOrdersToEvm
 
-Process pending bridge transfers from CLOB to EVM.
+Dequeue the next pending PrimeOrders → EVM bridge message.
 
 **Parameters:** None
+
+**Returns:** A bridge message `{ nonce, from, to, payload }`, or `null` if the queue is empty.
 
 ---
 
 ### primebridge_dequeueEvmToOrders
 
-Process pending bridge transfers from EVM to CLOB.
+Dequeue the next pending EVM → PrimeOrders bridge message.
 
 **Parameters:** None
+
+**Returns:** A bridge message `{ nonce, from, to, payload }`, or `null` if the queue is empty.
 
 ---
 
@@ -845,15 +877,40 @@ The following CLOB markets are registered on the testnet:
 
 ---
 
+## Precompiles
+
+Mersennet exposes native functionality through EVM precompiles, callable from Solidity via `eth_call` or transactions:
+
+| Address | Name | Purpose |
+|---------|------|---------|
+| `0x…0100` | PrimeOrders CLOB | On-chain order book: place/cancel orders, collateral, positions, best bid/ask |
+| `0x…0200` | Shielded Transfer | Private note-to-note transfer (`shieldedTransfer(bytes)`) |
+| `0x…0201` | Shield / Unshield | Transparent ⇄ shielded bridge (`shield`, `unshield`) |
+| `0x…0202` | Code Publication | Register/revoke a contract code attestation |
+| `0x…0300` | State-Proof Verifier | Verify an SP1 state-transition proof on-chain (`verifyStateProof(bytes)`) |
+
+(Addresses are the 20-byte form, e.g. `0x0000000000000000000000000000000000000100`.)
+
+:::note
+The shielded precompiles (`0x0200`, `0x0201`, `0x0300`) and shielded RPC methods activate with the privacy hard fork. The transparent PrimeOrders precompile is disabled after privacy activation in favor of the shielded order path.
+:::
+
+---
+
+## Privacy & shielded methods
+
+Shielded transfers and orders, SP1 state proofs, and selective-disclosure (viewing-grant) reads are exposed through the `prime_*` namespace and documented in full in the **[Shielded JSON-RPC reference](/developers/privacy/shielded-rpc)**. For typed client helpers, see the **[Shielded SDK](/developers/privacy/shielded-sdk)**.
+
+---
+
 ## Method Summary
 
-| Namespace | Count | Description |
-|-----------|-------|-------------|
-| `eth_` | 30 | Standard Ethereum JSON-RPC |
+| Namespace | Methods | Description |
+|-----------|---------|-------------|
+| `eth_` | ~30 | Standard Ethereum JSON-RPC (incl. filters) |
 | `net_` | 3 | Network status |
 | `web3_` | 1 | Client info |
 | `txpool_` | 1 | Mempool status |
-| `prime_` | 15 | Prime Chain native equivalents |
+| `prime_` | transparent equivalents + code attestation + shielded/ZK | Native equivalents, code-publication lookups, and the shielded/state-proof/disclosure surface ([Privacy](/developers/privacy/shielded-rpc)) |
 | `primeorders_` | 9 | CLOB order book engine |
 | `primebridge_` | 4 | Cross-domain bridge |
-| **Total** | **63** | |

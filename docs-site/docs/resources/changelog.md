@@ -6,7 +6,7 @@ title: "Changelog"
 
 # Changelog
 
-Notable milestones and updates for the Prime Chain ecosystem.
+Notable milestones and updates for the Mersennet ecosystem.
 
 ---
 
@@ -14,7 +14,7 @@ Notable milestones and updates for the Prime Chain ecosystem.
 
 ### PrimeSwap V3 Deployed
 
-Concentrated liquidity DEX built on the Uniswap V3 protocol, deployed to Prime Chain testnet.
+Concentrated liquidity DEX built on the Uniswap V3 protocol, deployed to Mersennet testnet.
 
 - Concentrated liquidity positions with custom price ranges
 - Multiple fee tiers: 0.05%, 0.3%, 1%
@@ -43,7 +43,7 @@ Automated Market Maker DEX (Uniswap V2 fork) deployed with Factory and Router co
 
 ### Testnet Launch
 
-Prime Chain testnet launched with HotStuff-2 consensus.
+Mersennet testnet launched with BFT proof-of-stake consensus.
 
 - 4-validator network on Hetzner VPS infrastructure
 - Chain ID 7919, EVM Shanghai compatibility

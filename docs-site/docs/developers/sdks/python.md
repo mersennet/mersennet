@@ -6,7 +6,7 @@ title: "Python SDK"
 
 # Python SDK
 
-The Prime Chain Python SDK (`prime-chain-sdk`) provides a client for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
+The Mersennet Python SDK (`prime-chain-sdk`) provides a client for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
 
 ## Installation
 
@@ -16,7 +16,7 @@ From PyPI (when published):
 pip install prime-chain-sdk
 ```
 
-From source (Prime Chain monorepo):
+From source (Mersennet monorepo):
 
 ```bash
 cd sdk-python
@@ -117,7 +117,7 @@ tx_hash = provider.send_raw_transaction("0xSignedTxHex")
 ```
 
 :::note
-Prime Chain uses a custom raw transaction format. Use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked. For wallet-signed transactions, ensure your signing library produces the Prime Chain format.
+Mersennet uses a custom raw transaction format. Use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked. For wallet-signed transactions, ensure your signing library produces the Mersennet format.
 :::
 
 ## PrimeOrders
@@ -220,13 +220,13 @@ WebSocket support may vary by node configuration. If subscriptions fail, use HTT
 
 ```python
 from prime_chain import PrimeProvider
-from prime_chain.provider import PrimeChainError
+from prime_chain.provider import MersennetError
 
 provider = PrimeProvider("http://46.225.30.187:8545")
 
 try:
     balance = provider.get_balance("0x...")
-except PrimeChainError as e:
+except MersennetError as e:
     print(f"RPC error: {e}, code: {e.code}")
 ```
 

@@ -1,10 +1,12 @@
 import {themes as prismThemes} from 'prism-react-renderer';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Prime Chain',
-  tagline: 'High-performance EVM blockchain with native order matching',
+  title: 'Mersennet',
+  tagline: 'Account-level privacy for the EVM and on-chain order books',
   favicon: 'img/favicon.svg',
 
   future: {
@@ -15,13 +17,20 @@ const config: Config = {
     format: 'detect',
   },
 
-  url: 'https://docs.primechain.network',
+  url: 'https://docs.mersennet.com',
   baseUrl: '/',
 
   organizationName: 'PrimeNumbersLabs',
   projectName: 'prime-chain',
 
   onBrokenLinks: 'warn',
+
+  stylesheets: [
+    {
+      href: '/katex/katex.min.css',
+      type: 'text/css',
+    },
+  ],
 
   i18n: {
     defaultLocale: 'en',
@@ -50,6 +59,8 @@ const config: Config = {
           routeBasePath: '/',
           editUrl: 'https://github.com/PrimeNumbersLabs/prime-chain/tree/main/docs-site/',
           showLastUpdateTime: true,
+          remarkPlugins: [remarkMath],
+          rehypePlugins: [rehypeKatex],
         },
         blog: false,
         theme: {
@@ -60,27 +71,27 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/prime-chain-social.png',
+    image: 'img/mersennet-social.svg',
     metadata: [
-      { name: 'keywords', content: 'blockchain, EVM, Layer 1, DeFi, CLOB, PrimeOrders, PRIM' },
+      { name: 'keywords', content: 'Mersennet, blockchain, ZK, zero-knowledge, privacy, EVM, Layer 1, DeFi, CLOB, order book, leverage trading' },
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
     colorMode: {
-      defaultMode: 'light',
+      defaultMode: 'dark',
       disableSwitch: false,
       respectPrefersColorScheme: true,
     },
     announcementBar: {
-      id: 'testnet_live',
-      content: '🟢 <b>Prime Chain Testnet is live</b> — <a href="/getting-started/faucet">Get testnet PRIM</a> · <a href="http://46.225.30.187" target="_blank">Block Explorer</a> · Chain ID: 7919',
-      backgroundColor: '#F3EDFF',
-      textColor: '#3A334D',
+      id: 'testnet_live_v2',
+      content: '🟢 <b>Mersennet Testnet is live</b> — <a href="/getting-started/faucet">Claim testnet tokens</a> · <a href="http://46.225.30.187" target="_blank">Block Explorer</a> · Chain ID: 7919',
+      backgroundColor: '#05140c',
+      textColor: '#d7ffe4',
       isCloseable: true,
     },
     navbar: {
-      title: 'Prime Chain',
+      title: 'Mersennet',
       logo: {
-        alt: 'Prime Chain',
+        alt: 'Mersennet',
         src: 'img/logo.svg',
         width: 32,
         height: 22,
@@ -97,6 +108,12 @@ const config: Config = {
           sidebarId: 'developers',
           position: 'left',
           label: 'Developers',
+        },
+        {
+          type: 'docSidebar',
+          sidebarId: 'privacy',
+          position: 'left',
+          label: 'Privacy',
         },
         {
           type: 'docSidebar',
@@ -143,6 +160,7 @@ const config: Config = {
             { label: 'ERC-20 Guide', to: '/developers/contracts/erc20-guide' },
             { label: 'RPC Reference', to: '/developers/rpc/methods' },
             { label: 'JavaScript SDK', to: '/developers/sdks/javascript' },
+            { label: 'Shielded SDK', to: '/developers/privacy/shielded-sdk' },
           ],
         },
         {
@@ -167,13 +185,14 @@ const config: Config = {
         {
           title: 'Community',
           items: [
+            { label: 'Privacy', to: '/privacy' },
             { label: 'GitHub', href: 'https://github.com/PrimeNumbersLabs/prime-chain' },
             { label: 'Whitepaper', to: '/whitepaper' },
             { label: 'FAQ', to: '/resources/faq' },
           ],
         },
       ],
-      copyright: `© ${new Date().getFullYear()} Prime Numbers Labs. All rights reserved.`,
+      copyright: `© ${new Date().getFullYear()} Mersennet · Prime Numbers Labs. All rights reserved.`,
     },
     prism: {
       theme: prismThemes.github,

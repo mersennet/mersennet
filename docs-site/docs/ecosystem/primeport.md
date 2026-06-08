@@ -6,7 +6,7 @@ title: "Primeport NFT Marketplace"
 
 # Primeport NFT Marketplace
 
-**Primeport** is the native NFT marketplace on Prime Chain, built on OpenSea's Seaport protocol. It supports ERC-721 and ERC-1155 NFTs with listing, buying, selling, and auction functionality.
+**Primeport** is the native NFT marketplace on Mersennet, built on OpenSea's Seaport protocol. It supports ERC-721 and ERC-1155 NFTs with listing, buying, selling, and auction functionality.
 
 ## Overview
 
@@ -64,7 +64,7 @@ Multi-token NFTs (multiple token IDs in one contract, with fungible and non-fung
 │  - Prisma ORM, indexing                                      │
 │  - Order validation, metadata                                │
 ├─────────────────────────────────────────────────────────────┤
-│  Seaport Contracts (Prime Chain)                             │
+│  Seaport Contracts (Mersennet)                             │
 │  - Order fulfillment                                         │
 │  - ERC-721 / ERC-1155 transfers                              │
 └─────────────────────────────────────────────────────────────┘
@@ -77,7 +77,7 @@ Multi-token NFTs (multiple token IDs in one contract, with fungible and non-fung
 | **Frontend** | Next.js 15, wagmi, viem/ethers |
 | **Backend** | NestJS, Prisma, GraphQL |
 | **Protocol** | Seaport |
-| **Chain** | Prime Chain (Chain ID 7919) |
+| **Chain** | Mersennet (Chain ID 7919) |
 
 ## Deployment Status
 
@@ -85,12 +85,12 @@ Multi-token NFTs (multiple token IDs in one contract, with fungible and non-fung
 |-----------|--------|
 | Primeport UI | Built (.next/) |
 | Primeport Server | Ready (NestJS, Prisma) |
-| Seaport contracts | To be deployed to Prime Chain |
+| Seaport contracts | To be deployed to Mersennet |
 
 ## Integration
 
 - **PrimeXDC Wallet** — Connect and sign transactions.
-- **Prime Chain** — All NFT and marketplace activity on-chain.
+- **Mersennet** — All NFT and marketplace activity on-chain.
 - **PrimeSwap** — Optional: trade NFT-related tokens or royalties.
 
 ## Related Resources

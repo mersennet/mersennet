@@ -6,11 +6,11 @@ title: "Node Architecture"
 
 # Node Architecture
 
-This page describes the internal architecture of a Prime Chain node — the Rust binary that produces blocks, executes transactions, participates in consensus, and serves the JSON-RPC API.
+This page describes the internal architecture of a Mersennet node — the Rust binary that produces blocks, executes transactions, participates in consensus, and serves the JSON-RPC API.
 
 ## Overview
 
-A running Prime Chain node is composed of five cooperating subsystems:
+A running Mersennet node is composed of five cooperating subsystems:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -263,7 +263,7 @@ The state backend supports snapshots for:
 
 ## EVM Integration
 
-Prime Chain uses [revm](https://github.com/bluealloy/revm) (Rust EVM) for transaction execution with the Shanghai specification.
+Mersennet uses [revm](https://github.com/bluealloy/revm) (Rust EVM) for transaction execution with the Shanghai specification.
 
 ### Execution Flow
 
@@ -281,7 +281,7 @@ For each transaction, the engine:
 
 ### Precompiles
 
-Beyond the standard Ethereum precompiles (ecRecover, SHA-256, RIPEMD-160, identity, modexp, ecAdd, ecMul, ecPairing, blake2f), Prime Chain adds:
+Beyond the standard Ethereum precompiles (ecRecover, SHA-256, RIPEMD-160, identity, modexp, ecAdd, ecMul, ecPairing, blake2f), Mersennet adds:
 
 | Address | Name | Description |
 |---------|------|-------------|
@@ -301,7 +301,7 @@ Gas follows standard EVM rules:
 
 ### EIP-1559 Fee Market
 
-Prime Chain implements EIP-1559 dynamic base fee:
+Mersennet implements EIP-1559 dynamic base fee:
 
 ```
 if gas_used > target_gas (gas_limit / elasticity):
@@ -316,7 +316,7 @@ Configuration:
 
 ## Custom Transaction Format
 
-Prime Chain uses a custom binary format for transaction signing, inspired by EIP-155:
+Mersennet uses a custom binary format for transaction signing, inspired by EIP-155:
 
 ### Signing Hash Input
 

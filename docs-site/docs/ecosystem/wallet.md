@@ -6,7 +6,7 @@ title: "PrimeXDC Wallet"
 
 # PrimeXDC Wallet
 
-**PrimeXDC Wallet** is the native browser extension wallet for Prime Chain. It provides send/receive, token management, dApp connectivity, and transaction signing—optimized for the Prime Chain ecosystem.
+**PrimeXDC Wallet** is the native browser extension wallet for Mersennet. It provides send/receive, token management, dApp connectivity, and transaction signing—optimized for the Mersennet ecosystem.
 
 ## Overview
 
@@ -14,7 +14,7 @@ title: "PrimeXDC Wallet"
 |---------|-----------------|
 | **Platform** | Chrome/Chromium extension |
 | **Standard** | EIP-1193 (MetaMask-compatible) |
-| **Chain** | Prime Chain (Chain ID 7919) supported out of the box |
+| **Chain** | Mersennet (Chain ID 7919) supported out of the box |
 | **Stack** | React, ethers.js, Chrome Manifest V3 |
 | **Status** | Built |
 
@@ -22,7 +22,7 @@ title: "PrimeXDC Wallet"
 
 ### Send & Receive PRIM
 
-- Send native PRIM to any address on Prime Chain.
+- Send native PRIM to any address on Mersennet.
 - Receive PRIM by sharing your wallet address.
 - View transaction history and confirmations.
 
@@ -34,7 +34,7 @@ title: "PrimeXDC Wallet"
 
 ### dApp Connectivity
 
-- Connect to Prime Chain dApps via the standard Ethereum provider (`window.ethereum`).
+- Connect to Mersennet dApps via the standard Ethereum provider (`window.ethereum`).
 - Approve transactions and sign messages.
 - Compatible with wagmi, ethers.js, viem, and other Web3 libraries.
 
@@ -48,7 +48,7 @@ title: "PrimeXDC Wallet"
 
 1. Install the PrimeXDC Wallet browser extension (Chrome/Chromium).
 2. Create a new wallet or import via seed phrase.
-3. Prime Chain testnet (Chain ID 7919) is preconfigured.
+3. Mersennet testnet (Chain ID 7919) is preconfigured.
 4. Use the [Faucet](http://46.225.30.187:4003) to get testnet PRIM.
 
 :::tip
@@ -65,7 +65,7 @@ PrimeXDC Wallet uses the same provider interface as MetaMask. dApps that support
 
 ## Supported dApps
 
-PrimeXDC Wallet works with all Prime Chain dApps, including:
+PrimeXDC Wallet works with all Mersennet dApps, including:
 
 - [PrimeSwap](/ecosystem/primeswap) — Swap and add liquidity
 - [PrimeFi](/ecosystem/primefi) — Supply and borrow (when deployed)
@@ -74,7 +74,7 @@ PrimeXDC Wallet works with all Prime Chain dApps, including:
 
 ## Alternative: MetaMask
 
-If you prefer MetaMask, you can add Prime Chain manually. See [Wallet Setup](/getting-started/wallet-setup) for instructions. PrimeXDC Wallet offers a tailored experience and may include Prime Chain–specific features (e.g., PrimeOrders integration) in future updates.
+If you prefer MetaMask, you can add Mersennet manually. See [Wallet Setup](/getting-started/wallet-setup) for instructions. PrimeXDC Wallet offers a tailored experience and may include Mersennet–specific features (e.g., PrimeOrders integration) in future updates.
 
 ## Security
 
@@ -84,6 +84,6 @@ If you prefer MetaMask, you can add Prime Chain manually. See [Wallet Setup](/ge
 
 ## Related Resources
 
-- [Wallet Setup](/getting-started/wallet-setup) — Add Prime Chain to MetaMask or PrimeXDC
+- [Wallet Setup](/getting-started/wallet-setup) — Add Mersennet to MetaMask or PrimeXDC
 - [Faucet](/getting-started/faucet) — Get testnet PRIM
 - [First Transaction](/getting-started/first-transaction) — Send your first PRIM
