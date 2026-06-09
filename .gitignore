@@ -80,3 +80,8 @@ node-dashboard/*.tar.gz
 # Python
 __pycache__/
 *.pyc
+
+# SDK / API keys
+sdk/.env
+sdk/.env.*
+sdk/dist/
