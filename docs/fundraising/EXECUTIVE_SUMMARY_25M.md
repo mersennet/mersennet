@@ -89,7 +89,7 @@ A smart contract on Mersennet can atomically: accept a tokenized bond deposit, p
 - **7 smart contracts** verified and deployed (Multicall3, WPRIM, stablecoins, DEX factory/router)
 - **3 liquidity pools** seeded (WPRIM/USDC, WPRIM/USDT, WPRIM/DAI)
 - **Comprehensive documentation portal** (32+ pages, Docusaurus)
-- **Core chain:** 10,600+ lines of Rust across 28 modules
+- **Core chain:** 44,000+ lines of Rust across a 6-crate workspace
 
 ---
 

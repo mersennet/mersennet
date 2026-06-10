@@ -492,7 +492,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 │   Rodolfo Cova — Founder & Lead Engineer                     │
 │   ─────────────────────────────────────                      │
 │   Full-stack blockchain architect. Built Mersennet from     │
-│   scratch: 10,600+ lines of Rust across 28 modules.          │
+│   scratch: 44,000+ lines of Rust, 6-crate workspace.           │
 │   Complete L1 with EVM, CLOB, consensus, P2P, RPC.           │
 │                                                              │
 │                   STRATEGIC ADVISORS                          │

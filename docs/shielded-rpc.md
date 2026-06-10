@@ -190,10 +190,10 @@ wscat -c ws://localhost:8546
 |---|---|
 | `-32700` | Parse error (invalid JSON) |
 | `-32601` | Method not found |
-| `-32602` | Invalid params — also used for proof rejected, stale anchor root, double-spend (nullifier already in the set), and unregistered/under-bonded liquidators; the specific reason is in the error message |
+| `-32602` | Invalid params (malformed envelopes, missing fields, bad bincode) |
 | `-32604` | Forbidden (viewing-key grant missing, expired, or revoked) |
 | `-32605` | **Method disabled in current chain mode** (privacy mode inactive) |
-| `-32000` | Internal error |
+| `-32000` | Internal / engine rejection — proof rejected, stale anchor root, double-spend (nullifier already in the set), unregistered or under-bonded liquidator; the specific reason is in the error message |
 | `-32005` | Transaction rejected (with `reason` in data) |
 
 ---

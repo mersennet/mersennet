@@ -74,7 +74,7 @@ This data room contains all materials required for due diligence on Mersennet's 
 │   └── 📄 GitHub Organization: PrimeNumbersLabs
 │
 ├── 📁 8. CODEBASE (available on request)
-│   ├── 📄 Core Chain (Rust)                          ← crates/ (28 modules, 10,600+ LOC)
+│   ├── 📄 Core Chain (Rust)                          ← crates/ (6-crate workspace, 44,000+ LOC)
 │   ├── 📄 Smart Contracts (Solidity)                 ← contracts/ (Foundry, 28 tests)
 │   ├── 📄 Explorer                                   ← explorer/
 │   ├── 📄 DEX                                        ← dex/
@@ -121,7 +121,7 @@ This data room contains all materials required for due diligence on Mersennet's 
 - [ ] Review whitepaper v7.0 (architecture, consensus, PrimeOrders)
 - [ ] Review technical reference (implementation details)
 - [ ] Test live testnet (Chain ID 7919, RPC: http://46.225.30.187:8545)
-- [ ] Review codebase (Rust core — 28 modules, 10,600+ LOC)
+- [ ] Review codebase (Rust core — 6-crate workspace, 44,000+ LOC)
 - [ ] Verify performance claims (72K TPS, 2.4M CLOB ops/s, ~200ms finality)
 - [ ] Review smart contracts (Foundry, 28 tests)
 - [ ] Evaluate CLOB precompile (0x0100) atomic composability

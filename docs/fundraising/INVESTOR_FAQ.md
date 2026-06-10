@@ -56,7 +56,7 @@ These are measured benchmarks, not theoretical maximums.
 
 | Layer | Technology |
 |-------|-----------|
-| Core blockchain | Rust 2024 edition (10,600+ LOC, 28 modules) |
+| Core blockchain | Rust 2024 edition (44,000+ LOC, 6-crate workspace) |
 | EVM | revm v12 (Shanghai spec) |
 | Consensus | HotStuff-2 BFT (DPoS) |
 | CLOB | Native PrimeOrders engine with FBA matching |

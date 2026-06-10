@@ -1247,6 +1247,8 @@ Initialized once via `prometheus::init()`. All metrics are pre-described with HE
 | `hotstuff2_timeouts` | Counter | HotStuff-2 timeouts |
 | `tx_submitted_total` | Counter | Total submitted txs |
 
+Additional privacy-fork metrics (`prime_chain_privacy_*`, `prime_chain_shielded_*`, `prime_chain_dkg_*`, `prime_chain_fba_*`, `prime_chain_liquidation_*`, `prime_chain_threshold_*`, `prime_chain_state_proof*`) are registered in `crates/core/src/prometheus.rs`.
+
 ### Structured Logging
 
 Uses `tracing` with `tracing-subscriber` (fmt + env-filter). Controlled via `RUST_LOG` environment variable.
