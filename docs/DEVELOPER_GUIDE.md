@@ -20,7 +20,7 @@ deep dive linked from here.
 
 A Rust-built EVM-compatible L1 with a native CLOB (PrimeOrders) that
 is being upgraded from a transparent chain (chain ID 131071) to a
-privacy-first chain (chain ID 131071) via a hard fork. The privacy fork:
+privacy-first chain (chain ID 7920) via a hard fork. The privacy fork:
 
 - Moves trader-specific state (balances, positions, orders) behind a
   Poseidon-2 BN254 note commitment tree + nullifier set, à la Aztec.
@@ -199,7 +199,7 @@ headers, roots, fees, timestamps, and transaction hashes remain
 available, but full transaction objects and transaction receipts are no
 longer exposed over public RPC.
 
-### Transparent RPC (works on both 131071 and 131071)
+### Transparent RPC (works on both 131071 and 7920)
 
 Standard Ethereum-style methods plus `prime_*` extensions:
 

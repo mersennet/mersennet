@@ -143,7 +143,7 @@ c['p2p']['node_key_path'] = '/opt/mersennet/keys/node_key.json'
 c['p2p']['peer_store_path'] = '/opt/mersennet/data/peers.json'
 c['engine']['state_path'] = '/opt/mersennet/data/state'
 c['rpc']['addr'] = '0.0.0.0:8545'
-c['ws'] = {'enabled': True, 'addr': '0.0.0.0:9945'}
+c['ws'] = {'enabled': True, 'addr': '0.0.0.0:8546'}
 with open('$RPC_CONFIG', 'w') as f:
     json.dump(c, f, indent=2)
 "

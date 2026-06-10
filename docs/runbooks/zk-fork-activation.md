@@ -21,7 +21,7 @@ the transparent testnet runs chain ID 131071).
       - pinned `PRIME_SP1_VKEY_HASH`
       - one successful `PRIME_SP1_MODE=local` prove + verify transcript against the checked-in host runner
 - [ ] Tag `v1.0.0-zk-rc.0` on `feat/zk-privacy`.
-- [ ] Pre-mainnet testnet (chain ID 131071) restarts from snapshot
+- [ ] Pre-mainnet testnet (chain ID 7920) restarts from snapshot
       with the new genesis. Migration runs. Every faucet account
       should hold one shielded note.
 - [ ] Validators sign the testnet activation block. Confirm

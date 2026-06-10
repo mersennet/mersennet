@@ -4,7 +4,7 @@
 use revm::primitives::{Address, U256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Mainnet chain ID.
+/// Mainnet chain ID — the Mersenne prime 2^13 − 1.
 pub const MAINNET_CHAIN_ID: u64 = 8191;
 
 /// Minimum number of validators required at genesis.

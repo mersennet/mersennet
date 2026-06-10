@@ -28,7 +28,7 @@ calendar-bound bake / audit / governance gates for mainnet.**
 
 Concretely:
 
-- Chain ID **131071 boots today** from
+- Chain ID **7920 boots today** from
   [testnet/scripts/bootstrap-privacy-genesis.sh](../../testnet/scripts/bootstrap-privacy-genesis.sh),
   auto-activates privacy at a configured height, and runs the full
   shielded flow — orders/FBA, sealed-bid liquidations, transfers,
@@ -71,7 +71,7 @@ dependency.
   threshold ElGamal, Pedersen-DKG, Noir + Barretenberg adapters,
   cryptography spec. (See the caveat on D5/D6 in §6.)
 - **E1** — SP1 RISC-V toolchain.
-- **H2–H5, H7** — privacy validator configs (5-of-7, chain 131071),
+- **H2–H5, H7** — privacy validator configs (5-of-7, chain 7920),
   docker-compose + bootstrap + runbook, synthetic load script, chaos
   kill-validator script, privacy metrics + Grafana dashboard.
 - **K1–K2** — expanded CI (prover feature, SP1 lanes, tsc, forge, audit)
@@ -169,7 +169,7 @@ is resolved.
 **Smallest shippable that shows real privacy to a partner.** Most of this
 already exists.
 
-- Ship on chain 131071 with the **deterministic-mock SP1 backend** (or the
+- Ship on chain 7920 with the **deterministic-mock SP1 backend** (or the
   Noir adapters if `nargo` / `bb` are installed): privacy auto-activation,
   full shielded order / transfer / liquidation / auction RPC flow, Grafana
   dashboards.
@@ -287,7 +287,7 @@ document (it is a separate analysis doc):
 
 ### Smallest acceptable MVP scope cut
 
-Testnet 131071 + deterministic-mock SP1 backend + a minimal note scanner so
+Testnet 7920 + deterministic-mock SP1 backend + a minimal note scanner so
 the partner wallet reads its shielded balance. Defer the real transcript,
 the Ethereum bridge (G), network proving (E4), Groth16 (E5), external
 audit, and governance. **Label proofs as MOCK and keep real funds out.**

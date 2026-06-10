@@ -1,7 +1,7 @@
 # Shielded JSON-RPC + WebSocket Reference
 
 **Audience:** SDK authors, wallet developers, indexers.
-**Chain:** 131071 (privacy testnet), 131071 (transparent testnet), and 8191 (mainnet, post-hard-fork).
+**Chain:** 7920 (privacy testnet), 131071 (transparent testnet), and 8191 (mainnet, post-hard-fork).
 **Pre-activation:** All mutation methods return `-32605` ("disabled
 in current chain mode"). Read methods return zero/empty values until
 the activation height is reached.

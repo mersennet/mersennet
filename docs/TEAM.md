@@ -26,7 +26,7 @@
 
 | Parameter | Value |
 |-----------|-------|
-| **Chain ID** | `131071` (`0x1FFFF` hex) |
+| **Chain ID** | `131071` (`0x1EEF` hex) |
 | **Currency** | MRSN (18 decimals) |
 | **Block Time** | ~1 second |
 | **Max Supply** | 1,000,000,000 MRSN |

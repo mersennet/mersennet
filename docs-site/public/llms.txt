@@ -67,7 +67,7 @@
 
 ## Key Facts
 
-- Chain ID: testnet 131071 (0x1FFFF) · mainnet 8191 (0x1FFF)
+- Chain ID: testnet 131071 (0x1FFFF) · mainnet 8191 (0x1FFF) · privacy testnet compose 7920
 - Token: MRSN (18 decimals)
 - Max Supply: 1,000,000,000 MRSN
 - Block Time: ~1 second (default)

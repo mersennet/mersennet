@@ -176,7 +176,7 @@ None of these are buildable in the dev sandbox (no prover-class hardware, no ext
 - **State:** checklist drafted; clock has not started.
 - **Needs:** all E blockers cleared (E3 transcript + E4 network proof) and the audit cycle funded — this is calendar-gated, not code-gated.
 - **Owner:** `@PrimeNumbersLabs/core`, `@PrimeNumbersLabs/docs`.
-- **Do:** execute the T-8 activation lane in `docs/runbooks/zk-fork-activation.md`; restart chain 131071 on the candidate release using `testnet/scripts/bootstrap-privacy-genesis.sh`; rerun the section-2 SP1 lanes every two weeks; capture bake evidence in `docs/STATUS.md`.
+- **Do:** execute the T-8 activation lane in `docs/runbooks/zk-fork-activation.md`; restart chain 7920 on the candidate release using `testnet/scripts/bootstrap-privacy-genesis.sh`; rerun the section-2 SP1 lanes every two weeks; capture bake evidence in `docs/STATUS.md`.
 - **Exit:** STATUS H6 moves from "checklist drafted" to an active bake with a start date; incident-free through the full 8-week window.
 
 ### I1-I6 — third-party audit
