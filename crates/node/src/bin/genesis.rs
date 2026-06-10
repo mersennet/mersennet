@@ -1,4 +1,4 @@
-//! Genesis ceremony tool for Prime Chain testnet.
+//! Genesis ceremony tool for Mersennet testnet.
 //! Generates validator keys, genesis config, and Docker Compose for N validators.
 
 use std::fs;

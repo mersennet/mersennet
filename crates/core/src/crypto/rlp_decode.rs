@@ -17,7 +17,7 @@ pub fn decode_ethereum_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     match bytes[0] {
         0x01 => decode_eip2930(&bytes[1..]),
         0x02 => decode_eip1559(&bytes[1..]),
-        // Prime Chain shielded transaction (EIP-2718 type byte 0x7E).
+        // Mersennet shielded transaction (EIP-2718 type byte 0x7E).
         // See ADR-018 + `shielded_evm::SHIELDED_TX_TYPE`.
         0x7E => decode_shielded(&bytes[1..]),
         b if b >= 0xc0 => decode_legacy(bytes),

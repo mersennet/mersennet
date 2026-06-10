@@ -1,4 +1,4 @@
-//! Testnet faucet for Prime Chain.
+//! Testnet faucet for Mersennet.
 //! Serves a simple HTTP endpoint that funds accounts with test tokens.
 
 use k256::ecdsa::SigningKey;
@@ -477,7 +477,7 @@ fn parse_args() -> Args {
                     DEFAULT_PORT
                 );
                 println!(
-                    "  --rpc-url URL       Prime Chain RPC URL (default: http://localhost:8545)"
+                    "  --rpc-url URL       Mersennet RPC URL (default: http://localhost:8545)"
                 );
                 println!(
                     "  --private-key PATH  Path to faucet key JSON (default: faucet-key.json)"

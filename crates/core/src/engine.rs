@@ -606,7 +606,7 @@ impl Engine {
         self.privacy_mode_activated = true;
         tracing::warn!(
             block = self.block_number,
-            "Prime Chain privacy hard fork activated — shielded tx type 0x7E now accepted"
+            "Mersennet privacy hard fork activated — shielded tx type 0x7E now accepted"
         );
     }
 

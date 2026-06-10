@@ -1,4 +1,4 @@
-//! SP1 ZK integration for Prime Chain.
+//! SP1 ZK integration for Mersennet.
 //!
 //! Production-ready interface for SP1-compatible proofs. Uses a deterministic
 //! simulation in mock mode; can be swapped to real SP1 SDK when deployed.

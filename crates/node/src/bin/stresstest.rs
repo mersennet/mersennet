@@ -1,4 +1,4 @@
-//! Adversarial stress test tool for Prime Chain.
+//! Adversarial stress test tool for Mersennet.
 //! Runs scenarios that test edge cases, backpressure, and error handling.
 
 use std::time::{Duration, Instant};
@@ -17,7 +17,7 @@ fn main() {
     let rpc = parse_rpc_arg();
 
     println!("╔══════════════════════════════════════════════╗");
-    println!("║       Prime Chain Stress Tests               ║");
+    println!("║       Mersennet Stress Tests               ║");
     println!("╚══════════════════════════════════════════════╝");
     println!("[CONFIG] RPC: {}", rpc);
     println!();

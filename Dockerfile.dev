@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Prime Chain development image (Workstream K4).
+# Mersennet development image (Workstream K4).
 #
 # A single reproducible toolchain for the whole repo:
 #   - Rust stable + clippy + rustfmt + cargo-audit + cargo-llvm-cov

@@ -1,4 +1,4 @@
-//! ZK state proof verification module for Prime Chain.
+//! ZK state proof verification module for Mersennet.
 //!
 //! Provides trustless bridges and light clients via state transition proofs.
 //! Supports mock prover for testing and extensible interface for future STARK/SNARK backends.

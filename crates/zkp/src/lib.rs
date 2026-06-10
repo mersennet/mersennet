@@ -1,4 +1,4 @@
-//! Prime Chain ZK primitives.
+//! Mersennet ZK primitives.
 //!
 //! This crate is the shared cryptographic surface between the chain
 //! ([`prime-chain` core](../prime_chain/index.html)) and the Noir/SP1

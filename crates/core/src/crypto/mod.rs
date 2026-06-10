@@ -106,7 +106,7 @@ pub fn sign_transaction(tx: &Transaction, private_key: &SigningKey) -> SignedTra
     }
 }
 
-/// Recover the signer address from a `SignedTransaction` using the Prime Chain custom signing hash.
+/// Recover the signer address from a `SignedTransaction` using the Mersennet custom signing hash.
 pub fn recover_signer(signed_tx: &SignedTransaction) -> Result<Address> {
     let hash = tx_signing_hash(&signed_tx.tx);
 
@@ -154,18 +154,18 @@ pub fn address_from_signing_key(key: &SigningKey) -> Address {
 }
 
 /// Decode raw signed transaction bytes. Tries standard Ethereum RLP first (for MetaMask/ethers.js
-/// compatibility), then falls back to Prime Chain's custom format.
+/// compatibility), then falls back to Mersennet's custom format.
 pub fn decode_raw_signed_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     // Try standard Ethereum RLP first
     if let Ok(signed) = rlp_decode::decode_ethereum_tx(bytes) {
         return Ok(signed);
     }
 
-    // Fall back to custom Prime Chain format
+    // Fall back to custom Mersennet format
     decode_prime_format_tx(bytes)
 }
 
-/// Decode raw signed transaction in Prime Chain's custom binary format.
+/// Decode raw signed transaction in Mersennet's custom binary format.
 /// Format: chain_id(8) | nonce(8) | gas_price(32) | gas_limit(8) | to(20) | value(32) | data_len(4) | data | r(32) | s(32) | v(8)
 fn decode_prime_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     const MIN_LEN: usize = 8 + 8 + 32 + 8 + 20 + 32 + 4 + 32 + 32 + 8; // 172
@@ -237,7 +237,7 @@ fn decode_prime_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     })
 }
 
-/// Encode a signed transaction to raw bytes (Prime Chain format).
+/// Encode a signed transaction to raw bytes (Mersennet format).
 ///
 /// For `tx_type == 0x7E` (shielded), encodes as the EIP-2718 envelope
 /// `0x7E || bincode(SerdeShielded)`. The serde wrapper carries the

@@ -1,4 +1,4 @@
-# Prime Chain Privacy Testnet (chain ID 7920)
+# Mersennet Privacy Testnet (chain ID 7920)
 #
 # 7 validators (5-of-7 DKG threshold), 1 RPC observer, faucet,
 # Prometheus, Grafana. Built from the privacy hard-fork branch.

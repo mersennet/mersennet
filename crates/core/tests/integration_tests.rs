@@ -1,4 +1,4 @@
-//! Comprehensive integration tests for Prime Chain modules.
+//! Comprehensive integration tests for Mersennet modules.
 //!
 //! Covers: ReDB backend, parallel execution, WebSocket, pipeline, ZK proofs,
 //! Noise encryption, FBA, and commit-reveal.
