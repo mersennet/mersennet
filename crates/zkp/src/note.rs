@@ -4,7 +4,7 @@
 //! atomic unit of shielded state, analogous to a UTXO. Each note has:
 //!
 //! - `value`            — amount, in the smallest unit of `asset_id`.
-//! - `asset_id`         — which asset (PRIM, USDC, position-share, etc).
+//! - `asset_id`         — which asset (MRSN, USDC, position-share, etc).
 //! - `owner_pk`         — owner's public spending key.
 //! - `rho`              — uniformly random; used to derive the nullifier.
 //! - `psi`              — uniformly random; used as commitment trapdoor.
@@ -26,7 +26,7 @@ use crate::field::Fr;
 use crate::poseidon::Poseidon;
 use serde::{Deserialize, Serialize};
 
-/// Asset identifier. 0 = PRIM (native), 1 = USDC, 2 = USDT, etc.
+/// Asset identifier. 0 = MRSN (native), 1 = USDC, 2 = USDT, etc.
 /// Position notes use a tagged range starting at `1 << 16`.
 pub type AssetId = u32;
 

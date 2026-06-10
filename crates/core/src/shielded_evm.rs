@@ -391,7 +391,7 @@ impl ShieldedEvm {
         // 2. Verify the output circuit proof.
         let public_inputs = vec![
             tx.output_commitment,
-            Fr::ZERO, // asset_id = 0 (native PRIM); a real impl reads from `tx`
+            Fr::ZERO, // asset_id = 0 (native MRSN); a real impl reads from `tx`
             Fr::from_u64(u256_low(&tx.amount)),
         ];
         self.verifier
