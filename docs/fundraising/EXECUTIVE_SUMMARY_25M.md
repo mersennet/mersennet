@@ -134,7 +134,7 @@ Mersennet at $25M Series A represents early-stage pricing for technology that co
 |-----------|-------|
 | Token | PRIM |
 | Max Supply | 1,000,000,000 (1B) |
-| Block Rewards | 70% (700M) — Bitcoin-style halving every ~2.2 years |
+| Block Rewards | 70% (700M) — Bitcoin-style halving every 35M blocks (~1.1 years at 1 s blocks) |
 | Ecosystem & Grants | 10% (100M) — 5-year linear |
 | Foundation Reserve | 10% (100M) — 1-year cliff + 4-year linear |
 | Team & Contributors | 5% (50M) — 1-year cliff + 3-year linear |

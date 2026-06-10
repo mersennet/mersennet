@@ -266,7 +266,7 @@ Annual yield:      39,420,000 PRIM per validator
 APY:               ~3,942%
 ```
 
-High initial APY incentivizes early staking. As more validators join and total stake increases, APY decreases proportionally. Halving every ~2.2 years further reduces emissions over time.
+High initial APY incentivizes early staking. As more validators join and total stake increases, APY decreases proportionally. Halving every 35M blocks (~1.1 years at 1 s blocks) further reduces emissions over time.
 
 ---
 

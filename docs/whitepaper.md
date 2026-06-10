@@ -1614,7 +1614,7 @@ This creates deflationary pressure when network usage is high.
 Total supply is capped at:
 $$S_{max} = 1,000,000,000 \text{ PRIM}$$
 
-Allocation: Block rewards 70% (700M), Ecosystem & Grants 10% (100M), Foundation Reserve 10% (100M), Team & Core Contributors 5% (50M), Sales 5% (50M). ~99% of block rewards emitted by ~year 13.
+Allocation: Block rewards 70% (700M), Ecosystem & Grants 10% (100M), Foundation Reserve 10% (100M), Team & Core Contributors 5% (50M), Sales 5% (50M). ~99% of block rewards emitted by ~year 7 (at the 1 s default block time).
 
 #### 8.2.2 Block Rewards
 

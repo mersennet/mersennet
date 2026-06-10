@@ -442,7 +442,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 | Celestia | 1B | Inflation | 17.6% | 35.6% | 26.8% | Perpetual |
 | Aptos | ~1.1B | Inflation | 19% | 49% | 32% | Perpetual |
 | Sui | 10B | Inflation | 14% | 48% | 38% | Perpetual |
-| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~13 years** |
+| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
 
 **Key Insight:** PRIM has the lowest team + investor allocation (10%) of any major L1 launched in the last 3 years. 70% goes to validators. This is a network-first, community-first token design.
 

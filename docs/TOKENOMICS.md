@@ -12,8 +12,8 @@ Complete technical documentation of PRIM token economics, emission schedule, all
 | **Ticker** | PRIM |
 | **Total Supply** | 1,000,000,000 (1 Billion) |
 | **Decimal Places** | 18 (1 PRIM = 10^18 wei) |
-| **Consensus** | Proof-of-Stake (Tendermint BFT) |
-| **Block Time** | ~2 seconds |
+| **Consensus** | Proof-of-Stake (HotStuff-2 BFT) |
+| **Block Time** | ~1 second (default) |
 
 ---
 
@@ -21,7 +21,7 @@ Complete technical documentation of PRIM token economics, emission schedule, all
 
 | Category | Percentage | Tokens | Vesting Schedule |
 |----------|-----------|--------|-----------------|
-| **Block Rewards** | 70% | 700,000,000 | Halving every ~2.2 years (see §3) |
+| **Block Rewards** | 70% | 700,000,000 | Halving every 35M blocks (~1.1 years at 1 s blocks) (see §3) |
 | **Ecosystem & Grants** | 10% | 100,000,000 | 5-year linear from TGE |
 | **Foundation Reserve** | 10% | 100,000,000 | 1-year cliff + 4-year linear |
 | **Team & Core Contributors** | 5% | 50,000,000 | 1-year cliff + 3-year linear |
@@ -57,8 +57,8 @@ Combined private and public sale allocation for fundraising. 6-month cliff follo
 |-----------|-------|
 | **Block Rewards Pool** | 700,000,000 PRIM |
 | **Initial Reward** | 10 PRIM per block |
-| **Halving Interval** | 35,000,000 blocks (~2.22 years at 2s) |
-| **Block Time** | ~2 seconds |
+| **Halving Interval** | 35,000,000 blocks (~1.1 years at the 1 s default block time) |
+| **Block Time** | ~1 second (config default; mainnet genesis currently specifies 200 ms — see note below) |
 
 ### 3.2 Halving Curve
 
@@ -87,17 +87,21 @@ total = initial_reward × halving_interval × 2
 
 ### 3.3 Emission Timeline
 
+Times below assume the 1 s default block time (`block_time_ms: 1000`, the config default also used by the testnet configs).
+
 | Milestone | Era | Approximate Time | Block Rewards Minted | % of Pool |
 |-----------|-----|-----------------|---------------------|-----------|
-| First halving | 1 | ~2.2 years | 350,000,000 | 50.0% |
-| Second halving | 2 | ~4.4 years | 525,000,000 | 75.0% |
-| 87.5% minted | 3 | ~6.7 years | 612,500,000 | 87.5% |
-| 93.75% minted | 4 | ~8.9 years | 656,250,000 | 93.75% |
-| 96.9% minted | 5 | ~11.1 years | 678,125,000 | 96.9% |
-| **99.2% minted** | **6** | **~13.3 years** | **689,062,500** | **98.4%** |
-| 99.6% minted | 7 | ~15.6 years | 694,531,250 | 99.2% |
+| First halving | 1 | ~1.1 years | 350,000,000 | 50.0% |
+| Second halving | 2 | ~2.2 years | 525,000,000 | 75.0% |
+| 87.5% minted | 3 | ~3.3 years | 612,500,000 | 87.5% |
+| 93.75% minted | 4 | ~4.4 years | 656,250,000 | 93.75% |
+| 96.9% minted | 5 | ~5.5 years | 678,125,000 | 96.9% |
+| **99.2% minted** | **6** | **~6.7 years** | **689,062,500** | **98.4%** |
+| 99.6% minted | 7 | ~7.8 years | 694,531,250 | 99.2% |
 
-**99% of block rewards are emitted by approximately year 13.** The supply cap enforces a hard ceiling — if somehow the remaining supply is less than the scheduled reward, only the remainder is distributed.
+**99% of block rewards are emitted by approximately year 7 at 1 s blocks.** The supply cap enforces a hard ceiling — if somehow the remaining supply is less than the scheduled reward, only the remainder is distributed.
+
+> **Note — block-time dependence:** the emission schedule is defined in blocks, so wall-clock timing scales with the configured block time. `mainnet/genesis.json` currently specifies `block_time_ms: 200`, which would compress the schedule 5x (first halving in ~81 days). The mainnet block time and/or halving interval should be reconciled before launch.
 
 ### 3.4 Supply Cap Enforcement
 
@@ -366,7 +370,7 @@ Governance requires:
 | **Cosmos** | ~750M | 68.5% | 3.2% | 3.8% | 3.1% | Perpetual |
 | **Celestia** | 1B | (inflation) | 17.6% | 35.6% | 26.8% | Perpetual |
 | **Polkadot** | 2.1B | Halving | ~5% | ~13% | ~17% | ~12+ years |
-| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~13 years** |
+| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
 
 Mersennet's allocation is closest to Cosmos (high block rewards) with the halving discipline of Bitcoin/Polkadot and a conservative team allocation.
 
