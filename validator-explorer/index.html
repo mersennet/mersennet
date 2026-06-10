@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PrimeNodes — Validator Dashboard</title>
+    <title>Mersennet Validators — Network Dashboard</title>
     <meta name="description" content="Real-time validator monitoring and network health dashboard for Mersennet (Chain ID 131071)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,7 @@
                     <svg width="32" height="22" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg"><g fill="#7dff9b"><rect x="8" y="14" width="12" height="68" rx="6"/><rect x="25" y="14" width="12" height="30" rx="6"/><rect x="42" y="14" width="12" height="46" rx="6"/><rect x="59" y="14" width="12" height="30" rx="6"/><rect x="76" y="14" width="12" height="68" rx="6"/></g></svg>
                 </div>
                 <div class="logo-text">
-                    <span class="logo-name">PrimeNodes</span>
+                    <span class="logo-name">Mersennet</span>
                     <span class="logo-sub">Validator Dashboard</span>
                 </div>
             </a>
@@ -110,7 +110,7 @@
         var btn = document.getElementById('themeToggle');
         var sunIcon = btn.querySelector('.theme-icon-sun');
         var moonIcon = btn.querySelector('.theme-icon-moon');
-        var isDark = localStorage.getItem('theme') === 'dark';
+        var isDark = localStorage.getItem('theme') ? localStorage.getItem('theme') === 'dark' : true;
 
         function apply() {
             document.body.classList.toggle('dark-mode', isDark);

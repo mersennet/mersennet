@@ -1,5 +1,5 @@
 /* =============================================================================
-   PrimeNodes — Validator Dashboard for Mersennet (Chain ID 131071)
+   Mersennet Validators — network dashboard (Chain ID 131071)
    Single-page app: hash-based routing, RPC polling, canvas charts
    ============================================================================= */
 
