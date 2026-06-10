@@ -1,84 +1,97 @@
 # Mersennet Security Audit Preparation
 
-## Version: 7.0
-## Date: March 2026
+## Version: 0.7.0
+## Date: June 2026
 
 ## Audit Scope
 
 ### Critical Path (Must Audit)
 
-1. **EVM Execution Engine** (`crates/core/src/engine.rs`) — 1,520 lines
+1. **EVM Execution Engine** (`crates/core/src/engine.rs`) — 3,004 lines
    - State transition correctness
    - Gas accounting
    - Parallel execution safety (Block-STM)
    - Chain ID validation, nonce handling, signature verification
 
-2. **CLOB Matching Engine** (`crates/core/src/prime_orders.rs`) — 800 lines
+2. **CLOB Matching Engine** (`crates/core/src/prime_orders.rs`) — 863 lines
    - Price-time priority enforcement
    - Conservation of value
    - Margin calculation correctness
    - Position management, liquidation, ADL (Auto-Deleveraging)
 
-3. **Consensus** (`crates/core/src/hotstuff2.rs`) — 760 lines
+3. **Consensus** (`crates/core/src/hotstuff2.rs`) — 765 lines
    - BFT safety (no two conflicting commits)
    - Liveness (progress under partial synchrony)
    - Slashing correctness
    - Quorum certificate validation, timeout handling
 
-4. **State Persistence** (`crates/core/src/state.rs` — 1,039 lines, `state_redb.rs` — 814 lines)
+4. **State Persistence** (`crates/core/src/state.rs` — 1,061 lines, `state_redb.rs` — 819 lines)
    - ACID compliance
    - Merkle tree correctness (`MerkleTree::compute_root`, `compute_proof`)
    - Crash recovery
    - Multi-domain state (EVM, PrimeOrders, Bridge) snapshot/restore
 
+5. **Privacy / Shielded Modules** (privacy hard fork)
+   - `crates/core/src/shielded_state.rs` (283 lines) — note commitment tree + nullifier set
+   - `crates/core/src/shielded_evm.rs` (733 lines) — shielded balances + `0x7E` tx type
+   - `crates/core/src/shielded_orders.rs` (1,113 lines) — shielded CLOB + frequent batch auctions
+   - `crates/core/src/liquidation_auction.rs` (669 lines) — sealed-bid liquidation auctions
+   - `crates/core/src/threshold_mempool.rs` (277 lines) — threshold-encrypted intent queue
+   - `crates/core/src/dkg.rs` (421 lines) — Pedersen-VSS 5-of-7 DKG coordinator
+   - `crates/core/src/shielded_persistence.rs` (398 lines) — redb-backed shielded storage
+   - `crates/rpc/src/rpc_shielded.rs` (2,118 lines) — shielded RPC surface + grant-gated reads
+   - Invariants: nullifier double-spend rejection, no address-keyed shielded
+     state, value conservation across shield/unshield, CI privacy grep
+     (`scripts/ci/check-privacy-invariants.sh`)
+
 ### High Priority
 
-5. **CLOB Precompile** (`crates/core/src/precompiles.rs` — 291 lines, `precompile_abi.rs`)
+6. **CLOB Precompile** (`crates/core/src/precompiles.rs` — 684 lines, `precompile_abi.rs`)
    - ABI encoding correctness
    - Gas metering
    - Context injection (`PRIME_ORDERS_CTX`) and lock safety
 
-6. **FBA Auctions** (`crates/core/src/fba.rs` — 391 lines)
+7. **FBA Auctions** (`crates/core/src/fba.rs` — 389 lines)
    - Uniform price correctness
    - MEV resistance
    - Pro-rata allocation when oversubscribed
 
-7. **Commit-Reveal** (`crates/core/src/commit_reveal.rs` — 129 lines)
+8. **Commit-Reveal** (`crates/core/src/commit_reveal.rs` — 129 lines)
    - Binding property (revealed tx matches committed hash)
    - Timing attacks (commit window expiry)
    - Duplicate commitment / already-revealed handling
 
-8. **Cross-Chain Bridge** (`crates/core/src/cross_chain.rs` — 501 lines, `bridge.rs` — 84 lines)
+9. **Cross-Chain Bridge** (`crates/core/src/cross_chain.rs` — 498 lines, `bridge.rs` — 89 lines)
    - Value conservation
    - Proof verification
    - Deposit/withdrawal status transitions
 
-9. **Account Abstraction** (`crates/core/src/account_abstraction.rs` — 407 lines)
+10. **Account Abstraction** (`crates/core/src/account_abstraction.rs` — 397 lines)
    - EntryPoint validation
    - Nonce handling
    - UserOperation verification
 
 ### Medium Priority
 
-10. **P2P Networking** (`crates/network/`, `crates/core/src/network.rs` — 68 lines)
+11. **P2P Networking** (`crates/network/`, `crates/core/src/network.rs` — 68 lines)
     - Noise encryption
     - Peer authentication
 
-11. **RPC Server** (`crates/rpc/src/rpc.rs` — 999 lines, `rpc_router.rs` — 808 lines)
+12. **RPC Server** (`crates/rpc/src/rpc.rs` — 1,816 lines, `rpc_router.rs` — 1,021 lines)
     - Input validation
     - DoS protection
     - WebSocket handling
 
-12. **Mempool** (`crates/core/src/mempool.rs` — 512 lines)
+13. **Mempool** (`crates/core/src/mempool.rs` — 520 lines)
     - Ordering fairness
     - Spam resistance
     - Per-sender queue limits
 
-13. **Encrypted Mempool** (`crates/core/src/encrypted_mempool.rs` — 282 lines)
+14. **Encrypted Mempool** (`crates/core/src/encrypted_mempool.rs` — 287 lines)
     - Threshold security
     - Key rotation
 
-14. **Privacy state-proof path** (`crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `programs/state-transition/`, `programs/state-transition-host/`)
+15. **Privacy state-proof path** (`crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `crates/state-proof/`, `programs/state-transition/`, `programs/state-transition-host/`)
    - Public-values contract matches the documented `BlockProgramOutput`
    - Host/program/request wiring preserves `prev/new` nullifier roots and market-state hash
    - Vkey pin procedure and release artifact provenance
@@ -88,7 +101,7 @@
 
 | Risk | Location | Description |
 |------|----------|-------------|
-| `unwrap()` / `expect()` usage | engine.rs (32), prime_orders.rs (14), state.rs (6), precompiles.rs (7), hotstuff2.rs (7), consensus.rs (9), parallel.rs (6), fba.rs (8), state_redb.rs (4) | Potential panic on unexpected states; should be replaced with proper error handling |
+| `unwrap()` / `expect()` usage | engine.rs (27), precompiles.rs (6), hotstuff2.rs (4), state.rs (3), prime_orders.rs (2), parallel.rs (2), state_redb.rs (2) | Potential panic on unexpected states; should be replaced with proper error handling (counts include test code) |
 | Lock poisoning | precompiles.rs, engine.rs | `Mutex` lock poisoning can propagate; consider `Mutex::get_mut` or poisoning recovery |
 | Bridge queue overflow | bridge.rs | `set_max_len` drops oldest messages when limit exceeded; no explicit value conservation check |
 | Commit-reveal window | commit_reveal.rs | Fixed 2-block window; timing-sensitive for MEV; expiry may be exploitable |
@@ -112,7 +125,7 @@
 | RPC | `rpc_tests.rs`, `ws_tests.rs` | 7+ |
 | Network | `noise_tests.rs` | 2+ |
 
-**Total:** ~60+ unit/integration tests across `crates/core/tests/`, `crates/rpc/tests/`, `crates/network/tests/`.
+**Total:** 241 tests pass on `cargo test --workspace` (unit + integration across `crates/core/`, `crates/rpc/`, `crates/network/`, `crates/zkp/`, `crates/state-proof/`, `crates/node/`); `cargo test -p prime-zkp --features prover` adds the real-crypto lane (66 tests). Additional integration suites: `privacy_migration_e2e.rs`, `fuzz_matching.rs`.
 
 **Formal verification:** `crates/core/src/formal_verification.rs` provides invariant checking and property-based test generators.
 
@@ -135,19 +148,7 @@ Before scheduling external privacy-fork audits, attach the following artifacts t
 cargo clippy --workspace --offline
 ```
 
-**Result:** 105 warnings (as of March 2026)
-
-Representative categories:
-- `mixed_case_hex_literals` (account_abstraction.rs)
-- `manual_is_multiple_of` (formal_verification.rs)
-- `needless_borrow` (crypto/mod.rs)
-- `needless_range_loop` (encrypted_mempool.rs)
-- `collapsible_if` (consensus.rs, bridge.rs, engine.rs)
-- `derivable_impls` (config.rs)
-- `too_many_arguments` (engine.rs)
-- `map_or` simplification (mempool.rs)
-
-Recommendation: Address Critical/High-priority audit items first; resolve clippy warnings in batches.
+**Result:** 0 warnings (as of June 2026). CI enforces `cargo clippy --workspace -- -D warnings`.
 
 ### Cargo Audit
 

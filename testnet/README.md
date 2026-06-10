@@ -93,7 +93,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 - **RPC**: http://localhost:8545
 - **Faucet**: http://localhost:8080
-- **Grafana**: http://localhost:3000 (admin/primechain)
+- **Grafana**: http://localhost:3000 (admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`)
 - **Prometheus**: http://localhost:9099
 
 ## Network Parameters
@@ -104,7 +104,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 | RPC URL     | http://localhost:8545 |
 | Faucet URL  | http://localhost:8080 |
 | Block Time  | ~1 second |
-| Currency    | PRIME (18 decimals) |
+| Currency    | PRIM (18 decimals) |
 
 ## Connecting MetaMask
 
@@ -113,7 +113,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
    - **Network Name**: Mersennet Testnet
    - **RPC URL**: `http://localhost:8545` (or your public RPC)
    - **Chain ID**: 7919
-   - **Currency Symbol**: PRIME
+   - **Currency Symbol**: PRIM
 
 3. Import an account or create one, then use the faucet to fund it.
 
@@ -121,7 +121,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 ### Web UI
 
-Visit http://localhost:8080 and enter your wallet address (0x...). Click "Request Tokens" to receive 1000 test PRIME.
+Visit http://localhost:8080 and enter your wallet address (0x...). Click "Request Tokens" to receive 1,000 test PRIM.
 
 ### API
 
@@ -147,9 +147,9 @@ curl -X POST http://localhost:8080/faucet \
 |-----------|------|--------------------|
 | RPC Node  | 8545 | Main public RPC    |
 | Validator 1 | 8546 | Validator RPC  |
-| Validator 2 | 8547 | Validator RPC  |
-| Validator 3 | 8548 | Validator RPC  |
-| Validator 4 | 8549 | Validator RPC  |
+| Validator 2 | 8546 | Validator RPC (compose currently maps the same host port as validator 1) |
+| Validator 3 | 8547 | Validator RPC  |
+| Validator 4 | 8548 | Validator RPC  |
 | Faucet    | 8080 | Faucet HTTP API    |
 | Grafana   | 3000 | Monitoring UI      |
 | Prometheus| 9099 | Metrics            |

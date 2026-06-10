@@ -4,7 +4,7 @@
 - Date: [DATE]
 - Validators: [N]
 - Hardware: [SPECS]
-- Software: Mersennet v7.0
+- Software: Mersennet v0.7.0
 
 ## Test 1: Transfer Load Test
 - Target TPS: [X]
