@@ -337,12 +337,12 @@ impl PrimeOrdersState {
             None
         };
 
-        metrics::increment_counter!("prime_chain_orders_submitted");
+        metrics::increment_counter!("mersennet_orders_submitted");
         if remaining.is_zero() {
-            metrics::increment_counter!("prime_chain_orders_filled");
+            metrics::increment_counter!("mersennet_orders_filled");
         }
         for trade in &trades {
-            metrics::increment_counter!("prime_chain_trades_executed");
+            metrics::increment_counter!("mersennet_trades_executed");
             tracing::info!(
                 taker = ?trade.taker,
                 maker = ?trade.maker,
@@ -353,7 +353,7 @@ impl PrimeOrdersState {
             );
         }
         metrics::gauge!(
-            "prime_chain_insurance_fund_balance",
+            "mersennet_insurance_fund_balance",
             self.insurance_fund.as_limbs()[0] as f64
         );
         let active_markets = self
@@ -361,7 +361,7 @@ impl PrimeOrdersState {
             .values()
             .filter(|m| m.status == MarketStatus::Active)
             .count();
-        metrics::gauge!("prime_chain_markets_active", active_markets as f64);
+        metrics::gauge!("mersennet_markets_active", active_markets as f64);
 
         Ok(OrderOutcome {
             order_id,
@@ -749,7 +749,7 @@ impl PrimeOrdersState {
     }
     pub fn cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
         let order = self.orders.remove(&order_id)?;
-        metrics::increment_counter!("prime_chain_orders_cancelled");
+        metrics::increment_counter!("mersennet_orders_cancelled");
         if let Some(account) = self.accounts.get_mut(&order.owner) {
             account.open_orders.retain(|id| *id != order_id);
         }

@@ -188,7 +188,7 @@ export class PrimeProvider {
     return result;
   }
 
-  /** eth_chainId / prime_chainId */
+  /** eth_chainId / mersennetId */
   async getChainId(): Promise<number> {
     const result = (await this.request('eth_chainId')) as string;
     return hexToNumber(result);

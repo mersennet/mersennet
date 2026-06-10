@@ -7,7 +7,7 @@
 //!
 //! The public-input ordering here MUST stay in lockstep with the `PI_*`
 //! constants in `PrimeChainBridge.sol` and with
-//! [`prime_zkp::sp1::BlockProgramOutput::to_field_elements`]. The bridge
+//! [`mersennet_zkp::sp1::BlockProgramOutput::to_field_elements`]. The bridge
 //! compares the root inputs as raw `bytes32` (i.e. `uint256(root)`), so the
 //! 32-byte digests are exported verbatim as big-endian EVM words and the
 //! `block_number` / `tx_count` counters are left-padded big-endian integers.
@@ -19,7 +19,7 @@
 //! artifacts. Everything in this module is exercised by unit tests against
 //! synthetic vectors so the calldata contract is locked down regardless.
 
-use prime_zkp::sp1::BlockProgramOutput;
+use mersennet_zkp::sp1::BlockProgramOutput;
 
 /// A 32-byte big-endian EVM word (`uint256` / `bytes32`).
 pub type Word = [u8; 32];

@@ -23,7 +23,7 @@ cargo build --release --workspace
 
 Build artifacts you'll need:
 
-- `target/release/prime-chain` — the node binary.
+- `target/release/mersennet` — the node binary.
 - `target/release/genesis` — generates validator keys + initial
   configs.
 - `target/release/migrate-genesis` — migrates a pre-fork snapshot
@@ -32,7 +32,7 @@ Build artifacts you'll need:
 Smoke check:
 
 ```bash
-./target/release/prime-chain --help
+./target/release/mersennet --help
 ./target/release/migrate-genesis --help
 ```
 
@@ -47,7 +47,7 @@ Two paths:
 Export a snapshot from the live transparent-chain (chain ID 7919):
 
 ```bash
-./target/release/prime-chain --config /etc/prime-chain/config.json \
+./target/release/mersennet --config /etc/mersennet/config.json \
     --export-snapshot ./prefork-snapshot.bin
 ```
 

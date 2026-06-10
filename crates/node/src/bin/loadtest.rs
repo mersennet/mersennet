@@ -7,8 +7,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use k256::ecdsa::SigningKey;
-use prime_chain::crypto::{address_from_signing_key, encode_raw_signed_tx, sign_transaction};
-use prime_chain::engine::Transaction;
+use mersennet::crypto::{address_from_signing_key, encode_raw_signed_tx, sign_transaction};
+use mersennet::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
 use serde_json::{Value, json};
 

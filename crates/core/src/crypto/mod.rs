@@ -418,8 +418,8 @@ mod tests {
     }
 
     fn dummy_shield_tx(addr: Address) -> crate::shielded_evm::ShieldTx {
-        use prime_zkp::field::Fr;
-        use prime_zkp::noir::{Circuit, CircuitProof};
+        use mersennet_zkp::field::Fr;
+        use mersennet_zkp::noir::{Circuit, CircuitProof};
         crate::shielded_evm::ShieldTx {
             from: addr,
             amount: U256::from(42u64),

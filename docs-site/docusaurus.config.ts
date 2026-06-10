@@ -21,7 +21,7 @@ const config: Config = {
   baseUrl: '/',
 
   organizationName: 'PrimeNumbersLabs',
-  projectName: 'prime-chain',
+  projectName: 'mersennet',
 
   onBrokenLinks: 'warn',
 

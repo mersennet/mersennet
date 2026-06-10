@@ -48,7 +48,7 @@ export declare class PrimeProvider {
     estimateGas(tx: CallParams): Promise<number>;
     /** eth_sendTransaction / prime_sendTransaction */
     sendTransaction(tx: TransactionParams): Promise<string>;
-    /** eth_chainId / prime_chainId */
+    /** eth_chainId / mersennetId */
     getChainId(): Promise<number>;
     /** prime_viewNotes for grant-gated encrypted note export. */
     viewNotes(grantIdHex: string, options?: {

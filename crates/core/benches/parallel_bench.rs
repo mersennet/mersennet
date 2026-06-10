@@ -1,5 +1,5 @@
-use prime_chain::engine::{Engine, Transaction};
-use prime_chain::fba::BatchOrder;
+use mersennet::engine::{Engine, Transaction};
+use mersennet::fba::BatchOrder;
 use revm::primitives::{Address, Bytes, U256};
 use std::time::Instant;
 
@@ -114,9 +114,9 @@ fn main() {
         for i in 0..batch_size {
             let owner = make_address((i % 500 + 1) as u16);
             let side = if i % 2 == 0 {
-                prime_chain::prime_orders::Side::Buy
+                mersennet::prime_orders::Side::Buy
             } else {
-                prime_chain::prime_orders::Side::Sell
+                mersennet::prime_orders::Side::Sell
             };
             let price = if i % 2 == 0 {
                 U256::from(100 + (i % 5) as u64)
@@ -129,7 +129,7 @@ fn main() {
                 side,
                 price,
                 size: U256::from(10u64),
-                tif: prime_chain::prime_orders::TimeInForce::Gtc,
+                tif: mersennet::prime_orders::TimeInForce::Gtc,
                 sequence: 0,
             });
         }
@@ -227,8 +227,8 @@ fn main() {
     // ZK MockProver prove/verify
     println!("\n=== ZK MockProver Benchmark ===\n");
     {
-        use prime_chain::zk_proofs::{MockProver, StateProver};
-        use prime_zkp::sp1::BlockProgramOutput;
+        use mersennet::zk_proofs::{MockProver, StateProver};
+        use mersennet_zkp::sp1::BlockProgramOutput;
         use revm::primitives::B256;
 
         let prover = MockProver::new();
@@ -289,7 +289,7 @@ fn main() {
     // Pipeline push/pop
     println!("\n=== Block Pipeline Benchmark ===\n");
     {
-        use prime_chain::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
+        use mersennet::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
         use revm::primitives::B256;
         use std::time::Duration;
 

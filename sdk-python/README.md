@@ -5,7 +5,7 @@ Python client for Mersennet - JSON-RPC, CLOB (order book), and WebSocket subscri
 ## Installation
 
 ```bash
-pip install prime-chain-sdk
+pip install mersennet-sdk
 ```
 
 Or from source:
@@ -18,7 +18,7 @@ pip install -e .
 ## Quick Start
 
 ```python
-from prime_chain import PrimeProvider, PrimeOrders
+from mersennet import PrimeProvider, PrimeOrders
 
 provider = PrimeProvider("http://localhost:8545")
 
@@ -85,7 +85,7 @@ Use `view_notes` to fetch encrypted note envelopes, then call
 viewing material locally.
 
 ```python
-from prime_chain import GrantedViewingMaterial, PrimeProvider, make_mock_note_decryptor, scan_granted_notes
+from mersennet import GrantedViewingMaterial, PrimeProvider, make_mock_note_decryptor, scan_granted_notes
 
 provider = PrimeProvider("http://localhost:8545")
 
@@ -104,7 +104,7 @@ See the runnable end-to-end example in [examples/view_notes_end_to_end.py](examp
 ## WebSocket Example
 
 ```python
-from prime_chain import PrimeSubscriber
+from mersennet import PrimeSubscriber
 
 sub = PrimeSubscriber("ws://localhost:8545")
 sub.connect()
@@ -121,10 +121,10 @@ sub.disconnect()
 ## Error Handling
 
 ```python
-from prime_chain.provider import PrimeChainError
+from mersennet.provider import MersennetError
 
 try:
     balance = provider.get_balance("0x...")
-except PrimeChainError as e:
+except MersennetError as e:
     print(f"Error {e.code}: {e}")
 ```

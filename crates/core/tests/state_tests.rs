@@ -1,8 +1,8 @@
-use prime_chain::bridge::{BridgeDomain, BridgeQueue};
-use prime_chain::prime_orders::PrimeOrdersState;
-use prime_chain::state::PersistentState;
-use prime_chain::state_redb::RedbState;
-use prime_chain::state_trait::StateBackend;
+use mersennet::bridge::{BridgeDomain, BridgeQueue};
+use mersennet::prime_orders::PrimeOrdersState;
+use mersennet::state::PersistentState;
+use mersennet::state_redb::RedbState;
+use mersennet::state_trait::StateBackend;
 use revm::Database;
 use revm::db::InMemoryDB;
 use revm::primitives::Bytes;
@@ -60,10 +60,10 @@ fn prime_orders_and_bridge_persistence() {
     let _order_id = prime_orders.place_order(
         owner,
         market_id,
-        prime_chain::prime_orders::Side::Buy,
+        mersennet::prime_orders::Side::Buy,
         U256::from(100u64),
         U256::from(2u64),
-        prime_chain::prime_orders::TimeInForce::Gtc,
+        mersennet::prime_orders::TimeInForce::Gtc,
     );
 
     let mut orders_to_evm = BridgeQueue::new();
@@ -202,10 +202,10 @@ fn redb_prime_orders_persistence() {
     let _order_id = prime_orders.place_order(
         owner,
         market_id,
-        prime_chain::prime_orders::Side::Buy,
+        mersennet::prime_orders::Side::Buy,
         U256::from(100u64),
         U256::from(2u64),
-        prime_chain::prime_orders::TimeInForce::Gtc,
+        mersennet::prime_orders::TimeInForce::Gtc,
     );
 
     let mut orders_to_evm = BridgeQueue::new();
@@ -251,7 +251,7 @@ fn redb_prime_orders_persistence() {
 
 #[test]
 fn redb_block_storage_via_engine() {
-    use prime_chain::engine::Engine;
+    use mersennet::engine::Engine;
     let dir = tempdir().expect("temp dir");
     let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
 
@@ -276,7 +276,7 @@ fn redb_block_storage_via_engine() {
 
 #[test]
 fn redb_engine_integration() {
-    use prime_chain::engine::Engine;
+    use mersennet::engine::Engine;
     let dir = tempdir().expect("temp dir");
     let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
 

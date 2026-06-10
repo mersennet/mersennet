@@ -516,7 +516,7 @@ curl -X POST http://46.225.30.187:8545 \
 
 These methods mirror their `eth_` counterparts but use Mersennet's native format.
 
-### prime_chainId
+### mersennetId
 
 Same as `eth_chainId`.
 

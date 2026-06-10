@@ -29,7 +29,7 @@ starting the real H6 bake clock.
   `PRIME_SP1_MODE=network` fails with an explicit blocker message
   instead of silently falling back.
 - Dedicated SP1 validation lanes exist in CI for:
-  - `cargo check -p prime-chain-node --features prover,sp1`
+  - `cargo check -p mersennet-node --features prover,sp1`
   - `cargo check --manifest-path programs/state-transition/Cargo.toml`
   - `cargo test --manifest-path programs/state-transition-host/Cargo.toml`
 
@@ -38,7 +38,7 @@ starting the real H6 bake clock.
 Windows host:
 
 ```powershell
-cargo check -p prime-chain-node --features prover,sp1
+cargo check -p mersennet-node --features prover,sp1
 cargo check --manifest-path programs/state-transition/Cargo.toml
 cargo test --manifest-path programs/state-transition-host/Cargo.toml
 py -3 scripts/zk/sp1_prove_adapter.py --help
@@ -58,7 +58,7 @@ WSL SP1 artifact capture:
 ```bash
 cd programs/state-transition
 /home/rodaemonic/.sp1/bin/cargo-prove prove build
-/home/rodaemonic/.sp1/bin/cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition
+/home/rodaemonic/.sp1/bin/cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition
 
 cd ..
 PROTOC=/home/rodaemonic/.local/bin/protoc \
@@ -106,7 +106,7 @@ end to end with `PRIME_SP1_MODE=local` against a reproducible ELF:
 Capture details:
 
 - ELF path (reproducible docker build, relative to repo root):
-      `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+      `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition`
 - Pinned hash:
       `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`
 - Checked-in artifact:
@@ -129,8 +129,8 @@ Capture details:
       `expected_market_state_hash =
       c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`.
 - Latest local real-SP1 runtime blocker:
-      WSL OOM-killed `prime-chain-state-transition-host` during proving even after the pin mismatch was fixed. The most recent kernel evidence was:
-      `Out of memory: Killed process 832 (prime-chain-sta) total-vm:21708000kB, anon-rss:15662908kB, ...`
+      WSL OOM-killed `mersennet-state-transition-host` during proving even after the pin mismatch was fixed. The most recent kernel evidence was:
+      `Out of memory: Killed process 832 (mersennet-sta) total-vm:21708000kB, anon-rss:15662908kB, ...`
 - Local WSL mitigation now applied on this host:
       created `C:\Users\rod_o\.wslconfig` with:
       `[wsl2]`
@@ -141,9 +141,9 @@ Capture details:
 - Local real-SP1 prove command attempted in WSL:
       `PROTOC=/home/rodaemonic/.local/bin/protoc PROTOC_INCLUDE=/home/rodaemonic/.local/share/protoc/extracted/include PRIME_SP1_MODE=local cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
 - Lower-concurrency retries attempted:
-      `RAYON_NUM_THREADS=4 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+      `RAYON_NUM_THREADS=4 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/mersennet-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
       and later
-      `RAYON_NUM_THREADS=2 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+      `RAYON_NUM_THREADS=2 PRIME_SP1_MODE=local programs/state-transition-host/target/debug/mersennet-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
 - Debug-profile reproducer finding:
       the checked-in host path isolated the slow startup to local SP1 SDK client initialization before prover setup. Stage tracing in `programs/state-transition-host/src/main.rs` reached:
       `[prime-sp1-stage] elf:read:start`
@@ -199,7 +199,7 @@ Capture details:
 ### 2. The canonical zkVM executor now covers the current proof boundary
 
 The checked-in zkVM program no longer echoes host-supplied outputs. It
-consumes canonical `prime_zkp::sp1::BlockProgramInput` and derives
+consumes canonical `mersennet_zkp::sp1::BlockProgramInput` and derives
 `BlockProgramOutput` via the shared deterministic executor used by the
 chain and host runner.
 
@@ -219,7 +219,7 @@ boundary.
 The `c-kzg` link conflict that previously blocked `sp1-sdk/network` has
 been resolved by removing `revm` from the SP1 host crate entirely.
 
-Previously the host depended on `prime-chain` (`crates/core`), which pulls
+Previously the host depended on `mersennet` (`crates/core`), which pulls
 the full `revm` execution stack and therefore `c-kzg` 1.x. Enabling
 `sp1-sdk/network` additionally pulls the Alloy 1.0 stack (`c-kzg` 2.x),
 and because `c-kzg` declares `links = "ckzg"` the two could not coexist:
@@ -230,10 +230,10 @@ package `c-kzg` links to the native library `ckzg`, but it conflicts with a prev
 
 Fix: the proof-envelope types the host actually needs
 (`StateTransitionProof`, `ProofType`, `SP1Proof`, `SP1ProofVerifier`, …)
-were extracted into a new `revm`-free crate, `prime-state-proof`, that
-depends only on `prime-zkp` + `alloy-primitives`. `prime-chain`
-re-exports them so `prime_chain::zk_proofs` / `prime_chain::zk_sp1` paths
-are unchanged. The host now depends on `prime-state-proof` + `prime-zkp`
+were extracted into a new `revm`-free crate, `mersennet-state-proof`, that
+depends only on `mersennet-zkp` + `alloy-primitives`. `mersennet`
+re-exports them so `mersennet::zk_proofs` / `mersennet::zk_sp1` paths
+are unchanged. The host now depends on `mersennet-state-proof` + `mersennet-zkp`
 + `alloy-primitives` only — no `revm`, no `c-kzg` 1.x.
 
 Verification (this environment):
@@ -285,7 +285,7 @@ The Ethereum-side bridge is implemented and tested in-repo:
   `BlockProgramOutput` + Groth16 proof blob into the bridge's
   `submitStateProof(uint256[8], uint256[])` calldata (public-input order
   matches `PrimeChainBridge.PI_*` and `BlockProgramOutput::to_field_elements`),
-  with 4 unit tests (`cargo test -p prime-chain --lib bridge_export`).
+  with 4 unit tests (`cargo test -p mersennet --lib bridge_export`).
 
 Still required to fully close E5 (out-of-repo):
 

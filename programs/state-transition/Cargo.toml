@@ -1,15 +1,15 @@
 [package]
-name = "prime-chain-state-transition"
+name = "mersennet-state-transition"
 version = "0.1.0"
 edition = "2024"
 
 [workspace]
 
 [[bin]]
-name = "prime-chain-state-transition"
+name = "mersennet-state-transition"
 path = "src/main.rs"
 
 [dependencies]
-prime-zkp = { path = "../../crates/zkp" }
+mersennet-zkp = { path = "../../crates/zkp" }
 serde = { version = "1.0", features = ["derive"] }
 sp1-zkvm = "6.2.2"

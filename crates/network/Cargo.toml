@@ -1,11 +1,11 @@
 [package]
-name = "prime-chain-network"
+name = "mersennet-network"
 version = "0.7.0"
 authors = ["Rodolfo Cova @rodaemonic"]
 edition = "2024"
 
 [dependencies]
-prime-chain = { path = "../core" }
+mersennet = { path = "../core" }
 anyhow = "1.0"
 hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }

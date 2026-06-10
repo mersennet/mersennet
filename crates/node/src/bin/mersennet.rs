@@ -1,14 +1,14 @@
 use k256::ecdsa::SigningKey;
-use prime_chain::config::{AppConfig, load_config, parse_address, parse_u256};
-use prime_chain::consensus::ValidatorChange;
-use prime_chain::engine::{Engine, Transaction};
-use prime_chain::governance::{Governance, ProposalKind};
-use prime_chain::identity::load_or_create_identity;
-use prime_chain::network::{Message, RoundStage};
-use prime_chain::prometheus;
-use prime_chain_network::net_transport::{GossipConfig, TcpSync, UdpGossip};
-use prime_chain_network::p2p::{NetworkNode, Node, P2pMessage, P2pNetwork};
-use prime_chain_rpc::{rpc, ws};
+use mersennet::config::{AppConfig, load_config, parse_address, parse_u256};
+use mersennet::consensus::ValidatorChange;
+use mersennet::engine::{Engine, Transaction};
+use mersennet::governance::{Governance, ProposalKind};
+use mersennet::identity::load_or_create_identity;
+use mersennet::network::{Message, RoundStage};
+use mersennet::prometheus;
+use mersennet_network::net_transport::{GossipConfig, TcpSync, UdpGossip};
+use mersennet_network::p2p::{NetworkNode, Node, P2pMessage, P2pNetwork};
+use mersennet_rpc::{rpc, ws};
 use revm::primitives::{Address, Bytes, U256, keccak256};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
         .init();
     let _prom = prometheus::init();
     // Emit a startup gauge so /metrics is non-empty on boot
-    metrics::gauge!("prime_chain_up", 1.0);
+    metrics::gauge!("mersennet_up", 1.0);
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
@@ -133,7 +133,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     info!("╔══════════════════════════════════════╗");
-    info!("║        Mersennet v7.0              ║");
+    info!("║       Mersennet v0.7.0               ║");
     info!("║   Production Node Starting...        ║");
     info!("╚══════════════════════════════════════╝");
     info!(
@@ -269,7 +269,7 @@ fn main() -> anyhow::Result<()> {
                                 mgr.notify_new_block(&block_json);
 
                                 for tx in &block.transactions {
-                                    let hash = prime_chain::crypto::tx_signing_hash(tx);
+                                    let hash = mersennet::crypto::tx_signing_hash(tx);
                                     mgr.notify_new_tx(&format!("{}", hash));
                                 }
 
@@ -304,9 +304,9 @@ fn main() -> anyhow::Result<()> {
                                 // commitments, and market-level
                                 // aggregates; CI K2 enforces that).
                                 for ev in &block.domain_events {
-                                    if let prime_chain::events::DomainEvent::Shielded(sev) = ev {
+                                    if let mersennet::events::DomainEvent::Shielded(sev) = ev {
                                         match sev {
-                                            prime_chain::events::ShieldedEvent::ShieldedRootAdvanced { block_number, new_root, notes_added, nullifiers_added } => {
+                                            mersennet::events::ShieldedEvent::ShieldedRootAdvanced { block_number, new_root, notes_added, nullifiers_added } => {
                                                 let payload = serde_json::json!({
                                                     "blockNumber": format!("0x{:x}", block_number),
                                                     "newRoot":     format!("0x{}", hex::encode(new_root)),
@@ -315,7 +315,7 @@ fn main() -> anyhow::Result<()> {
                                                 });
                                                 mgr.notify_shielded_root(&payload);
                                             }
-                                            prime_chain::events::ShieldedEvent::FbaCleared { market_id, clearing_price, matched_size, intent_count } => {
+                                            mersennet::events::ShieldedEvent::FbaCleared { market_id, clearing_price, matched_size, intent_count } => {
                                                 let payload = serde_json::json!({
                                                     "marketId":      format!("0x{:x}", market_id.0),
                                                     "clearingPrice": format!("0x{:x}", clearing_price),
@@ -324,7 +324,7 @@ fn main() -> anyhow::Result<()> {
                                                 });
                                                 mgr.notify_clearing_price(&payload, market_id.0);
                                             }
-                                            prime_chain::events::ShieldedEvent::LiquidationSettled { market_id, winner_bond_commitment, winning_bid } => {
+                                            mersennet::events::ShieldedEvent::LiquidationSettled { market_id, winner_bond_commitment, winning_bid } => {
                                                 let payload = serde_json::json!({
                                                     "marketId":              format!("0x{:x}", market_id.0),
                                                     "winnerBondCommitment":  format!("0x{}", hex::encode(winner_bond_commitment)),
@@ -332,7 +332,7 @@ fn main() -> anyhow::Result<()> {
                                                 });
                                                 mgr.notify_auction_settled(&payload, market_id.0);
                                             }
-                                            prime_chain::events::ShieldedEvent::MempoolBatchAdmitted { .. } => {
+                                            mersennet::events::ShieldedEvent::MempoolBatchAdmitted { .. } => {
                                                 // Not a public-facing WS topic — keep it
                                                 // in domain_events for indexing only.
                                             }
@@ -423,7 +423,7 @@ fn main() -> anyhow::Result<()> {
                                     });
                                     mgr.notify_new_block(&block_json);
                                     for tx in &block.transactions {
-                                        let hash = prime_chain::crypto::tx_signing_hash(tx);
+                                        let hash = mersennet::crypto::tx_signing_hash(tx);
                                         mgr.notify_new_tx(&format!("{}", hash));
                                     }
                                 }

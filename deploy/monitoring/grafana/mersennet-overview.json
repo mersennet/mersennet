@@ -22,7 +22,7 @@
       "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" },
       "title": "Block Height",
       "type": "stat",
-      "targets": [{ "expr": "prime_chain_height", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_height", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -32,7 +32,7 @@
       "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" },
       "title": "Blocks Produced",
       "type": "stat",
-      "targets": [{ "expr": "prime_chain_blocks_produced_total", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_blocks_produced_total", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -42,7 +42,7 @@
       "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" },
       "title": "Active Validators",
       "type": "stat",
-      "targets": [{ "expr": "prime_chain_validators_active", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_validators_active", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -52,7 +52,7 @@
       "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" },
       "title": "Node Status",
       "type": "stat",
-      "targets": [{ "expr": "prime_chain_up", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_up", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "collapsed": false,
@@ -69,7 +69,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "Block Height Over Time",
       "type": "timeseries",
-      "targets": [{ "expr": "prime_chain_height", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_height", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -80,8 +80,8 @@
       "title": "Block Execution Time (p50 / p99)",
       "type": "timeseries",
       "targets": [
-        { "expr": "prime_chain_block_execution_seconds{quantile=\"0.5\"}", "legendFormat": "p50 {{node}}", "refId": "A" },
-        { "expr": "prime_chain_block_execution_seconds{quantile=\"0.99\"}", "legendFormat": "p99 {{node}}", "refId": "B" }
+        { "expr": "mersennet_block_execution_seconds{quantile=\"0.5\"}", "legendFormat": "p50 {{node}}", "refId": "A" },
+        { "expr": "mersennet_block_execution_seconds{quantile=\"0.99\"}", "legendFormat": "p99 {{node}}", "refId": "B" }
       ]
     },
     {
@@ -99,7 +99,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "Blocks per Second",
       "type": "timeseries",
-      "targets": [{ "expr": "rate(prime_chain_blocks_produced_total[1m])", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "rate(mersennet_blocks_produced_total[1m])", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -109,7 +109,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "Consensus Rounds / sec",
       "type": "timeseries",
-      "targets": [{ "expr": "rate(prime_chain_consensus_rounds[1m])", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "rate(mersennet_consensus_rounds[1m])", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -136,7 +136,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "Transactions per Block",
       "type": "timeseries",
-      "targets": [{ "expr": "prime_chain_block_tx_count", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_block_tx_count", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -146,7 +146,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "Mempool Size",
       "type": "timeseries",
-      "targets": [{ "expr": "prime_chain_mempool_size", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_mempool_size", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -156,7 +156,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "Gas Used per Block",
       "type": "timeseries",
-      "targets": [{ "expr": "prime_chain_block_gas_used", "legendFormat": "{{node}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_block_gas_used", "legendFormat": "{{node}}", "refId": "A" }]
     },
     {
       "collapsed": false,
@@ -173,7 +173,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "RPC Requests / sec",
       "type": "timeseries",
-      "targets": [{ "expr": "rate(prime_chain_rpc_requests[1m])", "legendFormat": "{{method}}", "refId": "A" }]
+      "targets": [{ "expr": "rate(mersennet_rpc_requests[1m])", "legendFormat": "{{method}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
@@ -183,18 +183,18 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "title": "RPC Latency (p50)",
       "type": "timeseries",
-      "targets": [{ "expr": "prime_chain_rpc_duration_seconds{quantile=\"0.5\"}", "legendFormat": "{{method}}", "refId": "A" }]
+      "targets": [{ "expr": "mersennet_rpc_duration_seconds{quantile=\"0.5\"}", "legendFormat": "{{method}}", "refId": "A" }]
     }
   ],
   "refresh": "5s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["prime-chain"],
+  "tags": ["mersennet"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Mersennet Overview",
-  "uid": "prime-chain-overview",
+  "uid": "mersennet-overview",
   "version": 1
 }

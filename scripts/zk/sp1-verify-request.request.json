@@ -12,5 +12,5 @@
   "publicValuesHex": "000000000000000000000000000000000000000000000000000000000000000073dc7781dd3c9efc74b22daa99e0477d3315f99d03c850bbce2527ad6c9d2d520000000000000000000000000000000000000000000000000000000000000000011b4d03dd8c01f1049143cf9c4c817e4b167f1d1b83e5c6f0f10d89ba1e7bce0100000000000000b5e597b42a4b31f3a4fc119f055838edce6facf3a4d5138a8b772adac622c343c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470adaed4dd1e55ac43f334db32a4a185b1762d9e3b5448336ed3a1e697511c2b970000000000000000",
   "proofBytesHex": "LOAD_FROM_scripts/zk/sp1-prove-response.json:proof_bytes_hex",
   "proofSystem": "core",
-  "programElfPath": "programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition"
+  "programElfPath": "programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition"
 }

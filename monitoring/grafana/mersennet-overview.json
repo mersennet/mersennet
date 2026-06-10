@@ -61,7 +61,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_blocks_produced_total",
+          "expr": "mersennet_blocks_produced_total",
           "legendFormat": "Blocks Produced",
           "refId": "A"
         }
@@ -94,7 +94,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_height",
+          "expr": "mersennet_height",
           "legendFormat": "Height",
           "refId": "A"
         }
@@ -127,7 +127,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_up",
+          "expr": "mersennet_up",
           "legendFormat": "Node Status",
           "refId": "A"
         }
@@ -154,13 +154,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.5, rate(prime_chain_block_execution_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.5, rate(mersennet_block_execution_seconds_bucket[5m]))",
           "legendFormat": "p50 Block Time",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(prime_chain_block_execution_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(mersennet_block_execution_seconds_bucket[5m]))",
           "legendFormat": "p99 Block Time",
           "refId": "B"
         }
@@ -195,7 +195,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_block_tx_count",
+          "expr": "mersennet_block_tx_count",
           "legendFormat": "Tx per Block",
           "refId": "A"
         }
@@ -222,7 +222,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_block_tx_count[1m]) * 12",
+          "expr": "rate(mersennet_block_tx_count[1m]) * 12",
           "legendFormat": "TPS (approx)",
           "refId": "A"
         }
@@ -249,7 +249,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_rpc_requests[5m])",
+          "expr": "rate(mersennet_rpc_requests[5m])",
           "legendFormat": "{{method}}",
           "refId": "A"
         }
@@ -280,7 +280,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(prime_chain_rpc_duration_seconds_bucket[5m])) by (le, method)",
+          "expr": "sum(rate(mersennet_rpc_duration_seconds_bucket[5m])) by (le, method)",
           "format": "heatmap",
           "legendFormat": "{{method}}",
           "refId": "A"
@@ -316,7 +316,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_block_gas_used",
+          "expr": "mersennet_block_gas_used",
           "legendFormat": "Gas Used",
           "refId": "A"
         }
@@ -343,7 +343,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_block_execution_seconds",
+          "expr": "mersennet_block_execution_seconds",
           "legendFormat": "Block Execution",
           "refId": "A"
         }
@@ -376,7 +376,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_mempool_size",
+          "expr": "mersennet_mempool_size",
           "legendFormat": "Mempool Size",
           "refId": "A"
         }
@@ -403,7 +403,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_block_tx_count",
+          "expr": "mersennet_block_tx_count",
           "legendFormat": "Tx Count (proxy for parallel)",
           "refId": "A"
         }
@@ -438,7 +438,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_trades_executed",
+          "expr": "mersennet_trades_executed",
           "legendFormat": "Orders Matched",
           "refId": "A"
         }
@@ -465,7 +465,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_markets_active",
+          "expr": "mersennet_markets_active",
           "legendFormat": "Active Markets",
           "refId": "A"
         }
@@ -492,7 +492,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_orders_submitted",
+          "expr": "mersennet_orders_submitted",
           "legendFormat": "Orders Submitted",
           "refId": "A"
         }
@@ -519,7 +519,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_trades_executed[5m])",
+          "expr": "rate(mersennet_trades_executed[5m])",
           "legendFormat": "Trades/s (CLOB)",
           "refId": "A"
         }
@@ -554,7 +554,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_consensus_rounds",
+          "expr": "mersennet_consensus_rounds",
           "legendFormat": "Consensus Rounds",
           "refId": "A"
         }
@@ -587,7 +587,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_validators_active",
+          "expr": "mersennet_validators_active",
           "legendFormat": "Validators",
           "refId": "A"
         }
@@ -614,7 +614,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_consensus_finalized",
+          "expr": "mersennet_consensus_finalized",
           "legendFormat": "Blocks Finalized",
           "refId": "A"
         }
@@ -641,7 +641,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_rpc_requests[5m])",
+          "expr": "rate(mersennet_rpc_requests[5m])",
           "legendFormat": "{{method}}",
           "refId": "A"
         }
@@ -653,13 +653,13 @@
   "refresh": "10s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["prime-chain", "blockchain"],
+  "tags": ["mersennet", "blockchain"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Mersennet Overview",
-  "uid": "prime-chain-overview",
+  "uid": "mersennet-overview",
   "version": 1,
   "weekStart": ""
 }

@@ -1,8 +1,8 @@
 use crate::net_transport::{GossipConfig, TcpSync, UdpGossip};
 use anyhow::Result;
-use prime_chain::consensus::Finalization;
-use prime_chain::engine::{Block, Engine, Receipt, Transaction};
-use prime_chain::network::Message as VoteMessage;
+use mersennet::consensus::Finalization;
+use mersennet::engine::{Block, Engine, Receipt, Transaction};
+use mersennet::network::Message as VoteMessage;
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

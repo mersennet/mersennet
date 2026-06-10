@@ -59,7 +59,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_block_tx_count[1m]) * 12",
+          "expr": "rate(mersennet_block_tx_count[1m]) * 12",
           "legendFormat": "EVM TPS (approx)",
           "refId": "A"
         }
@@ -86,13 +86,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_trades_executed[5m])",
+          "expr": "rate(mersennet_trades_executed[5m])",
           "legendFormat": "CLOB Trades/s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_orders_submitted[5m])",
+          "expr": "rate(mersennet_orders_submitted[5m])",
           "legendFormat": "Orders/s",
           "refId": "B"
         }
@@ -127,19 +127,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.5, rate(prime_chain_block_execution_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.5, rate(mersennet_block_execution_seconds_bucket[5m]))",
           "legendFormat": "p50 Block Latency",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, rate(prime_chain_block_execution_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(mersennet_block_execution_seconds_bucket[5m]))",
           "legendFormat": "p95 Block Latency",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(prime_chain_block_execution_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(mersennet_block_execution_seconds_bucket[5m]))",
           "legendFormat": "p99 Block Latency",
           "refId": "C"
         }
@@ -166,7 +166,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_block_execution_seconds",
+          "expr": "mersennet_block_execution_seconds",
           "legendFormat": "State Commit (Block Exec)",
           "refId": "A"
         }
@@ -201,7 +201,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_block_gas_used",
+          "expr": "mersennet_block_gas_used",
           "legendFormat": "Gas Used",
           "refId": "A"
         }
@@ -228,7 +228,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(prime_chain_block_tx_count[5m]) / (rate(prime_chain_block_execution_seconds_sum[5m]) / rate(prime_chain_block_execution_seconds_count[5m]) + 0.001)",
+          "expr": "rate(mersennet_block_tx_count[5m]) / (rate(mersennet_block_execution_seconds_sum[5m]) / rate(mersennet_block_execution_seconds_count[5m]) + 0.001)",
           "legendFormat": "Tx per Second (exec)",
           "refId": "A"
         }
@@ -255,7 +255,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "prime_chain_mempool_size",
+          "expr": "mersennet_mempool_size",
           "legendFormat": "Mempool Size",
           "refId": "A"
         }
@@ -282,7 +282,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(prime_chain_rpc_duration_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(mersennet_rpc_duration_seconds_bucket[5m]))",
           "legendFormat": "p99 RPC Latency",
           "refId": "A"
         }
@@ -294,13 +294,13 @@
   "refresh": "10s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["prime-chain", "performance"],
+  "tags": ["mersennet", "performance"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Mersennet Performance",
-  "uid": "prime-chain-performance",
+  "uid": "mersennet-performance",
   "version": 1,
   "weekStart": ""
 }

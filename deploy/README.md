@@ -111,14 +111,14 @@ Point DNS A records to `PUBLIC_NODE` IP. Caddy auto-provisions Let's Encrypt cer
 
 ```bash
 # Check service status on a node
-ssh root@<IP> systemctl status prime-chain
+ssh root@<IP> systemctl status mersennet
 
 # View full logs
-ssh root@<IP> journalctl -u prime-chain -n 100 --no-pager
+ssh root@<IP> journalctl -u mersennet -n 100 --no-pager
 
 # Check disk usage
-ssh root@<IP> du -sh /opt/prime-chain/data/
+ssh root@<IP> du -sh /opt/mersennet/data/
 
 # Manual restart
-ssh root@<IP> systemctl restart prime-chain
+ssh root@<IP> systemctl restart mersennet
 ```

@@ -20,7 +20,7 @@
 //! To regenerate the artifact, run:
 //!
 //! ```text
-//! cargo test -p prime-zkp --lib poseidon::tests::dump_pinned_params_file -- --ignored --nocapture
+//! cargo test -p mersennet-zkp --lib poseidon::tests::dump_pinned_params_file -- --ignored --nocapture
 //! ```
 //!
 //! The current pinned bytes lock in the *current* synthesis, so the
@@ -506,7 +506,7 @@ mod tests {
     /// swap:
     ///
     /// ```text
-    /// cargo test -p prime-zkp --lib poseidon::tests::dump_pinned_params_file -- --ignored --nocapture
+    /// cargo test -p mersennet-zkp --lib poseidon::tests::dump_pinned_params_file -- --ignored --nocapture
     /// ```
     #[test]
     #[ignore]

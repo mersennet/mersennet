@@ -65,7 +65,7 @@ A running Mersennet node is composed of five cooperating subsystems:
 
 ## Module Breakdown
 
-The codebase is organized into six Rust crates: `core`, `network`, `rpc`, `node`, `zkp`, and `state-proof`. The four below make up the node runtime; `crates/zkp/` (`prime-zkp`) provides the zero-knowledge primitives (Poseidon hash, Pedersen commitments, threshold ElGamal, Noir circuit harness) and `crates/state-proof/` (`prime-state-proof`) provides the SP1 state-transition proof envelopes.
+The codebase is organized into six Rust crates: `core`, `network`, `rpc`, `node`, `zkp`, and `state-proof`. The four below make up the node runtime; `crates/zkp/` (`mersennet-zkp`) provides the zero-knowledge primitives (Poseidon hash, Pedersen commitments, threshold ElGamal, Noir circuit harness) and `crates/state-proof/` (`mersennet-state-proof`) provides the SP1 state-transition proof envelopes.
 
 ### `crates/core/` — Core Domain Logic
 
@@ -107,7 +107,7 @@ The executable entry point that wires all components together:
 
 | File | Purpose |
 |------|---------|
-| `bin/prime-chain.rs` | Main binary: CLI parsing, config loading, identity management, engine initialization, block production loop, P2P networking, RPC server startup |
+| `bin/mersennet.rs` | Main binary: CLI parsing, config loading, identity management, engine initialization, block production loop, P2P networking, RPC server startup |
 | `bin/genesis.rs` | Genesis file generator utility |
 | `bin/faucet.rs` | Testnet faucet HTTP server |
 | `bin/stresstest.rs` | Transaction stress test tool |
@@ -372,7 +372,7 @@ To recover the signer:
 
 ## Startup Sequence
 
-When the `prime-chain` binary starts:
+When the `mersennet` binary starts:
 
 ```
 1. Initialize tracing (structured logging from RUST_LOG env)

@@ -37,7 +37,7 @@ The TypeScript SDK ships the full pipeline so a wallet does not implement crypto
 | `scanAndReconstructBalances` | End-to-end: scan, derive, filter spent, and reconstruct in one call. |
 
 ```ts
-import { scanAndReconstructBalances } from '@prime-chain/sdk';
+import { scanAndReconstructBalances } from '@mersennet/sdk';
 
 const result = await scanAndReconstructBalances(
   provider,          // PrimeProvider

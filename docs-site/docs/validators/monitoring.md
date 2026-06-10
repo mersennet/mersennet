@@ -24,12 +24,12 @@ Mersennet exposes metrics that you should monitor:
 
 | Metric | Description |
 |--------|-------------|
-| `prime_chain_height` | Latest committed block height; should increase steadily |
-| `prime_chain_total_stake` | Total staked PRIM across all validators |
-| `prime_chain_block_tx_count` | Transaction count in the latest block |
-| `prime_chain_mempool_size` | Mempool size; high values may indicate congestion |
-| `prime_chain_validators_active` | Number of active validators |
-| `prime_chain_slashing_events` | Slashing evidence events by kind (slashing risk) |
+| `mersennet_height` | Latest committed block height; should increase steadily |
+| `mersennet_total_stake` | Total staked PRIM across all validators |
+| `mersennet_block_tx_count` | Transaction count in the latest block |
+| `mersennet_mempool_size` | Mempool size; high values may indicate congestion |
+| `mersennet_validators_active` | Number of active validators |
+| `mersennet_slashing_events` | Slashing evidence events by kind (slashing risk) |
 
 :::tip
 The full metric list is exposed at the node's `/metrics` endpoint (served on the RPC port). See [Run a Node — Monitoring Setup](/validators/run-a-node#monitoring-setup) for the complete table.
@@ -60,7 +60,7 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'prime-chain'
+  - job_name: 'mersennet'
     metrics_path: '/metrics'
     static_configs:
       - targets: ['localhost:8545']  # Mersennet RPC port (serves /metrics)
@@ -102,12 +102,12 @@ sudo systemctl start grafana-server
 
 Create panels for:
 
-- **Block height** — Graph of `prime_chain_height` over time
-- **Total stake** — Gauge or stat for `prime_chain_total_stake`
-- **Blocks produced** — Rate of `prime_chain_blocks_produced_total`
-- **Pending transactions** — `prime_chain_mempool_size`
-- **Active validators** — `prime_chain_validators_active`
-- **Slashing events** — `prime_chain_slashing_events` (critical for validators)
+- **Block height** — Graph of `mersennet_height` over time
+- **Total stake** — Gauge or stat for `mersennet_total_stake`
+- **Blocks produced** — Rate of `mersennet_blocks_produced_total`
+- **Pending transactions** — `mersennet_mempool_size`
+- **Active validators** — `mersennet_validators_active`
+- **Slashing events** — `mersennet_slashing_events` (critical for validators)
 
 ## Alert Rules
 
@@ -119,11 +119,11 @@ Create `alerts.yml` (or add to `prometheus.yml`):
 
 ```yaml
 groups:
-  - name: prime-chain
+  - name: mersennet
     rules:
       # Block production stalled
       - alert: MersennetBlockStalled
-        expr: increase(prime_chain_height[5m]) == 0
+        expr: increase(mersennet_height[5m]) == 0
         for: 2m
         labels:
           severity: critical
@@ -133,7 +133,7 @@ groups:
 
       # Slashing events (slashing risk)
       - alert: MersennetSlashingEvents
-        expr: increase(prime_chain_slashing_events[1h]) > 0
+        expr: increase(mersennet_slashing_events[1h]) > 0
         for: 5m
         labels:
           severity: warning
@@ -153,7 +153,7 @@ groups:
 
       # Mempool approaching capacity
       - alert: MersennetHighMempool
-        expr: prime_chain_mempool_size > 8000
+        expr: mersennet_mempool_size > 8000
         for: 10m
         labels:
           severity: warning

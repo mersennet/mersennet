@@ -123,12 +123,12 @@ The repository is a 6-crate Cargo workspace:
 
 | Crate | Path | Package Name | Purpose |
 |-------|------|--------------|---------|
-| core | `crates/core` | `prime-chain` | Engine, consensus, CLOB, state, precompiles, shielded subsystems |
-| network | `crates/network` | `prime-chain-network` | UDP gossip, TCP sync, Noise encryption, P2P node |
-| rpc | `crates/rpc` | `prime-chain-rpc` | JSON-RPC 2.0 server, method router, shielded RPC, WebSocket |
-| node | `crates/node` | `prime-chain-node` | Binaries: `prime-chain`, `genesis`, `faucet`, `loadtest`, `stresstest`, `migrate-genesis` |
-| zkp | `crates/zkp` | `prime-zkp` | Poseidon, Pedersen, notes/nullifiers, threshold ElGamal, Noir/SP1 harness |
-| state-proof | `crates/state-proof` | `prime-state-proof` | revm-free state-transition proof envelopes, SP1 prover/verifier glue |
+| core | `crates/core` | `mersennet` | Engine, consensus, CLOB, state, precompiles, shielded subsystems |
+| network | `crates/network` | `mersennet-network` | UDP gossip, TCP sync, Noise encryption, P2P node |
+| rpc | `crates/rpc` | `mersennet-rpc` | JSON-RPC 2.0 server, method router, shielded RPC, WebSocket |
+| node | `crates/node` | `mersennet-node` | Binaries: `mersennet`, `genesis`, `faucet`, `loadtest`, `stresstest`, `migrate-genesis` |
+| zkp | `crates/zkp` | `mersennet-zkp` | Poseidon, Pedersen, notes/nullifiers, threshold ElGamal, Noir/SP1 harness |
+| state-proof | `crates/state-proof` | `mersennet-state-proof` | revm-free state-transition proof envelopes, SP1 prover/verifier glue |
 
 ```
 crates/core/src/
@@ -174,7 +174,7 @@ crates/rpc/src/
 └── ws.rs                          # WebSocket subscriptions
 
 crates/node/src/bin/
-├── prime-chain.rs                 # Node entry point (CLI)
+├── mersennet.rs                 # Node entry point (CLI)
 ├── genesis.rs / migrate_genesis.rs
 └── faucet.rs / loadtest.rs / stresstest.rs
 ```
@@ -1044,7 +1044,7 @@ JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatib
 
 | Method | Eth Alias | Description |
 |--------|-----------|-------------|
-| `prime_chainId` | `eth_chainId` | Returns chain ID |
+| `mersennetId` | `eth_chainId` | Returns chain ID |
 | `prime_blockNumber` | `eth_blockNumber` | Latest block height |
 | `prime_getBalance` | `eth_getBalance` | Account balance |
 | `prime_getCode` | `eth_getCode` | Account bytecode |
@@ -1218,36 +1218,36 @@ Initialized once via `prometheus::init()`. All metrics are pre-described with HE
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `prime_chain_up` | Gauge | Node liveness (always 1) |
-| `prime_chain_blocks_produced_total` | Counter | Total blocks produced |
-| `prime_chain_height` | Gauge | Latest block height |
-| `prime_chain_block_gas_used` | Gauge | Gas in latest block |
-| `prime_chain_block_tx_count` | Gauge | Tx count in latest block |
-| `prime_chain_block_execution_seconds` | Histogram | Block execution time |
-| `prime_chain_base_fee_wei` | Gauge | Current base fee |
-| `prime_chain_consensus_rounds` | Counter | Consensus rounds executed |
-| `prime_chain_consensus_finalized` | Counter | Blocks finalized |
-| `prime_chain_slashing_events` | Counter | Slashing events by kind |
-| `prime_chain_validators_active` | Gauge | Active validator count |
-| `prime_chain_total_stake` | Gauge | Total staked amount |
-| `prime_chain_orders_submitted` | Counter | Orders submitted |
-| `prime_chain_orders_filled` | Counter | Orders fully filled |
-| `prime_chain_orders_cancelled` | Counter | Orders cancelled |
-| `prime_chain_trades_executed` | Counter | Trade fills executed |
-| `prime_chain_insurance_fund_balance` | Gauge | Insurance fund balance |
-| `prime_chain_markets_active` | Gauge | Active market count |
-| `prime_chain_mempool_size` | Gauge | Mempool total size |
-| `prime_chain_mempool_rejected` | Counter | Rejected txs by reason |
-| `prime_chain_rpc_requests` | Counter | RPC requests by method |
-| `prime_chain_rpc_errors` | Counter | RPC errors by method+code |
-| `prime_chain_rpc_duration_seconds` | Histogram | RPC latency by method |
+| `mersennet_up` | Gauge | Node liveness (always 1) |
+| `mersennet_blocks_produced_total` | Counter | Total blocks produced |
+| `mersennet_height` | Gauge | Latest block height |
+| `mersennet_block_gas_used` | Gauge | Gas in latest block |
+| `mersennet_block_tx_count` | Gauge | Tx count in latest block |
+| `mersennet_block_execution_seconds` | Histogram | Block execution time |
+| `mersennet_base_fee_wei` | Gauge | Current base fee |
+| `mersennet_consensus_rounds` | Counter | Consensus rounds executed |
+| `mersennet_consensus_finalized` | Counter | Blocks finalized |
+| `mersennet_slashing_events` | Counter | Slashing events by kind |
+| `mersennet_validators_active` | Gauge | Active validator count |
+| `mersennet_total_stake` | Gauge | Total staked amount |
+| `mersennet_orders_submitted` | Counter | Orders submitted |
+| `mersennet_orders_filled` | Counter | Orders fully filled |
+| `mersennet_orders_cancelled` | Counter | Orders cancelled |
+| `mersennet_trades_executed` | Counter | Trade fills executed |
+| `mersennet_insurance_fund_balance` | Gauge | Insurance fund balance |
+| `mersennet_markets_active` | Gauge | Active market count |
+| `mersennet_mempool_size` | Gauge | Mempool total size |
+| `mersennet_mempool_rejected` | Counter | Rejected txs by reason |
+| `mersennet_rpc_requests` | Counter | RPC requests by method |
+| `mersennet_rpc_errors` | Counter | RPC errors by method+code |
+| `mersennet_rpc_duration_seconds` | Histogram | RPC latency by method |
 | `parallel_execution_total` | Counter | Parallel execution runs |
 | `parallel_execution_groups` | Gauge | Groups in last parallel run |
 | `hotstuff2_commits` | Counter | HotStuff-2 commits |
 | `hotstuff2_timeouts` | Counter | HotStuff-2 timeouts |
 | `tx_submitted_total` | Counter | Total submitted txs |
 
-Additional privacy-fork metrics (`prime_chain_privacy_*`, `prime_chain_shielded_*`, `prime_chain_dkg_*`, `prime_chain_fba_*`, `prime_chain_liquidation_*`, `prime_chain_threshold_*`, `prime_chain_state_proof*`) are registered in `crates/core/src/prometheus.rs`.
+Additional privacy-fork metrics (`mersennet_privacy_*`, `mersennet_shielded_*`, `mersennet_dkg_*`, `mersennet_fba_*`, `mersennet_liquidation_*`, `mersennet_threshold_*`, `mersennet_state_proof*`) are registered in `crates/core/src/prometheus.rs`.
 
 ### Structured Logging
 
@@ -1472,9 +1472,9 @@ curl http://localhost:8545/health
 
 ```bash
 curl http://localhost:8545/metrics
-# HELP prime_chain_height Latest committed block height
-# TYPE prime_chain_height gauge
-# prime_chain_height 42
+# HELP mersennet_height Latest committed block height
+# TYPE mersennet_height gauge
+# mersennet_height 42
 ```
 
 ---
@@ -1484,7 +1484,7 @@ curl http://localhost:8545/metrics
 ### Docker Build
 
 ```bash
-docker build -t prime-chain:latest .
+docker build -t mersennet:latest .
 ```
 
 The multi-stage Dockerfile uses `rust:1.82-slim` for building and `debian:bookworm-slim` for the runtime image.
@@ -1555,7 +1555,7 @@ Each validator has:
 2. Start nodes:
 
 ```bash
-prime-chain --config /etc/prime-chain/config.json --validator --rpc
+mersennet --config /etc/mersennet/config.json --validator --rpc
 ```
 
 3. Verify:

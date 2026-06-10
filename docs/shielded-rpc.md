@@ -15,7 +15,7 @@ For the formal cryptographic definitions of every blob below, see
 
 All opaque ZK payloads — proofs, encrypted blobs, intent envelopes —
 are encoded as `bincode` over the typed Rust struct, then 0x-hex.
-A wallet that imports the [`prime-chain SDK`](../sdk/) gets these
+A wallet that imports the [`mersennet SDK`](../sdk/) gets these
 encoders for free.
 
 Field names use camelCase in JSON to match Ethereum conventions.
@@ -24,7 +24,7 @@ Field names use camelCase in JSON to match Ethereum conventions.
 
 ## 2. Shielded RPC methods
 
-### `prime_getChainConfig()` *(planned — not yet implemented; use `prime_chainId` / `eth_chainId` today)*
+### `prime_getChainConfig()` *(planned — not yet implemented; use `mersennetId` / `eth_chainId` today)*
 
 Returns the chain ID, privacy activation height, and feature flags.
 

@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut validator_addresses = Vec::new();
 
     for i in 1..=n {
-        let (signing_key, address) = prime_chain::crypto::generate_keypair();
+        let (signing_key, address) = mersennet::crypto::generate_keypair();
         let key_path = keys_dir.join(format!("validator-{}.json", i));
         fs::write(
             &key_path,
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
-    let (faucet_key, faucet_address) = prime_chain::crypto::generate_keypair();
+    let (faucet_key, faucet_address) = mersennet::crypto::generate_keypair();
     let faucet_addr_hex = format!("0x{}", hex::encode(faucet_address.as_slice()));
     let faucet_key_path = keys_dir.join("faucet-key.json");
     fs::write(
@@ -276,9 +276,9 @@ fn generate_docker_compose(n: u32, _chain_id: u64) -> String {
             r#"  validator-{}:
     build: ..
     container_name: prime-validator-{}
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/validator-{}.json:/etc/prime-chain/config.json:ro
+      - ./configs/validator-{}.json:/etc/mersennet/config.json:ro
       - ./keys/validator-{}.json:/data/node_key.json:ro
       - validator-{}-data:/data
     ports:

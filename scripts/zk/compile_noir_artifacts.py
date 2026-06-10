@@ -392,7 +392,7 @@ def materialize_package(tmp_dir: Path, circuits_src_dir: Path, circuit: str) -> 
 
 
 def compile_circuit(nargo_bin: str, circuits_src_dir: Path, artifacts_dir: Path, circuit: str) -> Path:
-    with tempfile.TemporaryDirectory(prefix=f"prime-chain-{circuit}-") as tmp_name:
+    with tempfile.TemporaryDirectory(prefix=f"mersennet-{circuit}-") as tmp_name:
         package_dir = materialize_package(Path(tmp_name), circuits_src_dir, circuit)
         run_command([nargo_bin, "compile"], cwd=package_dir)
 

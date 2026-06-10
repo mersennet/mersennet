@@ -2489,25 +2489,25 @@ The implementation is a six-crate Cargo workspace:
 
 ```
 crates/
-├── core/                       # `prime-chain` — engine, consensus (CometBFT-style
+├── core/                       # `mersennet` — engine, consensus (CometBFT-style
 │   │                           # + hotstuff2.rs), parallel EVM executor, mempool,
 │   │                           # precompiles (CLOB 0x0100 + shielded), FBA,
 │   │                           # commit-reveal, state backends (sled/redb/flat),
 │   │                           # bridge, governance, identity, prometheus,
 │   │                           # shielded_* subsystems, config, crypto
-├── network/                    # `prime-chain-network` — p2p.rs, net_transport.rs
+├── network/                    # `mersennet-network` — p2p.rs, net_transport.rs
 │   │                           # (TCP sync + UDP gossip), noise.rs encryption
-├── rpc/                        # `prime-chain-rpc` — rpc.rs, rpc_router.rs,
+├── rpc/                        # `mersennet-rpc` — rpc.rs, rpc_router.rs,
 │   │                           # rpc_shielded.rs, ws.rs (WebSocket subscriptions)
-├── node/                       # `prime-chain-node` — binaries: prime-chain,
+├── node/                       # `mersennet-node` — binaries: mersennet,
 │   │                           # genesis, faucet, loadtest, stresstest,
 │   │                           # migrate-genesis
-├── zkp/                        # `prime-zkp` — Poseidon, Pedersen, threshold
+├── zkp/                        # `mersennet-zkp` — Poseidon, Pedersen, threshold
 │   │                           # ElGamal, Noir circuit harness
-└── state-proof/                # `prime-state-proof` — SP1 state-transition
+└── state-proof/                # `mersennet-state-proof` — SP1 state-transition
                                 # proof envelopes and prover/verifier glue
-sdk/                            # TypeScript SDK (@prime-chain/sdk)
-sdk-python/                     # Python SDK (prime-chain-sdk)
+sdk/                            # TypeScript SDK (@mersennet/sdk)
+sdk-python/                     # Python SDK (mersennet-sdk)
 sdk-go/                         # Go SDK
 validator-explorer/             # Block explorer web UI (index.html, app.js)
 contracts/                      # Solidity (IPrimeOrders.sol, PrimeChainBridge.sol,
@@ -2558,18 +2558,18 @@ Configuration is JSON-based with hot-reload support:
 
 Prometheus metrics exposed at `/metrics`:
 
-- `prime_chain_up`: Node liveness gauge
-- `prime_chain_blocks_produced_total`: Block production counter
-- `prime_chain_consensus_finalized`: Finalized block counter
-- `prime_chain_block_tx_count`: Transactions in the latest block
-- `prime_chain_mempool_size`: Mempool size gauge
-- `prime_chain_height`: Current block height
-- `prime_chain_block_execution_seconds`: Block execution time histogram
-- `prime_chain_rpc_requests`: RPC request counter
-- `prime_chain_rpc_errors`: RPC error counter
-- `prime_chain_rpc_duration_seconds`: RPC latency histogram
-- `prime_chain_consensus_rounds`: Consensus round counter
-- `prime_chain_slashing_events`: Slashing evidence counter
+- `mersennet_up`: Node liveness gauge
+- `mersennet_blocks_produced_total`: Block production counter
+- `mersennet_consensus_finalized`: Finalized block counter
+- `mersennet_block_tx_count`: Transactions in the latest block
+- `mersennet_mempool_size`: Mempool size gauge
+- `mersennet_height`: Current block height
+- `mersennet_block_execution_seconds`: Block execution time histogram
+- `mersennet_rpc_requests`: RPC request counter
+- `mersennet_rpc_errors`: RPC error counter
+- `mersennet_rpc_duration_seconds`: RPC latency histogram
+- `mersennet_consensus_rounds`: Consensus round counter
+- `mersennet_slashing_events`: Slashing evidence counter
 
 ### 15.6 Testing Strategy
 
@@ -2637,7 +2637,7 @@ The following items from v5.0's roadmap have been implemented:
 - **Flat State Architecture**: Separate state storage from state trie computation. Store current account state in a flat key-value table; compute Merkle proofs only when needed (for light clients or bridges).
 - **Grafana Dashboards**: Pre-built dashboards for all Prometheus metrics.
 - **Cargo Workspace Restructure** *(completed)*: The repository is now a six-crate workspace (`core`, `network`, `rpc`, `node`, `zkp`, `state-proof`) for independent compilation and testing.
-- **SP1 ZK Integration** *(underway)*: Replace MockProver with the SP1 zkVM for production-grade state transition proofs — the `prime-state-proof` crate ships the SP1 prover/verifier glue behind the `prover`/`sp1` feature flags.
+- **SP1 ZK Integration** *(underway)*: Replace MockProver with the SP1 zkVM for production-grade state transition proofs — the `mersennet-state-proof` crate ships the SP1 prover/verifier glue behind the `prover`/`sp1` feature flags.
 
 ### 16.4 Medium-Term (Months 4-6)
 
@@ -3129,7 +3129,7 @@ $n$ = mempool/batch size, $k$ = txs per sender or parallel groups, $m$ = selecte
 
 | Method | Description |
 |--------|-------------|
-| `prime_chainId` | Returns chain ID |
+| `mersennetId` | Returns chain ID |
 | `prime_blockNumber` | Returns latest block number |
 | `prime_getBalance` | Returns account balance |
 | `prime_getBlockByNumber` | Returns block by number |
@@ -3166,7 +3166,7 @@ Collateral withdrawal is performed via the CLOB precompile (`withdrawCollateral(
 
 | Method | Alias For | Description |
 |--------|-----------|-------------|
-| `eth_chainId` | `prime_chainId` | Returns chain ID |
+| `eth_chainId` | `mersennetId` | Returns chain ID |
 | `eth_blockNumber` | `prime_blockNumber` | Returns latest block number |
 | `eth_getBalance` | `prime_getBalance` | Returns account balance |
 | `eth_getBlockByHash` | — | Returns block by hash |

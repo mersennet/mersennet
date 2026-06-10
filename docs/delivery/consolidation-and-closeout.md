@@ -38,7 +38,7 @@ Recommended order: Rust-core first (so the workspace compiles before the satelli
 git checkout feat/zk-privacy
 git pull --ff-only
 
-git merge --no-ff feat/zk-e4-revmfree     # new prime-state-proof crate + Cargo.lock + STATUS/audit-packet
+git merge --no-ff feat/zk-e4-revmfree     # new mersennet-state-proof crate + Cargo.lock + STATUS/audit-packet
 git merge --no-ff feat/zk-sp1-hardening   # engine.rs / sp1.rs / liquidation_auction.rs
 git merge --no-ff feat/zk-bridge          # contracts/src/zk/* + foundry tests
 git merge --no-ff feat/zk-sdk-client      # sdk/* (F1 WASM prover, F2 scanner, F4 migration, F5 client reconstruction)
@@ -47,11 +47,11 @@ git merge --no-ff feat/zk-tooling         # .github/workflows/ci.yml + Dockerfil
 
 ### What to expect
 - **Zero textual conflicts.** The branches are disjoint at the file level, so none of the five merges should report a conflict.
-- **One semantic integration to watch.** `feat/zk-e4-revmfree` relocates the proof-envelope types into a new `prime-state-proof` crate and leaves re-export shims:
-  - `crates/core/src/zk_proofs.rs` -> `pub use prime_state_proof::zk_proofs::*;`
-  - `crates/core/src/zk_sp1.rs` -> `pub use prime_state_proof::zk_sp1::*;`
+- **One semantic integration to watch.** `feat/zk-e4-revmfree` relocates the proof-envelope types into a new `mersennet-state-proof` crate and leaves re-export shims:
+  - `crates/core/src/zk_proofs.rs` -> `pub use mersennet_state_proof::zk_proofs::*;`
+  - `crates/core/src/zk_sp1.rs` -> `pub use mersennet_state_proof::zk_sp1::*;`
 
-  `feat/zk-sp1-hardening` edits `crates/core/src/engine.rs` and `crates/zkp/src/sp1.rs`, which consume those types via the `prime_chain::zk_proofs` / `prime_chain::zk_sp1` paths. Git will not flag this because the files differ, but the **combined tree must build**. Run the full verification matrix (section 2) immediately after the E4 + E2 pair before continuing.
+  `feat/zk-sp1-hardening` edits `crates/core/src/engine.rs` and `crates/zkp/src/sp1.rs`, which consume those types via the `mersennet::zk_proofs` / `mersennet::zk_sp1` paths. Git will not flag this because the files differ, but the **combined tree must build**. Run the full verification matrix (section 2) immediately after the E4 + E2 pair before continuing.
 - **`contracts/lib/`** (forge-std) is an untracked local install — do **not** stage it. Foundry repopulates it via `forge install` / submodules.
 
 ---
@@ -62,7 +62,7 @@ These must all pass on the consolidated `feat/zk-privacy` before the branch is c
 
 ```bash
 # Rust core + node, prover + SP1 features
-cargo check -p prime-chain-node --features prover,sp1
+cargo check -p mersennet-node --features prover,sp1
 
 # SP1 guest program + host (mock and real-sp1 local prover path)
 cargo check --manifest-path programs/state-transition/Cargo.toml
@@ -70,7 +70,7 @@ cargo test  --manifest-path programs/state-transition-host/Cargo.toml
 cargo check --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1
 
 # c-kzg single-version proof (E4): no revm in the host graph, one c-kzg in node graph
-cargo tree -p prime-chain-node --features prover,sp1 -i c-kzg
+cargo tree -p mersennet-node --features prover,sp1 -i c-kzg
 
 # Lint + dependency audit
 cargo clippy --workspace --all-targets -- -D warnings
@@ -87,7 +87,7 @@ bash scripts/ci/check-privacy-invariants.sh
 ```
 
 Expected pre-existing exceptions (do not block the merge on these — they predate this work and are tracked separately):
-- Two `state_proof` tests can fail under `--features sp1` (`invalid block tx encoding`, `shielded event root mismatch`) on branches that do not yet carry the E2 parity fixes. After `feat/zk-sp1-hardening` is merged, re-run `cargo test -p prime-chain --features sp1` and confirm they pass; if they still fail, the failure is the known parity gap, not a regression from consolidation.
+- Two `state_proof` tests can fail under `--features sp1` (`invalid block tx encoding`, `shielded event root mismatch`) on branches that do not yet carry the E2 parity fixes. After `feat/zk-sp1-hardening` is merged, re-run `cargo test -p mersennet --features sp1` and confirm they pass; if they still fail, the failure is the known parity gap, not a regression from consolidation.
 
 ---
 
@@ -107,7 +107,7 @@ Row reconciliation (status after consolidation, and the branch that satisfies it
 |---|---|---|
 | E2 | ✅ | `feat/zk-sp1-hardening` — witness-bearing prove path, FBA/order/liquidation replay, `shielded_event_root` |
 | E3 | 🟡 (prep done; real transcript gated) | `feat/zk-e4-revmfree` pins expected output + pre-fills `scripts/zk/sp1-verify-request.request.json`; real prove run is hardware-gated (see section 4) |
-| E4 | 🟡 (conflict resolved; network proof gated) | `feat/zk-e4-revmfree` — revm-free `prime-state-proof` crate removes the `c-kzg` link clash; `--features network` builds; one delegated proof still needs a Succinct account |
+| E4 | 🟡 (conflict resolved; network proof gated) | `feat/zk-e4-revmfree` — revm-free `mersennet-state-proof` crate removes the `c-kzg` link clash; `--features network` builds; one delegated proof still needs a Succinct account |
 | E5 | ✅ | `feat/zk-bridge` — Groth16 verifier wired to bridge |
 | F1 | ✅ | `feat/zk-sdk-client` — WASM Noir prover |
 | F2 | ✅ | `feat/zk-sdk-client` — owner-side note scanner |
@@ -137,7 +137,7 @@ None of these are buildable in the dev sandbox (no prover-class hardware, no ext
 - **Do:**
   ```bash
   cd programs/state-transition && cargo-prove prove build
-  cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition
+  cargo-prove prove vkey --elf target/elf-compilation/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition
 
   PRIME_SP1_MODE=local cargo run --release \
     --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- \
@@ -153,7 +153,7 @@ None of these are buildable in the dev sandbox (no prover-class hardware, no ext
 - **Exit:** public values in the response match the pinned set in the audit packet; the pinned `PRIME_SP1_VKEY_HASH` matches the freshly built ELF; transcript attached to the audit packet. E3 is independent of the E4 network cut-over.
 
 ### E4 — `ProverClient::network()` cut-over (final delegated proof)
-- **State:** the `c-kzg` link conflict between `revm` (1.x) and `sp1-sdk/network` (2.x) is resolved — the host no longer depends on `revm` (it depends on the revm-free `prime-state-proof` crate). `cargo check --features network` resolves to a single `c-kzg 2.x`.
+- **State:** the `c-kzg` link conflict between `revm` (1.x) and `sp1-sdk/network` (2.x) is resolved — the host no longer depends on `revm` (it depends on the revm-free `mersennet-state-proof` crate). `cargo check --features network` resolves to a single `c-kzg 2.x`.
 - **Needs:** `crates.io` access (to download the `network` feature deps) plus a Succinct network account/API key.
 - **Owner:** `@PrimeNumbersLabs/zk`.
 - **Do:**

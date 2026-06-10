@@ -36,7 +36,7 @@ The TypeScript SDK exposes the migration surface as typed functions:
 | `defaultNoteCommitment` | Default note-commitment hasher used when one is not supplied. |
 
 ```ts
-import { planMigration, confirmMigration } from '@prime-chain/sdk';
+import { planMigration, confirmMigration } from '@mersennet/sdk';
 
 // 1. Plan and show the user what will happen
 const plan = planMigration(accounts); // accounts: MigrationNoteParams[]

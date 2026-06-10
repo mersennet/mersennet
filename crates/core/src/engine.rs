@@ -56,7 +56,7 @@ use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
 use crate::shielded_orders::{ShieldedOrdersEngine, decode_threshold_order_intent};
 use crate::shielded_persistence::ShieldedPersistence;
 use crate::threshold_mempool::ThresholdMempool;
-use prime_zkp::sp1::{CanonicalShieldedEvent, U256Bytes, build_shielded_tick_events};
+use mersennet_zkp::sp1::{CanonicalShieldedEvent, U256Bytes, build_shielded_tick_events};
 
 /// Synthetic execution result returned by `apply_shielded_tx` when
 /// the shielded path is unavailable (e.g. pre-fork, missing payload).
@@ -1010,7 +1010,7 @@ impl Engine {
             && let Some(new_epoch) = self.dkg.on_block(self.block_number)
         {
             metrics::counter!(
-                "prime_chain_dkg_ceremonies_started_total",
+                "mersennet_dkg_ceremonies_started_total",
                 1,
                 "epoch" => new_epoch.to_string()
             );
@@ -1348,10 +1348,10 @@ impl Engine {
             }
         }
 
-        metrics::increment_counter!("prime_chain_blocks_produced_total");
-        metrics::gauge!("prime_chain_height", self.block_number as f64);
-        metrics::gauge!("prime_chain_block_gas_used", gas_used as f64);
-        metrics::gauge!("prime_chain_block_tx_count", tx_count as f64);
+        metrics::increment_counter!("mersennet_blocks_produced_total");
+        metrics::gauge!("mersennet_height", self.block_number as f64);
+        metrics::gauge!("mersennet_block_gas_used", gas_used as f64);
+        metrics::gauge!("mersennet_block_tx_count", tx_count as f64);
         tracing::info!(
             height = self.block_number,
             txs = tx_count,
@@ -1364,14 +1364,11 @@ impl Engine {
         self.base_fee = self.next_base_fee(gas_used);
         self.mempool.promote(self.base_fee);
         self.mempool.demote(self.base_fee);
-        metrics::gauge!(
-            "prime_chain_base_fee_wei",
-            self.base_fee.as_limbs()[0] as f64
-        );
+        metrics::gauge!("mersennet_base_fee_wei", self.base_fee.as_limbs()[0] as f64);
 
         self.block_number += 1;
         metrics::histogram!(
-            "prime_chain_block_execution_seconds",
+            "mersennet_block_execution_seconds",
             start.elapsed().as_secs_f64()
         );
 
@@ -1653,10 +1650,10 @@ impl Engine {
             tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed (parallel)");
         }
 
-        metrics::increment_counter!("prime_chain_blocks_produced_total");
-        metrics::gauge!("prime_chain_height", self.block_number as f64);
-        metrics::gauge!("prime_chain_block_gas_used", gas_used as f64);
-        metrics::gauge!("prime_chain_block_tx_count", tx_count as f64);
+        metrics::increment_counter!("mersennet_blocks_produced_total");
+        metrics::gauge!("mersennet_height", self.block_number as f64);
+        metrics::gauge!("mersennet_block_gas_used", gas_used as f64);
+        metrics::gauge!("mersennet_block_tx_count", tx_count as f64);
         tracing::info!(
             height = self.block_number,
             txs = tx_count,
@@ -1669,14 +1666,11 @@ impl Engine {
         self.base_fee = self.next_base_fee(gas_used);
         self.mempool.promote(self.base_fee);
         self.mempool.demote(self.base_fee);
-        metrics::gauge!(
-            "prime_chain_base_fee_wei",
-            self.base_fee.as_limbs()[0] as f64
-        );
+        metrics::gauge!("mersennet_base_fee_wei", self.base_fee.as_limbs()[0] as f64);
 
         self.block_number += 1;
         metrics::histogram!(
-            "prime_chain_block_execution_seconds",
+            "mersennet_block_execution_seconds",
             start.elapsed().as_secs_f64()
         );
         Ok(block)
@@ -2257,7 +2251,7 @@ impl Engine {
     /// SP1 prover is not invoked. Post-fork, the digests are taken
     /// from the live shielded subsystems and the proof is generated
     /// via [`crate::state_proof::prove_block`] (mock prover today,
-    /// real SP1 once `prime-zkp/sp1` is enabled in Workstream E).
+    /// real SP1 once `mersennet-zkp/sp1` is enabled in Workstream E).
     fn shielded_block_header(
         &self,
         transactions: &[Transaction],
@@ -2265,7 +2259,7 @@ impl Engine {
         gas_used: u64,
         pre_shielded_snapshot: Option<&crate::shielded_state::ShieldedSnapshot>,
         pre_transparent_balances: Option<&HashMap<Address, U256>>,
-        pre_tick_witness: Option<&prime_zkp::sp1::ShieldedTickWitness>,
+        pre_tick_witness: Option<&mersennet_zkp::sp1::ShieldedTickWitness>,
     ) -> Result<(
         B256,
         B256,
@@ -2315,7 +2309,7 @@ impl Engine {
                 .last()
                 .map(|b| b.nullifier_root)
                 .unwrap_or(B256::ZERO),
-            header: prime_zkp::sp1::BlockHeaderWitness {
+            header: mersennet_zkp::sp1::BlockHeaderWitness {
                 chain_id: self.chain_id,
                 gas_limit: self.gas_limit_per_block,
                 gas_used,
@@ -2399,15 +2393,15 @@ impl Engine {
 
         // Step 4 — emit the new shielded-state root for light clients.
         let new_root = self.shielded_evm.state.current_root().to_bytes();
-        metrics::counter!("prime_chain_shielded_root_advanced_total", 1);
+        metrics::counter!("mersennet_shielded_root_advanced_total", 1);
         let snap = self.shielded_evm.state.snapshot();
-        metrics::gauge!("prime_chain_shielded_notes_total", snap.leaves.len() as f64);
+        metrics::gauge!("mersennet_shielded_notes_total", snap.leaves.len() as f64);
         metrics::gauge!(
-            "prime_chain_shielded_nullifiers_total",
+            "mersennet_shielded_nullifiers_total",
             snap.nullifiers.len() as f64
         );
         metrics::gauge!(
-            "prime_chain_privacy_mode_active",
+            "mersennet_privacy_mode_active",
             if self.privacy_mode_activated {
                 1.0
             } else {
@@ -2415,7 +2409,7 @@ impl Engine {
             }
         );
         metrics::gauge!(
-            "prime_chain_privacy_activation_height",
+            "mersennet_privacy_activation_height",
             self.privacy_activation_height.unwrap_or(0) as f64
         );
         let events = build_shielded_tick_events(
@@ -2429,7 +2423,8 @@ impl Engine {
         // executor re-derives, so `prove_block`'s equality check
         // against the host root can actually succeed on blocks with
         // shielded activity.
-        self.shielded_tick_event_root = B256::from(prime_zkp::sp1::shielded_event_root(&events));
+        self.shielded_tick_event_root =
+            B256::from(mersennet_zkp::sp1::shielded_event_root(&events));
         self.pending_events.extend(
             events
                 .into_iter()
@@ -2444,7 +2439,7 @@ impl Engine {
         drained.sort_by_key(|(intent_id, _)| intent_id.0);
         if !drained.is_empty() {
             metrics::counter!(
-                "prime_chain_threshold_mempool_admitted_total",
+                "mersennet_threshold_mempool_admitted_total",
                 drained.len() as u64
             );
             for (intent_id, plaintext) in &drained {
@@ -2470,7 +2465,7 @@ impl Engine {
             }
         }
         metrics::gauge!(
-            "prime_chain_threshold_mempool_pending",
+            "mersennet_threshold_mempool_pending",
             self.threshold_mempool.pending_count() as f64
         );
         drained.len() as u64
@@ -2485,19 +2480,19 @@ impl Engine {
                 Ok(result) => {
                     if !result.matched_size.is_zero() {
                         metrics::counter!(
-                            "prime_chain_fba_cleared_total",
+                            "mersennet_fba_cleared_total",
                             1,
                             "market_id" => market_id.0.to_string()
                         );
                         // Gauges carry only market-level aggregates;
                         // no per-trader labels (CI K2).
                         metrics::gauge!(
-                            "prime_chain_fba_clearing_price",
+                            "mersennet_fba_clearing_price",
                             f64_from_u256(result.clearing_price),
                             "market_id" => market_id.0.to_string()
                         );
                         metrics::gauge!(
-                            "prime_chain_fba_matched_size",
+                            "mersennet_fba_matched_size",
                             f64_from_u256(result.matched_size),
                             "market_id" => market_id.0.to_string()
                         );
@@ -2525,11 +2520,11 @@ impl Engine {
             .liquidation_auction
             .settle_block_witness(self.block_number);
         for winner in &settlement.winners {
-            metrics::counter!("prime_chain_liquidation_auctions_settled_total", 1);
+            metrics::counter!("mersennet_liquidation_auctions_settled_total", 1);
             let _ = winner;
         }
         metrics::gauge!(
-            "prime_chain_liquidator_count",
+            "mersennet_liquidator_count",
             self.liquidation_auction.liquidators.len() as f64
         );
         settlement.events
@@ -2713,9 +2708,9 @@ impl Engine {
     ) -> B256 {
         let mut coinbase_bytes = [0u8; 20];
         coinbase_bytes.copy_from_slice(coinbase.as_slice());
-        B256::from(prime_zkp::sp1::derive_block_hash(
+        B256::from(mersennet_zkp::sp1::derive_block_hash(
             number,
-            &prime_zkp::sp1::BlockHeaderWitness {
+            &mersennet_zkp::sp1::BlockHeaderWitness {
                 chain_id,
                 gas_limit,
                 gas_used,
@@ -2778,9 +2773,9 @@ mod tests {
     use crate::events::{DomainEvent, ShieldedEvent};
     use crate::prime_orders::{Market, MarketStatus};
     use crate::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
-    use prime_zkp::Fr;
-    use prime_zkp::noir::{Circuit, MockVerifier};
-    use prime_zkp::note::Note;
+    use mersennet_zkp::Fr;
+    use mersennet_zkp::noir::{Circuit, MockVerifier};
+    use mersennet_zkp::note::Note;
     #[cfg(feature = "sp1")]
     use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;

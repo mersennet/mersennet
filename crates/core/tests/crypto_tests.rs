@@ -1,7 +1,7 @@
-use prime_chain::crypto::{
+use mersennet::crypto::{
     SignedTransaction, generate_keypair, recover_signer, sign_transaction, tx_signing_hash,
 };
-use prime_chain::engine::Transaction;
+use mersennet::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
 
 fn sample_tx(from: Address, chain_id: u64) -> Transaction {

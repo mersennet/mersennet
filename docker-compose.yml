@@ -4,9 +4,9 @@ services:
   validator-1:
     build: .
     container_name: prime-validator-1
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./testnet/configs/validator-1.json:/etc/prime-chain/config.json:ro
+      - ./testnet/configs/validator-1.json:/etc/mersennet/config.json:ro
       - validator-1-data:/data
     ports:
       - "8545:8545"
@@ -26,9 +26,9 @@ services:
   validator-2:
     build: .
     container_name: prime-validator-2
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./testnet/configs/validator-2.json:/etc/prime-chain/config.json:ro
+      - ./testnet/configs/validator-2.json:/etc/mersennet/config.json:ro
       - validator-2-data:/data
     ports:
       - "8546:8545"
@@ -48,9 +48,9 @@ services:
   validator-3:
     build: .
     container_name: prime-validator-3
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./testnet/configs/validator-3.json:/etc/prime-chain/config.json:ro
+      - ./testnet/configs/validator-3.json:/etc/mersennet/config.json:ro
       - validator-3-data:/data
     ports:
       - "8547:8545"

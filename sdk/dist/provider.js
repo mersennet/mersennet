@@ -142,7 +142,7 @@ class PrimeProvider {
         const result = (await this.request('eth_sendTransaction', [tx]));
         return result;
     }
-    /** eth_chainId / prime_chainId */
+    /** eth_chainId / mersennetId */
     async getChainId() {
         const result = (await this.request('eth_chainId'));
         return hexToNumber(result);

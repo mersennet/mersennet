@@ -41,7 +41,7 @@ Every two weeks:
 - Replace one mock dependency (`MockVerifier`, `DummyThreshold`,
   `SP1Prover::Mock`) with its production backend.
 - Reconfirm the SP1 CI lanes stay green:
-      `cargo check -p prime-chain-node --features prover,sp1`,
+      `cargo check -p mersennet-node --features prover,sp1`,
       `cargo check --manifest-path programs/state-transition/Cargo.toml`,
       `cargo test --manifest-path programs/state-transition-host/Cargo.toml`.
 - Run an internal red-team exercise: a privileged team tries to
@@ -53,9 +53,9 @@ Every two weeks:
 - [ ] Publish `v1.0.0-zk-rc.N` with `N` the iteration count.
 - [ ] Publish the exact `H` block on Twitter / Discord / blog /
       docs site.
-- [ ] Distribute updated `prime-chain` binaries.
-- [ ] Distribute updated `@prime-chain/sdk` (npm), `prime-chain-go`,
-      `prime-chain-python`.
+- [ ] Distribute updated `mersennet` binaries.
+- [ ] Distribute updated `@mersennet/sdk` (npm), `mersennet-go`,
+      `mersennet-python`.
 - [ ] PrimeTrade UI ships the shielded mode behind a feature flag.
 - [ ] Validators that have not upgraded by T-48h get a personal
       Slack ping.
@@ -63,7 +63,7 @@ Every two weeks:
 ## T-24h: validator upgrades
 
 - [ ] Every validator restarts on `v1.0.0-zk` (no `-rc` suffix).
-- [ ] Confirm `web3_clientVersion` returns `prime-chain/1.0.0-zk`.
+- [ ] Confirm `web3_clientVersion` returns `mersennet/1.0.0-zk`.
 - [ ] Confirm validator count and voting power match expectations
       via `prime_validators`.
 
@@ -89,7 +89,7 @@ Every two weeks:
       - delegated prover account / environment notes
 - [ ] Ethereum bridge (E5 / G1–G4): re-run `cd contracts && forge build
       --sizes && forge test --match-path 'test/zk/*' -vvv` (21 tests) and
-      `cargo test -p prime-chain --lib bridge_export` (4 tests). Before
+      `cargo test -p mersennet --lib bridge_export` (4 tests). Before
       mainnet bridging, install the SP1→Groth16 wrapping verifying key via
       `Groth16Verifier.setVerifyingKey` + `lockVerifyingKey`, then archive
       one real `submitStateProof` calldata set produced by

@@ -163,7 +163,7 @@ All three domains share one consensus layer, one block structure, one state root
 
 ```
                     ┌──────────────────────┐
-                    │  prime-chain          │  (binary entry point)
+                    │  mersennet          │  (binary entry point)
                     │  crates/node/src/bin/ │
                     └──────────┬───────────┘
                             │
@@ -996,7 +996,7 @@ Multi-stage build optimized for minimal production image:
 │  - ca-certificates, libssl3, curl    │
 │  - Copies release binary only        │
 │  - Exposes: 8545, 9090, 9100        │
-│  - ENTRYPOINT: prime-chain           │
+│  - ENTRYPOINT: mersennet           │
 │  - CMD: --config /etc/.../config.json│
 └──────────────────────────────────────┘
 ```
@@ -1096,5 +1096,5 @@ The `AppConfig` structure supports JSON configuration with sensible defaults:
 
 ---
 
-*Document generated from source analysis of the Mersennet codebase (repository `prime-chain`).*
+*Document generated from source analysis of the Mersennet codebase (repository `mersennet`).*
 *For protocol specification details, see [whitepaper.md](./whitepaper.md). For later ADRs (014–019), see [docs/adr/](./adr/).*

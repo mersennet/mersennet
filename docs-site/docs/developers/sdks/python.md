@@ -6,14 +6,14 @@ title: "Python SDK"
 
 # Python SDK
 
-The Mersennet Python SDK (`prime-chain-sdk`) provides a client for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
+The Mersennet Python SDK (`mersennet-sdk`) provides a client for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
 
 ## Installation
 
 From PyPI (when published):
 
 ```bash
-pip install prime-chain-sdk
+pip install mersennet-sdk
 ```
 
 From source (Mersennet monorepo):
@@ -32,7 +32,7 @@ pip install requests websocket-client
 ## Quick Start
 
 ```python
-from prime_chain import PrimeProvider, PrimeOrders
+from mersennet import PrimeProvider, PrimeOrders
 
 provider = PrimeProvider("http://46.225.30.187:8545")
 orders = PrimeOrders(provider)
@@ -54,7 +54,7 @@ print(f"Bids: {book.bids}, Asks: {book.asks}")
 ## Creating a Provider
 
 ```python
-from prime_chain import PrimeProvider
+from mersennet import PrimeProvider
 
 provider = PrimeProvider("http://46.225.30.187:8545")
 ```
@@ -181,7 +181,7 @@ market_id = orders.add_market(
 ## WebSocket Subscriptions
 
 ```python
-from prime_chain import PrimeSubscriber
+from mersennet import PrimeSubscriber
 
 # PrimeSubscriber takes the WebSocket URL directly
 subscriber = PrimeSubscriber("ws://46.225.30.187:8546")
@@ -219,14 +219,14 @@ WebSocket support may vary by node configuration. If subscriptions fail, use HTT
 ## Error Handling
 
 ```python
-from prime_chain import PrimeProvider
-from prime_chain.provider import PrimeChainError
+from mersennet import PrimeProvider
+from mersennet.provider import MersennetError
 
 provider = PrimeProvider("http://46.225.30.187:8545")
 
 try:
     balance = provider.get_balance("0x...")
-except PrimeChainError as e:
+except MersennetError as e:
     print(f"RPC error: {e}, code: {e.code}")
 ```
 

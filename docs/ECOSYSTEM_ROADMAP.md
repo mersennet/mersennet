@@ -57,7 +57,7 @@
 | PrimeRoll Casino | AI Agent Casino | `primeroll-agent-casino/` | NestJS, multi-SDK | Ready |
 | Vault Contracts | DeFi Vaults | `prime-xdc-vaults/` | Hardhat, Solidity | Ready |
 | PRFI NFT Contracts | Omnichain NFTs | `prfi-nft-contracts/` | Hardhat, LayerZero | Ready |
-| SDKs | Developer SDKs | `prime-chain/sdk*` | JS, Go, Python | In repo |
+| SDKs | Developer SDKs | `mersennet/sdk*` | JS, Go, Python | In repo |
 
 ---
 

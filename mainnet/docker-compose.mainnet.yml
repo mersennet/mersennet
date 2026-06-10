@@ -13,12 +13,12 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-chain-validator
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    container_name: mersennet-validator
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./config/config.json:/etc/prime-chain/config.json:ro
-      - validator-data:/var/lib/prime-chain
-      - ./keys:/etc/prime-chain/keys:ro
+      - ./config/config.json:/etc/mersennet/config.json:ro
+      - validator-data:/var/lib/mersennet
+      - ./keys:/etc/mersennet/keys:ro
     ports:
       - "30303:30303"   # P2P
       - "127.0.0.1:8545:8545"   # RPC + /metrics (bind to localhost; use caddy for TLS)
@@ -50,7 +50,7 @@ services:
   # TLS termination for RPC (expose HTTPS)
   caddy:
     image: caddy:2-alpine
-    container_name: prime-chain-rpc-tls
+    container_name: mersennet-rpc-tls
     ports:
       - "443:443"
       - "80:80"
@@ -69,7 +69,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.47.0
-    container_name: prime-chain-prometheus
+    container_name: mersennet-prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -93,7 +93,7 @@ services:
 
   grafana:
     image: grafana/grafana:10.2.0
-    container_name: prime-chain-grafana
+    container_name: mersennet-grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
@@ -117,7 +117,7 @@ services:
   # Loki for log aggregation
   loki:
     image: grafana/loki:2.9.0
-    container_name: prime-chain-loki
+    container_name: mersennet-loki
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
@@ -136,7 +136,7 @@ services:
 
   promtail:
     image: grafana/promtail:2.9.0
-    container_name: prime-chain-promtail
+    container_name: mersennet-promtail
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
@@ -151,7 +151,7 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.26.0
-    container_name: prime-chain-alertmanager
+    container_name: mersennet-alertmanager
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports:

@@ -420,6 +420,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "mersennet-state-transition"
+version = "0.1.0"
+dependencies = [
+ "mersennet-zkp",
+ "serde",
+ "sp1-zkvm",
+]
+
+[[package]]
+name = "mersennet-zkp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "hex",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "sha3",
+ "subtle",
+ "thiserror",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -620,30 +644,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
-]
-
-[[package]]
-name = "prime-chain-state-transition"
-version = "0.1.0"
-dependencies = [
- "prime-zkp",
- "serde",
- "sp1-zkvm",
-]
-
-[[package]]
-name = "prime-zkp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "hex",
- "rand",
- "rand_chacha",
- "serde",
- "sha3",
- "subtle",
- "thiserror",
 ]
 
 [[package]]

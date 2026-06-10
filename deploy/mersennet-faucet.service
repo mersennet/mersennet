@@ -1,23 +1,23 @@
 [Unit]
 Description=Mersennet Testnet Faucet
-After=prime-chain.service
-Wants=prime-chain.service
+After=mersennet.service
+Wants=mersennet.service
 
 [Service]
 Type=simple
-User=primechain
-Group=primechain
-ExecStart=/opt/prime-chain/bin/faucet \
+User=mersennet
+Group=mersennet
+ExecStart=/opt/mersennet/bin/faucet \
     --port 8080 \
     --rpc-url http://127.0.0.1:8545 \
-    --private-key /opt/prime-chain/keys/faucet-key.json
+    --private-key /opt/mersennet/keys/faucet-key.json
 Restart=always
 RestartSec=5
 Environment=RUST_LOG=info
-WorkingDirectory=/opt/prime-chain/data
+WorkingDirectory=/opt/mersennet/data
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=prime-chain-faucet
+SyslogIdentifier=mersennet-faucet
 
 [Install]
 WantedBy=multi-user.target

@@ -77,7 +77,7 @@ Run locally before opening a PR; all of these are also enforced by
 cargo check --workspace                                   # fast type-check
 cargo build --workspace                                   # default features
 cargo test --workspace --lib --tests                      # ~5 min, 241 tests
-cargo test -p prime-zkp --features prover                 # real crypto path (66 tests)
+cargo test -p mersennet-zkp --features prover                 # real crypto path (66 tests)
 cargo clippy --workspace -- -D warnings
 cargo fmt --check
 bash scripts/ci/check-privacy-invariants.sh               # CI K2 grep, 7 rules
@@ -191,8 +191,8 @@ Full runbook: [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/priva
 ```bash
 cargo build --workspace
 cargo test --workspace
-cargo run --bin prime-chain                  # devnet demo
-cargo run --bin prime-chain -- --rpc         # devnet with JSON-RPC on 8545
+cargo run --bin mersennet                  # devnet demo
+cargo run --bin mersennet -- --rpc         # devnet with JSON-RPC on 8545
 ```
 
 Solidity contracts:

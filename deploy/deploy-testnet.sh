@@ -62,9 +62,9 @@ echo
 # ---------------------------------------------------------------------------
 log "Building release binaries..."
 cd "$PROJECT_DIR"
-cargo build --release -p prime-chain-node 2>&1 | tail -3
+cargo build --release -p mersennet-node 2>&1 | tail -3
 
-BINARY="$PROJECT_DIR/target/release/prime-chain"
+BINARY="$PROJECT_DIR/target/release/mersennet"
 FAUCET_BIN="$PROJECT_DIR/target/release/faucet"
 GENESIS_BIN="$PROJECT_DIR/target/release/genesis"
 
@@ -113,9 +113,9 @@ with open('$CONFIG') as f:
 c['p2p']['listen'] = '0.0.0.0:30303'
 c['p2p']['peers'] = json.loads('$PEERS_JSON')
 c['p2p']['block_time_ms'] = $BLOCK_TIME_MS
-c['p2p']['node_key_path'] = '/opt/prime-chain/keys/node_key.json'
-c['p2p']['peer_store_path'] = '/opt/prime-chain/data/peers.json'
-c['engine']['state_path'] = '/opt/prime-chain/data/state'
+c['p2p']['node_key_path'] = '/opt/mersennet/keys/node_key.json'
+c['p2p']['peer_store_path'] = '/opt/mersennet/data/peers.json'
+c['engine']['state_path'] = '/opt/mersennet/data/state'
 c['rpc']['addr'] = '0.0.0.0:8545'
 with open('$CONFIG', 'w') as f:
     json.dump(c, f, indent=2)
@@ -139,9 +139,9 @@ with open('$RPC_CONFIG') as f:
 c['p2p']['listen'] = '0.0.0.0:30303'
 c['p2p']['peers'] = json.loads('$ALL_PEERS_JSON')
 c['p2p']['block_time_ms'] = $BLOCK_TIME_MS
-c['p2p']['node_key_path'] = '/opt/prime-chain/keys/node_key.json'
-c['p2p']['peer_store_path'] = '/opt/prime-chain/data/peers.json'
-c['engine']['state_path'] = '/opt/prime-chain/data/state'
+c['p2p']['node_key_path'] = '/opt/mersennet/keys/node_key.json'
+c['p2p']['peer_store_path'] = '/opt/mersennet/data/peers.json'
+c['engine']['state_path'] = '/opt/mersennet/data/state'
 c['rpc']['addr'] = '0.0.0.0:8545'
 c['ws'] = {'enabled': True, 'addr': '0.0.0.0:9945'}
 with open('$RPC_CONFIG', 'w') as f:
@@ -167,26 +167,26 @@ deploy_validator() {
 
     log "Deploying validator-$idx to $ip..."
 
-    ssh -o StrictHostKeyChecking=no "$ssh_target" "mkdir -p /tmp/prime-chain-deploy"
+    ssh -o StrictHostKeyChecking=no "$ssh_target" "mkdir -p /tmp/mersennet-deploy"
 
     scp -o StrictHostKeyChecking=no -q \
         "$BINARY" \
         "$GENESIS_DIR/configs/validator-${idx}.json" \
         "$SCRIPT_DIR/setup-node.sh" \
-        "$SCRIPT_DIR/prime-chain-validator.service" \
+        "$SCRIPT_DIR/mersennet-validator.service" \
         "$SCRIPT_DIR/firewall-validator.sh" \
-        "$ssh_target:/tmp/prime-chain-deploy/"
+        "$ssh_target:/tmp/mersennet-deploy/"
 
     # Also scp the key file separately (named differently from config)
     scp -o StrictHostKeyChecking=no -q \
         "$GENESIS_DIR/keys/validator-${idx}.json" \
-        "$ssh_target:/tmp/prime-chain-deploy/node_key.json"
+        "$ssh_target:/tmp/mersennet-deploy/node_key.json"
 
     ssh -o StrictHostKeyChecking=no "$ssh_target" "\
-        mv /tmp/prime-chain-deploy/validator-${idx}.json /tmp/prime-chain-deploy/config.json && \
-        cp /tmp/prime-chain-deploy/firewall-validator.sh /tmp/prime-chain-deploy/firewall.sh && \
-        chmod +x /tmp/prime-chain-deploy/setup-node.sh && \
-        bash /tmp/prime-chain-deploy/setup-node.sh validator"
+        mv /tmp/mersennet-deploy/validator-${idx}.json /tmp/mersennet-deploy/config.json && \
+        cp /tmp/mersennet-deploy/firewall-validator.sh /tmp/mersennet-deploy/firewall.sh && \
+        chmod +x /tmp/mersennet-deploy/setup-node.sh && \
+        bash /tmp/mersennet-deploy/setup-node.sh validator"
 
     log "  validator-$idx ($ip) deployed!"
 }
@@ -204,7 +204,7 @@ log "Deploying public node to $PUBLIC_NODE..."
 
 PUBLIC_SSH="$SSH_USER@$PUBLIC_NODE"
 
-ssh -o StrictHostKeyChecking=no "$PUBLIC_SSH" "mkdir -p /tmp/prime-chain-deploy"
+ssh -o StrictHostKeyChecking=no "$PUBLIC_SSH" "mkdir -p /tmp/mersennet-deploy"
 
 # Prepare Caddyfile with domains if set
 CADDYFILE="$SCRIPT_DIR/Caddyfile"
@@ -220,28 +220,28 @@ scp -o StrictHostKeyChecking=no -q \
     "$GENESIS_DIR/configs/rpc-node.json" \
     "$GENESIS_DIR/keys/faucet-key.json" \
     "$SCRIPT_DIR/setup-node.sh" \
-    "$SCRIPT_DIR/prime-chain-rpc.service" \
-    "$SCRIPT_DIR/prime-chain-faucet.service" \
+    "$SCRIPT_DIR/mersennet-rpc.service" \
+    "$SCRIPT_DIR/mersennet-faucet.service" \
     "$SCRIPT_DIR/firewall-public.sh" \
     "$CADDYFILE" \
-    "$PUBLIC_SSH:/tmp/prime-chain-deploy/"
+    "$PUBLIC_SSH:/tmp/mersennet-deploy/"
 
 # Copy monitoring stack
 scp -o StrictHostKeyChecking=no -q -r \
     "$SCRIPT_DIR/monitoring/"* \
-    "$PUBLIC_SSH:/tmp/prime-chain-deploy/"
+    "$PUBLIC_SSH:/tmp/mersennet-deploy/"
 
 # Copy Grafana dashboards
 scp -o StrictHostKeyChecking=no -q \
     "$PROJECT_DIR/monitoring/grafana/"*.json \
-    "$PUBLIC_SSH:/tmp/prime-chain-deploy/grafana/" 2>/dev/null || true
+    "$PUBLIC_SSH:/tmp/mersennet-deploy/grafana/" 2>/dev/null || true
 
 ssh -o StrictHostKeyChecking=no "$PUBLIC_SSH" "\
-    mv /tmp/prime-chain-deploy/rpc-node.json /tmp/prime-chain-deploy/config.json && \
-    cp /tmp/prime-chain-deploy/firewall-public.sh /tmp/prime-chain-deploy/firewall.sh && \
+    mv /tmp/mersennet-deploy/rpc-node.json /tmp/mersennet-deploy/config.json && \
+    cp /tmp/mersennet-deploy/firewall-public.sh /tmp/mersennet-deploy/firewall.sh && \
     export RPC_DOMAIN='${RPC_DOMAIN:-}' && \
-    chmod +x /tmp/prime-chain-deploy/setup-node.sh && \
-    bash /tmp/prime-chain-deploy/setup-node.sh public"
+    chmod +x /tmp/mersennet-deploy/setup-node.sh && \
+    bash /tmp/mersennet-deploy/setup-node.sh public"
 
 log "  public node ($PUBLIC_NODE) deployed!"
 echo
@@ -284,7 +284,7 @@ fi
 echo -e "${CYAN}╠══════════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  RPC:     http://$PUBLIC_NODE:8545"
 echo -e "${CYAN}║${NC}  Faucet:  http://$PUBLIC_NODE:8080"
-echo -e "${CYAN}║${NC}  Grafana: http://$PUBLIC_NODE:3000  (admin/primechain)"
+echo -e "${CYAN}║${NC}  Grafana: http://$PUBLIC_NODE:3000  (admin/changeme by default)"
 echo -e "${CYAN}║${NC}  Metrics: http://$PUBLIC_NODE:8545/metrics"
 if [ -n "${RPC_DOMAIN:-}" ]; then
     echo -e "${CYAN}║${NC}  TLS RPC: https://$RPC_DOMAIN"
@@ -295,7 +295,7 @@ echo
 if $ALL_OK; then
     log "${GREEN}Testnet deployment complete! All nodes healthy.${NC}"
 else
-    warn "Some nodes are still starting. Check with: ssh $SSH_USER@<IP> journalctl -u prime-chain -f"
+    warn "Some nodes are still starting. Check with: ssh $SSH_USER@<IP> journalctl -u mersennet -f"
 fi
 
 # Save deployment info

@@ -1,12 +1,12 @@
 /**
- * @prime-chain/sdk - TypeScript SDK for Mersennet
+ * @mersennet/sdk - TypeScript SDK for Mersennet
  *
  * Mersennet is a Layer 1 blockchain with JSON-RPC API and WebSocket subscriptions.
  * This SDK provides a typed interface for eth_*, prime_*, and primeorders_* methods.
  *
  * @example
  * ```ts
- * import { PrimeProvider, PrimeOrders } from '@prime-chain/sdk';
+ * import { PrimeProvider, PrimeOrders } from '@mersennet/sdk';
  *
  * const provider = new PrimeProvider('http://localhost:8545');
  * const orders = new PrimeOrders(provider);

@@ -69,20 +69,20 @@ cargo build --workspace --features prover                 # real BN254/BLS crypt
 ### Run (devnet demo)
 
 ```bash
-cargo run --bin prime-chain
+cargo run --bin mersennet
 ```
 
 ### Run with config + RPC
 
 ```bash
-cargo run --bin prime-chain -- --config path/to/config.json --rpc
+cargo run --bin mersennet -- --config path/to/config.json --rpc
 ```
 
 ### Tests
 
 ```bash
 cargo test --workspace                                    # full suite, 241 tests (~5 min)
-cargo test -p prime-zkp --features prover                 # cryptographic tests
+cargo test -p mersennet-zkp --features prover                 # cryptographic tests
 bash scripts/ci/check-privacy-invariants.sh               # CI K2 privacy grep
 ```
 
@@ -118,7 +118,7 @@ Full runbook: [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/priva
 
 ```
 crates/                         — Rust workspace (6 crates)
-├── core/                       — Engine, state, consensus, crypto (package `prime-chain`)
+├── core/                       — Engine, state, consensus, crypto (package `mersennet`)
 │   └── src/
 │       ├── engine.rs                 — block production
 │       ├── engine_snapshot.rs        — PZS1 versioned snapshot envelope
@@ -130,19 +130,19 @@ crates/                         — Rust workspace (6 crates)
 │       ├── dkg.rs                    — Pedersen-DKG coordinator
 │       ├── shielded_persistence.rs   — redb-backed shielded storage
 │       └── state_proof.rs            — SP1 state-transition proof glue
-├── network/                    — P2P transport layer (`prime-chain-network`)
-├── rpc/                        — JSON-RPC + WebSocket server (`prime-chain-rpc`)
+├── network/                    — P2P transport layer (`mersennet-network`)
+├── rpc/                        — JSON-RPC + WebSocket server (`mersennet-rpc`)
 │   ├── src/rpc_shielded.rs           — prime_submit*/prime_get* shielded methods
 │   └── src/ws.rs                     — newShieldedRoot, newClearingPrice…
-├── node/                       — CLI entrypoints (`prime-chain-node`)
+├── node/                       — CLI entrypoints (`mersennet-node`)
 │   └── src/bin/
-│       ├── prime-chain.rs            — main node binary
+│       ├── mersennet.rs            — main node binary
 │       ├── genesis.rs                — generates validator keys + configs
 │       ├── migrate_genesis.rs        — transparent → privacy migration (`migrate-genesis`)
 │       ├── faucet.rs                 — testnet faucet
 │       └── loadtest.rs / stresstest.rs
-├── state-proof/                — proof envelope types shared with the SP1 host (`prime-state-proof`)
-└── zkp/                        — ZK primitives (`prime-zkp`)
+├── state-proof/                — proof envelope types shared with the SP1 host (`mersennet-state-proof`)
+└── zkp/                        — ZK primitives (`mersennet-zkp`)
     ├── src/poseidon.rs               — Poseidon-2 BN254 (Aztec-pinned)
     ├── src/pedersen.rs               — BN254 Pedersen commitment
     ├── src/bls_threshold.rs          — BLS12-381 threshold ElGamal
@@ -204,11 +204,11 @@ All ecosystem applications live in their own repositories:
 | **PrimeSwap V2** | [primeswap-v2](https://github.com/PrimeNumbersLabs/primeswap-v2) | Uniswap V2-style AMM DEX (React) |
 | **PrimeSwap V3** | [primeswap-v3](https://github.com/PrimeNumbersLabs/primeswap-v3) | Concentrated liquidity DEX frontend |
 | **PrimeSwap DEX** | [primeswap-dex](https://github.com/PrimeNumbersLabs/primeswap-dex) | Lightweight swap interface (vanilla JS) |
-| **Validator Explorer** | [prime-chain-explorer](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Validator staking metrics and delegation UI |
+| **Validator Explorer** | [mersennet-explorer](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Validator staking metrics and delegation UI |
 | **Node Dashboard** | [primenodes-dashboard](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator monitoring and analytics |
 | **Faucet** | [prime-faucet](https://github.com/PrimeNumbersLabs/prime-faucet) | Testnet PRIM token faucet |
 | **Trading Bots** | [prime-bots](https://github.com/PrimeNumbersLabs/prime-bots) | Market maker, trader, and volume bots for CLOB testing |
-| **SDK** | [prime-chain-sdk](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK for JSON-RPC and PrimeOrders |
+| **SDK** | [mersennet-sdk](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK for JSON-RPC and PrimeOrders |
 
 ## Testnet
 

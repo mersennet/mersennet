@@ -13,13 +13,13 @@
 //!    shielded state is non-empty, and the transparent balances
 //!    are mirrored correctly.
 
-use prime_chain::engine::Engine;
-use prime_chain::engine_snapshot::{
+use mersennet::engine::Engine;
+use mersennet::engine_snapshot::{
     EngineSnapshotEnvelope, ShieldedSnapshotData, encode_transparent_balances,
 };
-use prime_chain::liquidation_auction::LiquidationAuction;
-use prime_chain::shielded_evm::{MigrationPlan, ShieldedEvm};
-use prime_zkp::Fr;
+use mersennet::liquidation_auction::LiquidationAuction;
+use mersennet::shielded_evm::{MigrationPlan, ShieldedEvm};
+use mersennet_zkp::Fr;
 use revm::primitives::{Address, U256};
 
 #[test]

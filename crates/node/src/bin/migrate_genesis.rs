@@ -31,7 +31,7 @@
 //!    EVM tables can be read out account-by-account.
 //! 3. For each EOA with positive transparent balance, compute the
 //!    shielded migration note via
-//!    [`prime_chain::shielded_evm::derive_migration_*`] and insert
+//!    [`mersennet::shielded_evm::derive_migration_*`] and insert
 //!    it into a fresh `ShieldedState`.
 //! 4. Re-encode the snapshot with `shielded` populated and stamp
 //!    the activation height + chain ID.
@@ -44,13 +44,13 @@
 //! so consensus on the privacy-fork block is automatic.
 
 use anyhow::{Context, Result, bail};
-use prime_chain::engine::Engine;
-use prime_chain::engine_snapshot::{
+use mersennet::engine::Engine;
+use mersennet::engine_snapshot::{
     EngineSnapshotEnvelope, ShieldedSnapshotData, encode_transparent_balances,
 };
-use prime_chain::liquidation_auction::LiquidationAuction;
-use prime_chain::shielded_evm::{MigrationPlan, ShieldedEvm};
-use prime_zkp::Fr;
+use mersennet::liquidation_auction::LiquidationAuction;
+use mersennet::shielded_evm::{MigrationPlan, ShieldedEvm};
+use mersennet_zkp::Fr;
 use revm::primitives::{Address, U256};
 use std::collections::HashMap;
 use std::path::PathBuf;

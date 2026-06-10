@@ -58,7 +58,7 @@ cd prime-chain
 cargo build --release
 ```
 
-The binary will be at `target/release/prime-chain` (built from the `prime-chain-node` crate).
+The binary will be at `target/release/mersennet` (built from the `mersennet-node` crate).
 
 ## Configuration
 
@@ -70,11 +70,11 @@ Mersennet uses a JSON configuration file. Create `config.json` with the sections
 {
   "engine": {
     "chain_id": 7919,
-    "state_path": "/var/lib/prime-chain/state",
+    "state_path": "/var/lib/mersennet/state",
     "storage_backend": "sled"
   },
   "p2p": {
-    "node_key_path": "/var/lib/prime-chain/state/node_key.json",
+    "node_key_path": "/var/lib/mersennet/state/node_key.json",
     "listen": "0.0.0.0:30303",
     "peers": ["46.225.30.187:30303"],
     "block_time_ms": 1000
@@ -213,7 +213,7 @@ Example `genesis` section:
 Run the node with your config in validator mode:
 
 ```bash
-./target/release/prime-chain \
+./target/release/mersennet \
   --config config.json \
   --mode validator
 ```
@@ -241,14 +241,14 @@ For production deployments, run the node as a systemd service with proper resour
 ### Create a Dedicated User
 
 ```bash
-sudo useradd --system --home-dir /var/lib/prime-chain --shell /usr/sbin/nologin prime
-sudo mkdir -p /var/lib/prime-chain/state
-sudo chown -R prime:prime /var/lib/prime-chain
+sudo useradd --system --home-dir /var/lib/mersennet --shell /usr/sbin/nologin mersennet
+sudo mkdir -p /var/lib/mersennet/state
+sudo chown -R mersennet:mersennet /var/lib/mersennet
 ```
 
 ### Service File
 
-Create `/etc/systemd/system/prime-chain.service`:
+Create `/etc/systemd/system/mersennet.service`:
 
 ```ini
 [Unit]
@@ -259,12 +259,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=prime
-Group=prime
-WorkingDirectory=/var/lib/prime-chain
+User=mersennet
+Group=mersennet
+WorkingDirectory=/var/lib/mersennet
 
-ExecStart=/usr/local/bin/prime-chain \
-    --config /etc/prime-chain/config.json \
+ExecStart=/usr/local/bin/mersennet \
+    --config /etc/mersennet/config.json \
     --mode validator
 
 Restart=always
@@ -275,13 +275,13 @@ StartLimitBurst=5
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=prime-chain
+SyslogIdentifier=mersennet
 
 # Security hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/prime-chain
+ReadWritePaths=/var/lib/mersennet
 PrivateTmp=yes
 
 # Resource limits
@@ -301,21 +301,21 @@ WantedBy=multi-user.target
 
 ```bash
 # Copy binary
-sudo cp target/release/prime-chain /usr/local/bin/
-sudo chmod +x /usr/local/bin/prime-chain
+sudo cp target/release/mersennet /usr/local/bin/
+sudo chmod +x /usr/local/bin/mersennet
 
 # Copy config
-sudo mkdir -p /etc/prime-chain
-sudo cp config.json /etc/prime-chain/
+sudo mkdir -p /etc/mersennet
+sudo cp config.json /etc/mersennet/
 
 # Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable prime-chain
-sudo systemctl start prime-chain
+sudo systemctl enable mersennet
+sudo systemctl start mersennet
 
 # Check status
-sudo systemctl status prime-chain
-sudo journalctl -u prime-chain -f
+sudo systemctl status mersennet
+sudo journalctl -u mersennet -f
 ```
 
 ### Log Levels
@@ -327,10 +327,10 @@ Control verbosity via the `RUST_LOG` environment variable:
 Environment="RUST_LOG=info"
 
 # Debug networking issues
-Environment="RUST_LOG=info,prime_chain_network=debug"
+Environment="RUST_LOG=info,mersennet_network=debug"
 
 # Trace EVM execution (very verbose)
-Environment="RUST_LOG=info,prime_chain::engine=trace"
+Environment="RUST_LOG=info,mersennet::engine=trace"
 
 # Quiet mode — warnings and errors only
 Environment="RUST_LOG=warn"
@@ -378,27 +378,27 @@ Mersennet exposes Prometheus-compatible metrics at the `/metrics` endpoint on th
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `prime_chain_up` | Gauge | Node liveness (always 1 while running) |
-| `prime_chain_height` | Gauge | Latest committed block height |
-| `prime_chain_blocks_produced_total` | Counter | Total blocks produced |
-| `prime_chain_block_gas_used` | Gauge | Gas consumed in latest block |
-| `prime_chain_block_tx_count` | Gauge | Transaction count in latest block |
-| `prime_chain_block_execution_seconds` | Histogram | Block execution duration |
-| `prime_chain_base_fee_wei` | Gauge | Current EIP-1559 base fee |
-| `prime_chain_consensus_rounds` | Counter | Total consensus rounds |
-| `prime_chain_consensus_finalized` | Counter | Total blocks finalized |
-| `prime_chain_validators_active` | Gauge | Active validator count |
-| `prime_chain_total_stake` | Gauge | Total staked PRIM |
-| `prime_chain_slashing_events` | Counter | Slashing events by kind |
-| `prime_chain_mempool_size` | Gauge | Current mempool transaction count |
-| `prime_chain_mempool_rejected` | Counter | Rejected transactions by reason |
-| `prime_chain_rpc_requests` | Counter | RPC requests by method |
-| `prime_chain_rpc_errors` | Counter | RPC errors by method and code |
-| `prime_chain_rpc_duration_seconds` | Histogram | RPC request duration |
-| `prime_chain_orders_submitted` | Counter | Orders submitted to order book |
-| `prime_chain_orders_filled` | Counter | Orders fully filled |
-| `prime_chain_trades_executed` | Counter | Trade fills executed |
-| `prime_chain_markets_active` | Gauge | Active markets count |
+| `mersennet_up` | Gauge | Node liveness (always 1 while running) |
+| `mersennet_height` | Gauge | Latest committed block height |
+| `mersennet_blocks_produced_total` | Counter | Total blocks produced |
+| `mersennet_block_gas_used` | Gauge | Gas consumed in latest block |
+| `mersennet_block_tx_count` | Gauge | Transaction count in latest block |
+| `mersennet_block_execution_seconds` | Histogram | Block execution duration |
+| `mersennet_base_fee_wei` | Gauge | Current EIP-1559 base fee |
+| `mersennet_consensus_rounds` | Counter | Total consensus rounds |
+| `mersennet_consensus_finalized` | Counter | Total blocks finalized |
+| `mersennet_validators_active` | Gauge | Active validator count |
+| `mersennet_total_stake` | Gauge | Total staked PRIM |
+| `mersennet_slashing_events` | Counter | Slashing events by kind |
+| `mersennet_mempool_size` | Gauge | Current mempool transaction count |
+| `mersennet_mempool_rejected` | Counter | Rejected transactions by reason |
+| `mersennet_rpc_requests` | Counter | RPC requests by method |
+| `mersennet_rpc_errors` | Counter | RPC errors by method and code |
+| `mersennet_rpc_duration_seconds` | Histogram | RPC request duration |
+| `mersennet_orders_submitted` | Counter | Orders submitted to order book |
+| `mersennet_orders_filled` | Counter | Orders fully filled |
+| `mersennet_trades_executed` | Counter | Trade fills executed |
+| `mersennet_markets_active` | Gauge | Active markets count |
 
 ### Prometheus Configuration
 
@@ -406,13 +406,13 @@ Add the following scrape target to your `prometheus.yml`:
 
 ```yaml
 scrape_configs:
-  - job_name: 'prime-chain'
+  - job_name: 'mersennet'
     scrape_interval: 15s
     metrics_path: '/metrics'
     static_configs:
       - targets: ['localhost:8545']
         labels:
-          chain: 'prime-chain-testnet'
+          chain: 'mersennet-testnet'
           node: 'validator-01'
 ```
 
@@ -434,10 +434,10 @@ Recommended Prometheus alert rules:
 
 ```yaml
 groups:
-  - name: prime-chain
+  - name: mersennet
     rules:
       - alert: NodeDown
-        expr: up{job="prime-chain"} == 0
+        expr: up{job="mersennet"} == 0
         for: 1m
         labels:
           severity: critical
@@ -445,7 +445,7 @@ groups:
           summary: "Mersennet node is down"
 
       - alert: BlockProductionStalled
-        expr: increase(prime_chain_blocks_produced_total[5m]) == 0
+        expr: increase(mersennet_blocks_produced_total[5m]) == 0
         for: 5m
         labels:
           severity: critical
@@ -453,7 +453,7 @@ groups:
           summary: "No blocks produced in 5 minutes"
 
       - alert: HighMempoolSize
-        expr: prime_chain_mempool_size > 8000
+        expr: mersennet_mempool_size > 8000
         for: 2m
         labels:
           severity: warning
@@ -461,14 +461,14 @@ groups:
           summary: "Mempool approaching capacity"
 
       - alert: SlashingEvent
-        expr: increase(prime_chain_slashing_events[5m]) > 0
+        expr: increase(mersennet_slashing_events[5m]) > 0
         labels:
           severity: critical
         annotations:
           summary: "Validator slashing event detected"
 
       - alert: ConsensusTimeouts
-        expr: increase(prime_chain_consensus_rounds[5m]) - increase(prime_chain_consensus_finalized[5m]) > 10
+        expr: increase(mersennet_consensus_rounds[5m]) - increase(mersennet_consensus_finalized[5m]) > 10
         for: 5m
         labels:
           severity: warning
@@ -491,32 +491,32 @@ groups:
 
 ```bash
 # Stop the node first to ensure consistent state
-sudo systemctl stop prime-chain
+sudo systemctl stop mersennet
 
 # Create timestamped backup
-BACKUP_DIR="/backups/prime-chain/$(date +%Y%m%d-%H%M%S)"
+BACKUP_DIR="/backups/mersennet/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
-cp -r /var/lib/prime-chain/state "$BACKUP_DIR/"
-cp /etc/prime-chain/config.json "$BACKUP_DIR/"
+cp -r /var/lib/mersennet/state "$BACKUP_DIR/"
+cp /etc/mersennet/config.json "$BACKUP_DIR/"
 
 # Restart the node
-sudo systemctl start prime-chain
+sudo systemctl start mersennet
 ```
 
 ### Restore Procedure
 
 ```bash
 # Stop the node
-sudo systemctl stop prime-chain
+sudo systemctl stop mersennet
 
 # Restore from backup
-BACKUP_DIR="/backups/prime-chain/20260101-120000"
-rm -rf /var/lib/prime-chain/state
-cp -r "$BACKUP_DIR/state" /var/lib/prime-chain/
-chown -R prime:prime /var/lib/prime-chain
+BACKUP_DIR="/backups/mersennet/20260101-120000"
+rm -rf /var/lib/mersennet/state
+cp -r "$BACKUP_DIR/state" /var/lib/mersennet/
+chown -R mersennet:mersennet /var/lib/mersennet
 
 # Start the node — it will catch up from the restored height
-sudo systemctl start prime-chain
+sudo systemctl start mersennet
 ```
 
 :::warning
@@ -533,7 +533,7 @@ Never run two nodes with the same `node_key.json` simultaneously — this may tr
 |---------|-------|----------|
 | `failed to read config file` | Config path wrong or missing | Check `--config` path; ensure file exists and is valid JSON |
 | `address already in use` | Port conflict (8545, 30303, or 9945) | Stop conflicting process or change port in config |
-| `permission denied` | File/directory permissions | `chown -R prime:prime /var/lib/prime-chain` |
+| `permission denied` | File/directory permissions | `chown -R mersennet:mersennet /var/lib/mersennet` |
 | `failed to install Prometheus metrics exporter` | Duplicate recorder initialization | Ensure only one node instance is running |
 
 #### Node not producing blocks
@@ -564,10 +564,10 @@ Never run two nodes with the same `node_key.json` simultaneously — this may tr
 
 ```bash
 # Check node status
-sudo systemctl status prime-chain
+sudo systemctl status mersennet
 
 # Follow logs in real time
-sudo journalctl -u prime-chain -f
+sudo journalctl -u mersennet -f
 
 # Check block height via RPC
 curl -s http://localhost:8545 -X POST \
@@ -585,10 +585,10 @@ curl -s http://localhost:8545 -X POST \
   -d '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' | jq
 
 # View Prometheus metrics
-curl -s http://localhost:8545/metrics | grep prime_chain_height
+curl -s http://localhost:8545/metrics | grep mersennet_height
 
 # Check disk usage
-du -sh /var/lib/prime-chain/state/
+du -sh /var/lib/mersennet/state/
 ```
 
 ## Next Steps

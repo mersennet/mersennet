@@ -1,5 +1,5 @@
 [package]
-name = "prime-zkp"
+name = "mersennet-zkp"
 version = "0.1.0"
 authors = ["PrimeNumbers Labs"]
 edition = "2024"

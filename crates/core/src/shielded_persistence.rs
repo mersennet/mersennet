@@ -57,7 +57,7 @@ impl std::fmt::Debug for ShieldedPersistence {
 
 impl ShieldedPersistence {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let db_path = path.as_ref().join("prime_chain_shielded.redb");
+        let db_path = path.as_ref().join("mersennet_shielded.redb");
         let db =
             Database::create(&db_path).with_context(|| format!("opening {}", db_path.display()))?;
 
@@ -318,7 +318,7 @@ impl ShieldedPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prime_zkp::{Fr, NoteCommitment, Nullifier};
+    use mersennet_zkp::{Fr, NoteCommitment, Nullifier};
 
     #[test]
     fn save_and_load_roundtrip() {

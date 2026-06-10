@@ -175,12 +175,12 @@ Use the CLI to stream state snapshots over TCP in chunks with hash verification.
 
 **Serve a snapshot**:
 ```
-prime-chain --snapshot-listen 127.0.0.1:43000
+mersennet --snapshot-listen 127.0.0.1:43000
 ```
 
 **Fetch a snapshot**:
 ```
-prime-chain --snapshot-fetch 127.0.0.1:43000 --snapshot-out snapshot.bin
+mersennet --snapshot-fetch 127.0.0.1:43000 --snapshot-out snapshot.bin
 ```
 
 **Optional tuning**:

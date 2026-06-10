@@ -62,12 +62,12 @@ programs/       — SP1 program (state-transition proof body)
 
 | Crate | Purpose | Key entry points |
 |---|---|---|
-| `prime-chain` (`crates/core`) | Engine, state, consensus, shielded subsystems | [`engine.rs`](../crates/core/src/engine.rs) |
-| `prime-chain-network` (`crates/network`) | P2P transport | `p2p.rs` |
-| `prime-chain-rpc` (`crates/rpc`) | JSON-RPC + WebSocket | [`rpc.rs`](../crates/rpc/src/rpc.rs), [`rpc_shielded.rs`](../crates/rpc/src/rpc_shielded.rs), [`ws.rs`](../crates/rpc/src/ws.rs) |
-| `prime-chain-node` (`crates/node`) | Binaries — `prime-chain`, `genesis`, `migrate-genesis`, `faucet`, `loadtest`, `stresstest` | `src/bin/*.rs` |
-| `prime-zkp` (`crates/zkp`) | ZK primitives — Poseidon, Pedersen, BLS threshold, merkle, nullifier, noir/sp1 stubs | `src/lib.rs` |
-| `prime-state-proof` (`crates/state-proof`) | revm-free state-transition proof envelopes + SP1 prover/verifier glue | `src/lib.rs` |
+| `mersennet` (`crates/core`) | Engine, state, consensus, shielded subsystems | [`engine.rs`](../crates/core/src/engine.rs) |
+| `mersennet-network` (`crates/network`) | P2P transport | `p2p.rs` |
+| `mersennet-rpc` (`crates/rpc`) | JSON-RPC + WebSocket | [`rpc.rs`](../crates/rpc/src/rpc.rs), [`rpc_shielded.rs`](../crates/rpc/src/rpc_shielded.rs), [`ws.rs`](../crates/rpc/src/ws.rs) |
+| `mersennet-node` (`crates/node`) | Binaries — `mersennet`, `genesis`, `migrate-genesis`, `faucet`, `loadtest`, `stresstest` | `src/bin/*.rs` |
+| `mersennet-zkp` (`crates/zkp`) | ZK primitives — Poseidon, Pedersen, BLS threshold, merkle, nullifier, noir/sp1 stubs | `src/lib.rs` |
+| `mersennet-state-proof` (`crates/state-proof`) | revm-free state-transition proof envelopes + SP1 prover/verifier glue | `src/lib.rs` |
 
 ### Shielded subsystem map (where the privacy work lives)
 
@@ -154,8 +154,8 @@ cargo build --workspace --features prover  # real BN254 + BLS crypto
 
 ```bash
 cargo test --workspace --lib --tests       # 241 tests, ~5 min
-cargo test -p prime-zkp --features prover  # 43 cryptographic tests
-cargo test -p prime-chain --test privacy_migration_e2e  # migration E2E
+cargo test -p mersennet-zkp --features prover  # 43 cryptographic tests
+cargo test -p mersennet --test privacy_migration_e2e  # migration E2E
 ```
 
 ### Lint + format
@@ -169,7 +169,7 @@ bash scripts/ci/check-privacy-invariants.sh
 ### Run a single-node devnet
 
 ```bash
-cargo run --bin prime-chain -- --rpc
+cargo run --bin mersennet -- --rpc
 # JSON-RPC at http://127.0.0.1:8545
 # Metrics at http://127.0.0.1:8545/metrics
 ```
@@ -206,7 +206,7 @@ Standard Ethereum-style methods plus `prime_*` extensions:
 | Method | Purpose |
 |---|---|
 | `eth_blockNumber`, `eth_getBlockByNumber` (header-only post-fork), `eth_call`, `eth_sendRawTransaction`, … | Standard EVM |
-| `prime_chainId`, `prime_blockNumber`, `prime_getBalance`, `prime_validators`, … | `prime_*` aliases + chain extensions |
+| `mersennetId`, `prime_blockNumber`, `prime_getBalance`, `prime_validators`, … | `prime_*` aliases + chain extensions |
 | `primeorders_addMarket`, `primeorders_getOrderBook`, `primeorders_submitOrder`, `primeorders_cancelOrder`, … | PrimeOrders CLOB |
 | `primebridge_enqueueOrdersToEvm` / `primebridge_dequeueEvmToOrders` (and the reverse pair) | Bridge queues |
 

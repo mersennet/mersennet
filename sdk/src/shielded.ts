@@ -140,8 +140,8 @@ export interface GrantedNoteScanResult {
  * Usage:
  *
  * ```ts
- * import { PrimeProvider } from '@prime-chain/sdk';
- * import { ShieldedClient, ViewingKey } from '@prime-chain/sdk/shielded';
+ * import { PrimeProvider } from '@mersennet/sdk';
+ * import { ShieldedClient, ViewingKey } from '@mersennet/sdk/shielded';
  *
  * const provider = new PrimeProvider('https://rpc.primechain.xyz');
  * const vk = ViewingKeyHelpers.fromSeed('my recovery phrase');

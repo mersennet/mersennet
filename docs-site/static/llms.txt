@@ -17,7 +17,7 @@
 - [ERC-20 Token Guide](/developers/contracts/erc20-guide): Deploy and interact with ERC-20 tokens.
 - [JSON-RPC Overview](/developers/rpc/overview): RPC architecture and Mersennet extensions.
 - [JSON-RPC Methods](/developers/rpc/methods): Complete method reference (eth_*, prime_*, primeorders_*).
-- [JavaScript SDK](/developers/sdks/javascript): @prime-chain/sdk usage and API reference.
+- [JavaScript SDK](/developers/sdks/javascript): @mersennet/sdk usage and API reference.
 
 ## Architecture
 

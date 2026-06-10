@@ -3,10 +3,10 @@
 //! Covers: ReDB backend, parallel execution, WebSocket, pipeline, ZK proofs,
 //! Noise encryption, FBA, and commit-reveal.
 
-use prime_chain::commit_reveal::CommitRevealError;
-use prime_chain::engine::{Engine, Transaction};
-use prime_chain::fba::BatchOrder;
-use prime_chain::prime_orders::{Side, TimeInForce};
+use mersennet::commit_reveal::CommitRevealError;
+use mersennet::engine::{Engine, Transaction};
+use mersennet::fba::BatchOrder;
+use mersennet::prime_orders::{Side, TimeInForce};
 use revm::primitives::{Address, B256, Bytes, U256, keccak256};
 use std::time::Duration;
 use tempfile::tempdir;
@@ -239,7 +239,7 @@ fn parallel_execution_matches_sequential() {
 
 #[test]
 fn pipeline_buffer_and_drain() {
-    use prime_chain::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
+    use mersennet::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
 
     let config = PipelineConfig {
         pipeline_depth: 2,
@@ -285,8 +285,8 @@ fn pipeline_buffer_and_drain() {
 
 #[test]
 fn mock_prover_roundtrip() {
-    use prime_chain::zk_proofs::{MockProver, StateProver};
-    use prime_zkp::sp1::BlockProgramOutput;
+    use mersennet::zk_proofs::{MockProver, StateProver};
+    use mersennet_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
     let output = BlockProgramOutput {
@@ -314,8 +314,8 @@ fn mock_prover_roundtrip() {
 
 #[test]
 fn checkpoint_store_chain_verification() {
-    use prime_chain::zk_proofs::{CheckpointStore, MockProver, ProofCheckpoint};
-    use prime_zkp::sp1::BlockProgramOutput;
+    use mersennet::zk_proofs::{CheckpointStore, MockProver, ProofCheckpoint};
+    use mersennet_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
     let mut store = CheckpointStore::new(100);
@@ -372,8 +372,8 @@ fn checkpoint_store_chain_verification() {
 
 #[test]
 fn batch_proof_aggregation() {
-    use prime_chain::zk_proofs::{BatchProofAggregator, MockProver};
-    use prime_zkp::sp1::BlockProgramOutput;
+    use mersennet::zk_proofs::{BatchProofAggregator, MockProver};
+    use mersennet_zkp::sp1::BlockProgramOutput;
 
     let prover = MockProver::new();
     let mut aggregator = BatchProofAggregator::new(3);
@@ -452,7 +452,7 @@ fn fba_engine_full_auction_cycle() {
 
 #[test]
 fn commit_reveal_full_cycle() {
-    use prime_chain::commit_reveal::{CommitRevealPool, TxCommitment, TxReveal};
+    use mersennet::commit_reveal::{CommitRevealPool, TxCommitment, TxReveal};
 
     let mut pool = CommitRevealPool::new(10);
     pool.current_block = 0;

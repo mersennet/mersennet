@@ -12,57 +12,57 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl ufw docker.io docker-compose >/dev/null 2>&1 || true
 
-if ! id -u primechain >/dev/null 2>&1; then
-    useradd -r -m -s /bin/bash primechain
+if ! id -u mersennet >/dev/null 2>&1; then
+    useradd -r -m -s /bin/bash mersennet
 fi
 
-mkdir -p /opt/prime-chain/{bin,config,data,keys}
-chown -R primechain:primechain /opt/prime-chain
+mkdir -p /opt/mersennet/{bin,config,data,keys}
+chown -R mersennet:mersennet /opt/mersennet
 
-cp /tmp/prime-chain-deploy/prime-chain /opt/prime-chain/bin/
-cp /tmp/prime-chain-deploy/faucet     /opt/prime-chain/bin/ 2>/dev/null || true
-cp /tmp/prime-chain-deploy/genesis    /opt/prime-chain/bin/ 2>/dev/null || true
-chmod +x /opt/prime-chain/bin/*
+cp /tmp/mersennet-deploy/mersennet /opt/mersennet/bin/
+cp /tmp/mersennet-deploy/faucet     /opt/mersennet/bin/ 2>/dev/null || true
+cp /tmp/mersennet-deploy/genesis    /opt/mersennet/bin/ 2>/dev/null || true
+chmod +x /opt/mersennet/bin/*
 
-cp /tmp/prime-chain-deploy/config.json  /opt/prime-chain/config/
-cp /tmp/prime-chain-deploy/node_key.json /opt/prime-chain/keys/ 2>/dev/null || true
+cp /tmp/mersennet-deploy/config.json  /opt/mersennet/config/
+cp /tmp/mersennet-deploy/node_key.json /opt/mersennet/keys/ 2>/dev/null || true
 
-chown -R primechain:primechain /opt/prime-chain
+chown -R mersennet:mersennet /opt/mersennet
 
 if [ "$NODE_ROLE" = "validator" ]; then
-    cp /tmp/prime-chain-deploy/prime-chain-validator.service /etc/systemd/system/prime-chain.service
+    cp /tmp/mersennet-deploy/mersennet-validator.service /etc/systemd/system/mersennet.service
 elif [ "$NODE_ROLE" = "public" ]; then
-    cp /tmp/prime-chain-deploy/prime-chain-rpc.service /etc/systemd/system/prime-chain.service
+    cp /tmp/mersennet-deploy/mersennet-rpc.service /etc/systemd/system/mersennet.service
 fi
 
-if [ -f /tmp/prime-chain-deploy/prime-chain-faucet.service ]; then
-    cp /tmp/prime-chain-deploy/prime-chain-faucet.service /etc/systemd/system/prime-chain-faucet.service
-    cp /tmp/prime-chain-deploy/faucet-key.json /opt/prime-chain/keys/
-    chown primechain:primechain /opt/prime-chain/keys/faucet-key.json
+if [ -f /tmp/mersennet-deploy/mersennet-faucet.service ]; then
+    cp /tmp/mersennet-deploy/mersennet-faucet.service /etc/systemd/system/mersennet-faucet.service
+    cp /tmp/mersennet-deploy/faucet-key.json /opt/mersennet/keys/
+    chown mersennet:mersennet /opt/mersennet/keys/faucet-key.json
 fi
 
-cp /tmp/prime-chain-deploy/firewall.sh /tmp/firewall.sh 2>/dev/null || true
+cp /tmp/mersennet-deploy/firewall.sh /tmp/firewall.sh 2>/dev/null || true
 if [ -f /tmp/firewall.sh ]; then
     chmod +x /tmp/firewall.sh
     bash /tmp/firewall.sh
 fi
 
 systemctl daemon-reload
-systemctl enable prime-chain
-systemctl restart prime-chain
+systemctl enable mersennet
+systemctl restart mersennet
 
-if [ -f /etc/systemd/system/prime-chain-faucet.service ]; then
-    systemctl enable prime-chain-faucet
-    systemctl restart prime-chain-faucet
+if [ -f /etc/systemd/system/mersennet-faucet.service ]; then
+    systemctl enable mersennet-faucet
+    systemctl restart mersennet-faucet
 fi
 
-if [ "$NODE_ROLE" = "public" ] && [ -f /tmp/prime-chain-deploy/docker-compose.monitoring.yml ]; then
-    mkdir -p /opt/prime-chain/monitoring
-    cp /tmp/prime-chain-deploy/docker-compose.monitoring.yml /opt/prime-chain/monitoring/docker-compose.yml
-    cp /tmp/prime-chain-deploy/prometheus.yml /opt/prime-chain/monitoring/
-    mkdir -p /opt/prime-chain/monitoring/grafana
-    cp /tmp/prime-chain-deploy/grafana/*.json /opt/prime-chain/monitoring/grafana/ 2>/dev/null || true
-    cd /opt/prime-chain/monitoring
+if [ "$NODE_ROLE" = "public" ] && [ -f /tmp/mersennet-deploy/docker-compose.monitoring.yml ]; then
+    mkdir -p /opt/mersennet/monitoring
+    cp /tmp/mersennet-deploy/docker-compose.monitoring.yml /opt/mersennet/monitoring/docker-compose.yml
+    cp /tmp/mersennet-deploy/prometheus.yml /opt/mersennet/monitoring/
+    mkdir -p /opt/mersennet/monitoring/grafana
+    cp /tmp/mersennet-deploy/grafana/*.json /opt/mersennet/monitoring/grafana/ 2>/dev/null || true
+    cd /opt/mersennet/monitoring
     docker-compose up -d || true
 fi
 
@@ -71,7 +71,7 @@ if [ -n "${RPC_DOMAIN:-}" ] && [ "$NODE_ROLE" = "public" ]; then
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || true
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null 2>&1 || true
     apt-get update -qq && apt-get install -y -qq caddy >/dev/null 2>&1 || true
-    cp /tmp/prime-chain-deploy/Caddyfile /etc/caddy/Caddyfile
+    cp /tmp/mersennet-deploy/Caddyfile /etc/caddy/Caddyfile
     systemctl reload caddy || systemctl restart caddy || true
 fi
 

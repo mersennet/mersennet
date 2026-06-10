@@ -73,7 +73,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Location | Description |
 |------|----------|-------------|
-| Docker image CI | `.github/workflows/ci.yml` | Build multi-arch Docker images on push/tag. Push to GitHub Container Registry (`ghcr.io/primenumberslabs/prime-chain`). |
+| Docker image CI | `.github/workflows/ci.yml` | Build multi-arch Docker images on push/tag. Push to GitHub Container Registry (`ghcr.io/primenumberslabs/mersennet`). |
 | Integration test job | `.github/workflows/integration.yml` | Spin up 3-node Docker testnet in CI. Run RPC conformance test suite against it (eth_* method coverage). |
 | Contract test suite | `contracts/test/` | Hardhat/Foundry tests for WPRIM, PrimeSwapFactory, PrimeSwapRouter, MockERC20 tokens. Cover swap, liquidity, edge cases. |
 | Release automation | `.github/workflows/release.yml` | Tag-based builds. Auto-generate changelog from conventional commits. Attach binaries + Docker tags to GitHub Releases. |
@@ -128,10 +128,10 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Description |
 |------|-------------|
-| TypeScript SDK | Publish `@primechain/sdk` to npm. Wraps ethers.js/viem with Mersennet defaults (chain config, PrimeOrders ABI, contract addresses). |
-| Python SDK | Publish `primechain` to PyPI. Web3.py wrapper with PrimeOrders support. |
+| TypeScript SDK | Publish `@mersennet/sdk` to npm. Wraps ethers.js/viem with Mersennet defaults (chain config, PrimeOrders ABI, contract addresses). |
+| Python SDK | Publish `mersennet-sdk` to PyPI. Web3.py wrapper with PrimeOrders support. |
 | SDK documentation | API reference, getting-started guide, code examples for common operations (connect, send tx, call PrimeOrders, read events). |
-| Hardhat plugin | `@primechain/hardhat-plugin`: auto-configure network, deploy helpers, PrimeOrders task integration. |
+| Hardhat plugin | `@mersennet/hardhat-plugin`: auto-configure network, deploy helpers, PrimeOrders task integration. |
 
 ### 2.4 Security Hardening
 

@@ -1,17 +1,17 @@
 [package]
-name = "prime-chain-node"
+name = "mersennet-node"
 version = "0.7.0"
 authors = ["Rodolfo Cova @rodaemonic"]
 edition = "2024"
 
 [features]
 default = []
-prover = ["prime-chain/prover", "prime-chain-rpc/prover", "prime-zkp/prover"]
-sp1 = ["prime-chain/sp1", "prime-chain-rpc/sp1", "prime-zkp/sp1"]
+prover = ["mersennet/prover", "mersennet-rpc/prover", "mersennet-zkp/prover"]
+sp1 = ["mersennet/sp1", "mersennet-rpc/sp1", "mersennet-zkp/sp1"]
 
 [[bin]]
-name = "prime-chain"
-path = "src/bin/prime-chain.rs"
+name = "mersennet"
+path = "src/bin/mersennet.rs"
 
 [[bin]]
 name = "genesis"
@@ -34,9 +34,9 @@ name = "migrate-genesis"
 path = "src/bin/migrate_genesis.rs"
 
 [dependencies]
-prime-chain = { path = "../core" }
-prime-chain-network = { path = "../network" }
-prime-chain-rpc = { path = "../rpc" }
+mersennet = { path = "../core" }
+mersennet-network = { path = "../network" }
+mersennet-rpc = { path = "../rpc" }
 anyhow = "1.0"
 hex = "0.4"
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "sha256", "std"] }
@@ -52,4 +52,4 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 metrics = "0.19"
 tempfile = "3.10"
 sha3 = "0.10"
-prime-zkp = { path = "../zkp" }
+mersennet-zkp = { path = "../zkp" }

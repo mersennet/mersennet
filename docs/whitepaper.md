@@ -2476,12 +2476,12 @@ Mersennet supports two storage backends via the `StateBackend` trait, selectable
 
 ### 15.3 Code Organization
 
-> **Note:** The codebase is organized as a 6-crate Cargo workspace — `crates/core` (`prime-chain`), `crates/network` (`prime-chain-network`), `crates/rpc` (`prime-chain-rpc`), `crates/node` (`prime-chain-node`, all binaries), `crates/zkp` (`prime-zkp`), and `crates/state-proof` (`prime-state-proof`). The historical tree below maps to `crates/*/src/`; see [TECHNICAL_REFERENCE.md](./TECHNICAL_REFERENCE.md) for the current module map.
+> **Note:** The codebase is organized as a 6-crate Cargo workspace — `crates/core` (`mersennet`), `crates/network` (`mersennet-network`), `crates/rpc` (`mersennet-rpc`), `crates/node` (`mersennet-node`, all binaries), `crates/zkp` (`mersennet-zkp`), and `crates/state-proof` (`mersennet-state-proof`). The historical tree below maps to `crates/*/src/`; see [TECHNICAL_REFERENCE.md](./TECHNICAL_REFERENCE.md) for the current module map.
 
 ```
 src/
 ├── bin/
-│   └── prime-chain.rs          # CLI entrypoint with production hardening [v7.0]
+│   └── mersennet.rs          # CLI entrypoint with production hardening [v7.0]
 ├── core/
 │   ├── engine.rs               # Execution engine (1,505 lines)
 │   ├── consensus.rs            # CometBFT consensus (850 lines)
@@ -2599,7 +2599,7 @@ Configuration is JSON-based with hot-reload support:
 
 Prometheus metrics exposed at `/metrics`:
 
-- `prime_chain_up`: Node uptime gauge
+- `mersennet_up`: Node uptime gauge
 - `blocks_executed_total`: Block execution counter
 - `blocks_finalized_total`: Finalized block counter
 - `tx_submitted_total`: Transaction submission counter
@@ -3170,7 +3170,7 @@ $n$ = mempool/batch size, $k$ = txs per sender or parallel groups, $m$ = selecte
 
 | Method | Description |
 |--------|-------------|
-| `prime_chainId` | Returns chain ID |
+| `mersennetId` | Returns chain ID |
 | `prime_blockNumber` | Returns latest block number |
 | `prime_getBalance` | Returns account balance |
 | `prime_getBlockByNumber` | Returns block by number |
@@ -3207,7 +3207,7 @@ $n$ = mempool/batch size, $k$ = txs per sender or parallel groups, $m$ = selecte
 
 | Method | Alias For | Description |
 |--------|-----------|-------------|
-| `eth_chainId` | `prime_chainId` | Returns chain ID |
+| `eth_chainId` | `mersennetId` | Returns chain ID |
 | `eth_blockNumber` | `prime_blockNumber` | Returns latest block number |
 | `eth_getBalance` | `prime_getBalance` | Returns account balance |
 | `eth_getBlockByHash` | — | Returns block by hash |

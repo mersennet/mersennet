@@ -3,7 +3,7 @@
 // #![no_main]
 // sp1_zkvm::entrypoint!(main);
 //
-// use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput};
+// use mersennet_zkp::sp1::{BlockProgramInput, BlockProgramOutput};
 //
 // pub fn main() {
 //     let input_bytes = sp1_zkvm::io::read_vec();

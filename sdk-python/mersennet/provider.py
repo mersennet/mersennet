@@ -12,7 +12,7 @@ except ImportError:
 from .types import Block, ViewNotesEntry, ViewNotesResult
 
 
-class PrimeChainError(Exception):
+class MersennetError(Exception):
     """Mersennet RPC or SDK error."""
 
     def __init__(self, message: str, code: Optional[int] = None):
@@ -70,11 +70,11 @@ class PrimeProvider:
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     data = json.loads(resp.read().decode())
         except Exception as e:
-            raise PrimeChainError(str(e))
+            raise MersennetError(str(e))
 
         if "error" in data:
             err = data["error"]
-            raise PrimeChainError(
+            raise MersennetError(
                 err.get("message", "Unknown RPC error"),
                 code=err.get("code"),
             )

@@ -16,14 +16,14 @@ restart_validator() {
     local idx=$1
     local ip="${VALIDATORS[$((idx-1))]}"
     echo "  Restarting validator-$idx ($ip)..."
-    ssh -o StrictHostKeyChecking=no "$SSH_USER@$ip" "systemctl restart prime-chain"
+    ssh -o StrictHostKeyChecking=no "$SSH_USER@$ip" "systemctl restart mersennet"
 }
 
 restart_public() {
     echo "  Restarting public node ($PUBLIC_NODE)..."
     ssh -o StrictHostKeyChecking=no "$SSH_USER@$PUBLIC_NODE" "\
-        systemctl restart prime-chain && \
-        systemctl restart prime-chain-faucet"
+        systemctl restart mersennet && \
+        systemctl restart mersennet-faucet"
 }
 
 case "$TARGET" in

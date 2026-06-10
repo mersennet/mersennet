@@ -6,16 +6,16 @@ description: "Client-side privacy primitives in the Mersennet JavaScript SDK: pr
 
 # Shielded SDK
 
-The Mersennet JavaScript SDK (`@prime-chain/sdk`) ships a **shielded surface** for wallets and apps that connect to a chain with the ZK privacy hard fork activated. It covers client-side proving, note scanning, balance/position/order reconstruction, selective-disclosure reads, and migration.
+The Mersennet JavaScript SDK (`@mersennet/sdk`) ships a **shielded surface** for wallets and apps that connect to a chain with the ZK privacy hard fork activated. It covers client-side proving, note scanning, balance/position/order reconstruction, selective-disclosure reads, and migration.
 
 All shielded crypto runs **client-side**. The node is never asked to decrypt your data; it only verifies proofs and gates authorized reads. See [Privacy on Mersennet](../../privacy/overview.md) for the conceptual model.
 
 ## Install
 
 ```bash
-npm install @prime-chain/sdk
+npm install @mersennet/sdk
 # or, from a checkout:
-npm install /path/to/prime-chain/sdk
+npm install /path/to/mersennet/sdk
 ```
 
 ## Modules at a glance
@@ -34,7 +34,7 @@ npm install /path/to/prime-chain/sdk
 Shielded transactions require a Noir proof generated in the wallet, so keys never leave the device. `NoirWasmProver` wraps a proving backend that the wallet injects (built on `@noir-lang/noir_js` + `@aztec/bb.js`).
 
 ```ts
-import { NoirWasmProver } from '@prime-chain/sdk';
+import { NoirWasmProver } from '@mersennet/sdk';
 
 const prover = new NoirWasmProver({ backend });   // backend: NoirProvingBackend
 // Typed circuit helpers map to named Noir circuit inputs:
@@ -49,7 +49,7 @@ Relevant types: `NoirCircuitName`, `NoirInputValue`, `NoirProvingBackend`, `Noir
 Rebuild private balances locally from encrypted notes (see [Note scanning](../../privacy/note-scanning.md)):
 
 ```ts
-import { scanAndReconstructBalances } from '@prime-chain/sdk';
+import { scanAndReconstructBalances } from '@mersennet/sdk';
 
 const result = await scanAndReconstructBalances(
   provider,          // PrimeProvider
@@ -66,7 +66,7 @@ Types: `Note`, `EncryptedNote`, `GrantedDecryptedNote`, `GrantedNoteScanOptions`
 ## Positions & open orders
 
 ```ts
-import { reconstructPositions, reconstructOpenOrders } from '@prime-chain/sdk';
+import { reconstructPositions, reconstructOpenOrders } from '@mersennet/sdk';
 
 const positions = reconstructPositions({ orders, fills /* local records */ });
 const openOrders = reconstructOpenOrders({ orders });
@@ -83,7 +83,7 @@ A grantee uses the same reconstruction primitives, but over the data a [viewing 
 Drive transparent → shielded migration with a plan-then-confirm flow (see [Migration](../../privacy/migration.md)):
 
 ```ts
-import { planMigration, confirmMigration } from '@prime-chain/sdk';
+import { planMigration, confirmMigration } from '@mersennet/sdk';
 
 const plan = planMigration(accounts);            // accounts: MigrationNoteParams[]
 // plan → pre-fork per-asset totals to preview; submit each via prime_submitShield ...

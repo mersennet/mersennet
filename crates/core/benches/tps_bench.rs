@@ -1,4 +1,4 @@
-use prime_chain::engine::{Engine, Transaction};
+use mersennet::engine::{Engine, Transaction};
 use revm::primitives::{Address, Bytes, U256};
 use std::time::Instant;
 
@@ -167,10 +167,10 @@ fn main() {
             let _ = eng.prime_orders_submit_order(
                 maker,
                 market,
-                prime_chain::prime_orders::Side::Sell,
+                mersennet::prime_orders::Side::Sell,
                 U256::from(100u64),
                 U256::from(1u64),
-                prime_chain::prime_orders::TimeInForce::Gtc,
+                mersennet::prime_orders::TimeInForce::Gtc,
             );
         }
         let maker_elapsed = start.elapsed();
@@ -182,10 +182,10 @@ fn main() {
             let _ = eng.prime_orders_submit_order(
                 taker,
                 market,
-                prime_chain::prime_orders::Side::Buy,
+                mersennet::prime_orders::Side::Buy,
                 U256::from(100u64),
                 U256::from(1u64),
-                prime_chain::prime_orders::TimeInForce::Ioc,
+                mersennet::prime_orders::TimeInForce::Ioc,
             );
         }
         let taker_elapsed = start.elapsed();
@@ -255,10 +255,10 @@ fn main() {
             let _ = eng.prime_orders_submit_order(
                 maker,
                 market,
-                prime_chain::prime_orders::Side::Sell,
+                mersennet::prime_orders::Side::Sell,
                 U256::from(100u64),
                 U256::from(1u64),
-                prime_chain::prime_orders::TimeInForce::Gtc,
+                mersennet::prime_orders::TimeInForce::Gtc,
             );
         }
         for i in 0..500u64 {
@@ -266,10 +266,10 @@ fn main() {
             let _ = eng.prime_orders_submit_order(
                 taker,
                 market,
-                prime_chain::prime_orders::Side::Buy,
+                mersennet::prime_orders::Side::Buy,
                 U256::from(100u64),
                 U256::from(1u64),
-                prime_chain::prime_orders::TimeInForce::Ioc,
+                mersennet::prime_orders::TimeInForce::Ioc,
             );
         }
 

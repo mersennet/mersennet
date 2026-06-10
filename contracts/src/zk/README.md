@@ -78,7 +78,7 @@ blob:
 - `build_bridge_submission(output, proof_bytes)` combines both and
   `to_hex()` renders relayer-ready hex words.
 
-This is unit-tested (`cargo test -p prime-chain --lib bridge_export`); it
+This is unit-tested (`cargo test -p mersennet --lib bridge_export`); it
 encodes the same public-input contract the wrapping circuit must expose.
 
 ## Deposit / withdraw bus

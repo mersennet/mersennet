@@ -6,7 +6,7 @@ title: "JavaScript SDK"
 
 # JavaScript SDK
 
-The Mersennet JavaScript SDK (`@prime-chain/sdk`) provides a typed interface for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
+The Mersennet JavaScript SDK (`@mersennet/sdk`) provides a typed interface for the JSON-RPC API, PrimeOrders (on-chain order book), and WebSocket subscriptions.
 
 :::tip Privacy / shielded features
 This page covers the **transparent** surface (`eth_*` / `prime_*` / `primeorders_*`). For shielded transfers and orders, client-side Noir proving, note scanning, balance/position reconstruction, selective-disclosure reads, and migration, see the dedicated **[Shielded SDK](/developers/privacy/shielded-sdk)**.
@@ -26,14 +26,14 @@ For use in another project, link or publish the package:
 
 ```bash
 # From your project
-npm install /path/to/prime-chain/sdk
-# Or when published: npm install @prime-chain/sdk
+npm install /path/to/mersennet/sdk
+# Or when published: npm install @mersennet/sdk
 ```
 
 ## Quick Start
 
 ```javascript
-import { PrimeProvider, PrimeOrders } from "@prime-chain/sdk";
+import { PrimeProvider, PrimeOrders } from "@mersennet/sdk";
 
 const provider = new PrimeProvider("http://46.225.30.187:8545");
 const orders = new PrimeOrders(provider);
@@ -55,7 +55,7 @@ console.log("Bids:", book.bids, "Asks:", book.asks);
 ## Creating a Provider
 
 ```javascript
-import { PrimeProvider } from "@prime-chain/sdk";
+import { PrimeProvider } from "@mersennet/sdk";
 
 // HTTP only
 const provider = new PrimeProvider("http://46.225.30.187:8545");
@@ -172,7 +172,7 @@ import {
   encodePlaceOrder,
   encodeGetPosition,
   encodeGetCollateral,
-} from "@prime-chain/sdk";
+} from "@mersennet/sdk";
 
 // Encode call data for eth_call
 const getPositionData = encodeGetPosition(1);
@@ -195,7 +195,7 @@ const placeOrderData = encodePlaceOrder(
 ## WebSocket Subscriptions
 
 ```javascript
-import { PrimeProvider, PrimeSubscription } from "@prime-chain/sdk";
+import { PrimeProvider, PrimeSubscription } from "@mersennet/sdk";
 
 const provider = new PrimeProvider(
   "http://46.225.30.187:8545",

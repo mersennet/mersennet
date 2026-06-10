@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use alloy_primitives::B256;
-use prime_zkp::sp1::{
+use mersennet_zkp::sp1::{
     BlockHeaderWitness, BlockProgramInput, derive_block_hash, hash_market_aggregates,
 };
 use serde::{Deserialize, Serialize};

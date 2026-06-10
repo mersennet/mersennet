@@ -125,7 +125,7 @@
 | RPC | `rpc_tests.rs`, `ws_tests.rs` | 7+ |
 | Network | `noise_tests.rs` | 2+ |
 
-**Total:** 241 tests pass on `cargo test --workspace` (unit + integration across `crates/core/`, `crates/rpc/`, `crates/network/`, `crates/zkp/`, `crates/state-proof/`, `crates/node/`); `cargo test -p prime-zkp --features prover` adds the real-crypto lane (66 tests). Additional integration suites: `privacy_migration_e2e.rs`, `fuzz_matching.rs`.
+**Total:** 241 tests pass on `cargo test --workspace` (unit + integration across `crates/core/`, `crates/rpc/`, `crates/network/`, `crates/zkp/`, `crates/state-proof/`, `crates/node/`); `cargo test -p mersennet-zkp --features prover` adds the real-crypto lane (66 tests). Additional integration suites: `privacy_migration_e2e.rs`, `fuzz_matching.rs`.
 
 **Formal verification:** `crates/core/src/formal_verification.rs` provides invariant checking and property-based test generators.
 

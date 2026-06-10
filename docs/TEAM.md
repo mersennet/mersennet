@@ -84,15 +84,15 @@
 
 ## Repository Map
 
-### Main Monorepo: `prime-chain`
+### Main Monorepo: `mersennet`
 
 ```
-prime-chain/
+mersennet/
 ├── crates/                    # Rust blockchain core
 │   ├── core/                  #   Engine, EVM, consensus, PrimeOrders
 │   ├── rpc/                   #   JSON-RPC + WebSocket
 │   ├── network/               #   P2P networking
-│   └── node/                  #   Binaries (prime-chain, faucet, genesis)
+│   └── node/                  #   Binaries (mersennet, faucet, genesis)
 ├── contracts/                 # Solidity smart contracts (Foundry)
 │   ├── src/foundation/        #   Multicall3, WPRIM, MockERC20
 │   ├── src/dex/               #   PrimeSwap (UniV2 fork)
@@ -134,12 +134,12 @@ prime-chain/
 
 | Repo | Purpose | Status |
 |------|---------|--------|
-| [`prime-chain`](https://github.com/PrimeNumbersLabs/prime-chain) | Core blockchain + all testnet apps (monorepo) | **Active** — main development |
+| [`mersennet`](https://github.com/PrimeNumbersLabs/prime-chain) | Core blockchain + all testnet apps (monorepo) | **Active** — main development |
 | [`primescan-explorer`](https://github.com/PrimeNumbersLabs/primescan-explorer) | Block explorer (standalone) | Synced from monorepo `explorer/` |
 | [`primeswap-dex`](https://github.com/PrimeNumbersLabs/primeswap-dex) | DEX frontend (standalone) | Synced from monorepo `dex/` |
 | [`primenodes-dashboard`](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator dashboard (standalone) | Synced from monorepo `validator-explorer/` |
-| [`prime-chain-explorer`](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Block explorer (legacy standalone) | Synced from monorepo |
-| [`prime-chain-sdk`](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK | Synced from monorepo `sdk/` |
+| [`mersennet-explorer`](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Block explorer (legacy standalone) | Synced from monorepo |
+| [`mersennet-sdk`](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK | Synced from monorepo `sdk/` |
 | `primefi-omni` | Cross-chain lending (LayerZero v2) | Built, not on Mersennet yet |
 | `primefi-contracts-v3` | Aave v3–style lending contracts | Built, not deployed |
 | `primefi-ui-v3` | Lending frontend | Built |
@@ -162,8 +162,8 @@ All services run on `46.225.30.187` unless noted.
 
 | # | Service | Port | URL | Stack | Source |
 |---|---------|------|-----|-------|--------|
-| 1 | **JSON-RPC** | 8545 | http://46.225.30.187:8545 | Rust (prime-chain binary) | `crates/rpc/` |
-| 2 | **WebSocket** | 8546 | ws://46.225.30.187:8546 | Rust (prime-chain binary) | `crates/node/` |
+| 1 | **JSON-RPC** | 8545 | http://46.225.30.187:8545 | Rust (mersennet binary) | `crates/rpc/` |
+| 2 | **WebSocket** | 8546 | ws://46.225.30.187:8546 | Rust (mersennet binary) | `crates/node/` |
 | 3 | **Block Explorer** | 80 | http://46.225.30.187/ | Vanilla JS SPA + Nginx | `explorer/` |
 | 4 | **Faucet** | 8080 | http://46.225.30.187:8080 | Rust binary (embedded HTML) | `crates/node/src/bin/faucet.html` |
 | 5 | **PrimeSwap DEX** | 4000 | http://46.225.30.187:4000 | Vanilla JS SPA + Nginx | `dex/` |
@@ -177,9 +177,9 @@ All services run on `46.225.30.187` unless noted.
 ### Server Layout
 
 ```
-/opt/prime-chain/
+/opt/mersennet/
 ├── bin/
-│   ├── prime-chain          # Node binary
+│   ├── mersennet          # Node binary
 │   └── faucet               # Faucet binary
 ├── keys/
 │   ├── validator-key.json   # Validator signing key
@@ -231,10 +231,10 @@ cargo build --release
 cargo run --bin genesis -- --validators 4 --output ./testnet
 
 # Run validator 1 (in separate terminals for each)
-cargo run --release --bin prime-chain -- --config testnet/validator-1.json
-cargo run --release --bin prime-chain -- --config testnet/validator-2.json
-cargo run --release --bin prime-chain -- --config testnet/validator-3.json
-cargo run --release --bin prime-chain -- --config testnet/validator-4.json
+cargo run --release --bin mersennet -- --config testnet/validator-1.json
+cargo run --release --bin mersennet -- --config testnet/validator-2.json
+cargo run --release --bin mersennet -- --config testnet/validator-3.json
+cargo run --release --bin mersennet -- --config testnet/validator-4.json
 ```
 
 Or use Docker Compose:
@@ -298,12 +298,12 @@ rsync -az --delete build/ root@46.225.30.187:/var/www/docs/
 
 ```bash
 cargo build --release
-scp target/release/prime-chain root@46.225.30.187:/tmp/prime-chain-new
+scp target/release/mersennet root@46.225.30.187:/tmp/mersennet-new
 
 ssh root@46.225.30.187
-  kill $(pgrep prime-chain)
-  cp /tmp/prime-chain-new /opt/prime-chain/bin/prime-chain
-  nohup /opt/prime-chain/bin/prime-chain --config /opt/prime-chain/config.json > /var/log/prime-chain.log 2>&1 &
+  kill $(pgrep mersennet)
+  cp /tmp/mersennet-new /opt/mersennet/bin/mersennet
+  nohup /opt/mersennet/bin/mersennet --config /opt/mersennet/config.json > /var/log/mersennet.log 2>&1 &
 ```
 
 ### Deploy faucet
@@ -314,10 +314,10 @@ scp target/release/faucet root@46.225.30.187:/tmp/faucet-new
 
 ssh root@46.225.30.187
   kill $(pgrep faucet)
-  cp /tmp/faucet-new /opt/prime-chain/bin/faucet
-  nohup /opt/prime-chain/bin/faucet --port 8080 \
+  cp /tmp/faucet-new /opt/mersennet/bin/faucet
+  nohup /opt/mersennet/bin/faucet --port 8080 \
     --rpc-url http://46.225.183.192:8545 \
-    --private-key /opt/prime-chain/keys/faucet-key.json \
+    --private-key /opt/mersennet/keys/faucet-key.json \
     > /var/log/faucet.log 2>&1 &
 ```
 
@@ -460,10 +460,10 @@ curl -s -X POST -H 'Content-Type: application/json' \
 ssh root@46.225.30.187
 
 # Check all processes
-ssh root@46.225.30.187 'ps aux | grep -E "prime-chain|faucet|nginx|docker" | grep -v grep'
+ssh root@46.225.30.187 'ps aux | grep -E "mersennet|faucet|nginx|docker" | grep -v grep'
 
 # View node logs
-ssh root@46.225.30.187 'tail -50 /var/log/prime-chain.log'
+ssh root@46.225.30.187 'tail -50 /var/log/mersennet.log'
 
 # View faucet logs
 ssh root@46.225.30.187 'tail -50 /var/log/faucet.log'
