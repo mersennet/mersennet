@@ -1,4 +1,4 @@
-# Prime Chain Security Audit Preparation
+# Mersennet Security Audit Preparation
 
 ## Version: 7.0
 ## Date: March 2026

@@ -1,6 +1,6 @@
 # prime-zkp
 
-Zero-knowledge primitives shared between the Prime Chain node and the
+Zero-knowledge primitives shared between the Mersennet node and the
 client SDK.
 
 ```

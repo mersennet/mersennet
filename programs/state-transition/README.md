@@ -1,10 +1,10 @@
 # SP1 state-transition program
 
-Proves that a Prime Chain block's state transition is valid, end to
+Proves that a Mersennet block's state transition is valid, end to
 end. The proof is consumed by:
 
 - **Light clients** verifying chain state without re-executing.
-- **Bridges** receiving Prime Chain state updates on other chains
+- **Bridges** receiving Mersennet state updates on other chains
   (verifier precompile `0x0300`).
 - **The chain itself**, optionally, as a "self-checkpointing" mechanism
   for restart-from-snapshot scenarios.
@@ -85,7 +85,7 @@ chain, host runner, and zkVM:
 That means the program now consumes the real private-witness shape and
 computes its own public values for the shielded tx sub-path plus the
 deterministic market-clearing hash, but it does not yet replay the full
-Prime Chain engine (`revm`, order admission, liquidation claim/settle,
+Mersennet engine (`revm`, order admission, liquidation claim/settle,
 full header derivation) inside the zkVM.
 
 Reference request/response adapters for the real prover live under
