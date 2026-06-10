@@ -15,6 +15,10 @@ phosphor green (`#7dff9b`) on black.
 
 Download: [logo.svg](/logo.svg) · [favicon.svg](/favicon.svg) · [social card](/mersennet-social.svg)
 
+A complete kit — avatars, banners for every platform (X, LinkedIn, YouTube,
+Discord, Facebook, GitHub), post templates, and transparent renders — lives in
+[`brand/` in the monorepo](https://github.com/mersennet/mersennet/tree/main/brand).
+
 ### Guidelines
 
 - The five bars are always **top-anchored and symmetric** (heights 5·2·3·2·5). Never bottom-anchor them — that reads as an audio equalizer, not the M.
