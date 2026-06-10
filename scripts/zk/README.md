@@ -251,6 +251,42 @@ Exit criteria:
 - The proof's `public_values` and `vkey_hash_hex` match the pinned E3
   artifact set.
 
+### E5 bridge-wrap scaffold
+
+The repo-local E5 scaffold is split across the checked-in SP1 host and the new
+`programs/state-transition-wrap/` utility package.
+
+Render the bridge-wrap request from the SP1 host response:
+
+```bash
+cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_bridge_wrap_request -- \
+  scripts/zk/sp1-prove-response.json \
+  scripts/zk/sp1-bridge-wrap-request.json \
+  <program-elf-path>
+```
+
+Then, on Linux or WSL, render the on-chain proof bytes or Solidity-friendly VK
+JSON from wrapper/SP1 Groth16 artifacts:
+
+```bash
+cargo run --manifest-path programs/state-transition-wrap/Cargo.toml --features real-sp1 -- \
+  render-onchain-proof-from-response \
+  --prove-response scripts/zk/sp1-prove-response.json \
+  --bytes-out scripts/zk/sp1-onchain-proof.bytes \
+  --json-out scripts/zk/sp1-onchain-proof.json
+```
+
+```bash
+cargo run --manifest-path programs/state-transition-wrap/Cargo.toml --features real-sp1 -- \
+  render-solidity-vk \
+  --vk-bytes scripts/zk/sp1-bridge-wrap-vk.bytes \
+  --json-out scripts/zk/sp1-bridge-wrap-vk.json
+```
+
+Important: this scaffold brings the artifact-conversion flow into the repo, but
+the bridge-specific nine-public-input wrapper backend is still distinct from
+SP1's native five-public-input Groth16 mode.
+
 ### Transcript capture request templates
 
 For the E3 release-transcript step, start from these checked-in request
@@ -274,6 +310,7 @@ cargo run --manifest-path programs/state-transition-host/Cargo.toml --example re
 
   Run that before invoking the real host prover if the request was
   created from placeholder or fallback fields.
+
 - `vkeyHashHex`, `publicValuesHex`, `proofBytesHex`, and `proofSystem`
   in the verify request should be copied from the corresponding prove
   response and wrapped `StateTransitionProof`.
