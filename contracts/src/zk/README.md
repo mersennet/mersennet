@@ -52,6 +52,14 @@ output of the SP1 Groth16 wrapping circuit, which is produced as part of E5
 Until the key is installed, `verifyProof` reverts with `NotConfigured`, so
 the bridge cannot accept proofs prematurely.
 
+The repo-local helper surface for this lifecycle now lives in:
+
+- `programs/state-transition-host/examples/render_bridge_wrap_request.rs`
+- `programs/state-transition-wrap/`
+
+`programs/state-transition-wrap render-solidity-vk` converts gnark/SP1 Groth16
+VK bytes into the JSON shape expected by `setVerifyingKey(...)`.
+
 ## State-proof intake
 
 `submitStateProof(proof, input)` enforces:

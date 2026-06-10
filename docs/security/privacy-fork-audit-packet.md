@@ -295,6 +295,15 @@ Still required to fully close E5 (out-of-repo):
   `Groth16Verifier.setVerifyingKey`, then `lockVerifyingKey`),
 - one real wrapped proof verified end-to-end through `submitStateProof`.
 
+Important boundary: the checked-in SP1 host already supports
+`PRIME_SP1_PROOF_SYSTEM=groth16`, but that proof shape is not a drop-in match
+for the current bridge ABI. The SDK Groth16 path exposes the SP1 verifier's
+five hashed public inputs (`vkey hash`, committed-values digest, exit code,
+VK root, nonce), while `PrimeChainBridge` and `bridge_export` are wired for
+nine raw `BlockProgramOutput` fields. The minimal repo-local change set that
+preserves the current bridge ABI is captured in
+`docs/security/e5-in-repo-wrapper-plan.md`.
+
 ## H6 Bake Status
 
 The actual 8-week H6 bake window has not started.

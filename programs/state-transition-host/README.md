@@ -70,3 +70,18 @@ prove or verify request even starts.
 The CLI contract is now stable for both paths. The remaining follow-up is
 to point it at the final materialized state-transition zkVM program once
 `programs/state-transition/` stops being scaffold-only.
+
+## Bridge-wrap helper
+
+The E5 bridge-wrap flow now has a checked-in request renderer example:
+
+```powershell
+cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_bridge_wrap_request -- \
+  scripts/zk/sp1-prove-response.json \
+  scripts/zk/sp1-bridge-wrap-request.json \
+  <program-elf-path>
+```
+
+It reads the host `prove-response.json`, decodes the canonical
+`BlockProgramOutput`, and emits the repo-local bridge-wrap request contract
+consumed by `programs/state-transition-wrap/`.
