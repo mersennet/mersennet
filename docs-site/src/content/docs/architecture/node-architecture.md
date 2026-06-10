@@ -35,7 +35,7 @@ A running Mersennet node is composed of five cooperating subsystems:
 │                    │                         │                          │
 │                    │  ┌─────────────────┐    │                          │
 │                    │  │   Consensus     │    │                          │
-│                    │  │   (DPoS + BFT)  │    │                          │
+│                    │  │   (PoS + BFT)   │    │                          │
 │                    │  └─────────────────┘    │                          │
 │                    │                         │                          │
 │                    │  ┌─────────────────┐    │                          │
@@ -70,7 +70,7 @@ The heart of the node. Contains all types, execution logic, and consensus:
 | Module | Purpose |
 |--------|---------|
 | `engine` | `Engine` struct coordinating block production, EVM execution, and state transitions. Defines `Block`, `Transaction`, `Receipt`, `LogEntry` types |
-| `consensus` | DPoS validator management, proposer rotation, BFT finalization, slashing, rewards |
+| `consensus` | PoS validator management, proposer rotation, BFT finalization, slashing, rewards |
 | `hotstuff2` | Alternative HotStuff-2 consensus pipeline (optional) |
 | `crypto` | secp256k1 signing/verification, `tx_signing_hash`, `sign_transaction`, `recover_signer` |
 | `state` | `PersistentState` with sled backend, Merkle tree computation, snapshots |

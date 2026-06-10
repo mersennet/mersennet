@@ -18,10 +18,10 @@ On a transparent chain, anyone can read your balances, positions, and order flow
 
 ## The four pillars
 
-- **[Shielded accounts](./shielded-accounts.md)** — balances, transfers, positions, and order flow are concealed using notes, commitments, and nullifiers.
-- **[Risk checks in zero knowledge](./zk-risk-checks.md)** — leverage without open liquidations: solvency and margin are proven with ZK proofs instead of public liquidation auctions.
-- **[Selective disclosure](./selective-disclosure.md)** — grant a scoped viewing key to an auditor, exchange, or counterparty and reveal exactly what you choose.
-- **[Verifiable state](./state-proofs.md)** — every block's state transition is proven with SP1 and verified on-chain through a Groth16 bridge, enabling trustless light clients.
+- **[Shielded accounts](/privacy/shielded-accounts/)** — balances, transfers, positions, and order flow are concealed using notes, commitments, and nullifiers.
+- **[Risk checks in zero knowledge](/privacy/zk-risk-checks/)** — leverage without open liquidations: solvency and margin are proven with ZK proofs instead of public liquidation auctions.
+- **[Selective disclosure](/privacy/selective-disclosure/)** — grant a scoped viewing key to an auditor, exchange, or counterparty and reveal exactly what you choose.
+- **[Verifiable state](/privacy/state-proofs/)** — every block's state transition is proven with SP1 and verified on-chain through a Groth16 bridge, enabling trustless light clients.
 
 ## How it fits together
 
@@ -38,10 +38,10 @@ flowchart TD
 
 ## Where to go next
 
-- Building a wallet or app? Start with the **[Shielded SDK](../developers/privacy/shielded-sdk.md)** and the **[Shielded JSON-RPC reference](../developers/privacy/shielded-rpc.md)**.
-- Want the formal protocol? See the **[Whitepaper](../whitepaper.md)**.
-- Moving funds from transparent to shielded? See **[Migrating to shielded accounts](./migration.md)**.
+- Building a wallet or app? Start with the **[Shielded SDK](/developers/privacy/shielded-sdk/)** and the **[Shielded JSON-RPC reference](/developers/privacy/shielded-rpc/)**.
+- Want the formal protocol? See the **[Whitepaper](/whitepaper/)**.
+- Moving funds from transparent to shielded? See **[Migrating to shielded accounts](/privacy/migration/)**.
 
 :::note[Activation]
-Shielded features are gated by the privacy hard fork. Before activation, mutation methods return error `-32605` ("method disabled in current chain mode") and read methods return empty values. See [Verifiable state](./state-proofs.md) and the [activation runbook](../whitepaper.md) for details.
+Shielded features are gated by the privacy hard fork. Before activation, mutation methods return error `-32605` ("method disabled in current chain mode") and read methods return empty values. See [Verifiable state](/privacy/state-proofs/) and the [activation runbook](/whitepaper/) for details.
 :::

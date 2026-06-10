@@ -45,8 +45,8 @@ Value enters and leaves the shielded pool through two operations:
 
 Inside the shielded pool, **shielded transfers** (`prime_submitShieldedTransfer`) move value between notes with full privacy.
 
-See [Migrating to shielded accounts](./migration.md) for the recommended UX flow, and the [Shielded JSON-RPC reference](../developers/privacy/shielded-rpc.md) for payload formats.
+See [Migrating to shielded accounts](/privacy/migration/) for the recommended UX flow, and the [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc/) for payload formats.
 
 ## Reconstructing your own state
 
-Because the node never stores a plaintext balance for you, your wallet rebuilds private state locally by **scanning notes** and tracking which ones you have spent. See [Note scanning & wallet reconstruction](./note-scanning.md).
+Because the node never stores a plaintext balance for you, your wallet rebuilds private state locally by **scanning notes** and tracking which ones you have spent. See [Note scanning & wallet reconstruction](/privacy/note-scanning/).

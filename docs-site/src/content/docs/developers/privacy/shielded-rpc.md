@@ -3,7 +3,7 @@ title: "Shielded JSON-RPC reference"
 description: "Shielded JSON-RPC and WebSocket methods for wallets, SDKs, and indexers on Mersennet."
 ---
 
-Reference for the shielded JSON-RPC and WebSocket surface used by wallets, SDK authors, and indexers. For the conceptual model see [Privacy on Mersennet](../../privacy/overview.md); for typed helpers see the [Shielded SDK](./shielded-sdk.md).
+Reference for the shielded JSON-RPC and WebSocket surface used by wallets, SDK authors, and indexers. For the conceptual model see [Privacy on Mersennet](/privacy/overview/); for typed helpers see the [Shielded SDK](/developers/privacy/shielded-sdk/).
 
 :::note[Activation]
 Shielded methods are gated by the privacy hard fork. Before activation, **mutation** methods return `-32605` ("method disabled in current chain mode") and **read** methods return zero/empty values.
@@ -21,7 +21,7 @@ These reads are always available; before privacy activation they return zero/emp
 Returns the current note commitment tree state: `{ shieldedStateRoot, blockNumber, noteCount, nullifierCount }`.
 
 ### `prime_getShieldedBalance()`
-Returns **aggregate** shielded-pool counters — `{ totalNoteCount, totalNullifierCount, transparentEoaCount }`. The node never decrypts balances; per-account balances are reconstructed **client-side** from notes obtained via a viewing grant (see [`prime_viewBalances`](#selective-disclosure-viewing-grants) and the [Shielded SDK](./shielded-sdk.md)).
+Returns **aggregate** shielded-pool counters — `{ totalNoteCount, totalNullifierCount, transparentEoaCount }`. The node never decrypts balances; per-account balances are reconstructed **client-side** from notes obtained via a viewing grant (see [`prime_viewBalances`](#selective-disclosure-viewing-grants) and the [Shielded SDK](/developers/privacy/shielded-sdk/)).
 
 ### `prime_getShieldedNotes()`
 Returns `{ noteCount, currentRoot }`. Per-account note ciphertexts are fetched through grant-gated reads (`prime_viewNotes`), not this method — viewing keys are never handled server-side.
@@ -41,7 +41,7 @@ Public per-market stats for the most recent batch-auction tick: `{ markets: [{ m
 | `prime_submitLiquidationExecute({ executeBincodeHex })` | Auction winner settles the victim's nullifier; mints bounty + insurance. |
 | `prime_registerLiquidator({ bondCommitmentHex, bondAmount })` | One-time registration with a Pedersen bond (`bondAmount >= 10,000 MRSN`). |
 
-See [Risk checks in zero knowledge](../../privacy/zk-risk-checks.md) for the liquidation model.
+See [Risk checks in zero knowledge](/privacy/zk-risk-checks/) for the liquidation model.
 
 ## State proofs
 
@@ -69,11 +69,11 @@ Response shape (when a proof exists):
 }
 ```
 
-If the block carries no proof, the response is `{ "blockHeight": …, "proof": null, "reason": … }`. See [Verifiable state](../../privacy/state-proofs.md).
+If the block carries no proof, the response is `{ "blockHeight": …, "proof": null, "reason": … }`. See [Verifiable state](/privacy/state-proofs/).
 
 ## Selective-disclosure (viewing grants)
 
-These methods implement the [selective-disclosure grant lifecycle](../../privacy/selective-disclosure.md). Reads are **authorization gates, not decryption oracles** — they return encrypted notes or public clearing context for the SDK to reconstruct client-side.
+These methods implement the [selective-disclosure grant lifecycle](/privacy/selective-disclosure/). Reads are **authorization gates, not decryption oracles** — they return encrypted notes or public clearing context for the SDK to reconstruct client-side.
 
 | Method | Scope | Purpose |
 |---|---|---|
@@ -128,5 +128,5 @@ wscat -c ws://46.225.30.187:8546
 
 ## See also
 
-- [Shielded SDK](./shielded-sdk.md) — typed client for these methods.
-- [JSON-RPC overview](../rpc/overview.md) and [methods](../rpc/methods.md) — the transparent surface.
+- [Shielded SDK](/developers/privacy/shielded-sdk/) — typed client for these methods.
+- [JSON-RPC overview](/developers/rpc/overview/) and [methods](/developers/rpc/methods/) — the transparent surface.

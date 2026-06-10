@@ -592,4 +592,4 @@ du -sh /var/lib/mersennet/state/
 - [Staking Guide](/validators/staking) — Stake MRSN and manage delegations
 - [Monitoring & Alerts](/validators/monitoring) — Set up Prometheus and Grafana
 - [Node Architecture](/architecture/node-architecture) — Understand the node internals
-- [Consensus Mechanism](/architecture/consensus) — Deep dive into DPoS and BFT
+- [Consensus Mechanism](/architecture/consensus) — Deep dive into PoS and HotStuff-2 BFT

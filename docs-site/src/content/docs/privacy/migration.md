@@ -57,4 +57,4 @@ The randomness labels (`MIGRATION_RHO_LABEL`, `MIGRATION_PSI_LABEL`) are exporte
 - **Confirm deterministically.** Treat a failed `confirmMigration` as a hard error, not a warning.
 - **Batch carefully.** Each shielded note is independent; large balances may be split into multiple notes for better privacy and future spend flexibility.
 
-After migrating, the wallet reconstructs the new shielded balance via [note scanning](./note-scanning.md). To later reveal a balance to a third party, use [selective disclosure](./selective-disclosure.md).
+After migrating, the wallet reconstructs the new shielded balance via [note scanning](/privacy/note-scanning/). To later reveal a balance to a third party, use [selective disclosure](/privacy/selective-disclosure/).

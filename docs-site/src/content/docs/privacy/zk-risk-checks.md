@@ -40,7 +40,7 @@ Because claims and bids are threshold-encrypted, the target position is never br
 ## Why this is safe
 
 - **Solvency is enforced** — the margin proof is checked by the chain; an invalid position cannot be admitted.
-- **No double-spend** — liquidation settles the position's nullifier, the same primitive that protects [shielded accounts](./shielded-accounts.md).
-- **Verifiable end to end** — the resulting state transition is captured in the block's [SP1 state proof](./state-proofs.md).
+- **No double-spend** — liquidation settles the position's nullifier, the same primitive that protects [shielded accounts](/privacy/shielded-accounts/).
+- **Verifiable end to end** — the resulting state transition is captured in the block's [SP1 state proof](/privacy/state-proofs/).
 
-See the [Shielded JSON-RPC reference](../developers/privacy/shielded-rpc.md) for the exact liquidation and order payloads.
+See the [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc/) for the exact liquidation and order payloads.

@@ -2,13 +2,13 @@
 title: "Consensus Mechanism"
 ---
 
-Mersennet uses **Delegated Proof-of-Stake (DPoS)** with round-robin proposer selection and priority-based weighting. This document provides a deep dive into how consensus works, from validator selection to block finalization and slashing.
+Mersennet uses **Proof-of-Stake (HotStuff-2 BFT)** with round-robin proposer selection and priority-based weighting. This document provides a deep dive into how consensus works, from validator selection to block finalization and slashing.
 
 ## Overview
 
 | Parameter | Value |
 |-----------|-------|
-| **Consensus** | Delegated Proof-of-Stake (DPoS) |
+| **Consensus** | Proof-of-Stake (HotStuff-2 BFT) |
 | **Block Time** | ~1 second |
 | **Finality** | BFT (Byzantine Fault Tolerant) |
 | **Implementation** | Rust |
@@ -523,7 +523,7 @@ Complete reference of all configuration parameters with their default values.
 
 ## Summary
 
-Mersennet's DPoS consensus provides:
+Mersennet's PoS consensus provides:
 
 - **Fast finality** (~1s block time)
 - **Fair proposer rotation** (stake-weighted round-robin)

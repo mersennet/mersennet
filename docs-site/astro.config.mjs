@@ -1,17 +1,22 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLinksValidator from 'starlight-links-validator';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 export default defineConfig({
   site: 'https://docs.mersennet.com',
+  redirects: {
+    '/overview': '/',
+  },
   markdown: {
     remarkPlugins: [remarkMath],
     rehypePlugins: [rehypeKatex],
   },
   integrations: [
     starlight({
+      plugins: [starlightLinksValidator()],
       title: 'Mersennet',
       description:
         'Build private DeFi on a zero-knowledge EVM Layer 1 with shielded accounts, a native on-chain order book, and SP1-proven state.',

@@ -47,7 +47,7 @@ console.log(result.perAsset); // per-asset totals, spent notes excluded
 
 ## Why nullifiers matter here
 
-A note you received may already have been spent. The only way to know — without a trusted server tracking your account — is to derive each note's nullifier and check it against the public spent-nullifier set. Notes whose nullifier is present are excluded from the balance. This is the same primitive that prevents double-spends in [shielded accounts](./shielded-accounts.md), reused on the read path.
+A note you received may already have been spent. The only way to know — without a trusted server tracking your account — is to derive each note's nullifier and check it against the public spent-nullifier set. Notes whose nullifier is present are excluded from the balance. This is the same primitive that prevents double-spends in [shielded accounts](/privacy/shielded-accounts/), reused on the read path.
 
 ## Positions and open orders
 
@@ -56,4 +56,4 @@ Trading state is reconstructed the same way, over the wallet's local order and f
 - `reconstructPositions` — net positions per market.
 - `reconstructOpenOrders` — resting open orders per market.
 
-These power both your own wallet view and grant-gated [selective disclosure](./selective-disclosure.md) reads. See the [Shielded SDK](../developers/privacy/shielded-sdk.md) for the complete API.
+These power both your own wallet view and grant-gated [selective disclosure](/privacy/selective-disclosure/) reads. See the [Shielded SDK](/developers/privacy/shielded-sdk/) for the complete API.

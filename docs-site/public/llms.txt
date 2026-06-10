@@ -1,6 +1,6 @@
 # Mersennet Documentation
 
-> Mersennet is a high-performance, EVM-compatible Layer 1 blockchain with a native on-chain order matching engine (PrimeOrders). Chain ID: 7919. Token: MRSN.
+> Mersennet is a zero-knowledge, EVM-equivalent Layer 1 blockchain with account-level privacy, a native on-chain order book (PrimeOrders, precompile 0x0100), and every block proven with SP1 and verifiable on Ethereum via Groth16. Chain ID: 7919. Token: MRSN.
 
 ## Getting Started
 
@@ -15,16 +15,24 @@
 - [Deploy with Hardhat](/developers/quick-start/hardhat): Full Hardhat setup for Mersennet.
 - [Deploy with Foundry](/developers/quick-start/foundry): Foundry deployment guide with Mersennet specifics.
 - [ERC-20 Token Guide](/developers/contracts/erc20-guide): Deploy and interact with ERC-20 tokens.
+- [NFT Guide](/developers/contracts/nft-guide): ERC-721 deployment and integration.
+- [DeFi Integration](/developers/contracts/defi-integration): Compose with PrimeSwap and the native order book.
 - [JSON-RPC Overview](/developers/rpc/overview): RPC architecture and Mersennet extensions.
 - [JSON-RPC Methods](/developers/rpc/methods): Complete method reference (eth_*, prime_*, primeorders_*).
 - [JavaScript SDK](/developers/sdks/javascript): @mersennet/sdk usage and API reference.
+- [Python SDK](/developers/sdks/python): mersennet-sdk for Python.
+- [Shielded SDK](/developers/privacy/shielded-sdk): Viewing keys, note scanning, shielded transfers and orders.
+- [Shielded JSON-RPC](/developers/privacy/shielded-rpc): prime_* shielded methods and error codes.
 
-## Architecture
+## Privacy
 
-- [Consensus Mechanism](/architecture/consensus): DPoS, proposer rotation, finality, slashing.
-- [PrimeOrders CLOB](/architecture/prime-orders): Native on-chain order matching precompile at 0x0100.
-- [Token Economics](/architecture/tokenomics): 1B max supply, halving schedule, allocation.
-- [EVM Compatibility](/architecture/evm-compatibility): Shanghai-level EVM, custom raw tx format.
+- [Privacy Overview](/privacy/overview): Shielded accounts, ZK risk checks, selective disclosure, verifiable state.
+- [Shielded Accounts](/privacy/shielded-accounts): Notes, commitments, nullifiers, shield/unshield.
+- [ZK Risk Checks](/privacy/zk-risk-checks): Margin and solvency proven without revealing positions.
+- [Selective Disclosure](/privacy/selective-disclosure): Viewing-key grants for auditors and exchanges.
+- [Note Scanning](/privacy/note-scanning): Owner-side balance reconstruction.
+- [State Proofs](/privacy/state-proofs): SP1 block proofs, Groth16 Ethereum bridge, light clients.
+- [Migration](/privacy/migration): Hard-fork migration of transparent balances into notes.
 
 ## Ecosystem
 
@@ -37,24 +45,35 @@
 
 ## Validators
 
+- [Validator Overview](/validators/overview): Role, economics, and requirements.
 - [Run a Node](/validators/run-a-node): How to run a Mersennet validator node.
-- [Staking Guide](/validators/staking): Stake MRSN and delegate to validators.
+- [Staking Guide](/validators/staking): Direct staking, rewards, unbonding, slashing.
 - [Monitoring](/validators/monitoring): Prometheus + Grafana monitoring setup.
+
+## Architecture
+
+- [Consensus Mechanism](/architecture/consensus): HotStuff-2 BFT Proof-of-Stake, proposer rotation, finality, slashing.
+- [Node Architecture](/architecture/node-architecture): Crates, engine pipeline, precompiles (0x0100, 0x0200, 0x0201, 0x0202, 0x0300).
+- [PrimeOrders CLOB](/architecture/prime-orders): Native on-chain order matching precompile at 0x0100.
+- [Token Economics](/architecture/tokenomics): 1B max supply, halving schedule, allocation.
+- [EVM Compatibility](/architecture/evm-compatibility): Shanghai-level EVM; standard RLP transactions accepted.
 
 ## Resources
 
 - [FAQ](/resources/faq): Frequently asked questions.
+- [Contracts](/resources/contracts): Deployed contract addresses.
 - [Brand Assets](/resources/brand-assets): Colors, typography, logos.
 - [Whitepaper](/whitepaper): Full technical whitepaper.
 
 ## Key Facts
 
-- Chain ID: 7919 (0x1EEF)
+- Chain ID: 7919 (0x1EEF); privacy testnet examples use 7920
 - Token: MRSN (18 decimals)
 - Max Supply: 1,000,000,000 MRSN
-- Block Time: ~1 second
-- Consensus: Delegated Proof-of-Stake (DPoS)
-- EVM Level: Shanghai
+- Block Time: ~1 second (default)
+- Consensus: Proof-of-Stake, HotStuff-2 BFT (2-phase, ~2/3 stake finality)
+- EVM Level: Shanghai (standard RLP legacy/EIP-2930/EIP-1559 transactions accepted)
+- Privacy: shielded accounts (note/nullifier model), threshold-encrypted orders, SP1-proven state
 - RPC: http://46.225.30.187:8545
 - WebSocket: ws://46.225.30.187:8546
 - Block Explorer: http://46.225.30.187

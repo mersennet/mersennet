@@ -2,7 +2,7 @@
 title: "Validator Overview"
 ---
 
-Validators are the backbone of Mersennet. They run full nodes, participate in consensus, produce blocks, and earn block rewards in proportion to their stake. This guide explains what validators do, how the Delegated Proof-of-Stake (DPoS) consensus works, and what you need to become one.
+Validators are the backbone of Mersennet. They run full nodes, participate in consensus, produce blocks, and earn block rewards in proportion to their stake. This guide explains what validators do, how the Proof-of-Stake consensus works, and what you need to become one.
 
 ## What Validators Do
 
@@ -14,9 +14,9 @@ Validators perform three critical functions:
 
 3. **Network Security** — By staking MRSN tokens, validators have economic skin in the game. Malicious or negligent behavior is penalized through slashing, which protects the network from attacks and downtime.
 
-## Delegated Proof-of-Stake (DPoS)
+## Proof-of-Stake (HotStuff-2 BFT)
 
-Mersennet uses **Delegated Proof-of-Stake** with the following characteristics:
+Mersennet uses stake-weighted BFT consensus with the following characteristics:
 
 | Aspect | Description |
 |--------|-------------|
@@ -25,7 +25,10 @@ Mersennet uses **Delegated Proof-of-Stake** with the following characteristics:
 | **Finality Threshold** | >2/3 of total stake must precommit for a block to be finalized. |
 | **Block Time** | ~1 second per block. |
 
-Token holders can **delegate** their MRSN to validators, increasing the validator's stake and voting power. Delegators share in the validator's rewards (minus any commission the validator charges).
+:::note
+Delegation is not yet implemented — all stake is currently bonded directly
+by validators. See the [Staking Guide](/validators/staking/) for details.
+:::
 
 ## Block Production
 

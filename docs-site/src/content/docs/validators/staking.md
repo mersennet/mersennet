@@ -2,30 +2,25 @@
 title: "Staking Guide"
 ---
 
-Staking is how you participate in Mersennet consensus and earn rewards. This guide covers how staking works, delegation, rewards, unbonding, and slashing conditions.
+Staking is how you participate in Mersennet consensus and earn rewards. This guide covers how staking works, rewards, unbonding, and slashing conditions.
 
 ## How Staking Works
 
-In Mersennet's Delegated Proof-of-Stake (DPoS) model:
+In Mersennet's Proof-of-Stake model (HotStuff-2 BFT):
 
 1. **Validators** stake MRSN to join the validator set and produce blocks.
-2. **Delegators** stake MRSN with validators to share in rewards without running a node.
-3. **Voting power** is proportional to total stake (validator + delegations).
-4. **Block rewards** are distributed to all validators proportionally to their stake.
+2. **Voting power** is proportional to stake.
+3. **Block rewards** are distributed to all active validators proportionally to their stake.
+
+:::note
+Delegation (staking with a validator without running a node) is **not yet
+implemented** — today all stake is bonded directly by validators. A
+delegation module is on the roadmap and will be activated by governance.
+:::
 
 ## Minimum Stake
 
 The minimum stake to register as a validator is set by governance. As of the current testnet, any non-zero amount may be accepted. Check the latest network parameters for production mainnet.
-
-## Delegation
-
-Token holders can **delegate** MRSN to validators they trust:
-
-- Delegated stake counts toward the validator's voting power.
-- Delegators earn a share of block rewards (minus validator commission, if any).
-- Delegators are subject to the same slashing risk as the validator they delegate to.
-
-To delegate, send a delegation transaction specifying the validator address and amount. The exact interface (RPC, CLI, or staking UI) depends on the tooling available.
 
 ## Rewards
 

@@ -22,7 +22,7 @@ title: "What is Mersennet?"
 - **EVM Compatibility** — Use Hardhat, Foundry, Remix, and all standard Ethereum tooling. Your contracts work as-is.
 - **Fast Finality** — ~1 second block times with BFT consensus for quick confirmations.
 - **PrimeOrders** — A native central limit order book (CLOB) accessible via EVM precompile, enabling DeFi strategies that combine smart contracts with order matching in a single transaction.
-- **Account-level privacy** — Shielded accounts conceal balances, positions, and order flow, and leverage is secured by zero-knowledge risk checks instead of public liquidation auctions. See [Privacy on Mersennet](/privacy).
+- **Account-level privacy** — Shielded accounts conceal balances, positions, and order flow, and leverage is secured by zero-knowledge risk checks instead of public liquidation auctions. See [Privacy on Mersennet](/privacy/overview/).
 - **Verifiable state** — Every block's state transition is proven with SP1 and wrapped into a Groth16 proof an Ethereum contract can verify, so the chain is checkable from a succinct proof.
 - **BFT Proof-of-Stake** — Stake-weighted proposer rotation with two-round prevote/precommit finality and escalating slashing.
 - **1 Billion MRSN** — Fixed max supply with halving block rewards and structured tokenomics.
@@ -40,5 +40,5 @@ Mersennet is designed for builders. Whether you're deploying a simple ERC-20, bu
 | 3. Send your first transaction | [First Transaction](/getting-started/first-transaction) |
 | 4. Deploy a smart contract | [Hardhat Quick Start](/developers/quick-start/hardhat) |
 | 5. Explore the architecture | [Consensus](/architecture/consensus) · [Tokenomics](/architecture/tokenomics) |
-| 6. Learn about privacy | [Privacy on Mersennet](/privacy) |
+| 6. Learn about privacy | [Privacy on Mersennet](/privacy/overview/) |
 | 7. Read the whitepaper | [Whitepaper](/whitepaper) |

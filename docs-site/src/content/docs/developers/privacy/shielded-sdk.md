@@ -5,7 +5,7 @@ description: "Client-side privacy primitives in the Mersennet JavaScript SDK: pr
 
 The Mersennet JavaScript SDK (`@mersennet/sdk`) ships a **shielded surface** for wallets and apps that connect to a chain with the ZK privacy hard fork activated. It covers client-side proving, note scanning, balance/position/order reconstruction, selective-disclosure reads, and migration.
 
-All shielded crypto runs **client-side**. The node is never asked to decrypt your data; it only verifies proofs and gates authorized reads. See [Privacy on Mersennet](../../privacy/overview.md) for the conceptual model.
+All shielded crypto runs **client-side**. The node is never asked to decrypt your data; it only verifies proofs and gates authorized reads. See [Privacy on Mersennet](/privacy/overview/) for the conceptual model.
 
 ## Install
 
@@ -43,7 +43,7 @@ Relevant types: `NoirCircuitName`, `NoirInputValue`, `NoirProvingBackend`, `Noir
 
 ## Note scanning & balance reconstruction
 
-Rebuild private balances locally from encrypted notes (see [Note scanning](../../privacy/note-scanning.md)):
+Rebuild private balances locally from encrypted notes (see [Note scanning](/privacy/note-scanning/)):
 
 ```ts
 import { scanAndReconstructBalances } from '@mersennet/sdk';
@@ -73,11 +73,11 @@ Types: `OrderSide`, `OrderRecord`, `FillRecord`, `OpenOrder`, `ReconstructedPosi
 
 ## Selective disclosure
 
-A grantee uses the same reconstruction primitives, but over the data a [viewing grant](../../privacy/selective-disclosure.md) authorizes. Fetch authorized notes/records via the grant-gated RPC methods (`prime_viewNotes`, `prime_viewBalances`, `prime_viewPositions`, `prime_viewOrders`) and run `reconstructPortfolio` / `reconstructPositions` / `reconstructOpenOrders` client-side.
+A grantee uses the same reconstruction primitives, but over the data a [viewing grant](/privacy/selective-disclosure/) authorizes. Fetch authorized notes/records via the grant-gated RPC methods (`prime_viewNotes`, `prime_viewBalances`, `prime_viewPositions`, `prime_viewOrders`) and run `reconstructPortfolio` / `reconstructPositions` / `reconstructOpenOrders` client-side.
 
 ## Migration
 
-Drive transparent → shielded migration with a plan-then-confirm flow (see [Migration](../../privacy/migration.md)):
+Drive transparent → shielded migration with a plan-then-confirm flow (see [Migration](/privacy/migration/)):
 
 ```ts
 import { planMigration, confirmMigration } from '@mersennet/sdk';
@@ -91,5 +91,5 @@ Types: `MigrationNote`, `MigrationNoteParams`, `MigrationPlan`, `MigrationConfir
 
 ## See also
 
-- [Shielded JSON-RPC reference](./shielded-rpc.md) — the methods these helpers call.
-- [JavaScript SDK](../sdks/javascript.md) — the transparent (eth_* / prime_* / primeorders_*) surface.
+- [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc/) — the methods these helpers call.
+- [JavaScript SDK](/developers/sdks/javascript/) — the transparent (eth_* / prime_* / primeorders_*) surface.

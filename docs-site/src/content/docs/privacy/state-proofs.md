@@ -66,4 +66,4 @@ This is the foundation for trustless bridges, cross-chain messaging, and indepen
 
 ## Activation
 
-State proofs and the bridge are part of the privacy hard fork. Before activation, blocks may not carry a proof; in that case proof reads return `{ "blockHeight": …, "proof": null, "reason": … }`. See the [Shielded JSON-RPC reference](../developers/privacy/shielded-rpc.md) for exact response shapes.
+State proofs and the bridge are part of the privacy hard fork. Before activation, blocks may not carry a proof; in that case proof reads return `{ "blockHeight": …, "proof": null, "reason": … }`. See the [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc/) for exact response shapes.

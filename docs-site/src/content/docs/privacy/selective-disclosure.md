@@ -53,4 +53,4 @@ This keeps the trust model honest: a viewing grant lets a specific party recompu
 
 ## Build it
 
-See [Note scanning & wallet reconstruction](./note-scanning.md) for the client-side reconstruction primitives, the [Shielded SDK](../developers/privacy/shielded-sdk.md) for typed helpers (`scanGrantedNotes`, `reconstructPortfolio`, `reconstructPositions`, `reconstructOpenOrders`), and the [Shielded JSON-RPC reference](../developers/privacy/shielded-rpc.md) for the full method signatures.
+See [Note scanning & wallet reconstruction](/privacy/note-scanning/) for the client-side reconstruction primitives, the [Shielded SDK](/developers/privacy/shielded-sdk/) for typed helpers (`scanGrantedNotes`, `reconstructPortfolio`, `reconstructPositions`, `reconstructOpenOrders`), and the [Shielded JSON-RPC reference](/developers/privacy/shielded-rpc/) for the full method signatures.
