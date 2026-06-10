@@ -183,7 +183,7 @@ docs/
 
 scripts/ci/, scripts/zk/        — CI helpers (privacy-grep) + ZK prover adapters
 sdk/, sdk-go/, sdk-python/      — TypeScript / Go / Python clients
-docs-site/                      — Docusaurus (docs.primechain.xyz)
+docs-site/                      — Astro Starlight docs (docs.mersennet.com)
 website/                        — Mersennet landing site
 ```
 
