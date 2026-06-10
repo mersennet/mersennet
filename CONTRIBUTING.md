@@ -1,4 +1,4 @@
-# Contributing to Prime Chain
+# Contributing to Mersennet
 
 Thanks for contributing. This document describes the branching model, commit
 conventions, review policy, and the workflow for the in-progress
@@ -8,7 +8,7 @@ conventions, review policy, and the workflow for the in-progress
 
 ## Branching model
 
-Prime Chain uses a **trunk-based** model with one long-lived integration branch
+Mersennet uses a **trunk-based** model with one long-lived integration branch
 for the active architecture redesign.
 
 | Branch | Purpose | Stability |
@@ -76,8 +76,8 @@ Run locally before opening a PR; all of these are also enforced by
 ```bash
 cargo check --workspace                                   # fast type-check
 cargo build --workspace                                   # default features
-cargo test --workspace --lib --tests                      # ~5 min, 286+ tests
-cargo test -p prime-zkp --features prover                 # real crypto path (43 tests)
+cargo test --workspace --lib --tests                      # ~5 min, 241 tests
+cargo test -p mersennet-zkp --features prover                 # real crypto path (66 tests)
 cargo clippy --workspace -- -D warnings
 cargo fmt --check
 bash scripts/ci/check-privacy-invariants.sh               # CI K2 grep, 7 rules
@@ -163,7 +163,7 @@ If you need to cross the transparent/shielded boundary on purpose
 ### Privacy testnet quick reference
 
 ```bash
-# Bring up a local 7-validator privacy testnet (chain 7920)
+# Bring up a local 7-validator privacy testnet (chain 131071)
 cd testnet
 ./scripts/bootstrap-privacy-genesis.sh
 docker compose -f docker-compose.privacy.yml up -d --build
@@ -178,7 +178,7 @@ docker compose -f docker-compose.privacy.yml up -d --build
 cargo run --release --bin migrate-genesis -- \
     --in  ./prefork-snapshot.bin \
     --out ./postfork-snapshot.bin \
-    --chain-id 7920 \
+    --chain-id 131071 \
     --activation-height 100
 ```
 
@@ -191,8 +191,8 @@ Full runbook: [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/priva
 ```bash
 cargo build --workspace
 cargo test --workspace
-cargo run --bin prime-chain                  # devnet demo
-cargo run --bin prime-chain -- --rpc         # devnet with JSON-RPC on 8545
+cargo run --bin mersennet                  # devnet demo
+cargo run --bin mersennet -- --rpc         # devnet with JSON-RPC on 8545
 ```
 
 Solidity contracts:

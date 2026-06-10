@@ -8,8 +8,8 @@
 //! byte-for-byte.
 
 #[cfg(feature = "prover")]
-use prime_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
-use prime_zkp::{
+use mersennet_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
+use mersennet_zkp::{
     Fr,
     merkle::MerkleTree,
     noir::{Circuit, MockVerifier, Verifier},
@@ -123,15 +123,15 @@ fn order_place_end_to_end() {
     let remaining = make_note(9_500, 9, 199, 200);
     let new_commitment = remaining.commit(&p).0;
 
-    let market_id = Fr::from_u64(1); // PRIM-PERP
+    let market_id = Fr::from_u64(1); // MRSN-PERP
     let side = Fr::from_u64(1); // ask
     let side_salt = Fr::from_u64(0xdead);
     let side_hash = p.hash_two(&side, &side_salt);
 
     let price_band = Fr::from_u64(450); // $4.50 tier
-    let size_band = Fr::from_u64(100); // 100 PRIM tier
+    let size_band = Fr::from_u64(100); // 100 MRSN tier
     let oracle_price = Fr::from_u64(449);
-    let imm_required = Fr::from_u64(500); // 5% margin on a 100 PRIM order
+    let imm_required = Fr::from_u64(500); // 5% margin on a 100 MRSN order
 
     let public_inputs = vec![
         root,
@@ -233,7 +233,7 @@ fn circuits_reject_cross_circuit_vk_substitution() {
             .expect_err("substituted vk_hash must be rejected");
         assert!(matches!(
             err,
-            prime_zkp::noir::VerifyError::VerifyingKeyMismatch
+            mersennet_zkp::noir::VerifyError::VerifyingKeyMismatch
         ));
     }
 }
@@ -253,7 +253,7 @@ fn nullifier_is_keyed_to_owner() {
 /// fails the second time. This is the double-spend protection.
 #[test]
 fn nullifier_set_double_spend() {
-    let mut s = prime_zkp::NullifierSet::new();
+    let mut s = mersennet_zkp::NullifierSet::new();
     let n = Nullifier(Fr::from_u64(0xfeedface));
     assert!(s.insert(n));
     assert!(!s.insert(n));
@@ -347,7 +347,7 @@ fn real_noir_toolchain_configured() -> bool {
 fn spend_witness(
     spent: &Note,
     output: &Note,
-    membership: &prime_zkp::MerkleProof,
+    membership: &mersennet_zkp::MerkleProof,
     spend_sk: Fr,
 ) -> WitnessInputs {
     let mut witness = WitnessInputs::new();
@@ -389,7 +389,7 @@ fn spend_witness(
 fn order_place_witness(
     spent: &Note,
     output: &Note,
-    membership: &prime_zkp::MerkleProof,
+    membership: &mersennet_zkp::MerkleProof,
     spend_sk: Fr,
     side_salt: Fr,
     side: Fr,

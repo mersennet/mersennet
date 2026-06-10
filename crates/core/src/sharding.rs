@@ -1,4 +1,4 @@
-//! State sharding for Prime Chain: partition PrimeOrders markets across shards
+//! State sharding for Mersennet: partition PrimeOrders markets across shards
 //! for horizontal throughput scaling.
 
 use anyhow::Result;

@@ -1,4 +1,4 @@
-//! WebSocket subscription system for Prime Chain.
+//! WebSocket subscription system for Mersennet.
 //!
 //! Provides real-time event streaming via WebSocket with support for
 //! newHeads, newPendingTransactions, logs, and Prime Orders subscriptions.

@@ -1,11 +1,11 @@
-use prime_chain::engine::Engine;
+use mersennet::engine::Engine;
 use revm::primitives::{Address, Bytes, U256};
 use tempfile::tempdir;
 
 #[test]
 fn block_execution_produces_receipts() {
     let dir = tempdir().expect("temp dir");
-    let mut engine = Engine::new_with_state(7919, dir.path());
+    let mut engine = Engine::new_with_state(131071, dir.path());
 
     let alice = Address::from_slice(&[0x11; 20]);
     let bob = Address::from_slice(&[0x22; 20]);

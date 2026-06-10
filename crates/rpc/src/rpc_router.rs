@@ -1,10 +1,10 @@
-use prime_chain::bridge::{BridgeDomain, BridgeMessage};
-use prime_chain::engine::Engine;
-use prime_chain::errors::PrimeOrdersError;
-use prime_chain::events::{
+use mersennet::bridge::{BridgeDomain, BridgeMessage};
+use mersennet::engine::Engine;
+use mersennet::errors::PrimeOrdersError;
+use mersennet::events::{
     BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
 };
-use prime_chain::prime_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
+use mersennet::prime_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -83,7 +83,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         Ok(None) => {}
     }
     match call {
-        "prime_chainId" | "eth_chainId" => Ok(Value::String(hex_u64(engine.chain_id))),
+        "mersennetId" | "eth_chainId" => Ok(Value::String(hex_u64(engine.chain_id))),
         "prime_blockNumber" | "eth_blockNumber" => {
             Ok(Value::String(hex_u64(engine.latest_height())))
         }
@@ -127,7 +127,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             let outcome = engine
                 .prime_orders_submit_order(
                     owner,
-                    prime_chain::prime_orders::MarketId(input.market_id),
+                    mersennet::prime_orders::MarketId(input.market_id),
                     side,
                     price,
                     size,
@@ -141,15 +141,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             require_transparent_prime_orders_enabled(engine)?;
             let order_id = parse_order_id(params)?;
             let cancelled = engine
-                .prime_orders_cancel_order(prime_chain::prime_orders::OrderId(order_id))
+                .prime_orders_cancel_order(mersennet::prime_orders::OrderId(order_id))
                 .is_some();
             Ok(Value::Bool(cancelled))
         }
         "primeorders_getOrderBook" => {
             require_transparent_prime_orders_enabled(engine)?;
             let market_id = parse_market_id(params)?;
-            let book =
-                engine.prime_orders_order_book(prime_chain::prime_orders::MarketId(market_id));
+            let book = engine.prime_orders_order_book(mersennet::prime_orders::MarketId(market_id));
             match book {
                 Some(book) => Ok(serde_json::to_value(order_book_to_dto(book))
                     .map_err(|err| RpcError::new(-32000, err.to_string()))?),
@@ -318,7 +317,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::String(format!("0x{:x}", count)))
         }
         "net_listening" => Ok(Value::Bool(true)),
-        "web3_clientVersion" => Ok(Value::String("PrimeChain/0.1.0".to_string())),
+        "web3_clientVersion" => Ok(Value::String("Mersennet/0.1.0".to_string())),
         "txpool_status" => {
             let pending = engine.mempool_pending_count();
             let queued = engine.mempool_queued_count();
@@ -673,7 +672,7 @@ fn order_outcome_to_dto(outcome: OrderOutcome) -> PrimeOrderResultDto {
     }
 }
 
-fn trade_to_dto(trade: prime_chain::prime_orders::Trade) -> TradeDto {
+fn trade_to_dto(trade: mersennet::prime_orders::Trade) -> TradeDto {
     TradeDto {
         taker: hex_address(trade.taker),
         maker: hex_address(trade.maker),
@@ -764,8 +763,8 @@ fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value
     }
 }
 
-fn shielded_event_to_value(event: &prime_chain::events::ShieldedEvent) -> Value {
-    use prime_chain::events::ShieldedEvent;
+fn shielded_event_to_value(event: &mersennet::events::ShieldedEvent) -> Value {
+    use mersennet::events::ShieldedEvent;
     match event {
         ShieldedEvent::FbaCleared {
             market_id,

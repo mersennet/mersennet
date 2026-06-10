@@ -9,7 +9,7 @@
 //   - nullifier         collateral note nullifier
 //   - new_commitment    new collateral note (with the order's
 //                       initial margin reserved off the value)
-//   - market_id         market identifier (e.g. PRIM-PERP)
+//   - market_id         market identifier (e.g. MRSN-PERP)
 //   - side_hash         Poseidon(side, salt) — hides the side from
 //                       any non-trader but allows the matching engine
 //                       to bucket orders consistently

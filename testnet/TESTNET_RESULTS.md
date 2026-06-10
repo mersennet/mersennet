@@ -1,10 +1,10 @@
-# Prime Chain Testnet Results
+# Mersennet Testnet Results
 
 ## Environment
 - Date: [DATE]
 - Validators: [N]
 - Hardware: [SPECS]
-- Software: Prime Chain v7.0
+- Software: Mersennet v0.7.0
 
 ## Test 1: Transfer Load Test
 - Target TPS: [X]

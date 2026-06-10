@@ -7,7 +7,7 @@
 //! reduced modulo `r`. We do *not* implement the full constant-time EC
 //! pairing-friendly arithmetic here — that belongs to the proving
 //! backend (Barretenberg / arkworks) and is gated behind the `prover`
-//! feature on the parent `prime-chain` crate.
+//! feature on the parent `mersennet` crate.
 //!
 //! What we do implement is enough to:
 //!

@@ -1,7 +1,7 @@
-use prime_chain::crypto::{
+use mersennet::crypto::{
     SignedTransaction, generate_keypair, recover_signer, sign_transaction, tx_signing_hash,
 };
-use prime_chain::engine::Transaction;
+use mersennet::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
 
 fn sample_tx(from: Address, chain_id: u64) -> Transaction {
@@ -23,7 +23,7 @@ fn sample_tx(from: Address, chain_id: u64) -> Transaction {
 #[test]
 fn sign_and_recover_roundtrip() {
     let (key, addr) = generate_keypair();
-    let tx = sample_tx(addr, 7919);
+    let tx = sample_tx(addr, 131071);
     let signed = sign_transaction(&tx, &key);
     let recovered = recover_signer(&signed).expect("recovery should succeed");
     assert_eq!(recovered, addr);
@@ -34,8 +34,8 @@ fn different_keys_produce_different_signatures() {
     let (key_a, addr_a) = generate_keypair();
     let (key_b, addr_b) = generate_keypair();
 
-    let tx_a = sample_tx(addr_a, 7919);
-    let tx_b = sample_tx(addr_b, 7919);
+    let tx_a = sample_tx(addr_a, 131071);
+    let tx_b = sample_tx(addr_b, 131071);
 
     let signed_a = sign_transaction(&tx_a, &key_a);
     let signed_b = sign_transaction(&tx_b, &key_b);
@@ -46,7 +46,7 @@ fn different_keys_produce_different_signatures() {
 #[test]
 fn tampered_data_breaks_recovery() {
     let (key, addr) = generate_keypair();
-    let tx = sample_tx(addr, 7919);
+    let tx = sample_tx(addr, 131071);
     let signed = sign_transaction(&tx, &key);
 
     let mut tampered_tx = signed.tx.clone();

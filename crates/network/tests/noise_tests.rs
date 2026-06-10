@@ -1,4 +1,4 @@
-use prime_chain_network::noise::NoiseKeypair;
+use mersennet_network::noise::NoiseKeypair;
 
 #[test]
 fn noise_keypair_generation() {

@@ -1,19 +1,19 @@
 {
-  "chain_id": 13370,
+  "chain_id": 8191,
   "consensus": "hotstuff2",
   "block_time_ms": 200,
   "genesis_timestamp": "2026-06-01T00:00:00Z",
   "token": {
-    "name": "PRIME",
-    "symbol": "PRIME",
+    "name": "MRSN",
+    "symbol": "MRSN",
     "decimals": 18,
-    "max_supply": "42000000000000000000000000",
-    "initial_reward_per_block": "100000000000000000000",
-    "halving_interval": 4200000
+    "max_supply": "1000000000000000000000000000",
+    "initial_reward_per_block": "10000000000000000000",
+    "halving_interval": 35000000
   },
   "engine": {
-    "chain_id": 13370,
-    "state_path": "/var/lib/prime-chain/state",
+    "chain_id": 8191,
+    "state_path": "/var/lib/mersennet/state",
     "storage_backend": "redb",
     "gas_limit_per_block": 30000000,
     "fee_elasticity_multiplier": 2,
@@ -43,17 +43,17 @@
     "unbonding_period": 100
   },
   "token_economics": {
-    "max_supply": "42000000000000000000000000",
-    "initial_reward_per_block": "100000000000000000000",
-    "halving_interval": 4200000
+    "max_supply": "1000000000000000000000000000",
+    "initial_reward_per_block": "10000000000000000000",
+    "halving_interval": 35000000
   },
   "rpc": {
     "enabled": true,
     "addr": "0.0.0.0:8545"
   },
   "p2p": {
-    "node_key_path": "/var/lib/prime-chain/node_key.json",
-    "peer_store_path": "/var/lib/prime-chain/peers.json",
+    "node_key_path": "/var/lib/mersennet/node_key.json",
+    "peer_store_path": "/var/lib/mersennet/peers.json",
     "listen": "0.0.0.0:30303",
     "peers": [],
     "block_time_ms": 200,

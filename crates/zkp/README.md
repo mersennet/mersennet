@@ -1,6 +1,6 @@
-# prime-zkp
+# mersennet-zkp
 
-Zero-knowledge primitives shared between the Prime Chain node and the
+Zero-knowledge primitives shared between the Mersennet node and the
 client SDK.
 
 ```
@@ -21,7 +21,7 @@ crates/zkp/
 │       ├── order_place.nr       perp order with ZK solvency proof
 │       ├── liquidate_claim.nr   sealed-bid liquidation claim
 │       └── liquidate_execute.nr auction-winner liquidation execution
-├── params/             Verifying keys + KZG SRS (Phase 1.4)
+├── params/             Pinned parameters (poseidon-bn254.bin, sp1/ vkey pin)
 └── src/                Rust API
     ├── lib.rs
     ├── field.rs        BN254 scalar field arithmetic (minimal)
@@ -31,6 +31,7 @@ crates/zkp/
     ├── nullifier.rs    nullifier set
     ├── note.rs         note schema + commit + nullifier
     ├── threshold.rs    threshold-decryption trait + dummy impl
+    ├── bls_threshold.rs BLS12-381 threshold ElGamal (behind `prover`)
     ├── noir.rs         proof envelope + verifier trait + MockVerifier
     └── sp1.rs          SP1 program input/output envelope
 ```
@@ -38,15 +39,15 @@ crates/zkp/
 ## Build
 
 ```bash
-cargo build -p prime-zkp
-cargo test -p prime-zkp
+cargo build -p mersennet-zkp
+cargo test -p mersennet-zkp
 ```
 
 Feature-enabled runtime wiring now has two explicit lanes:
 
 ```bash
-cargo check -p prime-zkp --features prover --lib
-cargo check -p prime-chain-node --features prover,sp1
+cargo check -p mersennet-zkp --features prover --lib
+cargo check -p mersennet-node --features prover,sp1
 ```
 
 Real Barretenberg-backed proving and verification are gated behind the
@@ -103,7 +104,7 @@ Reference scripts for all of the above live in [scripts/zk/README.md](../../scri
 
 - Phase 1.1 — module skeleton (DONE)
 - Phase 1.2 — Poseidon + Merkle tree + nullifier set (DONE)
-- Phase 1.3 — real BLS12-381 threshold ElGamal (in progress)
-- Phase 1.4 — pinned Aztec parameter set + audited Pedersen
-- Phase 1.5 — Barretenberg verifier behind `prover` feature
-- Phase 5   — `sp1_sdk::ProverClient` swap for block proofs
+- Phase 1.3 — real BLS12-381 threshold ElGamal (DONE, `bls_threshold.rs` behind `prover`)
+- Phase 1.4 — pinned Aztec parameter set + audited Pedersen (DONE, `params/poseidon-bn254.bin`)
+- Phase 1.5 — Barretenberg verifier behind `prover` feature (DONE, adapter-based — see `scripts/zk/`)
+- Phase 5   — `sp1_sdk::ProverClient` swap for block proofs (in progress — workstream E; vkey pinned in `params/sp1/`)

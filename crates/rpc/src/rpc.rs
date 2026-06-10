@@ -1,10 +1,10 @@
 use crate::rpc_router;
 use anyhow::{Result, anyhow};
-use prime_chain::bridge::BridgeDomain;
-use prime_chain::engine::{Block, Engine, LogEntry, Receipt, Transaction};
-use prime_chain::errors::RpcInputError;
-use prime_chain::events::{BridgeEvent, BridgeQueueKind, DomainEvent, PrimeOrdersEvent};
-use prime_chain::prometheus;
+use mersennet::bridge::BridgeDomain;
+use mersennet::engine::{Block, Engine, LogEntry, Receipt, Transaction};
+use mersennet::errors::RpcInputError;
+use mersennet::events::{BridgeEvent, BridgeQueueKind, DomainEvent, PrimeOrdersEvent};
+use mersennet::prometheus;
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -240,7 +240,7 @@ fn handle_request(
     // Expose metrics on GET /metrics
     if request.method() == &Method::Get && request.url() == "/metrics" {
         if let Some(handle) = prometheus::handle() {
-            metrics::increment_counter!("prime_chain_rpc_requests", "method" => "metrics");
+            metrics::increment_counter!("mersennet_rpc_requests", "method" => "metrics");
             let body = handle.render();
             let response = Response::from_string(body).with_header(
                 Header::from_bytes("Content-Type", "text/plain; version=0.0.4")
@@ -309,7 +309,7 @@ fn handle_request(
                 Ok(payload) => payload,
                 Err((id, error)) => {
                     metrics::increment_counter!(
-                        "prime_chain_rpc_errors",
+                        "mersennet_rpc_errors",
                         "code" => error.code.to_string(),
                         "method" => method.clone()
                     );
@@ -354,10 +354,10 @@ fn dispatch(
     let id = call.id.clone();
     let start = std::time::Instant::now();
     // count requests per method
-    metrics::increment_counter!("prime_chain_rpc_requests", "method" => call.method.clone());
+    metrics::increment_counter!("mersennet_rpc_requests", "method" => call.method.clone());
 
     let result = match call.method.as_str() {
-        "prime_chainId"
+        "mersennetId"
         | "eth_chainId"
         | "prime_blockNumber"
         | "eth_blockNumber"
@@ -451,7 +451,7 @@ fn dispatch(
             let params = call.params.unwrap_or(Value::Null);
             let raw_hex = parse_raw_tx_param(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let signed = prime_chain::crypto::decode_raw_signed_tx(&raw_hex)
+            let signed = mersennet::crypto::decode_raw_signed_tx(&raw_hex)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
             let mut engine = engine
                 .lock()
@@ -790,7 +790,7 @@ fn dispatch(
 
     // record request duration
     let dur = start.elapsed().as_secs_f64();
-    metrics::histogram!("prime_chain_rpc_duration_seconds", dur, "method" => call.method.clone());
+    metrics::histogram!("mersennet_rpc_duration_seconds", dur, "method" => call.method.clone());
 
     serde_json::to_string(&RpcResponse {
         jsonrpc: "2.0",
@@ -1302,15 +1302,15 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "owner": hex_address(*owner),
             "market_id": hex_u64(market_id.0),
             "side": match side {
-                prime_chain::prime_orders::Side::Buy => "buy",
-                prime_chain::prime_orders::Side::Sell => "sell",
+                mersennet::prime_orders::Side::Buy => "buy",
+                mersennet::prime_orders::Side::Sell => "sell",
             },
             "price": hex_u256(*price),
             "size": hex_u256(*size),
             "tif": match tif {
-                prime_chain::prime_orders::TimeInForce::Gtc => "gtc",
-                prime_chain::prime_orders::TimeInForce::Ioc => "ioc",
-                prime_chain::prime_orders::TimeInForce::Fok => "fok",
+                mersennet::prime_orders::TimeInForce::Gtc => "gtc",
+                mersennet::prime_orders::TimeInForce::Ioc => "ioc",
+                mersennet::prime_orders::TimeInForce::Fok => "fok",
             },
             "filled": hex_u256(*filled),
             "remaining": hex_u256(*remaining),
@@ -1336,8 +1336,8 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "maker": hex_address(*maker),
             "market_id": hex_u64(market_id.0),
             "side": match side {
-                prime_chain::prime_orders::Side::Buy => "buy",
-                prime_chain::prime_orders::Side::Sell => "sell",
+                mersennet::prime_orders::Side::Buy => "buy",
+                mersennet::prime_orders::Side::Sell => "sell",
             },
             "price": hex_u256(*price),
             "size": hex_u256(*size),
@@ -1493,9 +1493,9 @@ fn topics_match(log_topics: &[B256], filters: &[TopicFilter]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prime_chain::engine::Engine;
-    use prime_chain::events::{DomainEvent, PrimeOrdersEvent};
-    use prime_chain::prime_orders::{Side, TimeInForce};
+    use mersennet::engine::Engine;
+    use mersennet::events::{DomainEvent, PrimeOrdersEvent};
+    use mersennet::prime_orders::{Side, TimeInForce};
     use tempfile::TempDir;
 
     #[test]

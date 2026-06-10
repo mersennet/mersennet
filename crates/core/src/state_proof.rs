@@ -4,7 +4,7 @@
 //! existing [`crate::zk_sp1`] module provides the type-level
 //! `SP1Prover` interface; here we provide the *block-level* pipeline
 //! that calls it: gather inputs, drive the prover (mock today, real
-//! `sp1_sdk::ProverClient` behind the `sp1` feature on `prime-zkp`),
+//! `sp1_sdk::ProverClient` behind the `sp1` feature on `mersennet-zkp`),
 //! cache the resulting checkpoint, expose to light clients.
 //!
 //! ## Why this lives in core (not zkp)
@@ -34,7 +34,7 @@ use crate::shielded_state::{ShieldedRootDigest, ShieldedState};
 use crate::threshold_mempool::ThresholdMempool;
 use crate::zk_proofs::{StateProver, StateTransitionProof};
 use crate::zk_sp1::SP1Prover;
-use prime_zkp::sp1::{
+use mersennet_zkp::sp1::{
     BlockHeaderWitness, BlockProgramInput, BlockProgramOutput, LiquidationExecuteBlockTx,
     ShieldBlockTx, ShieldedBlockTx, ShieldedStateWitness, ShieldedTickWitness,
     ShieldedTransferBlockTx, TransparentBalanceEntry, U256Bytes, UnshieldBlockTx,
@@ -278,12 +278,12 @@ pub struct SubsystemDigests {
 mod tests {
     use super::*;
     use crate::zk_proofs::ProofType;
-    use prime_zkp::Nullifier;
+    use mersennet_zkp::Nullifier;
     use revm::primitives::B256;
 
     fn expected_host_shielded_event_root(block_number: u64, state: &ShieldedState) -> B256 {
-        B256::from(prime_zkp::sp1::shielded_event_root(
-            &prime_zkp::sp1::build_shielded_tick_events(
+        B256::from(mersennet_zkp::sp1::shielded_event_root(
+            &mersennet_zkp::sp1::build_shielded_tick_events(
                 block_number,
                 0,
                 &[],
@@ -297,7 +297,7 @@ mod tests {
     fn prove_then_verify_round_trip() {
         let state = ShieldedState::new();
         let header = BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used: 0,
             base_fee_be: [0u8; 32],
@@ -312,7 +312,7 @@ mod tests {
             txs: Vec::new(),
             prev_market_state: Vec::new(),
             header: header.clone(),
-            block_hash: B256::from(prime_zkp::sp1::derive_block_hash(42, &header)),
+            block_hash: B256::from(mersennet_zkp::sp1::derive_block_hash(42, &header)),
             expected_market_state_hash: B256::from(hash_market_aggregates(&[])),
             prev_shielded_state: ShieldedStateWitness::default(),
             transparent_balances: Vec::new(),
@@ -328,7 +328,7 @@ mod tests {
     fn modified_proof_fails_verification() {
         let state = ShieldedState::new();
         let header = BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used: 0,
             base_fee_be: [0u8; 32],
@@ -343,7 +343,7 @@ mod tests {
             txs: Vec::new(),
             prev_market_state: Vec::new(),
             header: header.clone(),
-            block_hash: B256::from(prime_zkp::sp1::derive_block_hash(1, &header)),
+            block_hash: B256::from(mersennet_zkp::sp1::derive_block_hash(1, &header)),
             expected_market_state_hash: B256::from(hash_market_aggregates(&[])),
             prev_shielded_state: ShieldedStateWitness::default(),
             transparent_balances: Vec::new(),
@@ -361,10 +361,12 @@ mod tests {
     #[test]
     fn prove_block_rejects_live_nullifier_root_mismatch() {
         let mut state = ShieldedState::new();
-        state.spend(Nullifier(prime_zkp::Fr::from_u64(7))).unwrap();
+        state
+            .spend(Nullifier(mersennet_zkp::Fr::from_u64(7)))
+            .unwrap();
 
         let header = BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used: 0,
             base_fee_be: [0u8; 32],
@@ -379,7 +381,7 @@ mod tests {
             txs: Vec::new(),
             prev_market_state: Vec::new(),
             header: header.clone(),
-            block_hash: B256::from(prime_zkp::sp1::derive_block_hash(9, &header)),
+            block_hash: B256::from(mersennet_zkp::sp1::derive_block_hash(9, &header)),
             expected_market_state_hash: B256::from(hash_market_aggregates(&[])),
             prev_shielded_state: ShieldedStateWitness::default(),
             transparent_balances: Vec::new(),

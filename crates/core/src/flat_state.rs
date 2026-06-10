@@ -1,4 +1,4 @@
-//! Flat state architecture for Prime Chain.
+//! Flat state architecture for Mersennet.
 //!
 //! Separates current account state from Merkle trie computation.
 //! Maintains a flat key-value cache for O(1) reads; Merkle proofs

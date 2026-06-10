@@ -106,7 +106,7 @@ def main() -> int:
     if not public_inputs_path.exists():
         raise SystemExit(f"missing public inputs file: {public_inputs_path}")
 
-    with tempfile.TemporaryDirectory(prefix="prime-chain-bb-") as tmp_name:
+    with tempfile.TemporaryDirectory(prefix="mersennet-bb-") as tmp_name:
         tmp_dir = Path(tmp_name)
         public_inputs_json = tmp_dir / "public_inputs.json"
         public_inputs = [line.strip() for line in public_inputs_path.read_text(encoding="utf-8").splitlines() if line.strip()]

@@ -1,11 +1,11 @@
-# Prime Chain Testnets
+# Mersennet Testnets
 
-This directory contains tooling to bring up two distinct Prime Chain
+This directory contains tooling to bring up two distinct Mersennet
 networks:
 
 | Compose file | Chain ID | Purpose |
 |---|---|---|
-| `docker-compose.testnet.yml` | **7919** | Transparent public testnet — EVM + PrimeOrders CLOB |
+| `docker-compose.testnet.yml` | **131071** | Transparent public testnet — EVM + PrimeOrders CLOB |
 | `docker-compose.privacy.yml` | **7920** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
 
 Both compose files run a multi-validator stack plus an RPC observer,
@@ -60,7 +60,7 @@ docker compose -f docker-compose.privacy.yml down -v
 
 ---
 
-## B. Transparent testnet (chain 7919)
+## B. Transparent testnet (chain 131071)
 
 This is the original public testnet — same network as
 `https://rpc.primechain.xyz` runs.
@@ -72,7 +72,7 @@ This is the original public testnet — same network as
 From the project root:
 
 ```bash
-cargo run --bin genesis -- --validators 4 --chain-id 7919 --output-dir genesis-output
+cargo run --bin genesis -- --validators 4 --chain-id 131071 --output-dir genesis-output
 ```
 
 This creates:
@@ -93,27 +93,27 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 - **RPC**: http://localhost:8545
 - **Faucet**: http://localhost:8080
-- **Grafana**: http://localhost:3000 (admin/primechain)
+- **Grafana**: http://localhost:3000 (admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`)
 - **Prometheus**: http://localhost:9099
 
 ## Network Parameters
 
 | Parameter    | Value |
 |-------------|-------|
-| Chain ID    | 7919   |
+| Chain ID    | 131071   |
 | RPC URL     | http://localhost:8545 |
 | Faucet URL  | http://localhost:8080 |
 | Block Time  | ~1 second |
-| Currency    | PRIME (18 decimals) |
+| Currency    | MRSN (18 decimals) |
 
 ## Connecting MetaMask
 
 1. Open MetaMask → Networks → Add Network
 2. Use:
-   - **Network Name**: Prime Chain Testnet
+   - **Network Name**: Mersennet Testnet
    - **RPC URL**: `http://localhost:8545` (or your public RPC)
-   - **Chain ID**: 7919
-   - **Currency Symbol**: PRIME
+   - **Chain ID**: 131071
+   - **Currency Symbol**: MRSN
 
 3. Import an account or create one, then use the faucet to fund it.
 
@@ -121,7 +121,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 ### Web UI
 
-Visit http://localhost:8080 and enter your wallet address (0x...). Click "Request Tokens" to receive 1000 test PRIME.
+Visit http://localhost:8080 and enter your wallet address (0x...). Click "Request Tokens" to receive 1,000 test MRSN.
 
 ### API
 
@@ -147,9 +147,9 @@ curl -X POST http://localhost:8080/faucet \
 |-----------|------|--------------------|
 | RPC Node  | 8545 | Main public RPC    |
 | Validator 1 | 8546 | Validator RPC  |
-| Validator 2 | 8547 | Validator RPC  |
-| Validator 3 | 8548 | Validator RPC  |
-| Validator 4 | 8549 | Validator RPC  |
+| Validator 2 | 8546 | Validator RPC (compose currently maps the same host port as validator 1) |
+| Validator 3 | 8547 | Validator RPC  |
+| Validator 4 | 8548 | Validator RPC  |
 | Faucet    | 8080 | Faucet HTTP API    |
 | Grafana   | 3000 | Monitoring UI      |
 | Prometheus| 9099 | Metrics            |

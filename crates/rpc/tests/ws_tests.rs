@@ -1,4 +1,4 @@
-use prime_chain_rpc::ws::{SubscriptionKind, WsSubscriptionManager, set_privacy_mode_activated};
+use mersennet_rpc::ws::{SubscriptionKind, WsSubscriptionManager, set_privacy_mode_activated};
 
 #[test]
 fn ws_subscription_manager_lifecycle() {

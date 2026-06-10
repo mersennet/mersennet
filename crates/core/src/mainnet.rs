@@ -4,8 +4,8 @@
 use revm::primitives::{Address, U256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Mainnet chain ID.
-pub const MAINNET_CHAIN_ID: u64 = 13370;
+/// Mainnet chain ID — the Mersenne prime 2^13 − 1.
+pub const MAINNET_CHAIN_ID: u64 = 8191;
 
 /// Minimum number of validators required at genesis.
 pub const MIN_GENESIS_VALIDATORS: usize = 7;
@@ -72,7 +72,7 @@ impl MainnetGuard {
         }
     }
 
-    /// Returns true if chain_id == 13370 (mainnet).
+    /// Returns true if chain_id == 8191 (mainnet).
     pub fn is_mainnet(&self) -> bool {
         self.is_mainnet
     }

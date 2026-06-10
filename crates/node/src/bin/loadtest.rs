@@ -1,4 +1,4 @@
-//! Load test tool for Prime Chain.
+//! Load test tool for Mersennet.
 //! Generates transactions at configurable rates against a running node.
 
 use std::sync::Arc;
@@ -7,8 +7,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use k256::ecdsa::SigningKey;
-use prime_chain::crypto::{address_from_signing_key, encode_raw_signed_tx, sign_transaction};
-use prime_chain::engine::Transaction;
+use mersennet::crypto::{address_from_signing_key, encode_raw_signed_tx, sign_transaction};
+use mersennet::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
 use serde_json::{Value, json};
 
@@ -128,7 +128,7 @@ fn parse_args() -> Args {
 
 fn print_banner(args: &Args) {
     println!("╔══════════════════════════════════════════════╗");
-    println!("║          Prime Chain Load Test               ║");
+    println!("║          Mersennet Load Test               ║");
     println!("╚══════════════════════════════════════════════╝");
     println!("[CONFIG] RPC:      {}", args.rpc);
     println!("[CONFIG] Rate:     {} TPS", args.rate);

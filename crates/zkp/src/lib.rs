@@ -1,7 +1,7 @@
-//! Prime Chain ZK primitives.
+//! Mersennet ZK primitives.
 //!
 //! This crate is the shared cryptographic surface between the chain
-//! ([`prime-chain` core](../prime_chain/index.html)) and the Noir/SP1
+//! ([`mersennet` core](../mersennet/index.html)) and the Noir/SP1
 //! proving stacks.
 //!
 //! Layout:
@@ -26,7 +26,7 @@
 //! - [`threshold`] — BLS12-381 threshold ElGamal scaffolding for the
 //!   encrypted mempool. Provides the trait + dummy in-memory provider
 //!   used by tests; the real `blstrs`-backed implementation is gated
-//!   behind the `prover` feature on `prime-chain` to avoid pulling
+//!   behind the `prover` feature on `mersennet` to avoid pulling
 //!   pairing-friendly curve libs into every workspace build.
 //! - [`noir`] — Noir circuit proof envelope + verifier trait. Mock
 //!   prover used when `prover` is off; Barretenberg bindings when on.

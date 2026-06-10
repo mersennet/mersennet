@@ -9,7 +9,7 @@
 //! This module replaces both with:
 //!
 //! 1. **Bonded liquidator set.** Anyone can stake `MIN_LIQUIDATOR_BOND`
-//!    PRIM to become an authorized liquidator. The bond is slashable
+//!    MRSN to become an authorized liquidator. The bond is slashable
 //!    for falsified claims.
 //! 2. **Liquidate-claim proof** (`Circuit::LiquidateClaim`). A
 //!    liquidator proves "there exists some position note `c` in the
@@ -30,13 +30,13 @@
 //!    block after settlement so collusion is observable.
 //!
 //! All of the above is engine-side bookkeeping; the cryptographic
-//! checks happen via [`prime_zkp::noir::Verifier`].
+//! checks happen via [`mersennet_zkp::noir::Verifier`].
 
 #![allow(dead_code)]
 
 use crate::prime_orders::MarketId;
 use crate::shielded_state::ShieldedState;
-use prime_zkp::{
+use mersennet_zkp::{
     Fr, NoteCommitment, Nullifier,
     noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
@@ -54,10 +54,10 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 #[cfg(test)]
-use prime_zkp::noir::MockVerifier;
+use mersennet_zkp::noir::MockVerifier;
 
-/// Minimum bond, in PRIM lowest units, to register as a liquidator.
-/// Configurable via governance after launch. Default = 10_000 PRIM.
+/// Minimum bond, in MRSN lowest units, to register as a liquidator.
+/// Configurable via governance after launch. Default = 10_000 MRSN.
 pub const MIN_LIQUIDATOR_BOND: u128 = 10_000 * 1_000_000_000_000_000_000;
 
 /// Bid-revelation delay in blocks. Losing bids are made public this
@@ -452,14 +452,14 @@ impl From<crate::shielded_state::ShieldedStateError> for LiquidationError {
 }
 
 fn map_block_program_error_to_liquidation_error(
-    error: prime_zkp::sp1::BlockProgramError,
+    error: mersennet_zkp::sp1::BlockProgramError,
 ) -> LiquidationError {
     match error {
-        prime_zkp::sp1::BlockProgramError::StaleAnchor => LiquidationError::StaleAnchor,
-        prime_zkp::sp1::BlockProgramError::UnregisteredLiquidator => {
+        mersennet_zkp::sp1::BlockProgramError::StaleAnchor => LiquidationError::StaleAnchor,
+        mersennet_zkp::sp1::BlockProgramError::UnregisteredLiquidator => {
             LiquidationError::UnregisteredLiquidator
         }
-        prime_zkp::sp1::BlockProgramError::InvalidProof => {
+        mersennet_zkp::sp1::BlockProgramError::InvalidProof => {
             LiquidationError::InvalidProof(VerifyError::InvalidProof)
         }
         other => {
@@ -483,7 +483,7 @@ fn u256_bytes(value: U256) -> U256Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prime_zkp::note::Note;
+    use mersennet_zkp::note::Note;
 
     fn build_claim(state: &ShieldedState, liquidator_id: Fr, victim: &Note) -> LiquidationClaim {
         let p = Poseidon::default();

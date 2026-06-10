@@ -3546,6 +3546,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "mersennet-state-proof"
+version = "0.7.0"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "anyhow",
+ "bincode",
+ "hex",
+ "mersennet-zkp",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "mersennet-state-transition-host"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "anyhow",
+ "bincode",
+ "clap",
+ "hex",
+ "mersennet-state-proof",
+ "mersennet-zkp",
+ "serde",
+ "serde_json",
+ "sp1-sdk",
+]
+
+[[package]]
+name = "mersennet-zkp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "hex",
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+ "serde",
+ "sha3 0.10.9",
+ "subtle",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4295,51 +4340,6 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "prime-chain-state-transition-host"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives 0.7.7",
- "anyhow",
- "bincode",
- "clap",
- "hex",
- "prime-state-proof",
- "prime-zkp",
- "serde",
- "serde_json",
- "sp1-sdk",
-]
-
-[[package]]
-name = "prime-state-proof"
-version = "0.7.0"
-dependencies = [
- "alloy-primitives 0.7.7",
- "anyhow",
- "bincode",
- "hex",
- "prime-zkp",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "prime-zkp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "hex",
- "rand 0.8.6",
- "rand_chacha 0.3.1",
- "serde",
- "sha3 0.10.9",
- "subtle",
- "thiserror 1.0.69",
 ]
 
 [[package]]

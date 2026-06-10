@@ -376,7 +376,7 @@ mod real {
         /// One-shot helper: given the original payload AND a list of
         /// `threshold` DecryptionShares, recover the plaintext.
         ///
-        /// Crates outside `prime-zkp` should call this through the
+        /// Crates outside `mersennet-zkp` should call this through the
         /// [`BlsThreshold::decrypt_payload`] inherent method (added
         /// for the encrypted-mempool integration); the test suite
         /// uses it directly.

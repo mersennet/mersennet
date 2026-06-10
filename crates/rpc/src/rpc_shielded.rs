@@ -19,20 +19,20 @@
 //!
 //! Mutation methods return RPC error `-32605` ("disabled until
 //! privacy hard fork activates") when
-//! [`prime_chain::engine::Engine::privacy_mode_activated`] is
+//! [`mersennet::engine::Engine::privacy_mode_activated`] is
 //! `false`. Read-only methods (root, balance count, latest proof)
 //! always return a structured response — pre-fork they describe the
 //! initial empty state.
 
-use prime_chain::engine::Engine;
-use prime_chain::liquidation_auction::{LiquidationClaim, LiquidationExecute};
-use prime_chain::prime_orders::{MarketId, Side, TimeInForce};
-use prime_chain::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
-use prime_chain::shielded_evm::{ViewingGrantScope, ViewingGrantToken};
-use prime_chain::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
-use prime_zkp::Fr;
-use prime_zkp::noir::{Circuit, CircuitProof, MockVerifier};
-use prime_zkp::poseidon::Poseidon;
+use mersennet::engine::Engine;
+use mersennet::liquidation_auction::{LiquidationClaim, LiquidationExecute};
+use mersennet::prime_orders::{MarketId, Side, TimeInForce};
+use mersennet::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
+use mersennet::shielded_evm::{ViewingGrantScope, ViewingGrantToken};
+use mersennet::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
+use mersennet_zkp::Fr;
+use mersennet_zkp::noir::{Circuit, CircuitProof, MockVerifier};
+use mersennet_zkp::poseidon::Poseidon;
 use revm::primitives::{U256, keccak256};
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -276,7 +276,7 @@ fn read_state_proof(engine: &Engine, params: &Value) -> Value {
     }
 }
 
-fn state_proof_to_value(proof: &prime_chain::zk_proofs::StateTransitionProof) -> Value {
+fn state_proof_to_value(proof: &mersennet::zk_proofs::StateTransitionProof) -> Value {
     match bincode::serialize(proof) {
         Ok(bytes) => json!({
             "blockHeight": proof.block_height,
@@ -296,9 +296,9 @@ fn state_proof_to_value(proof: &prime_chain::zk_proofs::StateTransitionProof) ->
 
 fn verify_state_proof(params: Value) -> Result<Value, ShieldedRpcError> {
     let payload = decode_bincode_hex_param(&params, "proofBincodeHex")?;
-    let proof: prime_chain::zk_proofs::StateTransitionProof = bincode::deserialize(&payload)
+    let proof: mersennet::zk_proofs::StateTransitionProof = bincode::deserialize(&payload)
         .map_err(|e| invalid_params(format!("verifyStateProof: bad bincode: {e}")))?;
-    let ok = prime_chain::state_proof::verify_block_proof(&proof);
+    let ok = mersennet::state_proof::verify_block_proof(&proof);
     Ok(json!({ "valid": ok }))
 }
 
@@ -726,7 +726,7 @@ fn submit_liquidation_claim(engine: &mut Engine, params: Value) -> ShieldedRoute
     }
     // Reborrow split: now use a fresh borrow for the mutable side.
     let dummy_state =
-        prime_chain::shielded_state::ShieldedState::restore(&engine.shielded_evm.state.snapshot());
+        mersennet::shielded_state::ShieldedState::restore(&engine.shielded_evm.state.snapshot());
     let tag = engine
         .liquidation_auction
         .submit_claim(&dummy_state, claim)
@@ -771,7 +771,7 @@ fn register_liquidator(engine: &mut Engine, params: Value) -> ShieldedRouteResul
     }
     let mut arr32 = [0u8; 32];
     arr32.copy_from_slice(&bond_bytes);
-    let bond_commitment = prime_zkp::Fr::from_bytes_reduce(&arr32);
+    let bond_commitment = mersennet_zkp::Fr::from_bytes_reduce(&arr32);
     let amount: u128 = u128::from_str_radix(bond_amount_hex.trim_start_matches("0x"), 16)
         .map_err(|e| invalid_params(format!("bad bondAmount: {e}")))?;
 
@@ -874,8 +874,8 @@ fn apply_envelope_directly(
     envelope: ShieldedEnvelope,
     method_label: &str,
 ) -> ShieldedRouteResult {
-    let tx = prime_chain::engine::Transaction {
-        tx_type: prime_chain::shielded_evm::SHIELDED_TX_TYPE,
+    let tx = mersennet::engine::Transaction {
+        tx_type: mersennet::shielded_evm::SHIELDED_TX_TYPE,
         shielded_payload: Some(envelope),
         ..Default::default()
     };
@@ -1203,7 +1203,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let sub = dir.path().join("rpc");
         std::fs::create_dir_all(&sub).unwrap();
-        let mut e = Engine::new_with_backend(7919, sub, "redb");
+        let mut e = Engine::new_with_backend(131071, sub, "redb");
         e.set_token_economics(
             revm::primitives::U256::ZERO,
             revm::primitives::U256::ZERO,
@@ -1338,13 +1338,13 @@ mod tests {
             .copied()
             .next()
             .unwrap_or_else(|| {
-                let market = prime_chain::prime_orders::Market {
-                    id: prime_chain::prime_orders::MarketId(1),
+                let market = mersennet::prime_orders::Market {
+                    id: mersennet::prime_orders::MarketId(1),
                     symbol: "M1".to_string(),
                     tick_size: U256::from(10u64),
                     lot_size: U256::from(1u64),
                     last_price: U256::from(1_000u64),
-                    status: prime_chain::prime_orders::MarketStatus::Active,
+                    status: mersennet::prime_orders::MarketStatus::Active,
                 };
                 e.shielded_orders.add_market(market.clone());
                 e.shielded_orders
@@ -1517,11 +1517,11 @@ mod tests {
         let mut e = fresh_engine();
         e.activate_privacy_mode();
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(9), &[0x09, 0x09]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(9), &[0x09, 0x09]);
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(2), &[0x02]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(2), &[0x02]);
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(5), &[0x05, 0x00]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(5), &[0x05, 0x00]);
 
         let signing_key = SigningKey::from_bytes((&[12u8; 32]).into()).unwrap();
         let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
@@ -1584,12 +1584,12 @@ mod tests {
         let mut e = fresh_engine();
         e.activate_privacy_mode();
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(4), &[0x04]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(4), &[0x04]);
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(8), &[0x08]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(8), &[0x08]);
         e.shielded_evm
             .state
-            .spend(prime_zkp::Nullifier(prime_zkp::Fr::from_u64(7)))
+            .spend(mersennet_zkp::Nullifier(mersennet_zkp::Fr::from_u64(7)))
             .unwrap();
 
         let signing_key = SigningKey::from_bytes((&[21u8; 32]).into()).unwrap();
@@ -1704,7 +1704,7 @@ mod tests {
         let mut e = fresh_engine();
         e.activate_privacy_mode();
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(1), &[0x01]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(1), &[0x01]);
         let signing_key = SigningKey::from_bytes((&[14u8; 32]).into()).unwrap();
         let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
             &signing_key,
@@ -1748,7 +1748,7 @@ mod tests {
         let mut e = fresh_engine();
         e.activate_privacy_mode();
         e.shielded_evm
-            .record_encrypted_note_payload(prime_zkp::Fr::from_u64(3), &[0x03]);
+            .record_encrypted_note_payload(mersennet_zkp::Fr::from_u64(3), &[0x03]);
         let signing_key = SigningKey::from_bytes((&[16u8; 32]).into()).unwrap();
         let (grantor_sig_pubkey_hex, grant_id_hex, signature_hex) = sign_viewing_grant(
             &signing_key,
@@ -1909,7 +1909,7 @@ mod tests {
         .unwrap();
 
         let expired_height = current.saturating_add(1);
-        let expired_block = prime_chain::engine::Block {
+        let expired_block = mersennet::engine::Block {
             number: expired_height,
             ..Default::default()
         };
@@ -2099,7 +2099,7 @@ mod tests {
             &mut e,
         )
         .unwrap();
-        e.chain.push(prime_chain::engine::Block {
+        e.chain.push(mersennet::engine::Block {
             number: 1,
             ..Default::default()
         });

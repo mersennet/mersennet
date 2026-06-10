@@ -56,13 +56,13 @@
 //! What this module does *not* own:
 //! - The note tree / nullifier set — owned by [`crate::shielded_state`].
 //! - The mempool — owned by [`crate::threshold_mempool`].
-//! - The proving stack — owned by `prime-zkp`.
+//! - The proving stack — owned by `mersennet-zkp`.
 
 #![allow(dead_code)]
 
 use crate::prime_orders::{MarketId, MarketStatus, Side, TimeInForce};
 use crate::shielded_state::ShieldedState;
-use prime_zkp::{
+use mersennet_zkp::{
     Fr, NoteCommitment, Nullifier,
     noir::{CircuitProof, Verifier, VerifyError, default_verifier},
     poseidon::Poseidon,
@@ -80,7 +80,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use thiserror::Error;
 
 #[cfg(test)]
-use prime_zkp::noir::MockVerifier;
+use mersennet_zkp::noir::MockVerifier;
 
 /// Externally-submitted shielded order envelope. Crosses the
 /// threshold mempool encrypted; only the public fields below are
@@ -885,8 +885,8 @@ impl From<crate::shielded_state::ShieldedStateError> for ShieldedOrderError {
 mod tests {
     use super::*;
     use crate::prime_orders::Market;
-    use prime_zkp::Circuit;
-    use prime_zkp::note::Note;
+    use mersennet_zkp::Circuit;
+    use mersennet_zkp::note::Note;
 
     fn mk_market(id: u64) -> Market {
         Market {
