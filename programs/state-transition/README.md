@@ -11,7 +11,7 @@ end. The proof is consumed by:
 
 ## Inputs (private witness)
 
-Bincode-encoded [`prime_zkp::sp1::BlockProgramInput`]:
+Bincode-encoded [`mersennet_zkp::sp1::BlockProgramInput`]:
 
 | Field | Source |
 |---|---|
@@ -24,7 +24,7 @@ Bincode-encoded [`prime_zkp::sp1::BlockProgramInput`]:
 
 ## Public output
 
-Bincode-encoded [`prime_zkp::sp1::BlockProgramOutput`]:
+Bincode-encoded [`mersennet_zkp::sp1::BlockProgramOutput`]:
 
 | Field | Meaning |
 |---|---|
@@ -63,7 +63,7 @@ For every tx in `txs`, in order:
 ## Today
 
 [`crate::state_proof`] now proves from canonical
-`prime_zkp::sp1::BlockProgramInput`, and the checked-in SP1 program in
+`mersennet_zkp::sp1::BlockProgramInput`, and the checked-in SP1 program in
 [src/main.rs](./src/main.rs) re-derives `BlockProgramOutput` from that
 input inside the zkVM. The host-echo contract is gone.
 

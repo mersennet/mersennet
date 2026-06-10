@@ -6,7 +6,7 @@
 use crate::zk_proofs::{ProofType, ProofVerificationResult, StateProver, StateTransitionProof};
 use alloy_primitives::{B256, keccak256};
 use anyhow::Result;
-use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
+use mersennet_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -89,7 +89,7 @@ impl SP1Prover {
     pub fn new(mode: ProverMode) -> Self {
         Self {
             program_elf: Vec::new(),
-            vkey_hash: keccak256(b"sp1_prime_chain_mock_vkey"),
+            vkey_hash: keccak256(b"sp1_mersennet_mock_vkey"),
             mode,
             #[cfg(feature = "sp1")]
             backend: None,
@@ -109,7 +109,7 @@ impl SP1Prover {
 
     pub fn with_elf(elf: Vec<u8>, mode: ProverMode) -> Self {
         let vkey_hash = if elf.is_empty() {
-            keccak256(b"sp1_prime_chain_mock_vkey")
+            keccak256(b"sp1_mersennet_mock_vkey")
         } else {
             keccak256(&elf)
         };
@@ -356,7 +356,7 @@ impl Sp1CliBackend {
         let vkey_hash = match env::var("PRIME_SP1_VKEY_HASH") {
             Ok(value) => parse_b256_hex(&value)?,
             Err(_) if !program_elf.is_empty() => keccak256(&program_elf),
-            Err(_) => keccak256(b"sp1_prime_chain_mock_vkey"),
+            Err(_) => keccak256(b"sp1_mersennet_mock_vkey"),
         };
         let mode = match env::var("PRIME_SP1_MODE")
             .unwrap_or_else(|_| "local".to_string())
@@ -460,7 +460,7 @@ fn unique_temp_dir(label: &str) -> PathBuf {
         .unwrap_or_default()
         .as_nanos();
     env::temp_dir().join(format!(
-        "prime-chain-sp1-{label}-{}-{now}",
+        "mersennet-sp1-{label}-{}-{now}",
         std::process::id()
     ))
 }
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn mock_round_trip_still_verifies() {
         let prover = SP1Prover::runtime_default();
-        let header = prime_zkp::sp1::BlockHeaderWitness::default();
+        let header = mersennet_zkp::sp1::BlockHeaderWitness::default();
         let proof = prover
             .prove_block_program(&BlockProgramInput {
                 prev_state_root: [0u8; 32],
@@ -601,11 +601,11 @@ mod tests {
                 header: header.clone(),
                 txs: Vec::new(),
                 prev_market_state: Vec::new(),
-                prev_shielded_state: prime_zkp::sp1::ShieldedStateWitness::default(),
+                prev_shielded_state: mersennet_zkp::sp1::ShieldedStateWitness::default(),
                 transparent_balances: Vec::new(),
-                pre_tick_witness: prime_zkp::sp1::ShieldedTickWitness::default(),
-                expected_block_hash: prime_zkp::sp1::derive_block_hash(3, &header),
-                expected_market_state_hash: prime_zkp::sp1::hash_market_aggregates(&[]),
+                pre_tick_witness: mersennet_zkp::sp1::ShieldedTickWitness::default(),
+                expected_block_hash: mersennet_zkp::sp1::derive_block_hash(3, &header),
+                expected_market_state_hash: mersennet_zkp::sp1::hash_market_aggregates(&[]),
             })
             .unwrap();
         let verified = prover.verify_proof(&proof).unwrap();

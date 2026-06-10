@@ -8,8 +8,8 @@
 //! byte-for-byte.
 
 #[cfg(feature = "prover")]
-use prime_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
-use prime_zkp::{
+use mersennet_zkp::noir::{WitnessInputs, WitnessValue, default_prover, default_verifier};
+use mersennet_zkp::{
     Fr,
     merkle::MerkleTree,
     noir::{Circuit, MockVerifier, Verifier},
@@ -233,7 +233,7 @@ fn circuits_reject_cross_circuit_vk_substitution() {
             .expect_err("substituted vk_hash must be rejected");
         assert!(matches!(
             err,
-            prime_zkp::noir::VerifyError::VerifyingKeyMismatch
+            mersennet_zkp::noir::VerifyError::VerifyingKeyMismatch
         ));
     }
 }
@@ -253,7 +253,7 @@ fn nullifier_is_keyed_to_owner() {
 /// fails the second time. This is the double-spend protection.
 #[test]
 fn nullifier_set_double_spend() {
-    let mut s = prime_zkp::NullifierSet::new();
+    let mut s = mersennet_zkp::NullifierSet::new();
     let n = Nullifier(Fr::from_u64(0xfeedface));
     assert!(s.insert(n));
     assert!(!s.insert(n));
@@ -347,7 +347,7 @@ fn real_noir_toolchain_configured() -> bool {
 fn spend_witness(
     spent: &Note,
     output: &Note,
-    membership: &prime_zkp::MerkleProof,
+    membership: &mersennet_zkp::MerkleProof,
     spend_sk: Fr,
 ) -> WitnessInputs {
     let mut witness = WitnessInputs::new();
@@ -389,7 +389,7 @@ fn spend_witness(
 fn order_place_witness(
     spent: &Note,
     output: &Note,
-    membership: &prime_zkp::MerkleProof,
+    membership: &mersennet_zkp::MerkleProof,
     spend_sk: Fr,
     side_salt: Fr,
     side: Fr,

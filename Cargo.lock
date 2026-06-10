@@ -1697,6 +1697,138 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
+name = "mersennet"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "hex",
+ "k256",
+ "mersennet-state-proof",
+ "mersennet-zkp",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "rand 0.8.5",
+ "redb",
+ "revm",
+ "serde",
+ "serde_json",
+ "sha3",
+ "sled",
+ "snow",
+ "tempfile",
+ "thiserror",
+ "tiny_http",
+ "tracing",
+ "tracing-subscriber",
+ "tungstenite",
+ "url",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "mersennet-network"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "mersennet",
+ "metrics",
+ "revm",
+ "serde",
+ "serde_json",
+ "snow",
+ "tracing",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "mersennet-node"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "ctrlc",
+ "hex",
+ "k256",
+ "mersennet",
+ "mersennet-network",
+ "mersennet-rpc",
+ "mersennet-zkp",
+ "metrics",
+ "rand 0.8.5",
+ "revm",
+ "serde",
+ "serde_json",
+ "sha3",
+ "tempfile",
+ "tiny_http",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+]
+
+[[package]]
+name = "mersennet-rpc"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "hex",
+ "k256",
+ "mersennet",
+ "mersennet-zkp",
+ "metrics",
+ "revm",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tiny_http",
+ "tracing",
+ "tungstenite",
+]
+
+[[package]]
+name = "mersennet-state-proof"
+version = "0.7.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "bincode",
+ "hex",
+ "mersennet-zkp",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "mersennet-zkp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
+ "bincode",
+ "blstrs",
+ "chacha20poly1305",
+ "ff",
+ "group",
+ "hex",
+ "num-bigint",
+ "proptest",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "sha3",
+ "subtle",
+ "thiserror",
+]
+
+[[package]]
 name = "metrics"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2050,138 +2182,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
-]
-
-[[package]]
-name = "prime-chain"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "bincode",
- "hex",
- "k256",
- "metrics",
- "metrics-exporter-prometheus",
- "once_cell",
- "prime-state-proof",
- "prime-zkp",
- "rand 0.8.5",
- "redb",
- "revm",
- "serde",
- "serde_json",
- "sha3",
- "sled",
- "snow",
- "tempfile",
- "thiserror",
- "tiny_http",
- "tracing",
- "tracing-subscriber",
- "tungstenite",
- "url",
- "x25519-dalek",
-]
-
-[[package]]
-name = "prime-chain-network"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "hex",
- "metrics",
- "prime-chain",
- "revm",
- "serde",
- "serde_json",
- "snow",
- "tracing",
- "x25519-dalek",
-]
-
-[[package]]
-name = "prime-chain-node"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "ctrlc",
- "hex",
- "k256",
- "metrics",
- "prime-chain",
- "prime-chain-network",
- "prime-chain-rpc",
- "prime-zkp",
- "rand 0.8.5",
- "revm",
- "serde",
- "serde_json",
- "sha3",
- "tempfile",
- "tiny_http",
- "tracing",
- "tracing-subscriber",
- "ureq",
-]
-
-[[package]]
-name = "prime-chain-rpc"
-version = "0.7.0"
-dependencies = [
- "anyhow",
- "bincode",
- "hex",
- "k256",
- "metrics",
- "prime-chain",
- "prime-zkp",
- "revm",
- "serde",
- "serde_json",
- "tempfile",
- "tiny_http",
- "tracing",
- "tungstenite",
-]
-
-[[package]]
-name = "prime-state-proof"
-version = "0.7.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "bincode",
- "hex",
- "prime-zkp",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "prime-zkp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-ec",
- "ark-ff 0.4.2",
- "ark-serialize 0.4.2",
- "ark-std 0.4.0",
- "bincode",
- "blstrs",
- "chacha20poly1305",
- "ff",
- "group",
- "hex",
- "num-bigint",
- "proptest",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "serde",
- "sha3",
- "subtle",
- "thiserror",
 ]
 
 [[package]]

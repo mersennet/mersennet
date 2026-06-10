@@ -1,5 +1,5 @@
-use prime_chain::engine::Transaction;
-use prime_chain::mempool::Mempool;
+use mersennet::engine::Transaction;
+use mersennet::mempool::Mempool;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use revm::primitives::{Address, Bytes, U256};

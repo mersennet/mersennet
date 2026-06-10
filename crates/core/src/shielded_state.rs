@@ -11,7 +11,7 @@
 
 #![allow(dead_code)]
 
-use prime_zkp::{Fr, MerkleProof, MerkleTree, NoteCommitment, Nullifier, NullifierSet};
+use mersennet_zkp::{Fr, MerkleProof, MerkleTree, NoteCommitment, Nullifier, NullifierSet};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use thiserror::Error;
@@ -100,7 +100,7 @@ impl ShieldedState {
         if !self.is_recent_root(anchor) {
             return Err(ShieldedStateError::StaleAnchor);
         }
-        let derived = proof.root(&prime_zkp::poseidon::Poseidon::default());
+        let derived = proof.root(&mersennet_zkp::poseidon::Poseidon::default());
         if &derived != anchor {
             return Err(ShieldedStateError::InvalidMembershipProof);
         }
@@ -215,8 +215,8 @@ impl ShieldedRootDigest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prime_zkp::note::Note;
-    use prime_zkp::poseidon::Poseidon;
+    use mersennet_zkp::note::Note;
+    use mersennet_zkp::poseidon::Poseidon;
 
     fn make_note(value: u128, seed: u64) -> Note {
         Note {

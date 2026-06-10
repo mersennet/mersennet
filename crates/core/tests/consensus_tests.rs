@@ -1,4 +1,4 @@
-use prime_chain::consensus::Consensus;
+use mersennet::consensus::Consensus;
 use revm::primitives::{Address, B256, U256};
 
 fn addr(byte: u8) -> Address {
@@ -91,7 +91,7 @@ fn no_finality_insufficient_votes() {
     consensus.set_miss_precommit(carol);
 
     let hash = B256::from_slice(&[0xBB; 32]);
-    let mut network = prime_chain::network::NetworkSim::default();
+    let mut network = mersennet::network::NetworkSim::default();
     let (rounds, _evidence) = consensus.run_finality_rounds(hash, 1, 2, &mut network);
 
     let any_finalized = rounds.iter().any(|r| r.finalized);
@@ -107,9 +107,9 @@ fn slashing_escalation_increases_penalty() {
     consensus.set_slashing_bps(500, 100);
     consensus.set_slashing_escalation(50, 1000);
 
-    let evidence = prime_chain::consensus::SlashingEvidence {
+    let evidence = mersennet::consensus::SlashingEvidence {
         validator: alice,
-        kind: prime_chain::consensus::EvidenceKind::PrecommitTimeout,
+        kind: mersennet::consensus::EvidenceKind::PrecommitTimeout,
         height: 1,
         round: 0,
         rounds_missed: 1,

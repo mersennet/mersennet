@@ -1,4 +1,4 @@
-# prime-zkp
+# mersennet-zkp
 
 Zero-knowledge primitives shared between the Mersennet node and the
 client SDK.
@@ -39,15 +39,15 @@ crates/zkp/
 ## Build
 
 ```bash
-cargo build -p prime-zkp
-cargo test -p prime-zkp
+cargo build -p mersennet-zkp
+cargo test -p mersennet-zkp
 ```
 
 Feature-enabled runtime wiring now has two explicit lanes:
 
 ```bash
-cargo check -p prime-zkp --features prover --lib
-cargo check -p prime-chain-node --features prover,sp1
+cargo check -p mersennet-zkp --features prover --lib
+cargo check -p mersennet-node --features prover,sp1
 ```
 
 Real Barretenberg-backed proving and verification are gated behind the

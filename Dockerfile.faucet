@@ -8,7 +8,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 COPY crates/ crates/
 
-RUN cargo build --release -p prime-chain-node --bin faucet
+RUN cargo build --release -p mersennet-node --bin faucet
 
 # ─────────────────────────────────────────────
 FROM debian:bookworm-slim

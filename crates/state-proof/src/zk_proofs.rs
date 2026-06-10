@@ -5,7 +5,7 @@
 
 use alloy_primitives::{B256, keccak256};
 use anyhow::Result;
-use prime_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
+use mersennet_zkp::sp1::{BlockProgramInput, BlockProgramOutput, execute_block_program};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 

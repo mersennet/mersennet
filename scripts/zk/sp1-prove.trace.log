@@ -1,8 +1,8 @@
     Finished `release` profile [optimized] target(s) in 0.37s
-     Running `programs/state-transition-host/target/release/prime-chain-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
+     Running `programs/state-transition-host/target/release/mersennet-state-transition-host --prove-request scripts/zk/sp1-prove-request.request.json --prove-response scripts/zk/sp1-prove-response.json`
 [prime-sp1-stage] prove:request:read:start
 [prime-sp1-stage] prove:request:read:done
-[prime-sp1-stage] prove:request:summary: block=1 txs=0 elf=programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition input_hex_len=1160
+[prime-sp1-stage] prove:request:summary: block=1 txs=0 elf=programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition input_hex_len=1160
 [prime-sp1-stage] prove:build:start
 [prime-sp1-stage] prove:input:build:start
 [prime-sp1-stage] prove:input:build:done

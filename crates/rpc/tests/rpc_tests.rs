@@ -1,6 +1,6 @@
-use prime_chain::engine::Engine;
-use prime_chain::precompile_abi::{CODE_PUBLICATION_PRECOMPILE, publish_code_hash_selector};
-use prime_chain_rpc::rpc_router::route;
+use mersennet::engine::Engine;
+use mersennet::precompile_abi::{CODE_PUBLICATION_PRECOMPILE, publish_code_hash_selector};
+use mersennet_rpc::rpc_router::route;
 use revm::primitives::{Address, Bytes, U256, keccak256};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -39,9 +39,9 @@ fn encode_publish_code_hash_call(contract: Address, metadata_uri: &str) -> Bytes
 }
 
 #[test]
-fn rpc_prime_chain_id() {
+fn rpc_mersennet_id() {
     let (mut engine, _dir) = setup_engine(7919);
-    let result = route("prime_chainId", Value::Null, &mut engine).expect("rpc ok");
+    let result = route("mersennetId", Value::Null, &mut engine).expect("rpc ok");
     assert_eq!(result, Value::String("0x1eef".to_string()));
 }
 
@@ -169,7 +169,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     );
 
     engine
-        .submit_tx_unsigned(prime_chain::engine::Transaction {
+        .submit_tx_unsigned(mersennet::engine::Transaction {
             from: stranger,
             to: Some(CODE_PUBLICATION_PRECOMPILE),
             value: U256::ZERO,
@@ -204,7 +204,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     );
 
     engine
-        .submit_tx_unsigned(prime_chain::engine::Transaction {
+        .submit_tx_unsigned(mersennet::engine::Transaction {
             from: deployer,
             to: Some(CODE_PUBLICATION_PRECOMPILE),
             value: U256::ZERO,
@@ -275,7 +275,7 @@ fn rpc_prime_send_transaction_adds_to_mempool() {
     let bob = addr(0x22);
     engine.fund_account(alice, U256::from(1_000_000u64), 0);
 
-    let tx = prime_chain::engine::Transaction {
+    let tx = mersennet::engine::Transaction {
         from: alice,
         to: Some(bob),
         value: U256::from(100u64),
@@ -417,10 +417,10 @@ fn rpc_domain_events_hide_sensitive_primeorders_events_after_privacy_activation(
         .prime_orders_submit_order(
             trader,
             market_id,
-            prime_chain::prime_orders::Side::Buy,
+            mersennet::prime_orders::Side::Buy,
             U256::from(100u64),
             U256::from(1u64),
-            prime_chain::prime_orders::TimeInForce::Gtc,
+            mersennet::prime_orders::TimeInForce::Gtc,
         )
         .expect("order accepted");
     engine.execute_block().expect("block executed");

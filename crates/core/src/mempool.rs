@@ -108,10 +108,10 @@ fn try_replace_in_pool(
 impl Mempool {
     fn update_metrics(&self) {
         let stats = self.stats();
-        metrics::gauge!("prime_chain_mempool_size", stats.total as f64);
-        metrics::gauge!("prime_chain_mempool_pending", stats.pending as f64);
-        metrics::gauge!("prime_chain_mempool_queued", stats.queued as f64);
-        metrics::gauge!("prime_chain_mempool_basefee_pool", stats.base_fee as f64);
+        metrics::gauge!("mersennet_mempool_size", stats.total as f64);
+        metrics::gauge!("mersennet_mempool_pending", stats.pending as f64);
+        metrics::gauge!("mersennet_mempool_queued", stats.queued as f64);
+        metrics::gauge!("mersennet_mempool_basefee_pool", stats.base_fee as f64);
     }
 
     pub fn with_limits(max_total: usize, max_per_sender: usize, min_replace_bump_bps: u64) -> Self {
@@ -168,7 +168,7 @@ impl Mempool {
     ) -> Result<(), TxRejection> {
         let result = self.try_insert(tx, base_fee, account_nonce);
         if let Err(ref e) = result {
-            metrics::increment_counter!("prime_chain_mempool_rejected", "reason" => e.code());
+            metrics::increment_counter!("mersennet_mempool_rejected", "reason" => e.code());
             debug!(reason = e.code(), "transaction rejected from mempool");
         }
         result

@@ -1,10 +1,10 @@
 //! Property-based fuzzing tests for Mersennet matching engine, FBA, mempool,
 //! parallel execution, and consensus.
 
-use prime_chain::engine::{Engine, Transaction};
-use prime_chain::fba::{BatchAuction, BatchOrder};
-use prime_chain::mempool::Mempool;
-use prime_chain::prime_orders::{MarketId, PrimeOrdersState, Side, TimeInForce};
+use mersennet::engine::{Engine, Transaction};
+use mersennet::fba::{BatchAuction, BatchOrder};
+use mersennet::mempool::Mempool;
+use mersennet::prime_orders::{MarketId, PrimeOrdersState, Side, TimeInForce};
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;

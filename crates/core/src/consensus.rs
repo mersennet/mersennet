@@ -407,9 +407,9 @@ impl Consensus {
                 self.unlock();
             }
 
-            metrics::increment_counter!("prime_chain_consensus_rounds");
+            metrics::increment_counter!("mersennet_consensus_rounds");
             if finalized {
-                metrics::increment_counter!("prime_chain_consensus_finalized");
+                metrics::increment_counter!("mersennet_consensus_finalized");
             }
 
             tracing::info!(
@@ -437,7 +437,7 @@ impl Consensus {
 
         for ev in &evidence {
             metrics::increment_counter!(
-                "prime_chain_slashing_events",
+                "mersennet_slashing_events",
                 "kind" => ev.kind.as_str()
             );
             tracing::warn!(
@@ -870,12 +870,12 @@ impl Consensus {
             .iter()
             .filter(|v| self.is_eligible(&v.address))
             .count();
-        metrics::gauge!("prime_chain_validators_active", active_count as f64);
+        metrics::gauge!("mersennet_validators_active", active_count as f64);
         let stake_display = total_stake
             .checked_div(U256::from(1_000_000_000_000_000_000u128))
             .unwrap_or(U256::ZERO)
             .as_limbs()[0] as f64;
-        metrics::gauge!("prime_chain_total_stake", stake_display);
+        metrics::gauge!("mersennet_total_stake", stake_display);
 
         Finalization {
             block_hash,

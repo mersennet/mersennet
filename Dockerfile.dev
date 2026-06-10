@@ -9,8 +9,8 @@
 #   - Noir (nargo) + Barretenberg (bb) for the client privacy circuits
 #   - SP1 (sp1up / cargo-prove) + protobuf for the state-transition prover
 #
-# Build:   docker build -f Dockerfile.dev -t prime-chain-dev .
-# Use:     docker run --rm -it -v "$PWD":/workspace prime-chain-dev
+# Build:   docker build -f Dockerfile.dev -t mersennet-dev .
+# Use:     docker run --rm -it -v "$PWD":/workspace mersennet-dev
 #
 # The toolchain installers (foundryup/noirup/sp1up) fetch release binaries
 # at build time, so the image must be built with network access.

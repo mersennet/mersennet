@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use prime_zkp::sp1::BlockProgramOutput;
+use mersennet_zkp::sp1::BlockProgramOutput;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 

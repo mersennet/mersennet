@@ -9,7 +9,7 @@
 # Targets the privacy-rpc-node by default (chain ID 7920). All
 # payloads are *opaque* (bincode-then-hex), since the chain rejects
 # anything else. We generate them by calling the SDK's
-# `prime-chain.test_helpers` mock-encoder which produces wire-valid
+# `mersennet.test_helpers` mock-encoder which produces wire-valid
 # but cryptographically-non-binding payloads — perfect for soak
 # testing without spinning up a full ZK prover.
 #
