@@ -25,7 +25,7 @@ fn make_address(seed: u8) -> Address {
 fn redb_full_block_lifecycle() {
     let dir = tempdir().expect("temp dir");
     std::fs::create_dir_all(dir.path()).ok();
-    let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
+    let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
 
     let alice = make_address(0x11);
     let bob = make_address(0x22);
@@ -63,7 +63,7 @@ fn redb_full_block_lifecycle() {
 fn redb_prime_orders_full_cycle() {
     let dir = tempdir().expect("temp dir");
     std::fs::create_dir_all(dir.path()).ok();
-    let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
+    let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
 
     let maker = make_address(0x11);
     let taker = make_address(0x22);
@@ -121,7 +121,7 @@ fn redb_state_persistence_across_restart() {
     let path = dir.path();
 
     {
-        let mut engine = Engine::new_with_backend(7919, path, "redb");
+        let mut engine = Engine::new_with_backend(131071, path, "redb");
         let alice = make_address(0x11);
         let bob = make_address(0x22);
         let validator = make_address(0x01);
@@ -141,7 +141,7 @@ fn redb_state_persistence_across_restart() {
         assert_eq!(block.number, 1);
     }
 
-    let mut engine = Engine::new_with_backend(7919, path, "redb");
+    let mut engine = Engine::new_with_backend(131071, path, "redb");
     let alice = make_address(0x11);
     let bob = make_address(0x22);
 
@@ -159,7 +159,7 @@ fn redb_state_persistence_across_restart() {
 fn parallel_execution_matches_sequential() {
     let dir = tempdir().expect("temp dir");
     std::fs::create_dir_all(dir.path()).ok();
-    let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
+    let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
 
     let validator = make_address(0x01);
     engine.fund_account(validator, U256::from(1000u64), 0);
@@ -183,7 +183,7 @@ fn parallel_execution_matches_sequential() {
             gas_limit: 21_000,
             gas_price: U256::from(1u64),
             nonce: 0,
-            chain_id: Some(7919),
+            chain_id: Some(131071),
             signature: None,
             tx_type: 0,
             shielded_payload: None,
@@ -196,7 +196,7 @@ fn parallel_execution_matches_sequential() {
 
     let dir2 = tempdir().expect("temp dir 2");
     std::fs::create_dir_all(dir2.path()).ok();
-    let mut engine2 = Engine::new_with_backend(7919, dir2.path(), "redb");
+    let mut engine2 = Engine::new_with_backend(131071, dir2.path(), "redb");
     engine2.fund_account(validator, U256::from(1000u64), 0);
     engine2
         .add_validator(validator, U256::from(1000u64))
@@ -216,7 +216,7 @@ fn parallel_execution_matches_sequential() {
             gas_limit: 21_000,
             gas_price: U256::from(1u64),
             nonce: 0,
-            chain_id: Some(7919),
+            chain_id: Some(131071),
             signature: None,
             tx_type: 0,
             shielded_payload: None,
@@ -416,7 +416,7 @@ fn batch_proof_aggregation() {
 fn fba_engine_full_auction_cycle() {
     let dir = tempdir().expect("temp dir");
     std::fs::create_dir_all(dir.path()).ok();
-    let mut engine = Engine::new_with_backend(7919, dir.path(), "redb");
+    let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
 
     let market_id = engine.prime_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
 

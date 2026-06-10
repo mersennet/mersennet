@@ -2,13 +2,13 @@
 title: "NFT (ERC-721) Guide"
 ---
 
-This guide walks you through deploying and interacting with an NFT collection on Mersennet (Chain ID 7919).
+This guide walks you through deploying and interacting with an NFT collection on Mersennet (Chain ID 131071).
 
 ## Network Details
 
 | Parameter | Value |
 |-----------|-------|
-| Chain ID | 7919 |
+| Chain ID | 131071 |
 | RPC URL | `http://46.225.30.187:8545` |
 | Block Explorer | http://46.225.30.187 |
 
@@ -169,7 +169,7 @@ console.log("NFT deployed to:", await nft.getAddress());
 ### Using Remix
 
 1. Compile the contract in Remix.
-2. Connect MetaMask to Mersennet (Chain ID 7919).
+2. Connect MetaMask to Mersennet (Chain ID 131071).
 3. Deploy with constructor args: `"Prime Collectibles"`, `"PRIME"`, `"https://api.mysite.com/metadata/"`.
 
 ## Interacting with the NFT
@@ -179,7 +179,7 @@ console.log("NFT deployed to:", await nft.getAddress());
 ```javascript
 const { ethers } = require("ethers");
 
-const provider = new ethers.JsonRpcProvider("http://46.225.30.187:8545", 7919);
+const provider = new ethers.JsonRpcProvider("http://46.225.30.187:8545", 131071);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 const NFT_ABI = [

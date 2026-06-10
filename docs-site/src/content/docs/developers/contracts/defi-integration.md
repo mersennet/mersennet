@@ -41,7 +41,7 @@ Get the expected output amount for a swap (without executing):
 const { ethers } = require("ethers");
 
 const RPC_URL = "http://46.225.30.187:8545";
-const CHAIN_ID = 7919;
+const CHAIN_ID = 131071;
 const ROUTER = "0x9f337f433e71ce969b991511f1dcd3d0622116bb";
 const WMRSN = "0x079bf1207b51acda83e2e8178344f62a883f8479";
 const MOCK_USDC = "0xb22f77d89122e9e3784bfd3eee9616273f38238d";

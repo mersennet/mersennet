@@ -2,13 +2,13 @@
 title: "ERC-20 Token Guide"
 ---
 
-This guide walks you through deploying and interacting with an ERC-20 token on Mersennet (Chain ID 7919).
+This guide walks you through deploying and interacting with an ERC-20 token on Mersennet (Chain ID 131071).
 
 ## Network Details
 
 | Parameter | Value |
 |-----------|-------|
-| Chain ID | 7919 |
+| Chain ID | 131071 |
 | RPC URL | `http://46.225.30.187:8545` |
 | Native Token | MRSN (18 decimals) |
 
@@ -97,7 +97,7 @@ console.log("Deployed:", await token.getAddress());
 1. Go to [Remix](https://remix.ethereum.org).
 2. Create a new file, paste the contract, and compile.
 3. In the Deploy tab, select **Injected Provider - MetaMask**.
-4. Add Mersennet to MetaMask (Chain ID 7919, RPC `http://46.225.30.187:8545`).
+4. Add Mersennet to MetaMask (Chain ID 131071, RPC `http://46.225.30.187:8545`).
 5. Get testnet MRSN from the [faucet](http://46.225.30.187:4003).
 6. Deploy and enter constructor args: `"My Token"`, `"MTK"`, `1000000`.
 
@@ -108,7 +108,7 @@ console.log("Deployed:", await token.getAddress());
 ```javascript
 const { ethers } = require("ethers");
 
-const provider = new ethers.JsonRpcProvider("http://46.225.30.187:8545", 7919);
+const provider = new ethers.JsonRpcProvider("http://46.225.30.187:8545", 131071);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 const TOKEN_ADDRESS = "0x..."; // Your deployed token address

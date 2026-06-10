@@ -98,7 +98,7 @@ and the host `--features network` compile lane passes locally.
 
 | ID | Description | Status | Reference |
 |---|---|---|---|
-| H2 | Privacy testnet validator configs (5-of-7, chain 7920) | ✅ | `testnet/configs/privacy/` |
+| H2 | Privacy testnet validator configs (5-of-7, chain 131071) | ✅ | `testnet/configs/privacy/` |
 | H3 | docker-compose + bootstrap script + runbook | ✅ | `testnet/docker-compose.privacy.yml`, `testnet/scripts/bootstrap-privacy-genesis.sh`, `docs/runbooks/privacy-testnet-bootstrap.md` |
 | H4 | Synthetic load script | ✅ | `testnet/scripts/privacy-load.sh` |
 | H5 | Chaos exercise — kill-validator-at-random | ✅ | `testnet/scripts/chaos-kill-validator.sh` |
@@ -187,7 +187,7 @@ work is E4 through E5.
 
 ## At a glance
 
-- **Testnet ready.** Chain 7920 can be brought up today with the
+- **Testnet ready.** Chain 131071 can be brought up today with the
   bootstrap script. Privacy mode auto-activates at the configured
   height; the Noir / Barretenberg path uses the checked-in runtime
   adapters when configured and otherwise falls back to the deterministic

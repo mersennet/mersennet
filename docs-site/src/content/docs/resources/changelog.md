@@ -42,7 +42,7 @@ Automated Market Maker DEX (Uniswap V2 fork) deployed with Factory and Router co
 Mersennet testnet launched with BFT proof-of-stake consensus.
 
 - 4-validator network on Hetzner VPS infrastructure
-- Chain ID 7919, EVM Shanghai compatibility
+- Chain ID 131071, EVM Shanghai compatibility
 - JSON-RPC and WebSocket endpoints live
 - Testnet faucet deployed at [http://46.225.30.187:4003](http://46.225.30.187:4003)
 - Foundation contracts deployed: Multicall3, WMRSN, MockUSDC, MockUSDT, MockDAI

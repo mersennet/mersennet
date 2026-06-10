@@ -10,7 +10,7 @@ title: "PrimeXDC Wallet"
 |---------|-----------------|
 | **Platform** | Chrome/Chromium extension |
 | **Standard** | EIP-1193 (MetaMask-compatible) |
-| **Chain** | Mersennet (Chain ID 7919) supported out of the box |
+| **Chain** | Mersennet (Chain ID 131071) supported out of the box |
 | **Stack** | React, ethers.js, Chrome Manifest V3 |
 | **Status** | Built |
 
@@ -44,7 +44,7 @@ title: "PrimeXDC Wallet"
 
 1. Install the PrimeXDC Wallet browser extension (Chrome/Chromium).
 2. Create a new wallet or import via seed phrase.
-3. Mersennet testnet (Chain ID 7919) is preconfigured.
+3. Mersennet testnet (Chain ID 131071) is preconfigured.
 4. Use the [Faucet](http://46.225.30.187:4003) to get testnet MRSN.
 
 :::tip

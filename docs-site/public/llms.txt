@@ -1,6 +1,6 @@
 # Mersennet Documentation
 
-> Mersennet is a zero-knowledge, EVM-equivalent Layer 1 blockchain with account-level privacy, a native on-chain order book (PrimeOrders, precompile 0x0100), and every block proven with SP1 and verifiable on Ethereum via Groth16. Chain ID: 7919. Token: MRSN.
+> Mersennet is a zero-knowledge, EVM-equivalent Layer 1 blockchain with account-level privacy, a native on-chain order book (PrimeOrders, precompile 0x0100), and every block proven with SP1 and verifiable on Ethereum via Groth16. Chain ID: 131071. Token: MRSN.
 
 ## Getting Started
 
@@ -67,7 +67,7 @@
 
 ## Key Facts
 
-- Chain ID: 7919 (0x1EEF); privacy testnet examples use 7920
+- Chain ID: testnet 131071 (0x1FFFF) · mainnet 8191 (0x1FFF)
 - Token: MRSN (18 decimals)
 - Max Supply: 1,000,000,000 MRSN
 - Block Time: ~1 second (default)

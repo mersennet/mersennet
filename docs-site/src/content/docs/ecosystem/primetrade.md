@@ -15,7 +15,7 @@ PrimeTrade is live at **[http://46.225.30.187:4004](http://46.225.30.187:4004)**
 | **Type** | Order book trading terminal |
 | **Order Engine** | PrimeOrders native precompile (`0x0100`) |
 | **Order Types** | Limit, Market |
-| **Chain** | Mersennet Testnet (Chain ID 7919) |
+| **Chain** | Mersennet Testnet (Chain ID 131071) |
 | **Wallet** | MetaMask or any EVM-compatible wallet |
 
 ## How It Works
@@ -47,7 +47,7 @@ PrimeTrade supports any pair listed on the PrimeOrders book. Current testnet pai
 ## Getting Started
 
 1. Visit [http://46.225.30.187:4004](http://46.225.30.187:4004)
-2. Connect your MetaMask wallet to Mersennet (Chain ID 7919)
+2. Connect your MetaMask wallet to Mersennet (Chain ID 131071)
 3. Get testnet MRSN from the [Faucet](/getting-started/faucet)
 4. Get test stablecoins by calling `faucet()` on the [mock token contracts](/resources/contracts)
 5. Approve the token you want to trade

@@ -62,7 +62,7 @@ Create `scripts/deploy.js`:
 const { ethers } = require("ethers");
 
 const RPC_URL = "http://46.225.30.187:8545";
-const CHAIN_ID = 7919;
+const CHAIN_ID = 131071;
 
 async function main() {
   // Option A: Use private key (ethers signs, but we use eth_sendTransaction via a custom provider)
@@ -100,7 +100,7 @@ const fs = require("fs");
 const path = require("path");
 
 const RPC_URL = "http://46.225.30.187:8545";
-const CHAIN_ID = 7919;
+const CHAIN_ID = 131071;
 
 async function main() {
   const provider = new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);

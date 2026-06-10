@@ -2,7 +2,7 @@ import styles from '../page.module.css';
 import { Reveal } from './Reveal';
 
 const STATS = [
-  { num: '7919', label: 'Chain ID · prime' },
+  { num: '131071', label: 'Chain ID · prime' },
   { num: '~1s', label: 'Block time' },
   { num: 'EVM', label: 'Shanghai-equivalent' },
   { num: 'SP1', label: 'Proven state' },

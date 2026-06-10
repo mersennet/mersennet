@@ -73,7 +73,7 @@ Multi-token NFTs (multiple token IDs in one contract, with fungible and non-fung
 | **Frontend** | Next.js 15, wagmi, viem/ethers |
 | **Backend** | NestJS, Prisma, GraphQL |
 | **Protocol** | Seaport |
-| **Chain** | Mersennet (Chain ID 7919) |
+| **Chain** | Mersennet (Chain ID 131071) |
 
 ## Deployment Status
 

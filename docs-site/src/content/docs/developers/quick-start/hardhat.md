@@ -2,7 +2,7 @@
 title: "Deploy with Hardhat"
 ---
 
-This guide walks you through setting up Hardhat and deploying a smart contract to Mersennet testnet (Chain ID 7919).
+This guide walks you through setting up Hardhat and deploying a smart contract to Mersennet testnet (Chain ID 131071).
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ const config: HardhatUserConfig = {
   networks: {
     prime: {
       url: "http://46.225.30.187:8545",
-      chainId: 7919,
+      chainId: 131071,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },

@@ -1561,7 +1561,7 @@ mod tests {
         let mut base_fee_be = [0u8; 32];
         base_fee_be[24..].copy_from_slice(&42u64.to_be_bytes());
         BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used,
             base_fee_be,

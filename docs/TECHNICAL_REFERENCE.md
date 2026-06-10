@@ -4,7 +4,7 @@
 **Authors:** Rodolfo Cova (@rodaemonic)  
 **Rust Edition:** 2024  
 **EVM Target:** Shanghai (SpecId::SHANGHAI)  
-**Chain ID:** 7919 (default)
+**Chain ID:** 131071 (default)
 
 ---
 
@@ -191,7 +191,7 @@ The `Engine` struct is the central orchestrator that owns all subsystems and dri
 
 ```rust
 pub struct Engine {
-    pub chain_id: u64,                  // Default: 7919
+    pub chain_id: u64,                  // Default: 131071
     pub block_number: u64,              // Next block to produce
     pub base_fee: U256,                 // EIP-1559 base fee
     pub coinbase: Address,              // Block reward recipient
@@ -1273,7 +1273,7 @@ JSON-based configuration loaded from a file path. All fields have defaults.
 ```json
 {
   "engine": {
-    "chain_id": 7919,
+    "chain_id": 131071,
     "state_path": "state",
     "gas_limit_per_block": 30000000,
     "fee_elasticity_multiplier": 2,
@@ -1351,7 +1351,7 @@ JSON-based configuration loaded from a file path. All fields have defaults.
 
 | Parameter | Default | Unit |
 |-----------|---------|------|
-| `chain_id` | 7919 | — |
+| `chain_id` | 131071 | — |
 | `gas_limit_per_block` | 30,000,000 | gas |
 | `fee_elasticity_multiplier` | 2 | — |
 | `fee_max_change_denominator` | 8 | — |
@@ -1408,7 +1408,7 @@ curl -X POST http://localhost:8545 \
       "gas": "0x5208",
       "gas_price": "0x1",
       "nonce": "0x0",
-      "chain_id": 7919
+      "chain_id": 131071
     }]
   }'
 ```
@@ -1465,7 +1465,7 @@ curl -X POST http://localhost:8545 \
 
 ```bash
 curl http://localhost:8545/health
-# {"status":"ok","height":42,"chain_id":7919}
+# {"status":"ok","height":42,"chain_id":131071}
 ```
 
 ### Prometheus Metrics
@@ -1521,7 +1521,7 @@ Each validator has:
 ```json
 {
   "engine": {
-    "chain_id": 7919,
+    "chain_id": 131071,
     "state_path": "/data/state"
   },
   "genesis": {

@@ -1,7 +1,7 @@
 # Shielded JSON-RPC + WebSocket Reference
 
 **Audience:** SDK authors, wallet developers, indexers.
-**Chain:** 7920 (privacy testnet), 7919 (transparent testnet), and 13370 (mainnet, post-hard-fork).
+**Chain:** 131071 (privacy testnet), 131071 (transparent testnet), and 8191 (mainnet, post-hard-fork).
 **Pre-activation:** All mutation methods return `-32605` ("disabled
 in current chain mode"). Read methods return zero/empty values until
 the activation height is reached.
@@ -30,7 +30,7 @@ Returns the chain ID, privacy activation height, and feature flags.
 
 ```json
 {
-  "chainId": "0x1ef0",            // 7920
+  "chainId": "0x1ef0",            // 131071
   "privacyModeActivated": false,
   "privacyActivationHeight": 100,
   "dkg": { "epochLengthBlocks": 1800, "k": 5, "n": 7 }

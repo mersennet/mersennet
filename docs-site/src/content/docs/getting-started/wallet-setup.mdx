@@ -20,7 +20,7 @@ Connect to Mersennet testnet using MetaMask or the native PrimeXDC Wallet.
 |-------|-------|
 | **Network name** | Mersennet Testnet |
 | **RPC URL** | `http://46.225.30.187:8545` |
-| **Chain ID** | `7919` |
+| **Chain ID** | `131071` |
 | **Currency symbol** | MRSN |
 | **Block explorer URL** | `http://46.225.30.187` |
 
@@ -44,7 +44,7 @@ This triggers the following MetaMask call:
 await window.ethereum.request({
   method: 'wallet_addEthereumChain',
   params: [{
-    chainId: '0x1EEF',
+    chainId: '0x1FFFF',
     chainName: 'Mersennet Testnet',
     nativeCurrency: { name: 'MRSN', symbol: 'MRSN', decimals: 18 },
     rpcUrls: ['http://46.225.30.187:8545'],
@@ -63,7 +63,7 @@ Click **Approve** in MetaMask to add the network.
 PrimeXDC Wallet is currently in development. For now, use MetaMask or any EVM-compatible wallet.
 :::
 
-**PrimeXDC Wallet** is a browser extension wallet built natively for the Mersennet ecosystem. It supports Chain ID 7919 out of the box and provides a tailored experience for Mersennet dApps.
+**PrimeXDC Wallet** is a browser extension wallet built natively for the Mersennet ecosystem. It supports Chain ID 131071 out of the box and provides a tailored experience for Mersennet dApps.
 
 ### Installation
 

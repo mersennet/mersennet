@@ -29,7 +29,7 @@ title: "What is Mersennet?"
 
 ## Built for Developers
 
-Mersennet is designed for builders. Whether you're deploying a simple ERC-20, building a DEX, or integrating lending protocols—the same tools and patterns you know from Ethereum apply. The network is live on **testnet** (Chain ID 7919) with a block explorer, faucet, and deployed infrastructure ready for development.
+Mersennet is designed for builders. Whether you're deploying a simple ERC-20, building a DEX, or integrating lending protocols—the same tools and patterns you know from Ethereum apply. The network is live on **testnet** (Chain ID 131071) with a block explorer, faucet, and deployed infrastructure ready for development.
 
 ## What's Next?
 

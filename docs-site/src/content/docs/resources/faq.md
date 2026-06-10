@@ -16,7 +16,7 @@ Yes. Mersennet is fully EVM compatible. You can deploy Solidity contracts withou
 
 ### What is the Chain ID?
 
-**7919** (hex: `0x1EEF`) for Mersennet testnet.
+**131071** (hex: `0x1FFFF`) for Mersennet testnet.
 
 ### What is PrimeOrders?
 
@@ -42,11 +42,11 @@ Yes. Mersennet is fully EVM compatible. You can deploy Solidity contracts withou
 
 ### How do I deploy a contract to Mersennet?
 
-Use Hardhat or Foundry with Mersennet as a network. Add the RPC URL `http://46.225.30.187:8545` and Chain ID `7919`. See [Deploy with Hardhat](/developers/quick-start/hardhat) and [Deploy with Foundry](/developers/quick-start/foundry).
+Use Hardhat or Foundry with Mersennet as a network. Add the RPC URL `http://46.225.30.187:8545` and Chain ID `131071`. See [Deploy with Hardhat](/developers/quick-start/hardhat) and [Deploy with Foundry](/developers/quick-start/foundry).
 
 ### What wallets are supported?
 
-- **PrimeXDC Wallet** — Native Chrome extension for Mersennet (Chain ID 7919 preconfigured).
+- **PrimeXDC Wallet** — Native Chrome extension for Mersennet (Chain ID 131071 preconfigured).
 - **MetaMask** — Add Mersennet manually via [Wallet Setup](/getting-started/wallet-setup).
 - **PrimeXDC Mobile** — React Native wallet (APK available).
 

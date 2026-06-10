@@ -378,7 +378,7 @@ The native CLOB + EVM combination has value even if RWA tokenization takes longe
 **Email:** [founders@primechain.network]
 **Docs:** docs.primechain.network
 **GitHub:** PrimeNumbersLabs
-**Testnet:** Chain ID 7919
+**Testnet:** Chain ID 131071
 
 ---
 

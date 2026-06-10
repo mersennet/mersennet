@@ -2,7 +2,7 @@
 title: "Deployed Contracts"
 ---
 
-Complete reference of smart contracts deployed on Mersennet testnet (Chain ID 7919). All addresses are verified for the current testnet deployment.
+Complete reference of smart contracts deployed on Mersennet testnet (Chain ID 131071). All addresses are verified for the current testnet deployment.
 
 ## Foundation
 
@@ -58,7 +58,7 @@ These contracts demonstrate Mersennet's unique capability: **atomic composabilit
 ## Quick Reference (Copy-Paste)
 
 ```
-Chain ID: 7919
+Chain ID: 131071
 PrimeOrders CLOB:    0x0000000000000000000000000000000000000100 (precompile)
 Multicall3:          0x973ee1bf0907287d1eb8a144d88b34f515c83f29
 WMRSN:               0x079bf1207b51acda83e2e8178344f62a883f8479

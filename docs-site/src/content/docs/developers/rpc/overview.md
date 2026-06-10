@@ -44,7 +44,7 @@ Response:
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "result": "0x1eef"
+  "result": "0x1ffff"
 }
 ```
 

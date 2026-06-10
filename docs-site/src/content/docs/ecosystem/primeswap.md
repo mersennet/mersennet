@@ -16,7 +16,7 @@ title: "PrimeSwap V2 DEX"
 | **Swap Fee** | 0.3% |
 | **Pair Model** | Constant product (x × y = k) |
 | **LP Tokens** | ERC-20, proportional to pool share |
-| **Chain** | Mersennet Testnet (Chain ID 7919) |
+| **Chain** | Mersennet Testnet (Chain ID 131071) |
 
 ## Factory + Router Architecture
 

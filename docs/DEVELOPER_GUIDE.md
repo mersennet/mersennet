@@ -19,8 +19,8 @@ deep dive linked from here.
 ## 1. What is Mersennet?
 
 A Rust-built EVM-compatible L1 with a native CLOB (PrimeOrders) that
-is being upgraded from a transparent chain (chain ID 7919) to a
-privacy-first chain (chain ID 7920) via a hard fork. The privacy fork:
+is being upgraded from a transparent chain (chain ID 131071) to a
+privacy-first chain (chain ID 131071) via a hard fork. The privacy fork:
 
 - Moves trader-specific state (balances, positions, orders) behind a
   Poseidon-2 BN254 note commitment tree + nullifier set, à la Aztec.
@@ -94,9 +94,9 @@ programs/       — SP1 program (state-transition proof body)
 ```
 testnet/
 ├── configs/
-│   ├── validator-{1..3}.json              — transparent testnet (chain 7919)
+│   ├── validator-{1..3}.json              — transparent testnet (chain 131071)
 │   └── privacy/
-│       ├── validator-{1..7}.json          — privacy testnet (chain 7920, 5-of-7)
+│       ├── validator-{1..7}.json          — privacy testnet (chain 131071, 5-of-7)
 │       └── rpc-node.json
 ├── docker-compose.testnet.yml             — transparent stack
 ├── docker-compose.privacy.yml             — privacy stack
@@ -113,7 +113,7 @@ testnet/
 
 | Branch | Purpose |
 |---|---|
-| `main` | Production trunk for transparent chain (7919) |
+| `main` | Production trunk for transparent chain (131071) |
 | `feat/zk-privacy` | **Where the privacy testnet work lives.** All current development happens here. |
 | `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived, one PR each |
 | `archive/*` (tags) | Read-only snapshots of retired work |
@@ -199,7 +199,7 @@ headers, roots, fees, timestamps, and transaction hashes remain
 available, but full transaction objects and transaction receipts are no
 longer exposed over public RPC.
 
-### Transparent RPC (works on both 7919 and 7920)
+### Transparent RPC (works on both 131071 and 131071)
 
 Standard Ethereum-style methods plus `prime_*` extensions:
 
@@ -220,7 +220,7 @@ Post-fork retrieval rule:
 - Expanded block responses with full transaction objects are disabled
   after privacy activation.
 
-### Shielded RPC (gated on privacy activation — chain 7920)
+### Shielded RPC (gated on privacy activation — chain 131071)
 
 All payloads are opaque `bincode-then-0x-hex` blobs. Wallets build
 them locally with the SDK.

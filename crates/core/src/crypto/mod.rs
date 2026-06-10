@@ -384,7 +384,7 @@ mod tests {
             gas_limit: 21_000,
             gas_price: U256::from(1u64),
             nonce: 0,
-            chain_id: Some(7919),
+            chain_id: Some(131071),
             signature: None,
             tx_type: 0,
             shielded_payload: None,

@@ -1,6 +1,6 @@
 # ADR-018: Privacy Hard Fork
 
-**Status:** Proposed — **testnet ready** on chain 7920.
+**Status:** Proposed — **testnet ready** on chain 131071.
 **Date:** 2026-05-21 (last revised after H1–H7 land on `feat/zk-privacy`).
 **Related:** [ADR-014](ADR-014-shielded-notes.md),
 [ADR-015](ADR-015-threshold-encrypted-mempool.md),
@@ -27,7 +27,7 @@ hard fork because:
 ## Decision
 
 Activate at a fixed height `H` on the production chain (chain ID
-13370 for mainnet; 7919 is the default/transparent testnet chain ID).
+8191 for mainnet; 131071 is the default/transparent testnet chain ID).
 Pre-activation testnet runs for at least 8 weeks with the identical
 fork rules.
 
@@ -89,7 +89,7 @@ mode and the next activation attempt is scheduled `>=1 week` later.
 Two runbooks now exist:
 
 1. **[`../runbooks/privacy-testnet-bootstrap.md`](../runbooks/privacy-testnet-bootstrap.md)** —
-   bring up chain 7920 (the privacy testnet) from a fresh host. This
+   bring up chain 131071 (the privacy testnet) from a fresh host. This
    is the one operators use today.
 2. **[`../runbooks/zk-fork-activation.md`](../runbooks/zk-fork-activation.md)** —
    T-8w through T+24h checklist for the mainnet activation. Drafted

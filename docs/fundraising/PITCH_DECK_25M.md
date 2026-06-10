@@ -282,7 +282,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 │      COMBINED STRATEGIC VALUE: $11–15M + MARKET ACCESS       │
 │      ═══════════════════════════════════════════════          │
 │                                                              │
-│      TESTNET LIVE (Chain ID 7919):                           │
+│      TESTNET LIVE (Chain ID 131071):                           │
 │      ✅ 4-Validator Network  ✅ PrimeScan Explorer            │
 │      ✅ PrimeSwap DEX        ✅ PrimeNodes Dashboard          │
 │      ✅ Faucet               ✅ Documentation Portal           │
@@ -458,7 +458,7 @@ Native order matching requires **consensus-level integration** — you can't bol
     └──────────┘         └──────────┘         └──────────┘         └──────────┘
 
     ✅ SC pilot           ✅ Live RWA          ✅ Public testnet    ✅ Mainnet
-      commitment            trading              (15+ validators)    (Chain 13370)
+      commitment            trading              (15+ validators)    (Chain 8191)
     ✅ XDC partnership    ✅ Regulatory         ✅ Developer eco    ✅ Institutional
     ✅ Greg Kidd            feedback             growth               trading live
       advisory            ✅ 3+ institutional  ✅ Security audit   ✅ $100M+ TVA
@@ -478,7 +478,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 | Q1 | Consensus over P2P, block timestamps, RPC completion | SC pilot, XDC partnership | $5M strategic |
 | Q2 | Indexer, bridge (testnet↔Sepolia), SDKs published | Live RWA + Credit trading, regulatory feedback | $15M cumulative |
 | Q3 | Public testnet (15+ validators), security audit | Developer ecosystem, DeFi integrations | $25M closed |
-| Q4 | Mainnet launch (Chain ID 13370), genesis | Institutional trading live, $100M+ TVA | Strategic partnerships |
+| Q4 | Mainnet launch (Chain ID 8191), genesis | Institutional trading live, $100M+ TVA | Strategic partnerships |
 
 ---
 
@@ -648,7 +648,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 ║                                                                  ║
 ║     ─────────────────────────────────────────                    ║
 ║                                                                  ║
-║     TESTNET LIVE:  Chain ID 7919                                 ║
+║     TESTNET LIVE:  Chain ID 131071                                 ║
 ║     Explorer:      primescan.io                                  ║
 ║     DEX:           primeswap.io                                  ║
 ║     Docs:          docs.primechain.network                       ║

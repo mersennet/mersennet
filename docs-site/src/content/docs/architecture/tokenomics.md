@@ -12,7 +12,7 @@ This document provides complete tokenomics documentation for Mersennet (MRSN), i
 | **Ticker** | MRSN |
 | **Max Supply** | 1,000,000,000 (1 billion) |
 | **Decimals** | 18 |
-| **Chain ID** | 7919 |
+| **Chain ID** | 131071 |
 
 ## Allocation Breakdown
 

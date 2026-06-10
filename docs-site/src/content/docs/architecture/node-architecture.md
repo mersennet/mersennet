@@ -327,7 +327,7 @@ The signing hash is `keccak256` of the following concatenated big-endian fields:
 ┌──────────────────────────────────────────────────────────────┐
 │  Field        │ Size    │ Encoding        │ Description      │
 ├───────────────┼─────────┼─────────────────┼──────────────────┤
-│  chain_id     │ 8 bytes │ u64 big-endian  │ Network ID (7919)│
+│  chain_id     │ 8 bytes │ u64 big-endian  │ Network ID (131071)│
 │  nonce        │ 8 bytes │ u64 big-endian  │ Sender nonce     │
 │  gas_price    │ 32 bytes│ U256 big-endian │ Price per gas    │
 │  gas_limit    │ 8 bytes │ u64 big-endian  │ Max gas          │

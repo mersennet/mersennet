@@ -12,7 +12,7 @@ title: "PrimeSwap V3 DEX"
 | **Liquidity** | Concentrated (custom price ranges) |
 | **Fee Tiers** | 0.05%, 0.3%, 1% |
 | **Position Type** | NFT-based (ERC-721) |
-| **Chain** | Mersennet Testnet (Chain ID 7919) |
+| **Chain** | Mersennet Testnet (Chain ID 131071) |
 | **Frontend** | [http://46.225.30.187:4002](http://46.225.30.187:4002) |
 
 ## V3 vs V2

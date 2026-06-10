@@ -2784,7 +2784,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let sub = dir.path().join("engine");
         std::fs::create_dir_all(&sub).unwrap();
-        let engine = Engine::new_with_backend(7919, sub, "redb");
+        let engine = Engine::new_with_backend(131071, sub, "redb");
         std::mem::forget(dir);
         engine
     }

@@ -11,7 +11,7 @@ Use the Mersennet faucet to receive testnet MRSN for development and testing.
 3. Click the request button to receive testnet MRSN.
 
 :::tip
-Ensure your wallet is connected to Mersennet (Chain ID 7919) before requesting. The faucet sends MRSN to the address you provide.
+Ensure your wallet is connected to Mersennet (Chain ID 131071) before requesting. The faucet sends MRSN to the address you provide.
 :::
 
 ## Programmatic Access
@@ -53,5 +53,5 @@ If your request is rate-limited, wait a few minutes before trying again. For aut
 | Issue | Solution |
 |-------|----------|
 | Request fails | Check that your address is a valid 0x-prefixed Ethereum address (40 hex chars). |
-| No MRSN received | Verify the transaction on the [block explorer](http://46.225.30.187). Confirm you're on Chain ID 7919. |
+| No MRSN received | Verify the transaction on the [block explorer](http://46.225.30.187). Confirm you're on Chain ID 131071. |
 | Rate limited | Wait before retrying. Use a different address if needed for testing. |

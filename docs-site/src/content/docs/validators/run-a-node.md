@@ -65,7 +65,7 @@ Mersennet uses a JSON configuration file. Create `config.json` with the sections
 ```json
 {
   "engine": {
-    "chain_id": 7919,
+    "chain_id": 131071,
     "state_path": "/var/lib/mersennet/state",
     "storage_backend": "sled"
   },
@@ -92,7 +92,7 @@ Mersennet uses a JSON configuration file. Create `config.json` with the sections
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `chain_id` | `u64` | `7919` | Chain identifier — must match genesis and network |
+| `chain_id` | `u64` | `131071` | Chain identifier — must match genesis and network |
 | `state_path` | `string` | `"state"` | Directory for state database and metadata |
 | `gas_limit_per_block` | `u64` | `30000000` | Maximum gas per block (30M) |
 | `fee_elasticity_multiplier` | `u64` | `2` | EIP-1559 elasticity (target = limit / multiplier) |
@@ -177,14 +177,14 @@ Check the [Network Information](/getting-started/network-info) page for current 
 
 ## Genesis Setup
 
-For **mainnet** or **testnet**, you need the correct genesis allocations. Genesis is not a separate file — it is the `genesis` section of your `config.json`, defining initial accounts and validators. The chain ID is the numeric `engine.chain_id` (7919 for testnet, 13370 for mainnet; see `mainnet/genesis.json` in the repository for the canonical mainnet parameters).
+For **mainnet** or **testnet**, you need the correct genesis allocations. Genesis is not a separate file — it is the `genesis` section of your `config.json`, defining initial accounts and validators. The chain ID is the numeric `engine.chain_id` (131071 for testnet, 8191 for mainnet; see `mainnet/genesis.json` in the repository for the canonical mainnet parameters).
 
 Example `genesis` section:
 
 ```json
 {
   "engine": {
-    "chain_id": 7919
+    "chain_id": 131071
   },
   "genesis": {
     "accounts": [
@@ -545,7 +545,7 @@ Never run two nodes with the same `node_key.json` simultaneously — this may tr
 | Symptom | Cause | Solution |
 |---------|-------|----------|
 | 0 connected peers | Firewall blocking port 30303 | Open TCP/UDP 30303 in firewall |
-| Peers connect then disconnect | Chain ID mismatch | Verify `engine.chain_id` matches network (7919) |
+| Peers connect then disconnect | Chain ID mismatch | Verify `engine.chain_id` matches network (131071) |
 | Slow block propagation | High network latency | Use peers geographically closer; check bandwidth |
 
 #### High resource usage

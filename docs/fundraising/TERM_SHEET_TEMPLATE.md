@@ -15,8 +15,8 @@
 ║   Round Size:         $25,000,000                                ║
 ║   Instrument:         SAFT (Simple Agreement for Future Tokens)  ║
 ║   Token:              MRSN                                       ║
-║   Network:            Mersennet (EVM L1, Chain ID 13370)       ║
-║   Stage:              Pre-Mainnet (Testnet Live, Chain ID 7919)  ║
+║   Network:            Mersennet (EVM L1, Chain ID 8191)       ║
+║   Stage:              Pre-Mainnet (Testnet Live, Chain ID 131071)  ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```

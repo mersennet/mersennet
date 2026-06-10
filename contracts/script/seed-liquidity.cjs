@@ -9,7 +9,7 @@ if (!process.env.DEPLOYER_KEY) {
     process.exit(1);
 }
 const PRIVATE_KEY = process.env.DEPLOYER_KEY.replace('0x', '');
-const CHAIN_ID = 7919;
+const CHAIN_ID = 131071;
 
 const deployments = JSON.parse(readFileSync(__dirname + '/../deployments.json', 'utf8'));
 const ROUTER = deployments.contracts.PrimeSwapRouter;

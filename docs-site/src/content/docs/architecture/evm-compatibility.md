@@ -9,7 +9,7 @@ Mersennet implements an **EVM-compatible** execution environment, allowing devel
 | Aspect | Mersennet |
 |--------|-------------|
 | **EVM Version** | Shanghai |
-| **Chain ID** | 7919 |
+| **Chain ID** | 131071 |
 | **Token** | MRSN (18 decimals) |
 | **Block Time** | ~1 second |
 
@@ -79,7 +79,7 @@ Gas costs align with Ethereum's Shanghai spec for predictable behavior when port
 Mersennet uses a **custom binary transaction format** alongside standard Ethereum RLP-encoded (EIP-155) transactions — `eth_sendRawTransaction` accepts both. Key points:
 
 - Transactions include: `from`, `to`, `value`, `data`, `gasLimit`, `gasPrice`, `nonce`
-- Chain ID 7919 is used for replay protection (testnet)
+- Chain ID 131071 is used for replay protection (testnet)
 
 ### EIP-1559 Base Fee (No Priority Tip)
 

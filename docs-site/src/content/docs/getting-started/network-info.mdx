@@ -8,7 +8,7 @@ Use the following configuration to connect to Mersennet testnet.
 
 | Parameter | Value |
 |-----------|-------|
-| **Chain ID** | 7919 |
+| **Chain ID** | 131071 |
 | **Network Name** | Mersennet Testnet |
 | **RPC URL** | `http://46.225.30.187:8545` |
 | **WebSocket URL** | `ws://46.225.30.187:8546` |
@@ -33,7 +33,7 @@ Or run this code in your browser console (with MetaMask installed):
 await window.ethereum.request({
   method: 'wallet_addEthereumChain',
   params: [{
-    chainId: '0x1EEF', // 7919 in hex
+    chainId: '0x1FFFF', // 131071 in hex
     chainName: 'Mersennet Testnet',
     nativeCurrency: {
       name: 'MRSN',
@@ -47,7 +47,7 @@ await window.ethereum.request({
 ```
 
 :::note
-Chain ID `7919` in decimal equals `0x1EEF` in hexadecimal.
+Chain ID `131071` in decimal equals `0x1FFFF` in hexadecimal.
 :::
 
 ## Deployed Contract Addresses

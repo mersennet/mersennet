@@ -5,7 +5,7 @@ export const SITE = {
   tagline: 'The private, verifiable network',
   description:
     'Mersennet is a zero-knowledge Layer 1: account-level privacy across the EVM and a native on-chain order book, leverage secured by ZK risk checks instead of open liquidations, and state proven end to end with SP1.',
-  chainId: 7919,
+  chainId: 131071,
   symbol: 'MRSN',
   blockTime: '~1s',
   consensus: 'BFT PoS',

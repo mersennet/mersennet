@@ -1,7 +1,7 @@
 # Privacy Testnet Bootstrap Runbook
 
 **Audience:** Operators bringing up the Mersennet privacy testnet
-(chain ID **7920**).
+(chain ID **131071**).
 **Status:** Workstream H3 (testnet phase).
 **Pre-reqs:** Docker 24+, Docker Compose v2+, Linux/macOS host with
 ≥ 8 GB RAM and 50 GB disk.
@@ -44,7 +44,7 @@ Two paths:
 
 ### 2a. Migrate from a pre-fork snapshot (recommended)
 
-Export a snapshot from the live transparent-chain (chain ID 7919):
+Export a snapshot from the live transparent-chain (chain ID 131071):
 
 ```bash
 ./target/release/mersennet --config /etc/mersennet/config.json \
@@ -57,7 +57,7 @@ Then run the privacy bootstrap with that snapshot:
 cd testnet
 PRE_FORK_SNAPSHOT=$(realpath ../prefork-snapshot.bin) \
 ACTIVATION_HEIGHT=100 \
-CHAIN_ID=7920 \
+CHAIN_ID=131071 \
 ./scripts/bootstrap-privacy-genesis.sh
 ```
 
@@ -128,7 +128,7 @@ curl -s http://localhost:8545/health
 curl -s -X POST -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"prime_getChainConfig","params":[]}' \
   http://localhost:8545
-# expect chain_id=7920, privacy.activation_height=100
+# expect chain_id=131071, privacy.activation_height=100
 ```
 
 Watch for `privacy hard fork activated` in the logs:

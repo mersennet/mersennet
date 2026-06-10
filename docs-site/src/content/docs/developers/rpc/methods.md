@@ -32,7 +32,7 @@ curl -X POST http://46.225.30.187:8545 \
 
 ### eth_chainId
 
-Returns the chain ID (`0x1eef` = 7919).
+Returns the chain ID (`0x1ffff` = 131071).
 
 **Parameters:** None
 
@@ -440,7 +440,7 @@ Destroys a filter. Returns `true` if the filter existed.
 
 ### net_version
 
-Returns the network ID as a string (`"7919"`).
+Returns the network ID as a string (`"131071"`).
 
 **Parameters:** None
 

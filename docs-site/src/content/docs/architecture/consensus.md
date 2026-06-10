@@ -175,7 +175,7 @@ Every finalized block contains the following fields:
 |-------|------|-------------|
 | `number` | `u64` | Sequential block height starting from 0 (genesis) |
 | `hash` | `B256` | Keccak-256 hash uniquely identifying this block |
-| `chain_id` | `u64` | Network identifier (7919 for testnet) |
+| `chain_id` | `u64` | Network identifier (131071 for testnet) |
 | `state_root` | `B256` | Merkle root of the post-execution state trie |
 | `transactions` | `Vec<Transaction>` | Ordered list of transactions included in the block |
 | `receipts` | `Vec<Receipt>` | Execution receipts corresponding 1:1 with transactions |
@@ -221,7 +221,7 @@ A transaction moves through the following stages from submission to finalization
      │
   2. VALIDATION
      │  ├─ Verify ECDSA signature (recover signer from r, s, v)
-     │  ├─ Check chain_id matches (7919 for testnet)
+     │  ├─ Check chain_id matches (131071 for testnet)
      │  ├─ Verify nonce == account.nonce (no gaps, no replays)
      │  ├─ Verify sender balance ≥ value + gas_limit × gas_price
      │  └─ Check gas_price ≥ base_fee (EIP-1559)
@@ -380,7 +380,7 @@ Complete reference of all configuration parameters with their default values.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `chain_id` | `u64` | `7919` | Chain identifier (must match genesis) |
+| `chain_id` | `u64` | `131071` | Chain identifier (must match genesis) |
 | `state_path` | `string` | `"state"` | Directory for state storage |
 | `gas_limit_per_block` | `u64` | `30000000` | Maximum gas per block (30M) |
 | `fee_elasticity_multiplier` | `u64` | `2` | EIP-1559 elasticity multiplier |
@@ -464,7 +464,7 @@ Complete reference of all configuration parameters with their default values.
 ```json
 {
   "engine": {
-    "chain_id": 7919,
+    "chain_id": 131071,
     "state_path": "state",
     "gas_limit_per_block": 30000000,
     "fee_elasticity_multiplier": 2,

@@ -4,7 +4,7 @@
 
 ## Current State: What We Have
 
-### Live on Testnet (Chain ID 7919)
+### Live on Testnet (Chain ID 131071)
 
 | Service | URL | Status |
 |---------|-----|--------|
@@ -99,12 +99,12 @@
 
 ### Phase 2: App Integration (User-driven)
 
-These require pointing existing apps to chain 7919:
+These require pointing existing apps to chain 131071:
 
 1. PrimeFi — deploy lending contracts, configure markets with WMRSN + mock stablecoins
 2. Primeport — deploy Seaport, point UI + NestJS backend to testnet RPC
 3. xdc-markets — deploy prediction market contracts, point frontend to testnet
-4. PrimeXDC Wallet — update chain ID to 7919, add default RPC/explorer URLs
+4. PrimeXDC Wallet — update chain ID to 131071, add default RPC/explorer URLs
 5. Staking UI — point to validator set on testnet
 6. Liquid Staking — deploy LST contracts, connect staking UI
 

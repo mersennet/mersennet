@@ -40,9 +40,9 @@ fn encode_publish_code_hash_call(contract: Address, metadata_uri: &str) -> Bytes
 
 #[test]
 fn rpc_mersennet_id() {
-    let (mut engine, _dir) = setup_engine(7919);
+    let (mut engine, _dir) = setup_engine(131071);
     let result = route("mersennetId", Value::Null, &mut engine).expect("rpc ok");
-    assert_eq!(result, Value::String("0x1eef".to_string()));
+    assert_eq!(result, Value::String("0x1ffff".to_string()));
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn rpc_transparent_simulation_methods_disabled_after_privacy_activation() {
 
 #[test]
 fn rpc_code_hash_attests_without_exposing_bytecode() {
-    let (mut engine, _dir) = setup_engine(7919);
+    let (mut engine, _dir) = setup_engine(131071);
     let deployer = addr(0x66);
     let stranger = addr(0x77);
     engine.fund_account(deployer, U256::from(2_000_000u64), 0);
@@ -177,7 +177,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
             gas_limit: 100_000,
             gas_price: U256::from(1u64),
             nonce: 0,
-            chain_id: Some(7919),
+            chain_id: Some(131071),
             signature: None,
             tx_type: 0,
             shielded_payload: None,
@@ -212,7 +212,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
             gas_limit: 100_000,
             gas_price: U256::from(1u64),
             nonce: 1,
-            chain_id: Some(7919),
+            chain_id: Some(131071),
             signature: None,
             tx_type: 0,
             shielded_payload: None,
@@ -270,7 +270,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
 
 #[test]
 fn rpc_prime_send_transaction_adds_to_mempool() {
-    let (mut engine, _dir) = setup_engine(7919);
+    let (mut engine, _dir) = setup_engine(131071);
     let alice = addr(0x11);
     let bob = addr(0x22);
     engine.fund_account(alice, U256::from(1_000_000u64), 0);
@@ -283,7 +283,7 @@ fn rpc_prime_send_transaction_adds_to_mempool() {
         gas_limit: 21_000,
         gas_price: U256::from(1u64),
         nonce: 0,
-        chain_id: Some(7919),
+        chain_id: Some(131071),
         signature: None,
         tx_type: 0,
         shielded_payload: None,

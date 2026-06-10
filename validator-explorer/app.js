@@ -1,5 +1,5 @@
 /* =============================================================================
-   PrimeNodes — Validator Dashboard for Mersennet (Chain ID 7919)
+   PrimeNodes — Validator Dashboard for Mersennet (Chain ID 131071)
    Single-page app: hash-based routing, RPC polling, canvas charts
    ============================================================================= */
 
@@ -8,7 +8,7 @@
 
     // ── Config ──────────────────────────────────────────────────────────
     const RPC_URL = '/rpc';
-    const CHAIN_ID = 7919;
+    const CHAIN_ID = 131071;
     const POLL_INTERVAL = 5000;
     const BLOCKS_TO_SCAN = 200;
     const EXPLORER_BASE = 'http://46.225.30.187';

@@ -2,7 +2,7 @@
 title: "Ecosystem Directory"
 ---
 
-Complete directory of live services, endpoints, and deployed contracts on Mersennet testnet (Chain ID 7919).
+Complete directory of live services, endpoints, and deployed contracts on Mersennet testnet (Chain ID 131071).
 
 ## Live Services
 
@@ -62,7 +62,7 @@ PrimeSwap V3 contracts are recently deployed. Verified addresses will be added t
 ## Quick Reference
 
 ```
-Chain ID:             7919 (0x1EEF)
+Chain ID:             131071 (0x1FFFF)
 RPC:                  http://46.225.30.187:8545
 WebSocket:            ws://46.225.30.187:8546
 Explorer:             http://46.225.30.187
