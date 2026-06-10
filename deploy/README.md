@@ -1,4 +1,4 @@
-# Prime Chain Testnet Deployment
+# Mersennet Testnet Deployment
 
 One-command deployment of a 4-validator + 1 public-node testnet to Hetzner VPS.
 

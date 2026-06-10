@@ -1,6 +1,6 @@
 # Runbook: Privacy Hard-Fork Activation
 
-**Audience:** Prime Chain validators, infrastructure operators, and the
+**Audience:** Mersennet validators, infrastructure operators, and the
 ecosystem leadership.
 **Linked ADRs:** [ADR-014](../adr/ADR-014-shielded-notes.md),
 [ADR-015](../adr/ADR-015-threshold-encrypted-mempool.md),

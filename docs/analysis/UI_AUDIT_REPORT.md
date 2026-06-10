@@ -10,7 +10,7 @@
 
 This audit compares PrimeSwap V3 (port 4002) against V2 (port 4000) to identify design inconsistencies, branding issues, and establish the target design language for V3.
 
-**Critical Finding:** V3 has significant branding inconsistencies and appears to use a generic Uniswap V3 fork UI without proper Prime Chain theming.
+**Critical Finding:** V3 has significant branding inconsistencies and appears to use a generic Uniswap V3 fork UI without proper Mersennet theming.
 
 ---
 
@@ -20,8 +20,8 @@ This audit compares PrimeSwap V3 (port 4002) against V2 (port 4000) to identify 
 
 **Logo/Brand Identity:**
 - Uses "PrimeSwap" text branding in header (plain text)
-- Missing Prime Chain logo/icon
-- Page title: "PrimeSwap V3 | Prime Chain DEX"
+- Missing Mersennet logo/icon
+- Page title: "PrimeSwap V3 | Mersennet DEX"
 - No visual Prime branding elements
 
 **Color Scheme:**
@@ -31,7 +31,7 @@ This audit compares PrimeSwap V3 (port 4002) against V2 (port 4000) to identify 
 - Accent color: Cyan blue (`#00D4FF` style)
 
 **Issues:**
-- Logo says "PrimeSwap" but lacks Prime Chain diamond logo
+- Logo says "PrimeSwap" but lacks Mersennet diamond logo
 - Generic appearance, doesn't establish unique brand identity
 - Inconsistent with V2's established branding
 
@@ -40,7 +40,7 @@ This audit compares PrimeSwap V3 (port 4002) against V2 (port 4000) to identify 
 **Logo/Brand Identity:**
 - **Diamond logo** (purple/pink gradient) + "Prime" text + "Swap" text
 - Distinctive multi-color diamond icon (purple, pink, cyan gradient)
-- Page title: "PrimeSwap | Prime Chain DEX"
+- Page title: "PrimeSwap | Mersennet DEX"
 - Strong visual brand presence
 
 **Color Scheme:**
@@ -52,7 +52,7 @@ This audit compares PrimeSwap V3 (port 4002) against V2 (port 4000) to identify 
 
 **Key Visual Elements:**
 - Version switcher badge: "V2" with dropdown to "V1"
-- "Prime Chain" network indicator button (top right)
+- "Mersennet" network indicator button (top right)
 - Settings gear icon (top right)
 - Hamburger menu (top right)
 
@@ -78,7 +78,7 @@ Header:
 ```
 Header:
 - Logo (diamond + "Prime Swap") [left]
-- Prime Chain button [right]
+- Mersennet button [right]
 - Connect to a wallet [right]
 - V2/V1 switcher [right]
 - Settings gear [right]
@@ -283,7 +283,7 @@ Card Tabs:
 Failed to get block number for chainId: 7919 
 Error: Failed to send batch call
 ```
-- **Issue:** RPC connection failing for Prime Chain (7919)
+- **Issue:** RPC connection failing for Mersennet (7919)
 - **Impact:** Can't fetch on-chain data, blocks/transactions won't update
 
 ### V2 Errors:
@@ -339,10 +339,10 @@ TypeError: Failed to fetch
    - Should use purple-pink gradient theme from V2
    - **Action:** Update CSS custom properties to match V2 palette
 
-3. **No Prime Chain Branding**
-   - Missing "Prime Chain" network button
+3. **No Mersennet Branding**
+   - Missing "Mersennet" network button
    - Missing version indicator
-   - **Action:** Add Prime Chain button and V3 badge to header
+   - **Action:** Add Mersennet button and V3 badge to header
 
 4. **Generic Button Styles**
    - Lacks distinctive purple-pink gradients
@@ -388,7 +388,7 @@ TypeError: Failed to fetch
 ### ✅ Adopt from V2:
 - **Diamond logo with gradient** (critical branding)
 - **Purple-to-pink gradient color scheme** (brand identity)
-- **"Prime Chain" network indicator** (user orientation)
+- **"Mersennet" network indicator** (user orientation)
 - **Version badge** ("V3") for clarity
 - **Gradient button styles** (visual consistency)
 - **Card borders and shadows** (visual depth)
@@ -402,7 +402,7 @@ Header:
 ├─ Diamond Logo + "Prime" + "Swap" (gradient)
 ├─ Navigation Tabs (Swap | Pool) - center
 └─ Right Side:
-   ├─ Prime Chain (network badge)
+   ├─ Mersennet (network badge)
    ├─ V3 (version badge)
    ├─ Connect to a wallet (gradient button)
    ├─ Settings (gear icon)
@@ -431,11 +431,11 @@ Token Selectors:
 ## 10. IMPLEMENTATION CHECKLIST
 
 ### Phase 1: Critical Branding (Do First)
-- [ ] Add Prime Chain diamond logo SVG to V3 project
+- [ ] Add Mersennet diamond logo SVG to V3 project
 - [ ] Update header logo to match V2 (diamond + text)
 - [ ] Implement purple-pink gradient CSS variables
 - [ ] Update primary button styles with gradients
-- [ ] Add "Prime Chain" network indicator button
+- [ ] Add "Mersennet" network indicator button
 - [ ] Add "V3" version badge
 
 ### Phase 2: Visual Refinement
@@ -465,7 +465,7 @@ Token Selectors:
 ## 11. DESIGN ASSETS NEEDED
 
 ### From V2 Codebase:
-1. **Prime Chain diamond logo** (SVG)
+1. **Mersennet diamond logo** (SVG)
    - Gradient version (purple/pink/cyan)
    - Monochrome version (white)
 
@@ -495,11 +495,11 @@ Token Selectors:
 
 ## 12. CONCLUSION
 
-**Current State:** V3 appears to be a Uniswap V3 fork with minimal Prime Chain branding applied. It lacks the distinctive purple-pink gradient theme and diamond logo that define the Prime Chain visual identity.
+**Current State:** V3 appears to be a Uniswap V3 fork with minimal Mersennet branding applied. It lacks the distinctive purple-pink gradient theme and diamond logo that define the Mersennet visual identity.
 
-**Target State:** V3 should adopt V2's established branding (logo, colors, gradients) while maintaining its improved header navigation structure. The result will be a modern, on-brand DEX that clearly identifies as part of the Prime Chain ecosystem.
+**Target State:** V3 should adopt V2's established branding (logo, colors, gradients) while maintaining its improved header navigation structure. The result will be a modern, on-brand DEX that clearly identifies as part of the Mersennet ecosystem.
 
-**Priority:** Branding updates are CRITICAL. The current V3 UI does not adequately represent Prime Chain and could confuse users familiar with V2.
+**Priority:** Branding updates are CRITICAL. The current V3 UI does not adequately represent Mersennet and could confuse users familiar with V2.
 
 **Estimated Effort:**
 - Phase 1 (Critical Branding): 4-8 hours
@@ -507,7 +507,7 @@ Token Selectors:
 - Phase 3 (UX Improvements): 4-6 hours
 - Phase 4 (Technical Fixes): 4-8 hours
 
-**Total:** 20-34 hours for complete V3 UI overhaul to match Prime Chain branding standards.
+**Total:** 20-34 hours for complete V3 UI overhaul to match Mersennet branding standards.
 
 ---
 

@@ -1,6 +1,6 @@
 # Privacy Testnet Bootstrap Runbook
 
-**Audience:** Operators bringing up the Prime Chain privacy testnet
+**Audience:** Operators bringing up the Mersennet privacy testnet
 (chain ID **7920**).
 **Status:** Workstream H3 (testnet phase).
 **Pre-reqs:** Docker 24+, Docker Compose v2+, Linux/macOS host with
@@ -145,7 +145,7 @@ Once block height reaches `ACTIVATION_HEIGHT` (default 100), every
 validator should log:
 
 ```
-WARN  Prime Chain privacy hard fork activated — shielded tx type 0x7E now accepted
+WARN  Mersennet privacy hard fork activated — shielded tx type 0x7E now accepted
 INFO  DKG ceremony started for new epoch  epoch=0
 ```
 

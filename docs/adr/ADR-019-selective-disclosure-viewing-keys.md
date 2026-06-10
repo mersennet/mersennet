@@ -14,7 +14,7 @@ The post-fork privacy perimeter now removes most transparent trader
 metadata from the public RPC surface. That is necessary, but not
 sufficient.
 
-Prime Chain still needs a way for the following actors to inspect
+Mersennet still needs a way for the following actors to inspect
 shielded state without reopening public account-level leakage:
 
 1. The owner of a shielded account.

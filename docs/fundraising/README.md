@@ -1,4 +1,4 @@
-# Prime Chain — $25M Series A Fundraising Suite
+# Mersennet — $25M Series A Fundraising Suite
 
 > All materials updated March 2026 | Confidential
 
@@ -23,7 +23,7 @@
 ```
 ╔══════════════════════════════════════════════════════╗
 ║                                                      ║
-║   PRIME CHAIN — SERIES A                             ║
+║   MERSENNET — SERIES A                             ║
 ║                                                      ║
 ║   Raise:     $25,000,000                             ║
 ║   Instrument: SAFT                                   ║

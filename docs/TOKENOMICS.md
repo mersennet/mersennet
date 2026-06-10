@@ -1,4 +1,4 @@
-# Prime Chain (PRIM) Tokenomics
+# Mersennet (PRIM) Tokenomics
 
 Complete technical documentation of PRIM token economics, emission schedule, allocations, validator incentives, and slashing mechanics.
 
@@ -8,7 +8,7 @@ Complete technical documentation of PRIM token economics, emission schedule, all
 
 | Parameter | Value |
 |-----------|-------|
-| **Token Name** | Prime Chain |
+| **Token Name** | Mersennet |
 | **Ticker** | PRIM |
 | **Total Supply** | 1,000,000,000 (1 Billion) |
 | **Decimal Places** | 18 (1 PRIM = 10^18 wei) |
@@ -324,7 +324,7 @@ Every block includes:
 
 ### 7.3 EIP-1559 Fee Market
 
-Prime Chain implements EIP-1559 base fee adjustment:
+Mersennet implements EIP-1559 base fee adjustment:
 
 ```
 gas_limit_per_block     = 30,000,000
@@ -368,7 +368,7 @@ Governance requires:
 | **Polkadot** | 2.1B | Halving | ~5% | ~13% | ~17% | ~12+ years |
 | **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~13 years** |
 
-Prime Chain's allocation is closest to Cosmos (high block rewards) with the halving discipline of Bitcoin/Polkadot and a conservative team allocation.
+Mersennet's allocation is closest to Cosmos (high block rewards) with the halving discipline of Bitcoin/Polkadot and a conservative team allocation.
 
 ---
 

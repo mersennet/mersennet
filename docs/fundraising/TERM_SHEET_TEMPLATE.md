@@ -1,4 +1,4 @@
-# Prime Chain — Indicative Term Sheet
+# Mersennet — Indicative Term Sheet
 
 > **DRAFT — For Discussion Purposes Only** | Series A | March 2026
 > This term sheet is non-binding and subject to final legal documentation.
@@ -10,12 +10,12 @@
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║                                                                  ║
-║   PRIME CHAIN — SERIES A TERM SHEET                              ║
+║   MERSENNET — SERIES A TERM SHEET                              ║
 ║                                                                  ║
 ║   Round Size:         $25,000,000                                ║
 ║   Instrument:         SAFT (Simple Agreement for Future Tokens)  ║
 ║   Token:              PRIM                                       ║
-║   Network:            Prime Chain (EVM L1, Chain ID 13370)       ║
+║   Network:            Mersennet (EVM L1, Chain ID 13370)       ║
 ║   Stage:              Pre-Mainnet (Testnet Live, Chain ID 7919)  ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
@@ -27,7 +27,7 @@
 
 | Term | Detail |
 |------|--------|
-| **Issuer** | Prime Chain Foundation (or designated entity) |
+| **Issuer** | Mersennet Foundation (or designated entity) |
 | **Round** | Series A |
 | **Total Raise** | $25,000,000 USD |
 | **Instrument** | SAFT (Simple Agreement for Future Tokens) |
@@ -206,7 +206,7 @@ For investors preferring milestone-based funding:
 
 ## 10. Contact & Execution
 
-**Issuer:** Prime Chain Foundation
+**Issuer:** Mersennet Foundation
 **Contact:** [founders@primechain.network]
 **Legal Counsel:** [To be appointed]
 

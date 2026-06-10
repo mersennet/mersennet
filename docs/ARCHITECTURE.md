@@ -1,4 +1,4 @@
-# Prime Chain — Architecture Decision Records
+# Mersennet — Architecture Decision Records
 
 **Version 1.0 — March 2026**
 **Classification: Technical Architecture Document**
@@ -33,9 +33,9 @@
 
 ## 1. Executive Summary
 
-Prime Chain is a **Layer 1 blockchain** that combines a parallel EVM execution engine with a native, high-performance Central Limit Order Book (CLOB). The core differentiator is **atomic EVM ↔ CLOB composability** through a custom revm precompile at address `0x0100`, enabling Solidity smart contracts to place orders, manage collateral, and query positions in a single transaction with no bridge latency.
+Mersennet is a **Layer 1 blockchain** that combines a parallel EVM execution engine with a native, high-performance Central Limit Order Book (CLOB). The core differentiator is **atomic EVM ↔ CLOB composability** through a custom revm precompile at address `0x0100`, enabling Solidity smart contracts to place orders, manage collateral, and query positions in a single transaction with no bridge latency.
 
-**Competitive positioning:** Hyperliquid has HyperEVM (alpha) alongside its native CLOB, but EVM ↔ CLOB composability is **async** — CoreWriter actions are delayed by seconds, reads are 1 block stale. Prime Chain's CLOB precompile is the key architectural differentiator: **true atomic same-transaction EVM ↔ CLOB** — unique in the industry.
+**Competitive positioning:** Hyperliquid has HyperEVM (alpha) alongside its native CLOB, but EVM ↔ CLOB composability is **async** — CoreWriter actions are delayed by seconds, reads are 1 block stale. Mersennet's CLOB precompile is the key architectural differentiator: **true atomic same-transaction EVM ↔ CLOB** — unique in the industry.
 
 ### Key Performance Characteristics
 
@@ -61,7 +61,7 @@ Prime Chain is a **Layer 1 blockchain** that combines a parallel EVM execution e
 
 ### Architectural Thesis
 
-Existing blockchains force a choice: general-purpose smart contracts (Ethereum) **or** high-performance order matching (Hyperliquid). Multi-chain approaches (dYdX v4) lose atomic composability. Prime Chain resolves this by embedding both execution domains in a single state tuple:
+Existing blockchains force a choice: general-purpose smart contracts (Ethereum) **or** high-performance order matching (Hyperliquid). Multi-chain approaches (dYdX v4) lose atomic composability. Mersennet resolves this by embedding both execution domains in a single state tuple:
 
 ```
 S = (S_evm, S_orders, S_bridge)
@@ -77,7 +77,7 @@ All three domains share one consensus layer, one block structure, one state root
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           PRIME CHAIN NODE                              │
+│                           MERSENNET NODE                              │
 │                                                                         │
 │  ┌─────────────┐    ┌──────────────────────────────────────────────┐   │
 │  │  JSON-RPC    │    │              ENGINE  (engine.rs)             │   │
@@ -224,7 +224,7 @@ State Root (B256, keccak256 Binary Merkle)
 **Status:** Accepted
 
 **Context:**
-Prime Chain's thesis requires both general-purpose smart contracts (EVM) and a high-performance order matching engine (CLOB) within a single blockchain. The core question is whether these two execution domains should maintain separate state or share a unified canonical state.
+Mersennet's thesis requires both general-purpose smart contracts (EVM) and a high-performance order matching engine (CLOB) within a single blockchain. The core question is whether these two execution domains should maintain separate state or share a unified canonical state.
 
 Separate state models (as used by dYdX v4 on its app-chain, or Polkadot parachains) introduce composability gaps: operations that span both domains require asynchronous bridge messages, breaking atomicity and introducing latency. For institutional use cases—where a smart contract must atomically deposit collateral, place an order, and react to fill results—this gap is unacceptable.
 
@@ -364,7 +364,7 @@ The existing CometBFT-style three-phase consensus (`consensus.rs`) is retained a
 **Status:** Accepted
 
 **Context:**
-The central value proposition of Prime Chain is that EVM smart contracts can interact atomically with the native order book. The question is *how* to expose order book operations to EVM execution.
+The central value proposition of Mersennet is that EVM smart contracts can interact atomically with the native order book. The question is *how* to expose order book operations to EVM execution.
 
 Options range from asynchronous bridge messages (latent, no atomicity), to implementing the CLOB entirely in Solidity (gas-prohibitive), to a custom EVM precompile that directly mutates native state.
 
@@ -494,7 +494,7 @@ The pool verifies `keccak256(encrypted_tx || salt) == commitment_hash`. If valid
 **Status:** Accepted
 
 **Context:**
-Prime Chain needs a production-quality EVM implementation in Rust. The implementation must support the Shanghai specification (the latest stable EVM hard fork), custom precompile registration, and integration with Rust-native state backends.
+Mersennet needs a production-quality EVM implementation in Rust. The implementation must support the Shanghai specification (the latest stable EVM hard fork), custom precompile registration, and integration with Rust-native state backends.
 
 **Decision:**
 Use **revm v12** with the following configuration:
@@ -528,7 +528,7 @@ revm is the EVM implementation used by **Reth** (the Rust Ethereum client by Par
 **Status:** Accepted (with planned migration)
 
 **Context:**
-Prime Chain needs an embedded key-value store for persisting EVM account state, contract storage, order book data, bridge queues, and block history. The store must support atomic writes, prefix scans (for iterating an account's storage slots), and reasonable throughput for initial development.
+Mersennet needs an embedded key-value store for persisting EVM account state, contract storage, order book data, bridge queues, and block history. The store must support atomic writes, prefix scans (for iterating an account's storage slots), and reasonable throughput for initial development.
 
 **Decision:**
 Use **sled 0.34**, a Rust-native embedded database built on a lock-free B+ tree with zero-copy reads. sled is used through 8 separate trees within a single database:
@@ -735,7 +735,7 @@ Implement a two-tier insolvency protection mechanism in `PrimeOrdersState`:
 Hyperliquid chose dual-execution (HyperCore + HyperEVM) for maximum CLOB performance but at the cost of async composability. HyperEVM runs as a separate Cancun-spec EVM alongside the native CLOB; they execute sequentially. EVM reads HyperCore state from the previous block (1 block stale). CoreWriter at `0x333...333` queues orders for the next block — seconds delay. This design optimizes for raw CLOB throughput (200K ops/s) but makes atomic EVM ↔ CLOB flows impossible.
 
 **Decision:**
-Prime Chain chose integrated execution with a precompile at `0x0100` that runs PrimeOrders operations **synchronously** within EVM transaction execution. The CLOB state is co-located with EVM state in the same block; precompile calls execute inline during `revm.transact_commit()`. A single transaction can deposit collateral, place an order, and react to the fill in one atomic step.
+Mersennet chose integrated execution with a precompile at `0x0100` that runs PrimeOrders operations **synchronously** within EVM transaction execution. The CLOB state is co-located with EVM state in the same block; precompile calls execute inline during `revm.transact_commit()`. A single transaction can deposit collateral, place an order, and react to the fill in one atomic step.
 
 **Alternatives Considered:**
 

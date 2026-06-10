@@ -1,4 +1,4 @@
-# Prime Chain Ecosystem Roadmap
+# Mersennet Ecosystem Roadmap
 
 > **Master Plan:** This document covers the ecosystem layer (apps, contracts, integrations). For the full infrastructure roadmap covering core chain, CI/CD, security, audits, and mainnet launch, see **[Infrastructure Roadmap](INFRASTRUCTURE_ROADMAP.md)**.
 
@@ -38,7 +38,7 @@
 | WPRIM/USDT | 10,000 WPRIM + 10,000 USDT | 1 PRIM = 1 USDT |
 | WPRIM/DAI | 10,000 WPRIM + 10,000 DAI | 1 PRIM = 1 DAI |
 
-### Built Locally (Not Yet Deployed to Prime Chain)
+### Built Locally (Not Yet Deployed to Mersennet)
 
 | App | Type | Repo | Stack | State |
 |-----|------|------|-------|-------|
@@ -145,7 +145,7 @@ These require pointing existing apps to chain 7919:
 
 ## Competitive Reference
 
-| Feature | Ethereum | Polygon | Arbitrum | Base | **Prime Chain** |
+| Feature | Ethereum | Polygon | Arbitrum | Base | **Mersennet** |
 |---------|----------|---------|----------|------|----------------|
 | Explorer | Etherscan | Polygonscan | Arbiscan | Basescan | **Live** |
 | Faucet | Multiple | Multiple | Alchemy | Coinbase | **Live** |

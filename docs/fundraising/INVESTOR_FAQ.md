@@ -1,4 +1,4 @@
-# Prime Chain — Investor FAQ
+# Mersennet — Investor FAQ
 
 > **Confidential** | Series A — $25M | March 2026
 
@@ -6,15 +6,15 @@
 
 ## Technology
 
-### Q: What is Prime Chain in one sentence?
+### Q: What is Mersennet in one sentence?
 
-**A:** Prime Chain is the only Layer 1 blockchain where Solidity smart contracts can trade on a native central limit order book (CLOB) in the same transaction — enabling institutional-grade, compliant trading of tokenized real-world assets and credit instruments.
+**A:** Mersennet is the only Layer 1 blockchain where Solidity smart contracts can trade on a native central limit order book (CLOB) in the same transaction — enabling institutional-grade, compliant trading of tokenized real-world assets and credit instruments.
 
 ---
 
 ### Q: What makes the atomic EVM ↔ CLOB composability unique?
 
-**A:** On Prime Chain, a smart contract can atomically (in a single transaction):
+**A:** On Mersennet, a smart contract can atomically (in a single transaction):
 
 1. Receive a tokenized bond deposit
 2. Place a limit order on the native order book
@@ -40,7 +40,7 @@ This happens in ~200ms, in one transaction, with deterministic execution. No oth
    Hyperliquid       ~500         200,000            200ms
    dYdX              N/A          100,000           ~1,000ms
    ─────────────────────────────────────────────────────────
-   PRIME CHAIN      72,181       2,484,170            200ms
+   MERSENNET      72,181       2,484,170            200ms
 ```
 
 - **EVM:** 72,181 TPS via Block-STM parallel execution (4.8x Monad, 18x Solana)
@@ -102,7 +102,7 @@ These are measured benchmarks, not theoretical maximums.
 | Citi | $5T by 2030 | Asset tokenization |
 | World Economic Forum | 10% of global GDP tokenized by 2027 | Broad tokenization |
 
-Our assumption: Prime Chain captures **0.14% of TAM** in Year 3 ($25B TVA out of $18.5T). That's conservative — it requires only 30 institutional partners with ~$833M TVA each.
+Our assumption: Mersennet captures **0.14% of TAM** in Year 3 ($25B TVA out of $18.5T). That's conservative — it requires only 30 institutional partners with ~$833M TVA each.
 
 ---
 
@@ -110,7 +110,7 @@ Our assumption: Prime Chain captures **0.14% of TAM** in Year 3 ($25B TVA out of
 
 **A:**
 
-| Limitation | Ethereum | L2s (Arbitrum, etc.) | Prime Chain |
+| Limitation | Ethereum | L2s (Arbitrum, etc.) | Mersennet |
 |-----------|----------|---------------------|-------------|
 | Finality | 12 seconds | 1–2 seconds | **200ms** |
 | Order Matching | Smart contract (MEV-prone) | Smart contract (MEV-prone) | **Native CLOB (MEV-free)** |
@@ -118,21 +118,21 @@ Our assumption: Prime Chain captures **0.14% of TAM** in Year 3 ($25B TVA out of
 | Risk Management | Build from scratch | Build from scratch | **Built-in (margin, liquidation)** |
 | Gas Cost | $10–100/tx | $0.10–1/tx | **<$0.01/tx** |
 
-Ethereum is the "internet computer." Prime Chain is the "institutional exchange." Different products for different markets.
+Ethereum is the "internet computer." Mersennet is the "institutional exchange." Different products for different markets.
 
 ---
 
-### Q: How is Prime Chain different from Hyperliquid?
+### Q: How is Mersennet different from Hyperliquid?
 
 **A:** This is the most important competitive question. Three critical differences:
 
-1. **Atomic vs. Async:** Prime Chain's EVM ↔ CLOB is atomic (same transaction). Hyperliquid's is async — CoreWriter is delayed by seconds, reads are stale by 1 block. This means DeFi protocols on Hyperliquid cannot atomically interact with the order book.
+1. **Atomic vs. Async:** Mersennet's EVM ↔ CLOB is atomic (same transaction). Hyperliquid's is async — CoreWriter is delayed by seconds, reads are stale by 1 block. This means DeFi protocols on Hyperliquid cannot atomically interact with the order book.
 
 2. **12x Faster CLOB:** 2.4M ops/s vs. 200K ops/s. More throughput = more concurrent markets, more institutional users.
 
-3. **Institutional Focus vs. Crypto Perps:** Hyperliquid focuses on crypto perpetual futures. Prime Chain targets $18.5T in tokenized RWA and credit — a fundamentally larger market.
+3. **Institutional Focus vs. Crypto Perps:** Hyperliquid focuses on crypto perpetual futures. Mersennet targets $18.5T in tokenized RWA and credit — a fundamentally larger market.
 
-**Analogy:** Hyperliquid is Binance Futures on-chain. Prime Chain is the NYSE/NASDAQ for tokenized real-world assets.
+**Analogy:** Hyperliquid is Binance Futures on-chain. Mersennet is the NYSE/NASDAQ for tokenized real-world assets.
 
 ---
 
@@ -229,7 +229,7 @@ Raising less would risk under-funding business development (the partnerships are
 
 ### Q: Why only 5% for sales?
 
-**A:** Prime Chain has the lowest combined insider allocation (10% team + sales) of any major L1 launched in the last three years:
+**A:** Mersennet has the lowest combined insider allocation (10% team + sales) of any major L1 launched in the last three years:
 
 | Chain | Team | Investors | Combined Insider |
 |-------|------|-----------|-----------------|
@@ -288,7 +288,7 @@ High initial APY incentivizes early staking. As more validators join and total s
 
 ### Q: What if RWA tokenization is slower than expected?
 
-**A:** Prime Chain has three fallback positions:
+**A:** Mersennet has three fallback positions:
 
 1. **Credit markets:** $2.5T+ TAM independent of RWA timeline
 2. **DeFi:** Full EVM compatibility means standard DeFi use cases work immediately

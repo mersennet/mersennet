@@ -1,6 +1,6 @@
-# Prime Chain — Developer Guide
+# Mersennet — Developer Guide
 
-**Audience:** Engineers landing on the Prime Chain repo for the first
+**Audience:** Engineers landing on the Mersennet repo for the first
 time, or returning after a break.
 
 This guide is the single entry point. It tells you:
@@ -16,7 +16,7 @@ deep dive linked from here.
 
 ---
 
-## 1. What is Prime Chain?
+## 1. What is Mersennet?
 
 A Rust-built EVM-compatible L1 with a native CLOB (PrimeOrders) that
 is being upgraded from a transparent chain (chain ID 7919) to a
@@ -35,7 +35,7 @@ privacy-first chain (chain ID 7920) via a hard fork. The privacy fork:
 **Why:** after October 10, 2025, large traders are unwilling to use
 chains where their positions and proximity to liquidation are
 publicly readable, because those signals get used to engineer
-cascading liquidations. Prime Chain's privacy fork makes those
+cascading liquidations. Mersennet's privacy fork makes those
 signals unobservable.
 
 ---

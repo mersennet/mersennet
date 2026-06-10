@@ -1,4 +1,4 @@
-# Prime Chain Privacy Fork — Consolidation & Close-Out
+# Mersennet Privacy Fork — Consolidation & Close-Out
 
 **Audience:** Rodolfo Cova (merge owner) and the workstream owners in `.github/CODEOWNERS`.
 **Purpose:** one authoritative handoff for finishing the zk privacy fork. It tells you how to consolidate the five feature branches, how to prove the consolidated tree is green, the true status of every workstream after the merge, and exactly what is left (and why none of it is buildable inside the dev sandbox).

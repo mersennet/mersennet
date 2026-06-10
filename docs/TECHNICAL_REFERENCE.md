@@ -1,4 +1,4 @@
-# Prime Chain — Technical Reference
+# Mersennet — Technical Reference
 
 **Version:** 0.1.0  
 **Authors:** Rodolfo Cova (@rodaemonic)  
@@ -39,7 +39,7 @@
 
 ## 1. Architecture Overview
 
-Prime Chain is a high-performance EVM-compatible blockchain with a native central limit order book (CLOB) embedded at the protocol level as an EVM precompile. It combines parallel transaction execution, two-phase BFT consensus, frequent batch auctions for fair price discovery, and commit-reveal MEV protection into a single vertically-integrated stack.
+Mersennet is a high-performance EVM-compatible blockchain with a native central limit order book (CLOB) embedded at the protocol level as an EVM precompile. It combines parallel transaction execution, two-phase BFT consensus, frequent batch auctions for fair price discovery, and commit-reveal MEV protection into a single vertically-integrated stack.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1574,14 +1574,14 @@ Hyperliquid operates a dual-execution architecture:
 
 ### EVM ↔ CLOB Composability Comparison
 
-| Aspect | Prime Chain (Precompile 0x0100) | Hyperliquid (HyperEVM) |
+| Aspect | Mersennet (Precompile 0x0100) | Hyperliquid (HyperEVM) |
 |--------|--------------------------------|------------------------|
 | **Composability** | Atomic same-transaction | Async next-block |
 | **Read latency** | Current block (live) | Previous block (1 block stale) |
 | **Write latency** | Immediate (same tx) | CoreWriter queues for next block (seconds) |
 | **Use case** | Vault: deposit → place order → react to fill in one tx | Requires multi-tx, multi-block flow |
 
-Prime Chain's CLOB precompile achieves **atomic same-tx composability** — a Solidity contract can deposit collateral, place an order, and react to the fill in a single transaction. HyperEVM's CoreWriter pattern is intentionally async, trading composability for maximum CLOB throughput.
+Mersennet's CLOB precompile achieves **atomic same-tx composability** — a Solidity contract can deposit collateral, place an order, and react to the fill in a single transaction. HyperEVM's CoreWriter pattern is intentionally async, trading composability for maximum CLOB throughput.
 
 ---
 

@@ -1,4 +1,4 @@
-# Prime Chain TODO
+# Mersennet TODO
 
 ## Core Networking & Execution
 - [x] Proper mempool + transaction validation pipeline.

@@ -1,6 +1,6 @@
-# Prime Chain Go SDK
+# Mersennet Go SDK
 
-Go client for Prime Chain - JSON-RPC and CLOB (order book) operations.
+Go client for Mersennet - JSON-RPC and CLOB (order book) operations.
 
 ## Installation
 

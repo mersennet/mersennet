@@ -1,19 +1,19 @@
-# Prime Chain: Strategic Positioning & Fundraising Strategy
+# Mersennet: Strategic Positioning & Fundraising Strategy
 
 **Version 3.0 - Updated March 2026**  
 **Last Updated: March 2026**
 
 ## Executive Summary
 
-Prime Chain is the **only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture—combining full EVM compatibility with institutional-grade trading infrastructure—solves a critical gap in the $16T+ Real-World Asset (RWA) tokenization market AND the $2.5T+ on-chain institutional credit market.
+Mersennet is the **only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture—combining full EVM compatibility with institutional-grade trading infrastructure—solves a critical gap in the $16T+ Real-World Asset (RWA) tokenization market AND the $2.5T+ on-chain institutional credit market.
 
-**Current State (v6.0)**: Prime Chain v6.0 is complete with a working testnet, 62 passing tests, and comprehensive documentation. **Measured performance**: 72K TPS (EVM), 2.4M CLOB ops/s, HotStuff-2 ~200ms finality. The CLOB precompile (0x0100) enables **atomic EVM ↔ CLOB composability** — Solidity contracts can trade on the order book in the same transaction. FBA (Federated Byzantine Agreement) provides MEV protection.
+**Current State (v6.0)**: Mersennet v6.0 is complete with a working testnet, 62 passing tests, and comprehensive documentation. **Measured performance**: 72K TPS (EVM), 2.4M CLOB ops/s, HotStuff-2 ~200ms finality. The CLOB precompile (0x0100) enables **atomic EVM ↔ CLOB composability** — Solidity contracts can trade on the order book in the same transaction. FBA (Federated Byzantine Agreement) provides MEV protection.
 
 **The Opportunity**: Traditional finance is tokenizing trillions in assets (bonds, commodities, real estate, trade finance) AND credit instruments (loans, credit derivatives, trade finance credit), but existing blockchains lack the deterministic, auditable trading infrastructure required by regulators and institutions.
 
-**The Solution**: Prime Chain provides a unified blockchain where smart contracts and order books coexist in a single atomic state, enabling compliant trading of tokenized RWAs AND on-chain credit markets with ~200ms finality and provable execution fairness. **Note on Hyperliquid**: Hyperliquid has HyperEVM (alpha) and a CLOB, but EVM↔CLOB composability is **ASYNC** — CoreWriter is delayed by seconds, reads are stale by 1 block. Prime Chain has **TRUE atomic composability** (same transaction). Our CLOB matching is **12x faster** than Hyperliquid's (2.4M vs 200K ops/s).
+**The Solution**: Mersennet provides a unified blockchain where smart contracts and order books coexist in a single atomic state, enabling compliant trading of tokenized RWAs AND on-chain credit markets with ~200ms finality and provable execution fairness. **Note on Hyperliquid**: Hyperliquid has HyperEVM (alpha) and a CLOB, but EVM↔CLOB composability is **ASYNC** — CoreWriter is delayed by seconds, reads are stale by 1 block. Mersennet has **TRUE atomic composability** (same transaction). Our CLOB matching is **12x faster** than Hyperliquid's (2.4M vs 200K ops/s).
 
-**The Advantage**: Deep connections to Standard Chartered (RWA tokenization leader), XDC Network (trade finance blockchain), Binance (exchange infrastructure), and Greg Kidd (institutional crypto pioneer) position Prime Chain uniquely to capture this market.
+**The Advantage**: Deep connections to Standard Chartered (RWA tokenization leader), XDC Network (trade finance blockchain), Binance (exchange infrastructure), and Greg Kidd (institutional crypto pioneer) position Mersennet uniquely to capture this market.
 
 **The Ask**: $X million to build institutional partnerships, achieve regulatory clarity, and launch the first RWA-native trading infrastructure on blockchain.
 
@@ -49,7 +49,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 ### Core Narrative (Elevator Pitch - 30 seconds)
 
-**"Prime Chain is the first blockchain where smart contracts and order books share the same atomic state. This means you can trade tokenized bonds, commodities, real estate, AND credit instruments with the same provable fairness as a traditional exchange, but with the composability of DeFi. We're building the infrastructure for the $16T RWA tokenization market AND the $2.5T+ on-chain credit markets, and we have partnerships with Standard Chartered and XDC Network to prove it."**
+**"Mersennet is the first blockchain where smart contracts and order books share the same atomic state. This means you can trade tokenized bonds, commodities, real estate, AND credit instruments with the same provable fairness as a traditional exchange, but with the composability of DeFi. We're building the infrastructure for the $16T RWA tokenization market AND the $2.5T+ on-chain credit markets, and we have partnerships with Standard Chartered and XDC Network to prove it."**
 
 ### Extended Narrative (Investor Pitch - 2 minutes)
 
@@ -60,7 +60,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 3. **Lack of determinism** - Regulators need provable, auditable execution
 4. **No RWA infrastructure** - No built-in margin, liquidation, or position management
 
-**Prime Chain solves this by being the only blockchain with native, deterministic order matching built into consensus. This means:**
+**Mersennet solves this by being the only blockchain with native, deterministic order matching built into consensus. This means:**
 
 - **Sub-second finality** - Institutional-grade latency
 - **Provable fairness** - Every trade is auditable, no MEV manipulation
@@ -82,7 +82,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
    - **What it means**: Order books, positions, margin, and liquidation are first-class citizens in the state model
    - **Why it matters**: Tokenized bonds, commodities, real estate need institutional-grade infrastructure
    - **Proof point**: Cross-domain bridge enables atomic RWA ↔ DeFi operations
-   - **Competitive advantage**: Ethereum requires complex smart contracts. Prime Chain has it built-in
+   - **Competitive advantage**: Ethereum requires complex smart contracts. Mersennet has it built-in
    - **Institutional value**: Ready for prime brokerage, custody, and settlement integration
 
 3. **Regulatory Compliance by Design** ⭐ **AUDIT-READY**
@@ -105,15 +105,15 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 ### Why On-Chain Credit is Critical
 
-**The Credit Market Opportunity**: While RWA tokenization gets attention, **institutional credit markets are equally massive** and Prime Chain's architecture is uniquely suited for on-chain credit trading.
+**The Credit Market Opportunity**: While RWA tokenization gets attention, **institutional credit markets are equally massive** and Mersennet's architecture is uniquely suited for on-chain credit trading.
 
 **Market Size**: $10T+ in institutional credit markets globally, with $2.5T+ projected to be tokenized by 2030.
 
-**Why Prime Chain Wins for Credit**:
+**Why Mersennet Wins for Credit**:
 
 1. **Order Book Trading for Credit Instruments**
    - Credit bonds, loans, CDS, ABS all need **liquid secondary markets**
-   - Prime Chain's native order matching = perfect for credit instrument trading
+   - Mersennet's native order matching = perfect for credit instrument trading
    - Deterministic execution = regulatory compliance for credit markets
    - Price-time priority = fair execution (critical for credit pricing)
 
@@ -125,7 +125,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 3. **EVM Compatibility = DeFi Credit Integration**
    - **Lending protocols**: Aave, Compound can integrate credit instruments
-   - **Credit markets**: Prime Chain credit can be used in DeFi protocols
+   - **Credit markets**: Mersennet credit can be used in DeFi protocols
    - **Composability**: Credit ↔ DeFi flows via cross-domain bridge
    - **Yield generation**: Credit instruments can generate yield in DeFi
 
@@ -173,7 +173,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 - Same EVM compatibility
 
 **3. Network Effects**
-- Institutions using Prime Chain for RWA will also use it for credit
+- Institutions using Mersennet for RWA will also use it for credit
 - Credit markets provide liquidity for RWA trading
 - RWA can be used as collateral in credit markets
 - Credit instruments can be traded alongside RWAs
@@ -189,7 +189,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 ### Investment Thesis (For Investors)
 
-**"Prime Chain is positioned to capture a significant portion of the $18.5T+ combined market (RWA + On-Chain Credit) by providing the only blockchain infrastructure that meets institutional requirements for deterministic, auditable trading. With deep connections to Standard Chartered, XDC Network, and Binance, we have a clear path to market adoption."**
+**"Mersennet is positioned to capture a significant portion of the $18.5T+ combined market (RWA + On-Chain Credit) by providing the only blockchain infrastructure that meets institutional requirements for deterministic, auditable trading. With deep connections to Standard Chartered, XDC Network, and Binance, we have a clear path to market adoption."**
 
 **Key Investment Highlights:**
 - **Unique Technology**: Only L1 with native order matching (defensible moat)
@@ -211,7 +211,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
   - Banking infrastructure integration
   - Customer introductions (sovereign wealth funds, pension funds)
 - **Pitch Angle**: 
-  - "Prime Chain enables Standard Chartered to offer compliant trading of tokenized RWAs to institutional clients"
+  - "Mersennet enables Standard Chartered to offer compliant trading of tokenized RWAs to institutional clients"
   - "We solve the infrastructure gap preventing SC from scaling RWA tokenization"
   - "Deterministic matching meets regulatory requirements SC needs"
 - **Specific Use Cases**:
@@ -225,16 +225,16 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 - **Connection**: Core team member relationship
 - **Investment Size**: $1-3M strategic
 - **Value Beyond Capital**:
-  - Cross-chain integration (XDC ↔ Prime Chain)
+  - Cross-chain integration (XDC ↔ Mersennet)
   - Trade finance use case development
   - Asian market access (XDC's strong presence)
   - Developer ecosystem sharing
 - **Pitch Angle**:
-  - "Prime Chain extends XDC's trade finance capabilities with DeFi composability"
+  - "Mersennet extends XDC's trade finance capabilities with DeFi composability"
   - "Together, we can offer end-to-end trade finance tokenization and trading"
-  - "XDC handles tokenization, Prime Chain handles trading infrastructure"
+  - "XDC handles tokenization, Mersennet handles trading infrastructure"
 - **Specific Use Cases**:
-  - Cross-chain RWA trading (tokenize on XDC, trade on Prime Chain)
+  - Cross-chain RWA trading (tokenize on XDC, trade on Mersennet)
   - Trade finance settlement with DeFi integration
   - Supply chain finance with order book trading
 - **Timeline**: Partnership announcement Q1, investment Q2
@@ -249,9 +249,9 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
   - Liquidity and market making support
   - Global brand recognition
 - **Pitch Angle**:
-  - "Prime Chain's matching engine technology can power Binance's institutional exchange infrastructure"
+  - "Mersennet's matching engine technology can power Binance's institutional exchange infrastructure"
   - "We provide the deterministic, MEV-free trading infrastructure Binance needs for institutional clients"
-  - "Binance can white-label Prime Chain technology for institutional exchanges"
+  - "Binance can white-label Mersennet technology for institutional exchanges"
 - **Specific Use Cases**:
   - Binance Institutional exchange infrastructure
   - OTC trading platform
@@ -271,7 +271,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
   - Strategic advisory
 - **Pitch Angle**:
   - "The infrastructure layer for institutional crypto adoption"
-  - "Prime Chain enables compliant trading that institutions need"
+  - "Mersennet enables compliant trading that institutions need"
   - "Greg's experience with Coinbase institutional adoption directly applies"
 - **Timeline**: Introduction via Greg Q1, investment Q2
 - **Ask**: $1M investment + Greg as strategic advisor
@@ -362,7 +362,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 **Pitch Deck Structure**:
 1. **Problem**: RWA tokenization lacks trading infrastructure
-2. **Solution**: Prime Chain = compliant, high-performance trading layer
+2. **Solution**: Mersennet = compliant, high-performance trading layer
 3. **Market**: $16T+ RWA tokenization opportunity (BCG estimate)
 4. **Traction**: Partnerships with Standard Chartered, XDC Network
 5. **Team**: Deep connections in traditional finance
@@ -379,37 +379,37 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 **1. Tokenized Bonds Trading**
 - **Scenario**: Standard Chartered tokenizes $100M corporate bond
-- **Prime Chain Value**: Instant settlement, provable execution, DeFi composability
+- **Mersennet Value**: Instant settlement, provable execution, DeFi composability
 - **Traditional Alternative**: T+2 settlement, high fees, no composability
 - **Market Size**: $130T global bond market → 1% tokenization = $1.3T
 
 **2. Commodities Trading**
 - **Scenario**: Tokenized gold, oil, or agricultural products
-- **Prime Chain Value**: 24/7 trading, instant settlement, margin trading built-in
+- **Mersennet Value**: 24/7 trading, instant settlement, margin trading built-in
 - **Traditional Alternative**: Limited hours, T+2 settlement, complex margin systems
 - **Market Size**: $5T+ commodities market → 5% tokenization = $250B
 
 **3. Trade Finance Settlement**
-- **Scenario**: XDC Network tokenizes trade finance instruments, Prime Chain enables trading
-- **Prime Chain Value**: Cross-chain integration, instant settlement, DeFi integration
+- **Scenario**: XDC Network tokenizes trade finance instruments, Mersennet enables trading
+- **Mersennet Value**: Cross-chain integration, instant settlement, DeFi integration
 - **Traditional Alternative**: Paper-based, slow, expensive
 - **Market Size**: $5T+ trade finance market → 10% tokenization = $500B
 
 **4. Real Estate Tokenization**
 - **Scenario**: Tokenized commercial real estate shares
-- **Prime Chain Value**: Fractional ownership trading, instant settlement, DeFi yield
+- **Mersennet Value**: Fractional ownership trading, instant settlement, DeFi yield
 - **Traditional Alternative**: Illiquid, high transaction costs, slow
 - **Market Size**: $280T global real estate → 1% tokenization = $2.8T
 
 **5. Private Equity Tokenization**
 - **Scenario**: Tokenized private equity fund shares
-- **Prime Chain Value**: Secondary market trading, instant settlement, DeFi integration
+- **Mersennet Value**: Secondary market trading, instant settlement, DeFi integration
 - **Traditional Alternative**: Illiquid, high minimums, slow
 - **Market Size**: $6T+ private equity market → 5% tokenization = $300B
 
 **6. Tokenized Funds (ETFs, Mutual Funds)**
 - **Scenario**: BlackRock tokenizes ETF shares
-- **Prime Chain Value**: 24/7 trading, instant settlement, DeFi composability
+- **Mersennet Value**: 24/7 trading, instant settlement, DeFi composability
 - **Traditional Alternative**: Market hours only, T+2 settlement
 - **Market Size**: $50T+ fund market → 10% tokenization = $5T
 
@@ -417,80 +417,80 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 **7. Tokenized Corporate Credit Trading**
 - **Scenario**: Standard Chartered tokenizes $500M corporate loan portfolio
-- **Prime Chain Value**: 
+- **Mersennet Value**: 
   - Order book trading of credit instruments (bonds, loans, credit default swaps)
   - Instant settlement (vs. T+2 traditional)
   - Built-in margin and liquidation for credit risk management
   - DeFi composability (credit can be used as collateral in DeFi)
 - **Traditional Alternative**: OTC markets, T+2 settlement, limited liquidity
 - **Market Size**: $10T+ corporate credit market → 5% tokenization = $500B
-- **Why Prime Chain Wins**: Native order matching perfect for credit instrument trading
+- **Why Mersennet Wins**: Native order matching perfect for credit instrument trading
 
 **8. Trade Finance Credit Markets**
-- **Scenario**: XDC Network tokenizes trade finance credit, Prime Chain enables trading
-- **Prime Chain Value**:
+- **Scenario**: XDC Network tokenizes trade finance credit, Mersennet enables trading
+- **Mersennet Value**:
   - Cross-chain credit instrument trading
   - Instant settlement for trade finance
   - Built-in risk management (margin, liquidation)
   - Integration with supply chain finance
 - **Traditional Alternative**: Paper-based, slow, expensive, limited liquidity
 - **Market Size**: $5T+ trade finance market → 20% tokenization = $1T
-- **Why Prime Chain Wins**: XDC partnership + deterministic matching = perfect fit
+- **Why Mersennet Wins**: XDC partnership + deterministic matching = perfect fit
 
 **9. Institutional Lending Markets**
-- **Scenario**: Banks tokenize loan portfolios, trade on Prime Chain
-- **Prime Chain Value**:
+- **Scenario**: Banks tokenize loan portfolios, trade on Mersennet
+- **Mersennet Value**:
   - Order book for loan trading (secondary market)
   - Instant settlement
   - Built-in credit risk management
   - DeFi integration (loans as collateral)
 - **Traditional Alternative**: Illiquid secondary markets, slow settlement
 - **Market Size**: $15T+ global lending market → 3% tokenization = $450B
-- **Why Prime Chain Wins**: EVM compatibility enables lending protocols (Aave, Compound) to integrate
+- **Why Mersennet Wins**: EVM compatibility enables lending protocols (Aave, Compound) to integrate
 
 **10. Credit Default Swap (CDS) Trading**
-- **Scenario**: Tokenized CDS contracts traded on Prime Chain
-- **Prime Chain Value**:
+- **Scenario**: Tokenized CDS contracts traded on Mersennet
+- **Mersennet Value**:
   - Order book for CDS trading
   - Deterministic execution (regulatory compliance)
   - Instant settlement
   - Built-in margin for credit risk
 - **Traditional Alternative**: OTC markets, T+2 settlement, limited transparency
 - **Market Size**: $10T+ CDS market → 2% tokenization = $200B
-- **Why Prime Chain Wins**: Deterministic matching = regulatory compliance for derivatives
+- **Why Mersennet Wins**: Deterministic matching = regulatory compliance for derivatives
 
 **11. Asset-Backed Securities (ABS) Trading**
-- **Scenario**: Tokenized ABS (mortgage-backed, auto loans, etc.) traded on Prime Chain
-- **Prime Chain Value**:
+- **Scenario**: Tokenized ABS (mortgage-backed, auto loans, etc.) traded on Mersennet
+- **Mersennet Value**:
   - Order book for ABS trading
   - Instant settlement
   - Transparent pricing (on-chain order book)
   - DeFi composability
 - **Traditional Alternative**: Illiquid markets, T+2 settlement, limited transparency
 - **Market Size**: $2T+ ABS market → 10% tokenization = $200B
-- **Why Prime Chain Wins**: Built-in order matching perfect for structured products
+- **Why Mersennet Wins**: Built-in order matching perfect for structured products
 
 **12. Institutional Credit Derivatives**
-- **Scenario**: Banks trade tokenized credit derivatives on Prime Chain
-- **Prime Chain Value**:
+- **Scenario**: Banks trade tokenized credit derivatives on Mersennet
+- **Mersennet Value**:
   - Order book for credit derivatives
   - Deterministic execution
   - Built-in margin and liquidation
   - Regulatory compliance (auditable)
 - **Traditional Alternative**: OTC markets, limited transparency, slow settlement
 - **Market Size**: $5T+ credit derivatives market → 3% tokenization = $150B
-- **Why Prime Chain Wins**: Deterministic matching meets regulatory requirements
+- **Why Mersennet Wins**: Deterministic matching meets regulatory requirements
 
 **Total Addressable Market**: 
 - **RWA Trading**: $10T+ by 2030
 - **Institutional Credit On-Chain**: $2.5T+ by 2030
 - **Combined TAM**: $12.5T+ by 2030
 
-### Why Prime Chain's Architecture is Perfect for On-Chain Credit
+### Why Mersennet's Architecture is Perfect for On-Chain Credit
 
 **1. Native Order Matching for Credit Instruments**
 - **Credit bonds, loans, CDS, ABS** all need order book trading
-- Prime Chain's native matching = perfect for credit instrument liquidity
+- Mersennet's native matching = perfect for credit instrument liquidity
 - Deterministic execution = regulatory compliance for credit markets
 - Price-time priority = fair execution (critical for credit)
 
@@ -502,7 +502,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 **3. EVM Compatibility = DeFi Credit Integration**
 - **Lending protocols**: Aave, Compound can integrate credit instruments
-- **Credit markets**: Prime Chain credit can be used in DeFi
+- **Credit markets**: Mersennet credit can be used in DeFi
 - **Composability**: Credit ↔ DeFi flows via cross-domain bridge
 - **Yield generation**: Credit instruments can generate yield in DeFi
 
@@ -537,7 +537,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 **Pitch Angle**:
 - AI trading agents need **deterministic, auditable** execution
-- Prime Chain's order matching is **provably fair** (no front-running)
+- Mersennet's order matching is **provably fair** (no front-running)
 - EVM compatibility enables **smart contract AI agents**
 - Sub-second finality enables **real-time AI trading**
 
@@ -578,7 +578,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 **Deliverable**: 
 - RWA tokenization pilot
-- Tokenized bond trading on Prime Chain
+- Tokenized bond trading on Mersennet
 - Integration with XDC Network for cross-chain RWA
 
 **Success Metrics**:
@@ -653,78 +653,78 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 ### vs. Ethereum ⭐ **10x Performance + Native Matching**
 
-| Feature | Ethereum | Prime Chain | Advantage |
+| Feature | Ethereum | Mersennet | Advantage |
 |---------|----------|-------------|-----------|
 | Finality | 12 seconds | ~200ms | **60x faster** - Critical for trading |
 | Order Matching | Smart contracts (Uniswap, etc.) | Native consensus-level | **Provable fairness** - No MEV |
 | Determinism | Probabilistic | Fully deterministic | **Regulatory compliance** |
 | RWA Support | Requires complex contracts | Built-in order books | **Institutional ready** |
 | Gas Costs | High ($10-100/tx) | Low (EIP-1559) | **Cost-effective** |
-| **Use Case Fit** | General DeFi | **RWA Trading** | Prime Chain wins |
+| **Use Case Fit** | General DeFi | **RWA Trading** | Mersennet wins |
 
-**Pitch**: "Ethereum is the internet of DeFi, but Prime Chain is the NYSE of tokenized assets."
+**Pitch**: "Ethereum is the internet of DeFi, but Mersennet is the NYSE of tokenized assets."
 
 ### vs. Solana ⭐ **EVM Compatibility + Determinism**
 
-| Feature | Solana | Prime Chain | Advantage |
+| Feature | Solana | Mersennet | Advantage |
 |---------|--------|-------------|-----------|
 | Finality | ~400ms | ~200ms | **Faster** |
 | VM | Custom (Sealevel) | EVM (revm) | **Full ecosystem** - All Ethereum tools work |
 | Order Matching | None (requires DEX) | Native consensus-level | **Built-in** - No smart contract risk |
 | Determinism | Partial | Fully deterministic | **Regulatory compliance** |
 | RWA Support | Limited | Built-in | **Institutional ready** |
-| **Use Case Fit** | High-frequency crypto | **RWA Trading** | Prime Chain wins |
+| **Use Case Fit** | High-frequency crypto | **RWA Trading** | Mersennet wins |
 
-**Pitch**: "Solana is fast for crypto, but Prime Chain is built for institutions trading real assets."
+**Pitch**: "Solana is fast for crypto, but Mersennet is built for institutions trading real assets."
 
 ### vs. Polygon / Arbitrum ⭐ **L1 Security + Native Features**
 
-| Feature | L2s | Prime Chain | Advantage |
+| Feature | L2s | Mersennet | Advantage |
 |---------|-----|-------------|-----------|
 | Security | Depends on L1 | Native L1 | **No dependencies** - Full security |
 | Order Matching | Smart contracts | Native consensus-level | **Provable fairness** |
 | Finality | 1-2 seconds | ~200ms | **Faster** |
 | RWA Support | Limited | Built-in | **Institutional ready** |
 | Withdrawal | 7 days (Arbitrum) | Instant | **No lockup** |
-| **Use Case Fit** | Scaling Ethereum | **RWA Trading** | Prime Chain wins |
+| **Use Case Fit** | Scaling Ethereum | **RWA Trading** | Mersennet wins |
 
-**Pitch**: "L2s scale Ethereum, but Prime Chain is purpose-built for institutional RWA trading."
+**Pitch**: "L2s scale Ethereum, but Mersennet is purpose-built for institutional RWA trading."
 
 ### vs. Hyperliquid ⭐ **Atomic vs. Async Composability**
 
-| Feature | Hyperliquid | Prime Chain | Advantage |
+| Feature | Hyperliquid | Mersennet | Advantage |
 |---------|-------------|-------------|-----------|
 | Finality | ~200ms | ~200ms | Comparable |
 | CLOB | Native (200K ops/s) | Native (2.4M ops/s) | **12x faster** |
 | EVM | HyperEVM (alpha) | Full EVM | **Production-ready** |
 | EVM↔CLOB | **ASYNC** (CoreWriter delayed by seconds, reads stale by 1 block) | **ATOMIC** (same transaction) | **True composability** |
-| **Use Case Fit** | Crypto derivatives | **RWA + Credit + DeFi** | Prime Chain wins for atomic flows |
+| **Use Case Fit** | Crypto derivatives | **RWA + Credit + DeFi** | Mersennet wins for atomic flows |
 
-**Pitch**: "Hyperliquid has a CLOB and EVM, but they're async — different blocks, delayed by seconds. Prime Chain has TRUE atomic composability: Solidity contracts trade on the order book in the same transaction."
+**Pitch**: "Hyperliquid has a CLOB and EVM, but they're async — different blocks, delayed by seconds. Mersennet has TRUE atomic composability: Solidity contracts trade on the order book in the same transaction."
 
 ### vs. dYdX / Orderly ⭐ **Full Blockchain + Composability**
 
-| Feature | App-Chains | Prime Chain | Advantage |
+| Feature | App-Chains | Mersennet | Advantage |
 |---------|------------|-------------|-----------|
 | Architecture | Application-specific | Full blockchain | **Composability** - DeFi integration |
 | EVM | No | Yes | **Full ecosystem** - Smart contracts work |
 | RWA Support | Crypto derivatives only | Built-in for any asset | **Flexible** - Any tokenized asset |
 | Isolation | Isolated | Integrated | **Cross-domain** - RWA ↔ DeFi flows |
-| **Use Case Fit** | Crypto derivatives | **RWA Trading** | Prime Chain wins |
+| **Use Case Fit** | Crypto derivatives | **RWA Trading** | Mersennet wins |
 
-**Pitch**: "dYdX trades crypto derivatives, but Prime Chain trades tokenized real-world assets with full DeFi composability."
+**Pitch**: "dYdX trades crypto derivatives, but Mersennet trades tokenized real-world assets with full DeFi composability."
 
 ### vs. Traditional Exchanges (NYSE, LSE) ⭐ **Blockchain Benefits**
 
-| Feature | Traditional | Prime Chain | Advantage |
+| Feature | Traditional | Mersennet | Advantage |
 |---------|-------------|-------------|-----------|
 | Settlement | T+2 days | Instant | **Faster settlement** |
 | Composability | None | Full DeFi | **Programmable** - Smart contracts |
 | Transparency | Limited | Full on-chain | **Auditable** - Regulators can verify |
 | Cost | High fees | Low fees | **Cost-effective** |
-| **Use Case Fit** | Traditional assets | **Tokenized assets** | Prime Chain enables new asset classes |
+| **Use Case Fit** | Traditional assets | **Tokenized assets** | Mersennet enables new asset classes |
 
-**Pitch**: "Traditional exchanges trade paper assets, but Prime Chain trades tokenized assets with blockchain benefits."
+**Pitch**: "Traditional exchanges trade paper assets, but Mersennet trades tokenized assets with blockchain benefits."
 
 ### Competitive Moat Analysis
 
@@ -795,7 +795,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ## 🎬 Pitch Deck Outline (Detailed)
 
 ### Slide 1: Cover
-- **Title**: "Prime Chain: The Institutional Trading Layer for Real-World Assets"
+- **Title**: "Mersennet: The Institutional Trading Layer for Real-World Assets"
 - **Tagline**: "The only blockchain with native order matching for $16T RWA market"
 - **Visual**: Architecture diagram showing EVM + Order Matching
 
@@ -813,7 +813,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
   - Institutions waiting for compliant solution
   - First-mover advantage available
 
-### Slide 3: The Solution (Prime Chain)
+### Slide 3: The Solution (Mersennet)
 - **Core Innovation**: "The only L1 blockchain with native, deterministic order matching"
 - **Key Features**:
   - ✅ Sub-second finality (institutional-grade)
@@ -866,11 +866,11 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 - **RWA Trading**:
   - Tokenized Bonds: $100M corporate bond trading with instant settlement
   - Commodities: 24/7 gold/oil trading with built-in margin
-  - Trade Finance: XDC tokenized instruments trading on Prime Chain
+  - Trade Finance: XDC tokenized instruments trading on Mersennet
   - Real Estate: Fractional commercial property shares, instant trading
 - **On-Chain Credit Markets** ⭐ **NEW**:
   - Corporate Credit: $500M loan portfolio trading with order book
-  - Trade Finance Credit: XDC credit instruments trading on Prime Chain
+  - Trade Finance Credit: XDC credit instruments trading on Mersennet
   - Institutional Lending: Tokenized loan portfolios with secondary market
   - Credit Derivatives: CDS, ABS trading with deterministic execution
 - **Visual**: Use case diagrams, before/after comparisons, credit market flow
@@ -1034,7 +1034,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 1. **✅ Finalize Positioning** (This document)
 2. **Create Pitch Deck** (Use detailed outline above)
 3. **Develop One-Pager** (1-page executive summary)
-4. **Prepare Demo** (RWA tokenization demo on Prime Chain)
+4. **Prepare Demo** (RWA tokenization demo on Mersennet)
 
 ### Week 2: Outreach Preparation
 1. **Standard Chartered Proposal**:
@@ -1118,7 +1118,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### For Standard Chartered (RWA Tokenization + Institutional Credit)
 
 **Opening (30 seconds)**:
-"Standard Chartered is tokenizing billions in real-world assets AND providing institutional credit, but your clients can't trade them efficiently because existing blockchains lack the deterministic, auditable trading infrastructure you need. Prime Chain solves this by being the only blockchain with native order matching built into consensus, giving you provable execution fairness for both RWA trading AND on-chain credit markets."
+"Standard Chartered is tokenizing billions in real-world assets AND providing institutional credit, but your clients can't trade them efficiently because existing blockchains lack the deterministic, auditable trading infrastructure you need. Mersennet solves this by being the only blockchain with native order matching built into consensus, giving you provable execution fairness for both RWA trading AND on-chain credit markets."
 
 **Value Proposition**:
 - **RWA Trading**: Tokenized bonds, commodities, real estate with instant settlement
@@ -1139,10 +1139,10 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### For XDC Network (Trade Finance + Credit Markets)
 
 **Opening (30 seconds)**:
-"XDC Network is the leading trade finance blockchain, but tokenized trade finance instruments AND credit need trading infrastructure. Prime Chain extends XDC's capabilities by providing deterministic order matching and DeFi composability, enabling end-to-end trade finance tokenization, credit markets, AND trading."
+"XDC Network is the leading trade finance blockchain, but tokenized trade finance instruments AND credit need trading infrastructure. Mersennet extends XDC's capabilities by providing deterministic order matching and DeFi composability, enabling end-to-end trade finance tokenization, credit markets, AND trading."
 
 **Value Proposition**:
-- **Cross-Chain**: XDC tokenizes trade finance + credit, Prime Chain trades (seamless integration)
+- **Cross-Chain**: XDC tokenizes trade finance + credit, Mersennet trades (seamless integration)
 - **Credit Markets**: Order book trading for trade finance credit instruments
 - **DeFi Integration**: Trade finance credit can interact with DeFi protocols (lending, yield)
 - **Deterministic**: Provable execution for trade finance settlement AND credit trading
@@ -1159,7 +1159,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### For Binance (Exchange Infrastructure)
 
 **Opening (30 seconds)**:
-"Binance needs institutional-grade exchange infrastructure with provable fairness and MEV protection. Prime Chain's matching engine technology provides deterministic, auditable order matching that can power Binance's institutional exchange and OTC trading platforms."
+"Binance needs institutional-grade exchange infrastructure with provable fairness and MEV protection. Mersennet's matching engine technology provides deterministic, auditable order matching that can power Binance's institutional exchange and OTC trading platforms."
 
 **Value Proposition**:
 - **Technology**: Native matching engine (can white-label)
@@ -1176,7 +1176,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### For Greg Kidd / Hard Yaka (Strategic Advisor)
 
 **Opening (30 seconds)**:
-"Greg, you've seen institutional crypto adoption from the beginning with Coinbase. Prime Chain is the infrastructure layer that enables compliant, institutional-grade trading of tokenized real-world assets. We need your expertise and network to navigate institutional adoption."
+"Greg, you've seen institutional crypto adoption from the beginning with Coinbase. Mersennet is the infrastructure layer that enables compliant, institutional-grade trading of tokenized real-world assets. We need your expertise and network to navigate institutional adoption."
 
 **Value Proposition**:
 - **Advisory**: Strategic guidance on institutional adoption
@@ -1193,7 +1193,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### For Crypto-Native VCs (Infrastructure Play)
 
 **Opening (30 seconds)**:
-"Prime Chain is an infrastructure play for the $18.5T+ combined market (RWA + On-Chain Credit). We're the only L1 with native order matching, giving us a unique position to capture institutional adoption. With partnerships with Standard Chartered and XDC Network, we have a clear path to market."
+"Mersennet is an infrastructure play for the $18.5T+ combined market (RWA + On-Chain Credit). We're the only L1 with native order matching, giving us a unique position to capture institutional adoption. With partnerships with Standard Chartered and XDC Network, we have a clear path to market."
 
 **Value Proposition**:
 - **Unique Technology**: Only L1 with native order matching (defensible moat)
@@ -1210,7 +1210,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 ### For Traditional Finance VCs (Institutional Play)
 
 **Opening (30 seconds)**:
-"Traditional finance is tokenizing trillions in assets, but they need compliant, auditable trading infrastructure. Prime Chain provides the blockchain infrastructure that meets institutional requirements, with deterministic execution and regulatory compliance built-in."
+"Traditional finance is tokenizing trillions in assets, but they need compliant, auditable trading infrastructure. Mersennet provides the blockchain infrastructure that meets institutional requirements, with deterministic execution and regulatory compliance built-in."
 
 **Value Proposition**:
 - **Institutional Focus**: Built for traditional finance, not crypto-native
@@ -1230,7 +1230,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 ### The Positioning (Refined)
 
-**Primary Positioning**: **"Prime Chain: The Institutional Trading Layer for Real-World Assets + On-Chain Credit Markets"**
+**Primary Positioning**: **"Mersennet: The Institutional Trading Layer for Real-World Assets + On-Chain Credit Markets"**
 
 **Core Message**: "The only blockchain with native, deterministic order matching, built for the $16T RWA tokenization market AND $2.5T+ on-chain credit markets with deep connections to Standard Chartered, XDC Network, and Binance."
 
@@ -1286,7 +1286,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 1. **✅ Positioning Document** (Complete)
 2. **Create Pitch Deck** (Use detailed outline)
-3. **Develop Demo** (RWA tokenization on Prime Chain)
+3. **Develop Demo** (RWA tokenization on Mersennet)
 4. **Draft Proposals** (Standard Chartered, XDC Network, Greg Kidd)
 5. **Schedule Meetings** (Week 2-3)
 
@@ -1336,7 +1336,7 @@ Prime Chain is the **only Layer 1 blockchain with native, deterministic order ma
 
 ### Conclusion
 
-Prime Chain is uniquely positioned to capture the $18.5T+ combined market (RWA + On-Chain Credit) through:
+Mersennet is uniquely positioned to capture the $18.5T+ combined market (RWA + On-Chain Credit) through:
 
 1. **Unique Technology**: Native order matching (only L1 with this) - perfect for both RWA trading AND credit markets
 2. **Massive Market**: $18.5T+ opportunity ($16T RWA + $2.5T credit) with regulatory tailwinds
@@ -1344,7 +1344,7 @@ Prime Chain is uniquely positioned to capture the $18.5T+ combined market (RWA +
 4. **Clear Path**: Pilot programs (RWA + Credit) → Partnerships → Fundraising → Mainnet
 5. **Architecture Fit**: Built-in order matching, margin, liquidation = perfect for credit markets
 
-**The combination of your unique technology and deep institutional connections positions Prime Chain uniquely in the market. Focus on RWA + institutional trading, execute on partnerships, and you'll have a compelling fundraising story.**
+**The combination of your unique technology and deep institutional connections positions Mersennet uniquely in the market. Focus on RWA + institutional trading, execute on partnerships, and you'll have a compelling fundraising story.**
 
 ---
 

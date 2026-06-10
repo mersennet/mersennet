@@ -60,7 +60,7 @@ Based on the Figma MCP server documentation, the following tools are available:
 - Generating design system documentation
 - Code Connect workflows (design-to-code)
 
-**For Prime Chain pitch deck, use:**
+**For Mersennet pitch deck, use:**
 1. **Pitch.com** (recommended) - Use the content from `PITCH_DECK.md`
 2. **Beautiful.ai** (alternative) - AI-powered creation
 3. **Canva** (via browser) - If you prefer Canva's interface

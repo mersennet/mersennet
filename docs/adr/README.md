@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This directory holds Prime Chain's ADRs. Each ADR captures a single
+This directory holds Mersennet's ADRs. Each ADR captures a single
 decision that materially shapes the codebase, the operations posture,
 or the protocol. ADRs are immutable once accepted; if a decision is
 later revisited, a new ADR supersedes it and links back.

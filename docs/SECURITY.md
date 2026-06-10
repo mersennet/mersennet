@@ -1,8 +1,8 @@
-# Prime Chain Security
+# Mersennet Security
 
 ## Responsible Disclosure Policy
 
-Prime Chain and Prime Numbers Labs take security seriously. We encourage security researchers and the community to report vulnerabilities responsibly.
+Mersennet and Prime Numbers Labs take security seriously. We encourage security researchers and the community to report vulnerabilities responsibly.
 
 ### What We Ask
 
@@ -20,14 +20,14 @@ Prime Chain and Prime Numbers Labs take security seriously. We encourage securit
 
 ### Out of Scope
 
-- Issues in third-party dependencies that are not directly exploitable in Prime Chain
+- Issues in third-party dependencies that are not directly exploitable in Mersennet
 - Social engineering or physical attacks
 - Denial-of-service attacks that require excessive resources (e.g., network flooding)
 - Issues that require physical access to the user’s machine
 
 ## Bug Bounty Program Outline
 
-Prime Chain is preparing a formal bug bounty program. The following is an outline of expected structure:
+Mersennet is preparing a formal bug bounty program. The following is an outline of expected structure:
 
 | Severity | Criteria | Typical Reward Range |
 |----------|----------|----------------------|
@@ -63,4 +63,4 @@ Prime Chain is preparing a formal bug bounty program. The following is an outlin
 
 ## Security Advisories
 
-Security advisories will be published at [Prime Chain GitHub Security Advisories](https://github.com/prime-chain/prime-chain/security/advisories) (or equivalent) when applicable.
+Security advisories will be published at [Mersennet GitHub Security Advisories](https://github.com/prime-chain/prime-chain/security/advisories) (or equivalent) when applicable.

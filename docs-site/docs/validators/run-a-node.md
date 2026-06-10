@@ -58,7 +58,7 @@ cd prime-chain
 cargo build --release
 ```
 
-The binary will be at `target/release/prime-chain` (or `prime-chain-node` depending on the crate name).
+The binary will be at `target/release/prime-chain` (built from the `prime-chain-node` crate).
 
 ## Configuration
 
@@ -181,39 +181,46 @@ Check the [Network Information](/getting-started/network-info) page for current 
 
 ## Genesis Setup
 
-For **mainnet** or **testnet**, you need the correct genesis file. Genesis defines the initial state: chain ID, validators, allocations, and parameters.
+For **mainnet** or **testnet**, you need the correct genesis allocations. Genesis is not a separate file — it is the `genesis` section of your `config.json`, defining initial accounts and validators. The chain ID is the numeric `engine.chain_id` (7919 for testnet, 13370 for mainnet; see `mainnet/genesis.json` in the repository for the canonical mainnet parameters).
 
-- **Chain ID**: 7919 (testnet)
-- Genesis is typically distributed with the network launch. Place it at `genesis.json` and reference it in your startup command or config.
-
-Example genesis structure:
+Example `genesis` section:
 
 ```json
 {
-  "chain_id": "prime-chain-7919",
-  "initial_height": "1",
-  "validators": [
-    {
-      "address": "0x...",
-      "pub_key": "...",
-      "power": "1000000"
-    }
-  ],
-  "app_state": { ... }
+  "engine": {
+    "chain_id": 7919
+  },
+  "genesis": {
+    "accounts": [
+      {
+        "address": "0x...",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      }
+    ],
+    "validators": [
+      {
+        "address": "0x...",
+        "stake": "1000000"
+      }
+    ]
+  }
 }
 ```
 
 ## Starting the Node
 
-Run the node with your config and genesis:
+Run the node with your config in validator mode:
 
 ```bash
 ./target/release/prime-chain \
   --config config.json \
-  --genesis genesis.json
+  --mode validator
 ```
 
-For a **non-validator** (sentinel/full node), omit the validator key or set `engine.validator_key_path` to empty. The node will sync and serve RPC but will not propose blocks.
+The `--mode` flag accepts `validator`, `full`, or `devnet` (the default if omitted, which runs a local demo — always pass `--mode` for real deployments).
+
+For a **non-validator** (sentinel/full node), start with `--mode full`. The node will sync and serve RPC but will not propose blocks.
 
 ## Registering as a Validator
 
@@ -223,7 +230,7 @@ To join the validator set:
 
 2. **Ensure your node is synced** — Wait until your node has caught up to the latest block height.
 
-3. **Validator key** — Your `validator_key_path` must point to a key file that corresponds to the address you staked from. The node will automatically begin participating in consensus once registered and synced.
+3. **Node key** — Your `p2p.node_key_path` must point to a key file that corresponds to the address you staked from. The node will automatically begin participating in consensus once registered and synced.
 
 Validator registration happens through the genesis configuration (for initial validators) or via staking transactions. There is no separate RPC method for registration—once you stake PRIM and your node is synced with the correct validator key, you join the active set.
 
@@ -257,7 +264,8 @@ Group=prime
 WorkingDirectory=/var/lib/prime-chain
 
 ExecStart=/usr/local/bin/prime-chain \
-    --config /etc/prime-chain/config.json
+    --config /etc/prime-chain/config.json \
+    --mode validator
 
 Restart=always
 RestartSec=10

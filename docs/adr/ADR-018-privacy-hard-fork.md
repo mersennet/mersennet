@@ -26,7 +26,7 @@ hard fork because:
 
 ## Decision
 
-Activate at a fixed height `H` on chain ID 7919 (Prime Chain
+Activate at a fixed height `H` on chain ID 7919 (Mersennet
 mainnet). Pre-activation testnet runs for at least 8 weeks with the
 identical fork rules.
 

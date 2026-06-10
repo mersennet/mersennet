@@ -1,4 +1,4 @@
-# PRIME CHAIN — Investor One-Pager
+# MERSENNET — Investor One-Pager
 
 > **Confidential** | Series A — $25M | March 2026
 
@@ -7,7 +7,7 @@
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
-║   ◆ PRIME CHAIN — The Institutional Trading Layer                            ║
+║   ◆ MERSENNET — The Institutional Trading Layer                            ║
 ║     for Real-World Assets + On-Chain Credit Markets                          ║
 ║                                                                              ║
 ║   The only Layer 1 blockchain with atomic EVM ↔ CLOB composability.          ║
@@ -56,7 +56,7 @@
 ║   Monad           ❌       ❌       ✅    ~1,000ms    ❌         ❌            ║
 ║   dYdX            ✅       ❌       ❌     ~1,000ms   ❌         ❌            ║
 ║   ──────────────────────────────────────────────────────────────────          ║
-║   PRIME CHAIN     ✅    ✅ ATOMIC   ✅      200ms     ✅         ✅            ║
+║   MERSENNET     ✅    ✅ ATOMIC   ✅      200ms     ✅         ✅            ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
@@ -101,7 +101,7 @@
 ║   5. 12–18 month window to define the "institutional trading L1" category   ║
 ║                                                                              ║
 ║   COMPARABLE: Hyperliquid ($4.5B FDV) has async CLOB + alpha EVM.           ║
-║   Prime Chain has atomic CLOB + full EVM + institutional focus at           ║
+║   Mersennet has atomic CLOB + full EVM + institutional focus at           ║
 ║   early-stage pricing.                                                       ║
 ║                                                                              ║
 ║   Contact: [founders@primechain.network]                                     ║

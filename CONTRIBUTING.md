@@ -1,4 +1,4 @@
-# Contributing to Prime Chain
+# Contributing to Mersennet
 
 Thanks for contributing. This document describes the branching model, commit
 conventions, review policy, and the workflow for the in-progress
@@ -8,7 +8,7 @@ conventions, review policy, and the workflow for the in-progress
 
 ## Branching model
 
-Prime Chain uses a **trunk-based** model with one long-lived integration branch
+Mersennet uses a **trunk-based** model with one long-lived integration branch
 for the active architecture redesign.
 
 | Branch | Purpose | Stability |

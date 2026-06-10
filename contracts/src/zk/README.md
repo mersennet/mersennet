@@ -1,7 +1,7 @@
-# Prime Chain ZK Bridge Contracts
+# Mersennet ZK Bridge Contracts
 
-Ethereum-side contracts that anchor Prime Chain's privacy fork (workstreams
-G1-G4 and E5). They let Ethereum verify Prime Chain block state-transition
+Ethereum-side contracts that anchor Mersennet's privacy fork (workstreams
+G1-G4 and E5). They let Ethereum verify Mersennet block state-transition
 proofs and run a deposit / withdraw message bus secured by that proven state.
 
 ## Contracts
@@ -84,15 +84,15 @@ encodes the same public-input contract the wrapping circuit must expose.
 ## Deposit / withdraw bus
 
 - `deposit(shieldedRecipient)` locks ETH and emits `DepositLocked(nonce,
-  shieldedRecipient, from, amount)`. Prime Chain watches this event and mints
+  shieldedRecipient, from, amount)`. Mersennet watches this event and mints
   a shielded note to `shieldedRecipient`.
 - `withdraw(recipient, amount, leafNonce, merkleProof)` releases ETH for an
-  unshield authorized on Prime Chain. The withdrawal leaf is
+  unshield authorized on Mersennet. The withdrawal leaf is
   `keccak256(abi.encode(recipient, amount, leafNonce))` and must be included
   in the latest proven `shieldedStateRoot` via a sorted-pair keccak Merkle
   tree. Each leaf can be spent once (`withdrawalSpent`).
 
-  **Integration contract:** Prime Chain's unshield-authorization Merkle tree
+  **Integration contract:** Mersennet's unshield-authorization Merkle tree
   must use the same leaf encoding and sorted-pair keccak hashing. Finalizing
   that chain-side tree (and committing its root into the proven public inputs
   if a dedicated withdrawal root is preferred over `shieldedStateRoot`) is the

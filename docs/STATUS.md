@@ -1,4 +1,4 @@
-# Prime Chain — Workstream Status
+# Mersennet — Workstream Status
 
 **Branch:** `feat/zk-privacy` (close-out work on `feat/zk-e4-e5-f-closeout`)
 **Last sync:** 2026-06-05

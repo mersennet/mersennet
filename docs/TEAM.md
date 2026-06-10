@@ -1,6 +1,6 @@
-# Prime Chain — Team Handbook
+# Mersennet — Team Handbook
 
-> Internal reference for the Prime Chain development team. Everything you need to build, deploy, and operate the Prime Chain ecosystem.
+> Internal reference for the Mersennet development team. Everything you need to build, deploy, and operate the Mersennet ecosystem.
 
 **Last Updated:** March 2026
 
@@ -140,7 +140,7 @@ prime-chain/
 | [`primenodes-dashboard`](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator dashboard (standalone) | Synced from monorepo `validator-explorer/` |
 | [`prime-chain-explorer`](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Block explorer (legacy standalone) | Synced from monorepo |
 | [`prime-chain-sdk`](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK | Synced from monorepo `sdk/` |
-| `primefi-omni` | Cross-chain lending (LayerZero v2) | Built, not on Prime Chain yet |
+| `primefi-omni` | Cross-chain lending (LayerZero v2) | Built, not on Mersennet yet |
 | `primefi-contracts-v3` | Aave v3–style lending contracts | Built, not deployed |
 | `primefi-ui-v3` | Lending frontend | Built |
 | `primexdc-wallet` | Browser extension wallet | Built, needs chain ID update |

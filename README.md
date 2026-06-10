@@ -1,4 +1,4 @@
-# Prime Chain
+# Mersennet
 
 Privacy-first L1 blockchain with a native on-chain order matching engine
 (PrimeOrders), EVM compatibility, and an Aztec-style account-level
@@ -6,7 +6,7 @@ privacy layer, built in Rust.
 
 | Chain | ID | Purpose | Status |
 |---|---|---|---|
-| **Prime Chain mainnet** | `7919` (1000th prime) | Transparent EVM + CLOB | Live |
+| **Mersennet mainnet** | `7919` (1000th prime) | Transparent EVM + CLOB | Live |
 | **Privacy Testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork

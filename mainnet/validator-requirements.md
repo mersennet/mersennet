@@ -1,4 +1,4 @@
-# Prime Chain Mainnet Validator Requirements
+# Mersennet Mainnet Validator Requirements
 
 ## Hardware Requirements
 

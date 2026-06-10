@@ -1,10 +1,10 @@
 # Pitch Deck Tools: Quick Reference Guide
 
-## 🏆 Top Recommendations for Prime Chain
+## 🏆 Top Recommendations for Mersennet
 
 ### 1. **Pitch.com** ⭐⭐⭐⭐⭐ (BEST CHOICE)
 
-**Why It's Perfect for Prime Chain:**
+**Why It's Perfect for Mersennet:**
 - ✅ Y Combinator-style templates (perfect for blockchain startups)
 - ✅ Real-time collaboration (work with team/advisors)
 - ✅ Professional, clean designs
@@ -101,7 +101,7 @@
 
 ---
 
-## 🎯 Recommendation for Prime Chain
+## 🎯 Recommendation for Mersennet
 
 ### **Primary Choice: Pitch.com**
 

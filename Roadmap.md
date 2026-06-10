@@ -1,4 +1,4 @@
-# Prime Chain 12-Month Roadmap
+# Mersennet 12-Month Roadmap
 
 ## Months 1–3 (Foundation)
 - Production-grade P2P networking (peer auth, encryption, NAT traversal)

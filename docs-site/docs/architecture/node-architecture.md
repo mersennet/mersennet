@@ -14,7 +14,7 @@ A running Mersennet node is composed of five cooperating subsystems:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          PRIME CHAIN NODE                               │
+│                          MERSENNET NODE                               │
 │                                                                         │
 │  ┌───────────┐   ┌───────────┐   ┌──────────┐   ┌──────────────────┐  │
 │  │  JSON-RPC  │   │ WebSocket │   │   P2P    │   │  Block Producer  │  │

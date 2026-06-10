@@ -154,7 +154,7 @@ Capture details:
       `[prime-sp1-stage] client:build:start`
       and the debug run did not reach `client:build:done` within the earlier probe window.
 - Standalone reproducer:
-      `programs/state-transition-host/examples/probe_prover_client.rs` reproduces the same startup cost without any Prime Chain input handling. Running it in WSL with `cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --example probe_prover_client --features real-sp1` now prints:
+      `programs/state-transition-host/examples/probe_prover_client.rs` reproduces the same startup cost without any Mersennet input handling. Running it in WSL with `cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --example probe_prover_client --features real-sp1` now prints:
       `[prime-sp1-probe] client:build:start`
       followed by
       `[prime-sp1-probe] client:build:done`.

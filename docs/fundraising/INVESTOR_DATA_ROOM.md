@@ -1,4 +1,4 @@
-# Prime Chain — Investor Data Room
+# Mersennet — Investor Data Room
 
 > **Confidential** | Series A — $25M | March 2026
 > Access granted to: [Investor Name] on [Date]
@@ -7,10 +7,10 @@
 
 ## Data Room Structure
 
-This data room contains all materials required for due diligence on Prime Chain's $25M Series A round. Documents are organized by category with security classification.
+This data room contains all materials required for due diligence on Mersennet's $25M Series A round. Documents are organized by category with security classification.
 
 ```
-📁 PRIME CHAIN DATA ROOM
+📁 MERSENNET DATA ROOM
 │
 ├── 📁 1. FUNDRAISING MATERIALS
 │   ├── 📄 Pitch Deck (16 slides)                    ← PITCH_DECK_25M.md
@@ -172,7 +172,7 @@ This data room contains all materials required for due diligence on Prime Chain'
 
 ### Quick Start (Try the Testnet)
 
-1. Add Prime Chain to MetaMask: Chain ID `7919`, RPC `http://46.225.30.187:8545`
+1. Add Mersennet to MetaMask: Chain ID `7919`, RPC `http://46.225.30.187:8545`
 2. Get testnet PRIM from the faucet: http://46.225.30.187:8080
 3. Trade on PrimeSwap: http://46.225.30.187:4000
 4. View your transactions: http://46.225.30.187/

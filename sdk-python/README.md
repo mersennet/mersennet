@@ -1,6 +1,6 @@
-# Prime Chain Python SDK
+# Mersennet Python SDK
 
-Python client for Prime Chain - JSON-RPC, CLOB (order book), and WebSocket subscriptions.
+Python client for Mersennet - JSON-RPC, CLOB (order book), and WebSocket subscriptions.
 
 ## Installation
 
@@ -121,10 +121,10 @@ sub.disconnect()
 ## Error Handling
 
 ```python
-from prime_chain.provider import PrimeChainError
+from prime_chain.provider import MersennetError
 
 try:
     balance = provider.get_balance("0x...")
-except PrimeChainError as e:
+except MersennetError as e:
     print(f"Error {e.code}: {e}")
 ```

@@ -1,10 +1,10 @@
-# Prime Chain Solidity Example Contracts
+# Mersennet Solidity Example Contracts
 
 This directory contains example Solidity contracts that demonstrate **atomic EVM ↔ CLOB interaction** via the Prime Orders precompile at address `0x0100`. These strategies are **impossible on Hyperliquid** and other chains where the CLOB and EVM run asynchronously.
 
 ## CLOB Precompile at 0x0100
 
-Prime Chain embeds a native CLOB (Central Limit Order Book) matching engine that is **synchronously callable from EVM contracts**. The precompile at `0x0100` exposes:
+Mersennet embeds a native CLOB (Central Limit Order Book) matching engine that is **synchronously callable from EVM contracts**. The precompile at `0x0100` exposes:
 
 | Selector | Function | Description |
 |----------|----------|-------------|
@@ -25,7 +25,7 @@ On Hyperliquid (and similar architectures):
 - Cross-domain messaging (e.g. IBC, bridges) introduces latency and async semantics
 - You cannot build **atomic** strategies like: "buy on CLOB, sell on AMM, all-or-nothing"
 
-On Prime Chain, the CLOB is a **precompile** — a native extension of the EVM. One transaction can:
+On Mersennet, the CLOB is a **precompile** — a native extension of the EVM. One transaction can:
 
 1. Deposit collateral
 2. Place a limit order
@@ -63,7 +63,7 @@ On Prime Chain, the CLOB is a **precompile** — a native extension of the EVM. 
 ### Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/) or [Hardhat](https://hardhat.org/)
-- Prime Chain node (testnet or local)
+- Mersennet node (testnet or local)
 
 ### Deploy with Foundry
 
@@ -139,6 +139,6 @@ Actual gas depends on order book depth and number of fills.
 ## Security Notes
 
 - Contracts use `onlyOwner` for sensitive operations
-- Precompile address `0x0100` is fixed in Prime Chain; do not deploy on other chains
+- Precompile address `0x0100` is fixed in Mersennet; do not deploy on other chains
 - Always verify `getPosition` after `placeOrder` when expecting fills
 - Consider reentrancy if integrating with external protocols

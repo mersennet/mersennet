@@ -1,4 +1,4 @@
-# Prime Chain: One-Page Executive Summary
+# Mersennet: One-Page Executive Summary
 
 **The Only Blockchain with Native Order Matching for Institutional Finance**
 
@@ -17,7 +17,7 @@
 
 ## The Solution
 
-**Prime Chain is the only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture enables:
+**Mersennet is the only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture enables:
 
 ✅ **~200ms finality via HotStuff-2** (vs. 12s Ethereum) - Institutional-grade latency  
 ✅ **Provable fairness** - Every trade is auditable, no MEV manipulation  
@@ -29,10 +29,10 @@
 
 ---
 
-## Why Prime Chain Wins
+## Why Mersennet Wins
 
 ### 1. Unique Technology Moat ⭐⭐⭐⭐⭐
-- **Only L1 with ATOMIC EVM ↔ CLOB composability** — Hyperliquid has a CLOB + EVM but they are async (different blocks); Prime Chain has atomic same-transaction composability (defensible technical moat)
+- **Only L1 with ATOMIC EVM ↔ CLOB composability** — Hyperliquid has a CLOB + EVM but they are async (different blocks); Mersennet has atomic same-transaction composability (defensible technical moat)
 - **Deterministic execution** (regulatory compliance)
 - **Cross-domain bridge** (RWA ↔ Credit ↔ DeFi atomic operations)
 
@@ -75,7 +75,7 @@
 
 ## Competitive Advantage
 
-| Feature | Ethereum | Solana | Hyperliquid | Monad | Sei v2 | Prime Chain |
+| Feature | Ethereum | Solana | Hyperliquid | Monad | Sei v2 | Mersennet |
 |---------|----------|--------|-------------|-------|--------|-------------|
 | Finality | 12 seconds | ~400ms | ~200ms | ~1s | ~400ms | **~200ms** |
 | Order Matching | Smart contracts | None | Native (200K ops/s) | None | Deprecated DEX | **Native (2.4M ops/s)** |
@@ -137,7 +137,7 @@
 
 ## Investment Thesis
 
-**Prime Chain is positioned to capture a significant portion of the $18.5T+ combined market (RWA + On-Chain Credit) by providing the only blockchain infrastructure that meets institutional requirements for deterministic, auditable trading.**
+**Mersennet is positioned to capture a significant portion of the $18.5T+ combined market (RWA + On-Chain Credit) by providing the only blockchain infrastructure that meets institutional requirements for deterministic, auditable trading.**
 
 **Why Invest Now**:
 1. **Unique Technology**: Only L1 with ATOMIC EVM↔CLOB composability (defensible moat)
@@ -171,7 +171,7 @@
 
 ## Contact
 
-**Prime Chain**  
+**Mersennet**  
 *The Institutional Trading Layer for Real-World Assets + On-Chain Credit Markets*
 
 **Key Differentiator**: The only blockchain with ATOMIC EVM ↔ CLOB composability — Hyperliquid has CLOB + EVM but they are async (different blocks).

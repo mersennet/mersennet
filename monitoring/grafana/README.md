@@ -1,10 +1,10 @@
-# Prime Chain Grafana Dashboards
+# Mersennet Grafana Dashboards
 
-This directory contains Grafana dashboard JSON files for monitoring Prime Chain nodes.
+This directory contains Grafana dashboard JSON files for monitoring Mersennet nodes.
 
 ## Dashboards
 
-### Prime Chain Overview (`prime-chain-overview.json`)
+### Mersennet Overview (`prime-chain-overview.json`)
 Comprehensive overview of chain health, throughput, execution engine, CLOB, and consensus:
 
 - **Chain Health**: Blocks produced, block height, node uptime, block time
@@ -13,7 +13,7 @@ Comprehensive overview of chain health, throughput, execution engine, CLOB, and 
 - **PrimeOrders CLOB**: Orders matched, active markets, CLOB activity
 - **Consensus & Network**: Consensus rounds, validators, finalization, RPC messages
 
-### Prime Chain Performance (`prime-chain-performance.json`)
+### Mersennet Performance (`prime-chain-performance.json`)
 Performance-focused metrics:
 
 - **EVM TPS**: Transaction throughput over time
@@ -46,9 +46,9 @@ Performance-focused metrics:
    ```yaml
    apiVersion: 1
    providers:
-     - name: 'Prime Chain'
+     - name: 'Mersennet'
        orgId: 1
-       folder: 'Prime Chain'
+       folder: 'Mersennet'
        type: file
        disableDeletion: false
        updateIntervalSeconds: 30
@@ -69,7 +69,7 @@ curl -X POST -H "Content-Type: application/json" \
 
 ## Prerequisites
 
-- **Prometheus** must be scraping the Prime Chain node's `/metrics` endpoint
+- **Prometheus** must be scraping the Mersennet node's `/metrics` endpoint
 - Configure the Prometheus datasource in Grafana to point to your Prometheus instance (default: `http://prometheus:9090` when using docker-compose)
 
 ## Datasource Variable

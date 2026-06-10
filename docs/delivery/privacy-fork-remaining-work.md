@@ -1,4 +1,4 @@
-# Prime Chain Privacy Fork — Remaining Work Assessment
+# Mersennet Privacy Fork — Remaining Work Assessment
 
 **Branch under assessment:** `feat/zk-privacy`
 **This document lives on:** `docs/remaining-work-assessment`

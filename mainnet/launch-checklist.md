@@ -1,4 +1,4 @@
-# Prime Chain Mainnet Launch Checklist
+# Mersennet Mainnet Launch Checklist
 
 ## Pre-Launch
 

@@ -1,6 +1,6 @@
-# Prime Chain Testnets
+# Mersennet Testnets
 
-This directory contains tooling to bring up two distinct Prime Chain
+This directory contains tooling to bring up two distinct Mersennet
 networks:
 
 | Compose file | Chain ID | Purpose |
@@ -110,7 +110,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 1. Open MetaMask → Networks → Add Network
 2. Use:
-   - **Network Name**: Prime Chain Testnet
+   - **Network Name**: Mersennet Testnet
    - **RPC URL**: `http://localhost:8545` (or your public RPC)
    - **Chain ID**: 7919
    - **Currency Symbol**: PRIME

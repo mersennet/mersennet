@@ -6,7 +6,7 @@
 
 ## Context
 
-Account-level state on Prime Chain — collateral, positions, PnL — is
+Account-level state on Mersennet — collateral, positions, PnL — is
 publicly readable today. After October 10, 2025, large traders use
 this transparency to engineer cascading liquidations: scan the chain
 for accounts close to maintenance margin, push the mark away from
