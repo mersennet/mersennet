@@ -86,7 +86,9 @@ pub fn bridge_public_inputs(output: &BlockProgramOutput) -> [Word; BRIDGE_PUBLIC
 
 /// Decode an SP1 on-chain Groth16 proof blob (`selector || 8x32 words`) into
 /// the `uint256[8]` array the bridge / verifier consumes.
-pub fn decode_groth16_proof(proof_bytes: &[u8]) -> Result<[Word; GROTH16_PROOF_WORDS], BridgeExportError> {
+pub fn decode_groth16_proof(
+    proof_bytes: &[u8],
+) -> Result<[Word; GROTH16_PROOF_WORDS], BridgeExportError> {
     let expected = GROTH16_SELECTOR_LEN + GROTH16_PROOF_WORDS * 32;
     if proof_bytes.len() != expected {
         return Err(BridgeExportError::BadProofLength {
