@@ -44,7 +44,7 @@ Two paths:
 
 ### 2a. Migrate from a pre-fork snapshot (recommended)
 
-Export a snapshot from the live transparent-chain (chain ID 7919):
+Export a snapshot from the live transparent-chain (chain ID 131071):
 
 ```bash
 ./target/release/mersennet --config /etc/mersennet/config.json \

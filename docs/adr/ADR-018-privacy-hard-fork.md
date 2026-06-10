@@ -27,7 +27,7 @@ hard fork because:
 ## Decision
 
 Activate at a fixed height `H` on the production chain (chain ID
-13370 for mainnet; 7919 is the default/transparent testnet chain ID).
+8191 for mainnet; 131071 is the default/transparent testnet chain ID).
 Pre-activation testnet runs for at least 8 weeks with the identical
 fork rules.
 

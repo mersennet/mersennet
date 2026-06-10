@@ -177,7 +177,7 @@ Check the [Network Information](/getting-started/network-info) page for current 
 
 ## Genesis Setup
 
-For **mainnet** or **testnet**, you need the correct genesis allocations. Genesis is not a separate file — it is the `genesis` section of your `config.json`, defining initial accounts and validators. The chain ID is the numeric `engine.chain_id` (7919 for testnet, 13370 for mainnet; see `mainnet/genesis.json` in the repository for the canonical mainnet parameters).
+For **mainnet** or **testnet**, you need the correct genesis allocations. Genesis is not a separate file — it is the `genesis` section of your `config.json`, defining initial accounts and validators. The chain ID is the numeric `engine.chain_id` (7919 for testnet, 8191 for mainnet; see `mainnet/genesis.json` in the repository for the canonical mainnet parameters).
 
 Example `genesis` section:
 

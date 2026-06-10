@@ -120,7 +120,7 @@ This data room contains all materials required for due diligence on Mersennet's 
 
 - [ ] Review whitepaper v7.0 (architecture, consensus, PrimeOrders)
 - [ ] Review technical reference (implementation details)
-- [ ] Test live testnet (Chain ID 7919, RPC: http://46.225.30.187:8545)
+- [ ] Test live testnet (Chain ID 131071, RPC: http://46.225.30.187:8545)
 - [ ] Review codebase (Rust core — 6-crate workspace, 44,000+ LOC)
 - [ ] Verify performance claims (72K TPS, 2.4M CLOB ops/s, ~200ms finality)
 - [ ] Review smart contracts (Foundry, 28 tests)
@@ -172,7 +172,7 @@ This data room contains all materials required for due diligence on Mersennet's 
 
 ### Quick Start (Try the Testnet)
 
-1. Add Mersennet to MetaMask: Chain ID `7919`, RPC `http://46.225.30.187:8545`
+1. Add Mersennet to MetaMask: Chain ID `131071`, RPC `http://46.225.30.187:8545`
 2. Get testnet MRSN from the faucet: http://46.225.30.187:8080
 3. Trade on PrimeSwap: http://46.225.30.187:4000
 4. View your transactions: http://46.225.30.187/

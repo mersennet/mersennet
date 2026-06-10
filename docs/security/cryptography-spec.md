@@ -1,7 +1,7 @@
 # Mersennet — Cryptography Specification
 
 **Status:** Draft for third-party audit (Workstream I)
-**Target chain ID:** 7920 (privacy testnet) → 7919 (mainnet, post-fork)
+**Target chain ID:** 7920 (privacy testnet) → 131071 (mainnet, post-fork)
 **Date:** 2026-05-21
 
 This document formally specifies the cryptographic primitives,

@@ -1,6 +1,6 @@
 {
   "network": "Mersennet Testnet",
-  "chainId": 7919,
+  "chainId": 131071,
   "rpc": "http://46.225.30.187:8545",
   "explorer": "http://46.225.30.187",
   "deployer": "0x7f5ce38fb2553e95dd8ef9182a80bc219c9a0d45",

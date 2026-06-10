@@ -71,7 +71,7 @@
 ║   ✅ Greg Kidd (Advisor)              Lowest insider allocation (10%)        ║
 ║      Early Coinbase/Ripple/Square     of any major L1 in 3 years.            ║
 ║                                                                              ║
-║   TESTNET LIVE: Chain ID 7919                                                ║
+║   TESTNET LIVE: Chain ID 131071                                                ║
 ║   12 products built · 6 live                                                 ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -88,7 +88,7 @@
 ║                                                                              ║
 ║   ROADMAP                                                                    ║
 ║   Q1 2026: Pilot + $5M strategic      Q3 2026: Public testnet + audit       ║
-║   Q2 2026: Live trading + $15M        Q4 2026: Mainnet (Chain 13370)        ║
+║   Q2 2026: Live trading + $15M        Q4 2026: Mainnet (Chain 8191)        ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║

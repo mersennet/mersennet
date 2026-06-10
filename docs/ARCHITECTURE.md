@@ -1042,7 +1042,7 @@ The `AppConfig` structure supports JSON configuration with sensible defaults:
 
 | Section | Key Parameters | Defaults |
 |---|---|---|
-| `engine` | chain_id, state_path, gas_limit_per_block | 7919, "state", 30M |
+| `engine` | chain_id, state_path, gas_limit_per_block | 131071, "state", 30M |
 | `mempool` | max_total, max_per_sender, bump_bps | 10K, 1K, 1000 (10%) |
 | `prime_orders` | initial_margin_bps, maintenance_margin_bps | 0, 0 |
 | `bridge` | max_queue_len | 10,000 |

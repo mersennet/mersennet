@@ -9,8 +9,8 @@ ecosystem leadership.
 [ADR-018](../adr/ADR-018-privacy-hard-fork.md).
 
 This runbook is the operational checklist for activating the
-privacy hard fork on the production chain (mainnet chain ID 13370;
-the transparent testnet runs chain ID 7919).
+privacy hard fork on the production chain (mainnet chain ID 8191;
+the transparent testnet runs chain ID 131071).
 
 ---
 

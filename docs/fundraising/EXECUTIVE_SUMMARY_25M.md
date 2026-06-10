@@ -11,7 +11,7 @@
 This architectural breakthrough, delivered through CLOB precompile `0x0100`, unlocks compliant, auditable, and composable trading of tokenized real-world assets (RWA) and on-chain credit instruments at institutional speed.
 
 **Category:** Institutional Trading Infrastructure
-**Stage:** Pre-mainnet, testnet live (Chain ID 7919)
+**Stage:** Pre-mainnet, testnet live (Chain ID 131071)
 **Raising:** $25M Series A
 **Core Innovation:** Atomic EVM ↔ CLOB composability (unique in market)
 
@@ -83,7 +83,7 @@ A smart contract on Mersennet can atomically: accept a tokenized bond deposit, p
 
 ### Technical Progress
 
-- **Testnet live** on 4 Hetzner VPS validators (Chain ID 7919)
+- **Testnet live** on 4 Hetzner VPS validators (Chain ID 131071)
 - **12 products built:** Explorer, DEX, lending, NFT marketplace, wallet (browser + mobile), prediction markets, liquid staking, validator dashboard, SDKs (Python, Go, TypeScript)
 - **6 products deployed** to testnet with live UIs
 - **7 smart contracts** verified and deployed (Multicall3, WMRSN, stablecoins, DEX factory/router)
@@ -166,7 +166,7 @@ Mersennet at $25M Series A represents early-stage pricing for technology that co
 | 3+ institutional partners | Q2 2026 | Signed agreements |
 | Security audit passed | Q3 2026 | Clean audit from tier-1 firm |
 | Public testnet (15+ validators) | Q3 2026 | Community participation |
-| Mainnet launch | Q4 2026 | Chain ID 13370, institutional trading live |
+| Mainnet launch | Q4 2026 | Chain ID 8191, institutional trading live |
 | $500M+ TVA | Q4 2026 | Assets trading on Mersennet |
 
 ---
@@ -205,7 +205,7 @@ The Institutional Trading Layer for Real-World Assets + On-Chain Credit Markets
 
 - **Docs:** docs.primechain.network
 - **GitHub:** PrimeNumbersLabs
-- **Testnet Explorer:** Chain ID 7919
+- **Testnet Explorer:** Chain ID 131071
 - **Email:** [founders@primechain.network]
 
 ---

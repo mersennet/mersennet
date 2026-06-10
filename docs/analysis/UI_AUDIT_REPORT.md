@@ -280,10 +280,10 @@ Card Tabs:
 ### V3 Errors:
 ```javascript
 // Debug log - RPC failure
-Failed to get block number for chainId: 7919 
+Failed to get block number for chainId: 131071 
 Error: Failed to send batch call
 ```
-- **Issue:** RPC connection failing for Mersennet (7919)
+- **Issue:** RPC connection failing for Mersennet (131071)
 - **Impact:** Can't fetch on-chain data, blocks/transactions won't update
 
 ### V2 Errors:
@@ -454,7 +454,7 @@ Token Selectors:
 - [ ] Add loading states with brand colors
 
 ### Phase 4: Technical Fixes
-- [ ] Fix RPC connection for chain ID 7919
+- [ ] Fix RPC connection for chain ID 131071
 - [ ] Add/fix token list JSON endpoint
 - [ ] Test wallet connection flow
 - [ ] Add proper error boundaries

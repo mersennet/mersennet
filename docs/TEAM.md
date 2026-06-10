@@ -26,7 +26,7 @@
 
 | Parameter | Value |
 |-----------|-------|
-| **Chain ID** | `7919` (`0x1EEF` hex) |
+| **Chain ID** | `131071` (`0x1EEF` hex) |
 | **Currency** | MRSN (18 decimals) |
 | **Block Time** | ~1 second |
 | **Max Supply** | 1,000,000,000 MRSN |
@@ -399,7 +399,7 @@ docker-compose up -d
 | **Q1** (Months 1-3) | Foundation & Hardening | Block timestamps, RPC compatibility (camelCase, filters, feeHistory), CI/CD pipelines, monitoring stack, contract tests, security fixes |
 | **Q2** (Months 4-6) | Production Readiness | Subgraph/indexer, testnet bridge, SDK publishing, configurable endpoints, security audit scope |
 | **Q3** (Months 7-9) | Public Testnet | External audit, governance, multi-sig, validator onboarding program, load testing |
-| **Q4** (Months 10-12) | Mainnet Launch | Chain ID 13370, genesis ceremony, mainnet bridge, launch comms |
+| **Q4** (Months 10-12) | Mainnet Launch | Chain ID 8191, genesis ceremony, mainnet bridge, launch comms |
 
 ---
 
@@ -425,7 +425,7 @@ docker-compose up -d
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-03 | Chain ID `7919` (testnet), `13370` (mainnet) | Unique, not used by any known chain |
+| 2026-03 | Chain ID `131071` (testnet), `8191` (mainnet) | Unique, not used by any known chain |
 | 2026-03 | MRSN ticker | Not used by any tracked token |
 | 2026-03 | Monorepo structure | Explorer, DEX, validator dashboard kept in main repo for ease of development |
 | 2026-03 | Vanilla JS for frontends | No build step required, instant deploy via SCP |

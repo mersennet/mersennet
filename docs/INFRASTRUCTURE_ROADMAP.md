@@ -2,13 +2,13 @@
 
 **Version:** 1.0
 **Period:** 12 months (Q1 2026 -- Q1 2027)
-**Target:** Mainnet launch (Chain ID 13370) by end of Q4
+**Target:** Mainnet launch (Chain ID 8191) by end of Q4
 
 ---
 
 ## Executive Summary
 
-This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4 validators on Hetzner VPS) to a production-grade mainnet with 21+ validators, a complete developer ecosystem, and institutional-grade operations. The plan is conservative by design: the first three quarters focus on hardening, testing, and security, with mainnet launch gated by a completed external audit.
+This roadmap defines a 4-quarter path from the current testnet (Chain ID 131071, 4 validators on Hetzner VPS) to a production-grade mainnet with 21+ validators, a complete developer ecosystem, and institutional-grade operations. The plan is conservative by design: the first three quarters focus on hardening, testing, and security, with mainnet launch gated by a completed external audit.
 
 ---
 
@@ -120,7 +120,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Description |
 |------|-------------|
-| Testnet bridge | Mersennet (7919) <-> Sepolia bridge. Lock-and-mint architecture for ETH and ERC-20 tokens. Relayer service. |
+| Testnet bridge | Mersennet (131071) <-> Sepolia bridge. Lock-and-mint architecture for ETH and ERC-20 tokens. Relayer service. |
 | Bridge monitoring | Dashboard for bridge balances, pending transfers, relayer health. Alerts for stuck transactions or balance discrepancies. |
 | Audit preparation | Document bridge contract architecture, threat model, and known risks. Prepare scope for inclusion in the security audit. |
 
@@ -238,7 +238,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 |------|-------------|
 | Audit remediation verification | All critical and high-severity findings resolved. Re-verified by auditor or internal review. |
 | Genesis validator set | Minimum 7 validators confirmed. Target 21. Hardware requirements met (`mainnet/validator-requirements.md`: 16+ cores, 64 GB RAM, 2 TB NVMe). |
-| Genesis ceremony | Multi-party genesis generation. Each validator generates keys independently. Genesis block assembled from validator registrations. Chain ID 13370. |
+| Genesis ceremony | Multi-party genesis generation. Each validator generates keys independently. Genesis block assembled from validator registrations. Chain ID 8191. |
 | Stress test | Sustained load test for 72+ hours. Target: 1,000+ TPS with mixed workload (transfers, DEX swaps, PrimeOrders). Monitor for memory leaks, state bloat, consensus liveness. |
 | Mainnet dry run | Deploy mainnet binary on an isolated network. Run through the full launch sequence. Verify monitoring, alerting, and incident response procedures. |
 
@@ -246,7 +246,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Description |
 |------|-------------|
-| Genesis block | Mainnet genesis block produced. Chain ID 13370. Initial token distribution per tokenomics (700M block rewards pool, team/foundation/ecosystem allocations). |
+| Genesis block | Mainnet genesis block produced. Chain ID 8191. Initial token distribution per tokenomics (700M block rewards pool, team/foundation/ecosystem allocations). |
 | Validator monitoring | 24/7 monitoring with on-call rotation. Alert escalation path defined and tested. |
 | Ecosystem apps on mainnet | Explorer, DEX, validator dashboard, docs all pointed to mainnet. Testnet versions remain available on separate URLs. |
 | Bridge activation | Mersennet <-> Ethereum mainnet bridge. Start with ETH and USDC. Conservative initial limits. |
@@ -268,7 +268,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 - [ ] All audit findings resolved and verified
 - [ ] Genesis ceremony complete
 - [ ] 72-hour stress test passed
-- [ ] Mainnet genesis block (Chain ID 13370)
+- [ ] Mainnet genesis block (Chain ID 8191)
 - [ ] 21+ validators active
 - [ ] Explorer, DEX, dashboard live on mainnet
 - [ ] Bridge active (Mersennet <-> Ethereum)
