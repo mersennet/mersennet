@@ -53,8 +53,8 @@ rustc --version  # Should be 1.75+
 Clone the Mersennet repository and build the release binary:
 
 ```bash
-git clone https://github.com/PrimeNumbersLabs/prime-chain.git
-cd prime-chain
+git clone https://github.com/PrimeNumbersLabs/mersennet.git
+cd mersennet
 cargo build --release
 ```
 

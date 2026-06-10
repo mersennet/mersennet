@@ -89,4 +89,4 @@ Primeport is a Seaport-based NFT marketplace supporting ERC-721 and ERC-1155. Se
 
 ---
 
-Have more questions? Check the [Getting Started](/getting-started/overview) guides or open an issue on [GitHub](https://github.com/PrimeNumbersLabs/prime-chain).
+Have more questions? Check the [Getting Started](/getting-started/overview) guides or open an issue on [GitHub](https://github.com/PrimeNumbersLabs/mersennet).

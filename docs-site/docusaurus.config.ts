@@ -57,7 +57,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/',
-          editUrl: 'https://github.com/PrimeNumbersLabs/prime-chain/tree/main/docs-site/',
+          editUrl: 'https://github.com/PrimeNumbersLabs/mersennet/tree/main/docs-site/',
           showLastUpdateTime: true,
           remarkPlugins: [remarkMath],
           rehypePlugins: [rehypeKatex],
@@ -144,7 +144,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/PrimeNumbersLabs/prime-chain',
+          href: 'https://github.com/PrimeNumbersLabs/mersennet',
           label: 'GitHub',
           position: 'right',
         },
@@ -186,7 +186,7 @@ const config: Config = {
           title: 'Community',
           items: [
             { label: 'Privacy', to: '/privacy' },
-            { label: 'GitHub', href: 'https://github.com/PrimeNumbersLabs/prime-chain' },
+            { label: 'GitHub', href: 'https://github.com/PrimeNumbersLabs/mersennet' },
             { label: 'Whitepaper', to: '/whitepaper' },
             { label: 'FAQ', to: '/resources/faq' },
           ],

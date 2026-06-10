@@ -16,7 +16,7 @@ export const LINKS = {
   docs: 'https://docs.mersennet.com',
   explorer: 'http://46.225.30.187',
   faucet: 'http://46.225.30.187:4003',
-  github: 'https://github.com/PrimeNumbersLabs/prime-chain',
+  github: 'https://github.com/PrimeNumbersLabs/mersennet',
   whitepaper: 'https://docs.mersennet.com/whitepaper',
   quickStart: 'https://docs.mersennet.com/developers/quick-start/hardhat',
   networkInfo: 'https://docs.mersennet.com/getting-started/network-info',

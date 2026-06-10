@@ -81,7 +81,7 @@ AtomicArbitrage:     0x77c6de42d5629ac7e454910a46d06fab34be8f14
 Contract ABIs can be obtained from:
 
 - **Block Explorer** — [http://46.225.30.187](http://46.225.30.187) — Search by address and view contract details.
-- **Source Code** — Mersennet contracts repository (see [GitHub](https://github.com/PrimeNumbersLabs/prime-chain)).
+- **Source Code** — Mersennet contracts repository (see [GitHub](https://github.com/PrimeNumbersLabs/mersennet)).
 - **Multicall3** — Standard [Multicall3](https://github.com/mds1/multicall) ABI; compatible with wagmi/viem defaults.
 
 ## Usage Examples

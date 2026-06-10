@@ -107,7 +107,7 @@ Used for: hero titles, primary CTA buttons, top bars, logo fills, and accent bor
 | Social Card | PNG | Open Graph / Twitter share image (1200×630) |
 
 :::tip
-All logo files are available in the [docs-site repository](https://github.com/PrimeNumbersLabs/prime-chain/tree/main/docs-site/static/img).
+All logo files are available in the [docs-site repository](https://github.com/PrimeNumbersLabs/mersennet/tree/main/docs-site/static/img).
 :::
 
 ## Integration Guide
@@ -126,4 +126,4 @@ When building dApps or documentation for Mersennet:
 
 ## Contact
 
-For custom brand requests, partnerships, or asset access, reach out via the [Mersennet GitHub](https://github.com/PrimeNumbersLabs/prime-chain) or community channels.
+For custom brand requests, partnerships, or asset access, reach out via the [Mersennet GitHub](https://github.com/PrimeNumbersLabs/mersennet) or community channels.

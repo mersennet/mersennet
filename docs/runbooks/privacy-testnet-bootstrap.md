@@ -16,8 +16,8 @@ running testnet and just want to roll a new validator in, jump to
 ## 1. Clone + build
 
 ```bash
-git clone https://github.com/PrimeNumbersLabs/prime-chain.git
-cd prime-chain
+git clone https://github.com/PrimeNumbersLabs/mersennet.git
+cd mersennet
 cargo build --release --workspace
 ```
 
