@@ -1,4 +1,4 @@
-//! Load test tool for Prime Chain.
+//! Load test tool for Mersennet.
 //! Generates transactions at configurable rates against a running node.
 
 use std::sync::Arc;
@@ -128,7 +128,7 @@ fn parse_args() -> Args {
 
 fn print_banner(args: &Args) {
     println!("╔══════════════════════════════════════════════╗");
-    println!("║          Prime Chain Load Test               ║");
+    println!("║          Mersennet Load Test               ║");
     println!("╚══════════════════════════════════════════════╝");
     println!("[CONFIG] RPC:      {}", args.rpc);
     println!("[CONFIG] Rate:     {} TPS", args.rate);

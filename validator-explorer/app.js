@@ -1,5 +1,5 @@
 /* =============================================================================
-   PrimeNodes — Validator Dashboard for Prime Chain (Chain ID 7919)
+   PrimeNodes — Validator Dashboard for Mersennet (Chain ID 7919)
    Single-page app: hash-based routing, RPC polling, canvas charts
    ============================================================================= */
 
@@ -504,7 +504,7 @@
         container.innerHTML = `
             <div class="container page-enter">
                 <div class="hero-banner">
-                    <h1 class="hero-title">Prime Chain Validator Dashboard</h1>
+                    <h1 class="hero-title">Mersennet Validator Dashboard</h1>
                     <p class="hero-sub">Real-time network monitoring &amp; validator analytics</p>
                 </div>
 

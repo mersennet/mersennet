@@ -1,4 +1,4 @@
-//! revm-free state-transition proof envelopes for Prime Chain.
+//! revm-free state-transition proof envelopes for Mersennet.
 //!
 //! These types used to live in `prime-chain` (`crates/core`), which pulls
 //! the full `revm` execution stack and therefore `c-kzg` 1.x. The SP1 host

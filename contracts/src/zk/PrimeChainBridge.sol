@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "./IStateProofVerifier.sol";
 
 /// @title PrimeChainBridge
-/// @notice Ethereum-side anchor for Prime Chain's privacy fork. It consumes
+/// @notice Ethereum-side anchor for Mersennet's privacy fork. It consumes
 ///         Groth16-wrapped SP1 state-transition proofs to advance a canonical
 ///         view of the shielded state root, and operates a deposit / withdraw
 ///         message bus secured by that proven state.
@@ -154,7 +154,7 @@ contract PrimeChainBridge {
         );
     }
 
-    /// @notice Lock ETH on Ethereum and request a shielded note on Prime Chain.
+    /// @notice Lock ETH on Ethereum and request a shielded note on Mersennet.
     /// @param shieldedRecipient The shielded identity commitment to credit.
     function deposit(bytes32 shieldedRecipient) external payable {
         if (depositsPaused) revert DepositsArePaused();
@@ -164,7 +164,7 @@ contract PrimeChainBridge {
         emit DepositLocked(nonce, shieldedRecipient, msg.sender, msg.value);
     }
 
-    /// @notice Withdraw ETH that was authorized (unshielded) on Prime Chain.
+    /// @notice Withdraw ETH that was authorized (unshielded) on Mersennet.
     /// @dev The withdrawal leaf is `keccak256(abi.encode(recipient, amount, leafNonce))`
     ///      and must be included in the latest proven `shieldedStateRoot` via a
     ///      sorted-pair keccak Merkle tree. Each leaf can be spent once.

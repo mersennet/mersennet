@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PrimeProvider - JSON-RPC client for Prime Chain.
+ * PrimeProvider - JSON-RPC client for Mersennet.
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -18,7 +18,7 @@ function hexToString(hex) {
     return '0x' + s.toLowerCase();
 }
 /**
- * Prime Chain JSON-RPC provider.
+ * Mersennet JSON-RPC provider.
  * Connects to the RPC endpoint via HTTP.
  */
 class PrimeProvider {

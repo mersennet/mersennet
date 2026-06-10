@@ -1,5 +1,5 @@
 {
-  "network": "Prime Chain Testnet",
+  "network": "Mersennet Testnet",
   "chainId": 7919,
   "rpc": "http://46.225.30.187:8545",
   "explorer": "http://46.225.30.187",

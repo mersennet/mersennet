@@ -1,4 +1,4 @@
-"""PrimeOrders - CLOB interaction for Prime Chain."""
+"""PrimeOrders - CLOB interaction for Mersennet."""
 
 from typing import List, Optional
 
@@ -13,7 +13,7 @@ def _to_hex_amount(s: str) -> str:
 
 
 class PrimeOrders:
-    """High-level API for Prime Chain order book operations."""
+    """High-level API for Mersennet order book operations."""
 
     def __init__(self, provider: PrimeProvider):
         self.provider = provider

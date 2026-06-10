@@ -1,5 +1,5 @@
 /**
- * Shielded-state SDK for Prime Chain (Phase 6 of the privacy redesign).
+ * Shielded-state SDK for Mersennet (Phase 6 of the privacy redesign).
  *
  * Provides:
  *

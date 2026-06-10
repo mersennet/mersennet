@@ -1,4 +1,4 @@
-"""Type definitions for Prime Chain SDK."""
+"""Type definitions for Mersennet SDK."""
 
 from dataclasses import dataclass
 from typing import List, Optional

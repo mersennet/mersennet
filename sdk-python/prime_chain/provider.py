@@ -1,4 +1,4 @@
-"""PrimeProvider - JSON-RPC client for Prime Chain."""
+"""PrimeProvider - JSON-RPC client for Mersennet."""
 
 import json
 from typing import Any, Dict, Optional
@@ -13,7 +13,7 @@ from .types import Block, ViewNotesEntry, ViewNotesResult
 
 
 class PrimeChainError(Exception):
-    """Prime Chain RPC or SDK error."""
+    """Mersennet RPC or SDK error."""
 
     def __init__(self, message: str, code: Optional[int] = None):
         super().__init__(message)
@@ -33,7 +33,7 @@ def _hex_to_string(hex_str: str) -> str:
 
 
 class PrimeProvider:
-    """Prime Chain JSON-RPC provider. Connects to the RPC endpoint via HTTP."""
+    """Mersennet JSON-RPC provider. Connects to the RPC endpoint via HTTP."""
 
     def __init__(self, rpc_url: str):
         self.url = rpc_url

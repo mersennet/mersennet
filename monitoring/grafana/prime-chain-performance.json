@@ -299,7 +299,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "Prime Chain Performance",
+  "title": "Mersennet Performance",
   "uid": "prime-chain-performance",
   "version": 1,
   "weekStart": ""

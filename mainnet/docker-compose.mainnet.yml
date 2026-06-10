@@ -1,4 +1,4 @@
-# Prime Chain Mainnet - Production Docker Compose
+# Mersennet Mainnet - Production Docker Compose
 # Usage: docker compose -f docker-compose.mainnet.yml up -d
 #
 # Prerequisites:

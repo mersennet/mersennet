@@ -133,7 +133,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     info!("╔══════════════════════════════════════╗");
-    info!("║        Prime Chain v7.0              ║");
+    info!("║        Mersennet v7.0              ║");
     info!("║   Production Node Starting...        ║");
     info!("╚══════════════════════════════════════╝");
     info!(

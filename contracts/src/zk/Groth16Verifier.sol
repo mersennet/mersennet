@@ -5,7 +5,7 @@ import "./IStateProofVerifier.sol";
 
 /// @title Groth16Verifier
 /// @notice On-chain Groth16 verifier over the BN254 (alt_bn128) curve for
-///         Prime Chain state-transition proofs.
+///         Mersennet state-transition proofs.
 /// @dev Uses the EVM precompiles ecAdd (0x06), ecMul (0x07) and ecPairing
 ///      (0x08). The verifying key is set once by the deployer after the SP1
 ///      Groth16 wrapping circuit is finalized, then permanently locked. This

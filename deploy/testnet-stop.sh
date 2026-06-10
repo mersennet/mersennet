@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/nodes.conf"
 VALIDATORS=("$VALIDATOR_1" "$VALIDATOR_2" "$VALIDATOR_3" "$VALIDATOR_4")
 SSH_USER="${SSH_USER:-root}"
 
-echo "Stopping all Prime Chain testnet nodes..."
+echo "Stopping all Mersennet testnet nodes..."
 
 for i in 1 2 3 4; do
     IP="${VALIDATORS[$((i-1))]}"

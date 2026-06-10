@@ -194,7 +194,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "Prime Chain Overview",
+  "title": "Mersennet Overview",
   "uid": "prime-chain-overview",
   "version": 1
 }

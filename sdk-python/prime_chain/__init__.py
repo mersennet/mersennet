@@ -1,4 +1,4 @@
-"""Prime Chain Python SDK - JSON-RPC, CLOB, and WebSocket client."""
+"""Mersennet Python SDK - JSON-RPC, CLOB, and WebSocket client."""
 
 from .provider import PrimeProvider
 from .orders import PrimeOrders

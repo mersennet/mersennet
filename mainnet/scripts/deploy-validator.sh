@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy a Prime Chain validator node
+# Deploy a Mersennet validator node
 # Usage: ./deploy-validator.sh --data-dir /var/lib/prime-chain --config genesis.json
 
 set -e
@@ -132,7 +132,7 @@ wait_for_sync() {
 # Print status
 print_status() {
     echo ""
-    echo "==> Prime Chain Validator Deployment Complete"
+    echo "==> Mersennet Validator Deployment Complete"
     echo ""
     echo "  Data dir:  $DATA_DIR"
     echo "  Config:    $CONFIG_PATH"

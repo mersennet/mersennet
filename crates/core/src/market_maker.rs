@@ -1,4 +1,4 @@
-//! Programmable Market Maker module for Prime Chain CLOB.
+//! Programmable Market Maker module for Mersennet CLOB.
 //!
 //! Enables smart contract-like market making via the CLOB precompile with
 //! configurable strategies: Grid, Avellaneda-Stoikov, Inventory-based, and TWAP.

@@ -18,7 +18,7 @@ func (e *PrimeChainError) Error() string {
 	return e.Message
 }
 
-// Provider is the JSON-RPC client for Prime Chain
+// Provider is the JSON-RPC client for Mersennet
 type Provider struct {
 	URL string
 	id  int

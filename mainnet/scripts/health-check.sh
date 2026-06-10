@@ -1,5 +1,5 @@
 #!/bin/bash
-# Check Prime Chain node health
+# Check Mersennet node health
 # Returns 0 if healthy, 1 if not
 # Usage: ./health-check.sh [--rpc-url URL] [--data-dir DIR]
 
@@ -113,7 +113,7 @@ check_disk() {
 }
 
 # Run all checks
-echo "==> Prime Chain Health Check"
+echo "==> Mersennet Health Check"
 echo ""
 
 check_process || exit_code=1

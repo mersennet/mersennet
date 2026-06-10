@@ -1,5 +1,5 @@
 #!/bin/bash
-# Backup Prime Chain state data
+# Backup Mersennet state data
 # Usage: ./backup-state.sh --data-dir /var/lib/prime-chain --backup-dir /backups
 
 set -e
@@ -55,7 +55,7 @@ mkdir -p "$BACKUP_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="prime-chain-state-$TIMESTAMP"
 
-echo "==> Backing up Prime Chain state"
+echo "==> Backing up Mersennet state"
 echo "  Source:      $DATA_DIR"
 echo "  Destination: $BACKUP_DIR/$BACKUP_NAME"
 echo ""

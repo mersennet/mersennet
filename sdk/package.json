@@ -1,7 +1,7 @@
 {
   "name": "@prime-chain/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for Prime Chain",
+  "description": "TypeScript SDK for Mersennet",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

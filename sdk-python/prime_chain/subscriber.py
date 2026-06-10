@@ -1,4 +1,4 @@
-"""PrimeSubscriber - WebSocket subscriptions for Prime Chain."""
+"""PrimeSubscriber - WebSocket subscriptions for Mersennet."""
 
 import json
 import threading
@@ -12,7 +12,7 @@ except ImportError:
 
 
 class PrimeSubscriber:
-    """WebSocket subscription manager for Prime Chain."""
+    """WebSocket subscription manager for Mersennet."""
 
     def __init__(self, ws_url: str):
         if not HAS_WEBSOCKET:

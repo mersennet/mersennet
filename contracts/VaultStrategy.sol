@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @title Prime Chain Vault Strategy
+/// @title Mersennet Vault Strategy
 /// @notice Demonstrates atomic EVM ↔ CLOB interaction via the precompile at 0x0100
 /// @dev This contract deposits collateral, places orders, and reacts to fills
 ///      all in a single transaction — impossible on Hyperliquid or any other chain.

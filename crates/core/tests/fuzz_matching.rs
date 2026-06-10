@@ -1,4 +1,4 @@
-//! Property-based fuzzing tests for Prime Chain matching engine, FBA, mempool,
+//! Property-based fuzzing tests for Mersennet matching engine, FBA, mempool,
 //! parallel execution, and consensus.
 
 use prime_chain::engine::{Engine, Transaction};

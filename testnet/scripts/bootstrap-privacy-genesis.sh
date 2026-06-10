@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prime Chain privacy testnet bootstrap (Workstream H3).
+# Mersennet privacy testnet bootstrap (Workstream H3).
 #
 # Produces `genesis-output/privacy/`:
 #   - validator keys (7 ECDSA secp256k1 keypairs)

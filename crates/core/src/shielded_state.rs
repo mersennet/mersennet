@@ -1,4 +1,4 @@
-//! Shielded state for Prime Chain.
+//! Shielded state for Mersennet.
 //!
 //! Holds the global note commitment tree, the nullifier set, and a
 //! recent-roots ring so that wallets can prove against a slightly

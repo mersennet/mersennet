@@ -1,5 +1,5 @@
 /**
- * TypeScript interfaces for Prime Chain SDK.
+ * TypeScript interfaces for Mersennet SDK.
  * All amounts are strings to avoid BigInt precision issues in JSON.
  */
 

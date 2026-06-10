@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Prime Chain privacy testnet (chain ID 7920) — operator dashboard. All panels obey CI K2: no address labels.",
+  "description": "Mersennet privacy testnet (chain ID 7920) — operator dashboard. All panels obey CI K2: no address labels.",
   "editable": false,
   "graphTooltip": 1,
   "id": null,
@@ -233,6 +233,6 @@
   "tags": ["prime-chain", "privacy", "testnet", "chain-7920"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
-  "title": "Prime Chain — Privacy Testnet",
+  "title": "Mersennet — Privacy Testnet",
   "version": 1
 }

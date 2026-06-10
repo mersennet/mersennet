@@ -1,5 +1,5 @@
 [Unit]
-Description=Prime Chain Testnet Faucet
+Description=Mersennet Testnet Faucet
 After=prime-chain.service
 Wants=prime-chain.service
 

@@ -1,7 +1,7 @@
 /**
- * @prime-chain/sdk - TypeScript SDK for Prime Chain
+ * @prime-chain/sdk - TypeScript SDK for Mersennet
  *
- * Prime Chain is a Layer 1 blockchain with JSON-RPC API and WebSocket subscriptions.
+ * Mersennet is a Layer 1 blockchain with JSON-RPC API and WebSocket subscriptions.
  * This SDK provides a typed interface for eth_*, prime_*, and primeorders_* methods.
  *
  * @example

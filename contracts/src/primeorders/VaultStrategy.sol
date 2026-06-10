@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "../interfaces/IPrimeOrders.sol";
 
-/// @title Prime Chain Vault Strategy
+/// @title Mersennet Vault Strategy
 /// @notice Demonstrates atomic EVM + CLOB interaction via the precompile at 0x0100
 /// @dev Deposits collateral, places orders, and reacts to fills
 ///      all in a single transaction -- impossible on Hyperliquid or any other chain.

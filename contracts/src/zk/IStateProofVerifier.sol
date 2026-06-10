@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /// @title IStateProofVerifier
-/// @notice Verifies a Prime Chain block state-transition proof on Ethereum.
+/// @notice Verifies a Mersennet block state-transition proof on Ethereum.
 /// @dev The proof is a Groth16 proof over BN254 wrapping the SP1
 ///      state-transition program. The public inputs are the nine field
 ///      elements committed by `BlockProgramOutput::to_field_elements`

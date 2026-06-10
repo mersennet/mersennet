@@ -1,4 +1,4 @@
-// Prime Chain circuit library.
+// Mersennet circuit library.
 //
 // Each shielded operation is implemented as its own circuit (.nr file
 // in this directory). This `lib.nr` re-exports the common helpers

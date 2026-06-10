@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /// @title Wrapped PRIM (WPRIM)
-/// @notice ERC-20 wrapper for the native PRIM token on Prime Chain
+/// @notice ERC-20 wrapper for the native PRIM token on Mersennet
 /// @dev Identical interface to WETH9 — deposit native PRIM, get WPRIM ERC-20
 contract WPRIM {
     string public constant name     = "Wrapped PRIM";

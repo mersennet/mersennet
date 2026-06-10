@@ -6,7 +6,7 @@ set -euo pipefail
 
 NODE_ROLE="${1:-validator}"
 
-echo "==> Setting up Prime Chain node (role: $NODE_ROLE)"
+echo "==> Setting up Mersennet node (role: $NODE_ROLE)"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq

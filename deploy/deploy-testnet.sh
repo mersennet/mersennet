@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# Prime Chain Testnet Deployment
+# Mersennet Testnet Deployment
 # Deploys a 4-validator + 1 public-RPC testnet to Hetzner VPS instances.
 #
 # Usage:
@@ -254,7 +254,7 @@ sleep 10
 
 echo
 echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║          Prime Chain Testnet Status              ║${NC}"
+echo -e "${CYAN}║          Mersennet Testnet Status              ║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════════╣${NC}"
 
 ALL_OK=true

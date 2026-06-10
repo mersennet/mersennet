@@ -3,7 +3,7 @@ name = "prime-state-proof"
 version = "0.7.0"
 authors = ["PrimeNumbers Labs"]
 edition = "2024"
-description = "revm-free state-transition proof envelopes and SP1 prover/verifier glue for Prime Chain. Kept free of the EVM execution stack so the SP1 host can enable sp1-sdk/network without the revm c-kzg conflict."
+description = "revm-free state-transition proof envelopes and SP1 prover/verifier glue for Mersennet. Kept free of the EVM execution stack so the SP1 host can enable sp1-sdk/network without the revm c-kzg conflict."
 
 [features]
 default = []

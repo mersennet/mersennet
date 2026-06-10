@@ -1,4 +1,4 @@
-//! Formal verification module for Prime Chain matching engine correctness.
+//! Formal verification module for Mersennet matching engine correctness.
 //!
 //! Provides invariant checking and property-based test generators for security audits.
 
