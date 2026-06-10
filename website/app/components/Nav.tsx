@@ -5,9 +5,10 @@ import { BrandMark } from './Icon';
 const NAV = [
   { n: '1.0', label: 'Docs', href: LINKS.docs },
   { n: '2.0', label: 'Network', href: '#network' },
-  { n: '3.0', label: 'Verify', href: '#verifiable' },
-  { n: '4.0', label: 'Ecosystem', href: '#ecosystem' },
-  { n: '5.0', label: 'GitHub', href: LINKS.github },
+  { n: '3.0', label: 'Build', href: '#build' },
+  { n: '4.0', label: 'Verify', href: '#verifiable' },
+  { n: '5.0', label: 'Ecosystem', href: '#ecosystem' },
+  { n: '6.0', label: 'GitHub', href: LINKS.github },
 ];
 
 export function Nav() {

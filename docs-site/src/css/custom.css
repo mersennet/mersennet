@@ -975,3 +975,74 @@ html {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   17. Docs landing hero (/overview)
+   -------------------------------------------------------------------------- */
+
+.hero-home {
+  text-align: center;
+  padding: 3.2rem 1rem 2.6rem;
+  margin-bottom: 2.4rem;
+  border-bottom: 1px solid var(--prime-border);
+}
+.hero-home h1 {
+  font-size: clamp(2.1rem, 5vw, 3.1rem);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.8rem;
+}
+.hero-home__subtitle {
+  max-width: 620px;
+  margin: 0 auto 1.6rem;
+  color: var(--prime-text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+.hero-home__ctas {
+  display: flex;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.4rem;
+}
+.hero-home__cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.62rem 1.25rem;
+  border-radius: var(--prime-radius-sm, 6px);
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.hero-home__cta:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.hero-home__cta--primary {
+  background: var(--ifm-color-primary);
+  color: #04140a;
+}
+.hero-home__cta--primary:hover {
+  color: #04140a;
+  box-shadow: 0 6px 22px var(--prime-accent-dim);
+}
+[data-theme='dark'] .hero-home__cta--primary {
+  background: var(--prime-accent);
+}
+.hero-home__cta--secondary {
+  border: 1px solid var(--prime-border);
+  color: var(--ifm-font-color-base);
+  background: transparent;
+}
+.hero-home__cta--secondary:hover {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+.hero-home__stats {
+  font-family: var(--prime-font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  color: var(--prime-text-secondary);
+  margin: 0;
+}

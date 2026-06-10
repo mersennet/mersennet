@@ -14,12 +14,12 @@ type Blob = {x: number; y: number; z: number; color: string; size: number};
 
 const CHARS = '01234567891379∑∏√π∞≡⊕⊗×÷ΛΦ◇▷◁';
 const BLOB_COLORS = [
-  '255,82,64',
-  '255,154,60',
-  '91,140,255',
-  '176,124,255',
-  '125,255,155',
-  '255,255,255',
+  '125,255,155', // phosphor green
+  '64,224,180', // teal
+  '125,255,155', // phosphor green
+  '90,200,250', // cold cyan
+  '125,255,155', // phosphor green
+  '236,236,239', // off-white
 ];
 
 // Signature hero backdrop: a rotating sphere of prime digits + math glyphs,
