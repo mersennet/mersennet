@@ -6,22 +6,29 @@ Brand guidelines for Mersennet — colors, typography, logo usage, and downloada
 
 ## Logo
 
-The Mersennet logo is a **double-helix** symbol representing interconnected value chains. It uses a violet-to-cyan gradient that defines the entire brand identity.
+The Mersennet mark is the letter **M drawn as five vertical bars**, anchored to a
+common top line. Five binary ones — `11111₂` = 31 = 2⁵−1 — form a Mersenne
+prime: the name is written into the mark in binary. The mark is set in
+phosphor green (`#7dff9b`) on black.
+
+<img src="/logo.svg" alt="Mersennet mark" width="96" height="96" />
+
+Download: [logo.svg](/logo.svg) · [favicon.svg](/favicon.svg) · [social card](/mersennet-social.svg)
 
 ### Guidelines
 
-- Use the official Mersennet double-helix logo for all Mersennet–related materials.
-- Maintain clear space around the logo (minimum: the height of the central ellipse).
-- Do not stretch, rotate, or alter the logo proportions.
-- Use the gradient version on dark backgrounds; use a white solid version on light backgrounds.
-- Avoid placing the logo on busy or low-contrast backgrounds.
+- The five bars are always **top-anchored and symmetric** (heights 5·2·3·2·5). Never bottom-anchor them — that reads as an audio equalizer, not the M.
+- Use phosphor green `#7dff9b` on dark backgrounds and deep green `#0c8f43` on light backgrounds.
+- Maintain clear space around the mark equal to one bar width.
+- Do not stretch, rotate, re-space, or re-proportion the bars.
+- For monochrome contexts the mark may be set in pure white or pure black.
 
 ### Don'ts
 
-- Do not change the gradient colors outside the approved palette.
-- Do not add effects (shadows, outlines) that obscure the logo.
-- Do not use low-resolution or pixelated versions.
-- Do not separate the helix strands from the central ellipse.
+- Do not change the number of bars — five is the point (11111₂ = 31).
+- Do not apply gradients, shadows, or outlines.
+- Do not place the mark on busy or low-contrast backgrounds.
+- Do not round the bars into circles or taper them.
 
 ## Color Palette
 
@@ -29,9 +36,9 @@ The Mersennet logo is a **double-helix** symbol representing interconnected valu
 
 | Name | Hex | RGB | Usage |
 |------|-----|-----|-------|
-| **Violet** | `#4901FF` | 73, 1, 255 | Primary brand color, gradients, CTAs |
-| **Violet Light** | `#6d2fff` | 109, 47, 255 | Gradient midpoint, hover states |
-| **Cyan** | `#00FFF9` | 0, 255, 249 | Accent color, links, highlights, status indicators |
+| **Phosphor Green** | `#7dff9b` | 125, 255, 155 | Primary brand color, logo, CTAs, accents on dark |
+| **Deep Green** | `#0c8f43` | 12, 143, 67 | Logo and accents on light backgrounds |
+| **Teal** | `#40e0b4` | 64, 224, 180 | Secondary accent (charts, glows) |
 
 ### Background Colors (Dark Theme)
 
