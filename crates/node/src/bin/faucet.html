@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mersennet Faucet</title>
-    <meta name="description" content="Get testnet MRSN and mock tokens for development on Mersennet (Chain ID 7919)">
+    <meta name="description" content="Get testnet MRSN and mock tokens for development on Mersennet (Chain ID 131071)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -343,7 +343,7 @@
             </div>
             <div class="info-card">
                 <div class="info-label">Chain ID</div>
-                <div class="info-value accent">7919</div>
+                <div class="info-value accent">131071</div>
             </div>
             <div class="info-card">
                 <div class="info-label">Currency</div>
@@ -465,7 +465,7 @@
                         await window.ethereum.request({
                             method: 'wallet_addEthereumChain',
                             params: [{
-                                chainId: '0x1EEF',
+                                chainId: '0x1FFFF',
                                 chainName: 'Mersennet Testnet',
                                 nativeCurrency: { name: 'MRSN', symbol: 'MRSN', decimals: 18 },
                                 rpcUrls: [window.location.protocol + '//' + window.location.hostname + ':8545'],
@@ -536,7 +536,7 @@
     }
 
     // --- Mock token claiming via backend ---
-    const CHAIN_ID_HEX = '0x1EEF';
+    const CHAIN_ID_HEX = '0x1FFFF';
     const claimAllBtn = document.getElementById('claimAllBtn');
 
     function getRecipientAddress() {

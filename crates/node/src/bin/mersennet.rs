@@ -1014,8 +1014,8 @@ fn run_devnet_demo(
 
 fn run_p2p_demo() -> anyhow::Result<()> {
     let mut network = P2pNetwork::default();
-    let mut engine_a = Engine::new_with_state(7919, "state-node-a");
-    let mut engine_b = Engine::new_with_state(7919, "state-node-b");
+    let mut engine_a = Engine::new_with_state(131071, "state-node-a");
+    let mut engine_b = Engine::new_with_state(131071, "state-node-b");
 
     engine_a.add_validator(Address::from_slice(&[0x11; 20]), U256::from(10u64))?;
     engine_b.add_validator(Address::from_slice(&[0x11; 20]), U256::from(10u64))?;
@@ -1040,7 +1040,7 @@ fn run_p2p_demo() -> anyhow::Result<()> {
             gas_limit: 21_000,
             gas_price: U256::from(1u64),
             nonce: 0,
-            chain_id: Some(7919),
+            chain_id: Some(131071),
             signature: None,
             tx_type: 0,
             shielded_payload: None,

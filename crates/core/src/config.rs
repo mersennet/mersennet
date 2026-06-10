@@ -412,8 +412,12 @@ pub fn parse_address(value: &str) -> Result<Address> {
     Ok(Address::from_slice(&bytes))
 }
 
+/// Mersennet testnet chain id — the Mersenne prime 2^17 − 1.
+/// (Mainnet is 8191 = 2^13 − 1, see `crate::mainnet::MAINNET_CHAIN_ID`.)
+pub const TESTNET_CHAIN_ID: u64 = 131_071;
+
 fn default_chain_id() -> u64 {
-    7919
+    TESTNET_CHAIN_ID
 }
 
 fn default_state_path() -> String {

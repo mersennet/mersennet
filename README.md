@@ -6,9 +6,9 @@ privacy layer, built in Rust.
 
 | Chain | ID | Purpose | Status |
 |---|---|---|---|
-| **Public testnet** | `7919` (1000th prime, default chain ID) | Transparent EVM + CLOB | Live |
+| **Public testnet** | `131071` (Mersenne prime 2^17 − 1, default chain ID) | Transparent EVM + CLOB | Live |
 | **Privacy testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
-| **Mersennet mainnet** | `13370` | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 1B max supply, 10 MRSN/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
+| **Mersennet mainnet** | `8191` (Mersenne prime 2^13 − 1) | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 1B max supply, 10 MRSN/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork
 > introduces shielded accounts, ZK-proved risk checks, sealed-bid
@@ -24,7 +24,7 @@ privacy layer, built in Rust.
 
 ## Features
 
-### Transparent chain (live on testnet 7919)
+### Transparent chain (live on testnet 131071)
 
 - EVM execution (revm) with block production and receipts
 - PrimeOrders CLOB matching engine with margin checks and liquidation hooks
@@ -162,10 +162,10 @@ contracts/                      — Solidity contracts (Foundry)
 deploy/                         — Hetzner VPS testnet deployment (systemd + scripts)
 testnet/                        — Dockerized testnets
 ├── configs/privacy/                  — 7-validator 5-of-7 configs
-├── docker-compose.testnet.yml        — transparent testnet stack (7919)
+├── docker-compose.testnet.yml        — transparent testnet stack (131071)
 ├── docker-compose.privacy.yml        — privacy testnet stack (7920)
 └── scripts/                          — bootstrap, load, chaos
-mainnet/                        — Mainnet genesis (13370), compose stack, launch checklist
+mainnet/                        — Mainnet genesis (8191), compose stack, launch checklist
 monitoring/                     — Prometheus + Grafana dashboards
 validator-explorer/             — Static validator staking explorer (HTML/JS)
 
@@ -240,7 +240,7 @@ All ecosystem applications live in their own repositories:
   — bring up chain 7920 from a fresh host.
 - **[ZK fork activation runbook](docs/runbooks/zk-fork-activation.md)** —
   mainnet hard-fork checklist (T-8w through T+24h).
-- **[Public testnet](testnet/README.md)** — transparent chain 7919 + privacy chain 7920.
+- **[Public testnet](testnet/README.md)** — transparent chain 131071 + privacy chain 7920.
 
 ### Architecture + design
 

@@ -5,7 +5,8 @@ use std::fs;
 use std::path::Path;
 
 const DEFAULT_VALIDATORS: u32 = 4;
-const DEFAULT_CHAIN_ID: u64 = 7919;
+/// Testnet chain id — the Mersenne prime 2^17 − 1 (mainnet uses 8191 = 2^13 − 1).
+const DEFAULT_CHAIN_ID: u64 = 131_071;
 const DEFAULT_OUTPUT_DIR: &str = "genesis-output";
 const TOKENS_PER_VALIDATOR: &str = "10000000000000000000000000"; // 10M MRSN (18 decimals)
 const STAKE_PER_VALIDATOR: &str = "1000000000000000000000000"; // 1M MRSN staked

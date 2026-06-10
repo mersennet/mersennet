@@ -26,7 +26,7 @@ and [`docs/STATUS.md`](docs/STATUS.md) for live workstream status.
 
 - Governance activation vote and validator upgrade schedule (J1–J6)
 - Execute the mainnet hard-fork runbook (`docs/runbooks/zk-fork-activation.md`)
-- Mainnet launch checklist (`mainnet/launch-checklist.md`), chain ID 13370
+- Mainnet launch checklist (`mainnet/launch-checklist.md`), chain ID 8191
 
 ## Months 10–12 (Ecosystem)
 
