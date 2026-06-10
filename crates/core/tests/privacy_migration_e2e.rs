@@ -3,7 +3,7 @@
 //!
 //! Exercises:
 //!
-//! 1. Pre-fork: build an engine on chain 7919 with two transparent
+//! 1. Pre-fork: build an engine on chain 131071 with two transparent
 //!    EOAs, run one block, export an EVM-only snapshot.
 //! 2. Wrap it in the V2 envelope (simulating the migrate-genesis
 //!    binary).
@@ -28,7 +28,7 @@ fn migration_envelope_round_trip_through_engine() {
     let dir_a = tempfile::TempDir::new().unwrap();
     let pre_state = dir_a.path().join("prefork");
     std::fs::create_dir_all(&pre_state).unwrap();
-    let mut pre = Engine::new_with_backend(7919, &pre_state, "redb");
+    let mut pre = Engine::new_with_backend(131071, &pre_state, "redb");
     let a = Address::from([1u8; 20]);
     let b = Address::from([2u8; 20]);
     pre.fund_account(a, U256::from(1000u64), 0);
@@ -44,7 +44,7 @@ fn migration_envelope_round_trip_through_engine() {
     // test we decode → re-stamp activation height → re-encode →
     // import.
     let envelope = EngineSnapshotEnvelope::decode(&snap_bytes).unwrap();
-    assert_eq!(envelope.chain_id, 7919);
+    assert_eq!(envelope.chain_id, 131071);
 
     // ── Apply migration: derive notes for every EOA ───────────
     let mut shielded_evm = ShieldedEvm::default();
@@ -107,13 +107,13 @@ fn migration_envelope_round_trip_through_engine() {
 
 #[test]
 fn migration_rejects_cross_chain_import() {
-    // Build a snapshot tagged chain_id 7919; try to load into 7920.
+    // Build a snapshot tagged chain_id 131071; try to load into 7920.
     // The envelope-level check should fire before we touch any
     // shielded state.
     let dir_a = tempfile::TempDir::new().unwrap();
     let pre_state = dir_a.path().join("prefork");
     std::fs::create_dir_all(&pre_state).unwrap();
-    let mut pre = Engine::new_with_backend(7919, &pre_state, "redb");
+    let mut pre = Engine::new_with_backend(131071, &pre_state, "redb");
     pre.fund_account(Address::from([3u8; 20]), U256::from(1u64), 0);
     pre.execute_block().unwrap();
     let snap_path = dir_a.path().join("snap.bin");

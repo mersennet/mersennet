@@ -413,7 +413,7 @@ pub fn parse_address(value: &str) -> Result<Address> {
 }
 
 fn default_chain_id() -> u64 {
-    7919
+    131071
 }
 
 fn default_state_path() -> String {

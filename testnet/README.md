@@ -5,15 +5,15 @@ networks:
 
 | Compose file | Chain ID | Purpose |
 |---|---|---|
-| `docker-compose.testnet.yml` | **7919** | Transparent public testnet — EVM + PrimeOrders CLOB |
-| `docker-compose.privacy.yml` | **7920** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
+| `docker-compose.testnet.yml` | **131071** | Transparent public testnet — EVM + PrimeOrders CLOB |
+| `docker-compose.privacy.yml` | **131071** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
 
 Both compose files run a multi-validator stack plus an RPC observer,
 faucet, Prometheus, and Grafana.
 
 ---
 
-## A. Privacy testnet (chain 7920) — recommended starting point
+## A. Privacy testnet (chain 131071) — recommended starting point
 
 Full operator runbook:
 [`../docs/runbooks/privacy-testnet-bootstrap.md`](../docs/runbooks/privacy-testnet-bootstrap.md).
@@ -60,7 +60,7 @@ docker compose -f docker-compose.privacy.yml down -v
 
 ---
 
-## B. Transparent testnet (chain 7919)
+## B. Transparent testnet (chain 131071)
 
 This is the original public testnet — same network as
 `https://rpc.primechain.xyz` runs.
@@ -72,7 +72,7 @@ This is the original public testnet — same network as
 From the project root:
 
 ```bash
-cargo run --bin genesis -- --validators 4 --chain-id 7919 --output-dir genesis-output
+cargo run --bin genesis -- --validators 4 --chain-id 131071 --output-dir genesis-output
 ```
 
 This creates:
@@ -100,7 +100,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 | Parameter    | Value |
 |-------------|-------|
-| Chain ID    | 7919   |
+| Chain ID    | 131071   |
 | RPC URL     | http://localhost:8545 |
 | Faucet URL  | http://localhost:8080 |
 | Block Time  | ~1 second |
@@ -112,7 +112,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 2. Use:
    - **Network Name**: Mersennet Testnet
    - **RPC URL**: `http://localhost:8545` (or your public RPC)
-   - **Chain ID**: 7919
+   - **Chain ID**: 131071
    - **Currency Symbol**: MRSN
 
 3. Import an account or create one, then use the faucet to fund it.

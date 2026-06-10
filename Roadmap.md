@@ -14,7 +14,7 @@ and [`docs/STATUS.md`](docs/STATUS.md) for live workstream status.
   key in the Ethereum bridge `Groth16Verifier`
 - Credentialed network-prover run (E4 execution) for delegated proving
 - Assemble the external audit packet (`docs/security/privacy-fork-audit-packet.md`)
-- Start the 8-week privacy testnet bake (H6) on chain 7920
+- Start the 8-week privacy testnet bake (H6) on chain 131071
 
 ## Months 4–6 (Audit + hardening)
 
@@ -26,7 +26,7 @@ and [`docs/STATUS.md`](docs/STATUS.md) for live workstream status.
 
 - Governance activation vote and validator upgrade schedule (J1–J6)
 - Execute the mainnet hard-fork runbook (`docs/runbooks/zk-fork-activation.md`)
-- Mainnet launch checklist (`mainnet/launch-checklist.md`), chain ID 13370
+- Mainnet launch checklist (`mainnet/launch-checklist.md`), chain ID 8191
 
 ## Months 10–12 (Ecosystem)
 

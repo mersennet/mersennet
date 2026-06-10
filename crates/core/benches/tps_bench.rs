@@ -10,7 +10,7 @@ fn make_address(seed: u8) -> Address {
 
 fn main() {
     let dir = tempfile::tempdir().unwrap();
-    let mut engine = Engine::new_with_state(7919, dir.path().join("state"));
+    let mut engine = Engine::new_with_state(131071, dir.path().join("state"));
 
     // Fund 256 accounts with plenty of balance
     let funder = make_address(0);
@@ -29,7 +29,7 @@ fn main() {
     println!("=== Benchmark: Simple ETH Transfers ===");
     for batch_size in [100, 500, 1000, 2000, 5000] {
         let dir2 = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir2.path().join("state"));
+        let mut eng = Engine::new_with_state(131071, dir2.path().join("state"));
         eng.add_validator(make_address(1), U256::from(1000u64))
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -55,7 +55,7 @@ fn main() {
                 gas_limit: 21_000,
                 gas_price: U256::from(1u64),
                 nonce,
-                chain_id: Some(7919),
+                chain_id: Some(131071),
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,
@@ -97,7 +97,7 @@ fn main() {
 
     for batch_size in [50, 100, 500, 1000] {
         let dir2 = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir2.path().join("state"));
+        let mut eng = Engine::new_with_state(131071, dir2.path().join("state"));
         eng.add_validator(make_address(1), U256::from(1000u64))
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -120,7 +120,7 @@ fn main() {
                 gas_limit: 200_000,
                 gas_price: U256::from(1u64),
                 nonce,
-                chain_id: Some(7919),
+                chain_id: Some(131071),
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,
@@ -153,7 +153,7 @@ fn main() {
     println!("\n=== Benchmark: PrimeOrders Order Matching ===");
     for batch_size in [100, 500, 1000, 5000, 10000] {
         let dir2 = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir2.path().join("state"));
+        let mut eng = Engine::new_with_state(131071, dir2.path().join("state"));
         eng.add_validator(make_address(1), U256::from(1000u64))
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -217,7 +217,7 @@ fn main() {
     println!("\n=== Benchmark: Mixed Workload (transfers + orders in one block) ===");
     {
         let dir2 = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir2.path().join("state"));
+        let mut eng = Engine::new_with_state(131071, dir2.path().join("state"));
         eng.add_validator(make_address(1), U256::from(1000u64))
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -241,7 +241,7 @@ fn main() {
                 gas_limit: 21_000,
                 gas_price: U256::from(1u64),
                 nonce,
-                chain_id: Some(7919),
+                chain_id: Some(131071),
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,

@@ -1203,7 +1203,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let sub = dir.path().join("rpc");
         std::fs::create_dir_all(&sub).unwrap();
-        let mut e = Engine::new_with_backend(7919, sub, "redb");
+        let mut e = Engine::new_with_backend(131071, sub, "redb");
         e.set_token_economics(
             revm::primitives::U256::ZERO,
             revm::primitives::U256::ZERO,

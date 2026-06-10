@@ -163,7 +163,7 @@ If you need to cross the transparent/shielded boundary on purpose
 ### Privacy testnet quick reference
 
 ```bash
-# Bring up a local 7-validator privacy testnet (chain 7920)
+# Bring up a local 7-validator privacy testnet (chain 131071)
 cd testnet
 ./scripts/bootstrap-privacy-genesis.sh
 docker compose -f docker-compose.privacy.yml up -d --build
@@ -178,7 +178,7 @@ docker compose -f docker-compose.privacy.yml up -d --build
 cargo run --release --bin migrate-genesis -- \
     --in  ./prefork-snapshot.bin \
     --out ./postfork-snapshot.bin \
-    --chain-id 7920 \
+    --chain-id 131071 \
     --activation-height 100
 ```
 

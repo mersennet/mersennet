@@ -297,7 +297,7 @@ mod tests {
     fn prove_then_verify_round_trip() {
         let state = ShieldedState::new();
         let header = BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used: 0,
             base_fee_be: [0u8; 32],
@@ -328,7 +328,7 @@ mod tests {
     fn modified_proof_fails_verification() {
         let state = ShieldedState::new();
         let header = BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used: 0,
             base_fee_be: [0u8; 32],
@@ -366,7 +366,7 @@ mod tests {
             .unwrap();
 
         let header = BlockHeaderWitness {
-            chain_id: 7919,
+            chain_id: 131071,
             gas_limit: 30_000_000,
             gas_used: 0,
             base_fee_be: [0u8; 32],

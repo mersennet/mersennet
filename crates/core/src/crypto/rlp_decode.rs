@@ -517,7 +517,7 @@ mod tests {
             vec![0xBB; 20],   // to
             vec![0x03, 0xe8], // value=1000
             vec![],           // data
-            vec![0x1e, 0xef], // chainId=7919
+            vec![0x1e, 0xef], // chainId=131071
             vec![],           // 0
             vec![],           // 0
         ];

@@ -6,9 +6,9 @@ privacy layer, built in Rust.
 
 | Chain | ID | Purpose | Status |
 |---|---|---|---|
-| **Public testnet** | `7919` (1000th prime, default chain ID) | Transparent EVM + CLOB | Live |
-| **Privacy testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
-| **Mersennet mainnet** | `13370` | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 1B max supply, 10 MRSN/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
+| **Public testnet** | `131071` (1000th prime, default chain ID) | Transparent EVM + CLOB | Live |
+| **Privacy testnet** | `131071` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
+| **Mersennet mainnet** | `8191` | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 1B max supply, 10 MRSN/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork
 > introduces shielded accounts, ZK-proved risk checks, sealed-bid
@@ -24,7 +24,7 @@ privacy layer, built in Rust.
 
 ## Features
 
-### Transparent chain (live on testnet 7919)
+### Transparent chain (live on testnet 131071)
 
 - EVM execution (revm) with block production and receipts
 - PrimeOrders CLOB matching engine with margin checks and liquidation hooks
@@ -33,7 +33,7 @@ privacy layer, built in Rust.
 - Node identity + peer-store persistence
 - HotStuff-2 consensus with slashing and unbonding
 
-### Privacy testnet (7920, `feat/zk-privacy`)
+### Privacy testnet (131071, `feat/zk-privacy`)
 
 - **Shielded note commitment tree** (Poseidon-2 BN254) + global nullifier
   set + 64-block recent-roots ring for client-side proving
@@ -86,7 +86,7 @@ cargo test -p mersennet-zkp --features prover                 # cryptographic te
 bash scripts/ci/check-privacy-invariants.sh               # CI K2 privacy grep
 ```
 
-### Bring up the privacy testnet (chain 7920)
+### Bring up the privacy testnet (chain 131071)
 
 ```bash
 cd testnet
@@ -162,10 +162,10 @@ contracts/                      — Solidity contracts (Foundry)
 deploy/                         — Hetzner VPS testnet deployment (systemd + scripts)
 testnet/                        — Dockerized testnets
 ├── configs/privacy/                  — 7-validator 5-of-7 configs
-├── docker-compose.testnet.yml        — transparent testnet stack (7919)
-├── docker-compose.privacy.yml        — privacy testnet stack (7920)
+├── docker-compose.testnet.yml        — transparent testnet stack (131071)
+├── docker-compose.privacy.yml        — privacy testnet stack (131071)
 └── scripts/                          — bootstrap, load, chaos
-mainnet/                        — Mainnet genesis (13370), compose stack, launch checklist
+mainnet/                        — Mainnet genesis (8191), compose stack, launch checklist
 monitoring/                     — Prometheus + Grafana dashboards
 validator-explorer/             — Static validator staking explorer (HTML/JS)
 
@@ -178,7 +178,7 @@ docs/
 │   ├── cryptography-spec.md          — formal crypto spec for auditor
 │   └── privacy-invariants.md         — CI-enforced rules
 └── runbooks/
-    ├── privacy-testnet-bootstrap.md  — bring up chain 7920
+    ├── privacy-testnet-bootstrap.md  — bring up chain 131071
     └── zk-fork-activation.md         — mainnet hard-fork checklist
 
 scripts/ci/, scripts/zk/        — CI helpers (privacy-grep) + ZK prover adapters
@@ -237,10 +237,10 @@ All ecosystem applications live in their own repositories:
 ### For operators
 
 - **[Privacy testnet bootstrap](docs/runbooks/privacy-testnet-bootstrap.md)**
-  — bring up chain 7920 from a fresh host.
+  — bring up chain 131071 from a fresh host.
 - **[ZK fork activation runbook](docs/runbooks/zk-fork-activation.md)** —
   mainnet hard-fork checklist (T-8w through T+24h).
-- **[Public testnet](testnet/README.md)** — transparent chain 7919 + privacy chain 7920.
+- **[Public testnet](testnet/README.md)** — transparent chain 131071 + privacy chain 131071.
 
 ### Architecture + design
 
