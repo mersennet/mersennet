@@ -1,7 +1,7 @@
 # Mersennet Privacy Fork — Remaining Work Assessment
 
 **Branch under assessment:** `feat/zk-privacy`
-**This document lives on:** `docs/remaining-work-assessment`
+**This document lives at:** `docs/delivery/privacy-fork-remaining-work.md` (originally authored on branch `docs/remaining-work-assessment`)
 **Date:** 2026-05-31
 **Author role:** principal engineer / delivery lead
 

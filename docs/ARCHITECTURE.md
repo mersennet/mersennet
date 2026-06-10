@@ -24,6 +24,7 @@
    - [ADR-011: ECDSA secp256k1 for Transaction Signing](#adr-011-ecdsa-secp256k1-for-transaction-signing)
    - [ADR-012: Insurance Fund and Auto-Deleveraging](#adr-012-insurance-fund-and-auto-deleveraging)
    - [ADR-013: True Atomic vs. Async EVM ↔ CLOB Composability](#adr-013-true-atomic-vs-async-evm--clob-composability)
+   - ADR-014 through ADR-019 (shielded notes, threshold-encrypted mempool, liquidation auctions, SP1 state proofs, privacy hard fork, viewing keys) live in [docs/adr/](./adr/)
 4. [Data Flow Diagrams](#4-data-flow-diagrams)
 5. [Security Architecture](#5-security-architecture)
 6. [Deployment Architecture](#6-deployment-architecture)
@@ -53,8 +54,9 @@ Mersennet is a **Layer 1 blockchain** that combines a parallel EVM execution eng
 | Dimension | Value |
 |---|---|
 | Language | Rust (2024 edition) |
-| Source files | ~28 modules |
-| Lines of code | ~10,600 |
+| Workspace | 6 crates (`crates/{core,network,rpc,node,zkp,state-proof}`) |
+| Source files | ~97 Rust files (~50 in `crates/core/src/`) |
+| Lines of code | ~44,000 |
 | EVM backend | revm v12 (Shanghai spec) |
 | Storage backend | sled 0.34 (embedded) |
 | Cryptography | k256 0.13 (secp256k1 ECDSA) |
@@ -160,10 +162,10 @@ All three domains share one consensus layer, one block structure, one state root
 ### 2.2 Module Dependency Graph
 
 ```
-                    ┌───────────────┐
-                    │  prime-chain  │  (binary entry point)
-                    │  src/bin/     │
-                    └───────┬───────┘
+                    ┌──────────────────────┐
+                    │  prime-chain          │  (binary entry point)
+                    │  crates/node/src/bin/ │
+                    └──────────┬───────────┘
                             │
                             ▼
                     ┌───────────────┐
@@ -277,7 +279,7 @@ Sequential EVM execution is the primary throughput bottleneck of Ethereum-compat
 The Block-STM algorithm (pioneered by Aptos for Move VM) and the Grevm adaptation for EVM demonstrate that optimistic concurrency control can yield significant speedups on multi-core hardware without requiring developers to declare access lists.
 
 **Decision:**
-Implement a `ParallelExecutor` (in `src/core/parallel.rs`) that:
+Implement a `ParallelExecutor` (in `crates/core/src/parallel.rs`) that:
 
 1. **Static dependency analysis**: Extracts read/write sets per transaction (`TxAccessSet`) from `tx.from` and `tx.to`. Coinbase is excluded to avoid false dependencies (every transaction writes to coinbase).
 2. **Union-find grouping**: Groups transactions into independent sets using a disjoint-set data structure. Transactions with overlapping write addresses are grouped together.
@@ -316,7 +318,7 @@ Classical BFT protocols like CometBFT (Tendermint) use a three-phase protocol (p
 HotStuff-2 (Malkhi and Nayak, 2023) reduces the protocol to **two phases** while retaining the same safety guarantees (BFT tolerance of f < n/3 Byzantine validators).
 
 **Decision:**
-Implement HotStuff-2 as a standalone module (`src/core/hotstuff2.rs`) with the following design:
+Implement HotStuff-2 as a standalone module (`crates/core/src/hotstuff2.rs`) with the following design:
 
 **Protocol phases:**
 1. **Propose**: The leader for the current round (determined by weighted round-robin) broadcasts a `Proposal` containing the block hash and a `justify` QC from the previous round.
@@ -413,7 +415,7 @@ Register a custom precompile at the fixed address `0x000000000000000000000000000
 Continuous limit order books are vulnerable to front-running and MEV extraction. In a continuous CLOB, speed advantage translates directly to profit: a faster participant can observe an incoming order and place their own order ahead of it (sandwich attack) or extract value from the spread (latency arbitrage). This problem is well-documented in traditional finance (see Budish, Cramton, Shim 2015) and is amplified in blockchain settings where mempool contents are public.
 
 **Decision:**
-Implement Frequent Batch Auctions (FBA) via the `FBAEngine` and `BatchAuction` structs in `src/core/fba.rs`. The mechanism works as follows:
+Implement Frequent Batch Auctions (FBA) via the `FBAEngine` and `BatchAuction` structs in `crates/core/src/fba.rs`. The mechanism works as follows:
 
 1. **Collection phase**: Orders are submitted via `submit_order()` with a `sequence` number (monotonically increasing within a batch). Orders accumulate in per-market `BatchAuction` instances.
 2. **Clearing price discovery**: At batch execution time, the engine evaluates all candidate price levels (union of buy and sell prices). For each candidate, it computes aggregate demand (buy volume at or above the price) and supply (sell volume at or below). The price that maximizes matched volume wins; ties are broken in favor of the higher price (benefits sell side, standard FBA convention).
@@ -448,7 +450,7 @@ The batch interval is configurable (default: 100ms). The engine exposes `execute
 EVM transactions are visible in the mempool before execution. This creates a well-known MEV vector: searchers can inspect pending transactions and construct sandwich attacks, generalized front-running, or back-running strategies. While FBA addresses MEV in the CLOB domain, the EVM transaction pool needs its own protection mechanism.
 
 **Decision:**
-Implement a two-phase commit-reveal scheme in `src/core/commit_reveal.rs`:
+Implement a two-phase commit-reveal scheme in `crates/core/src/commit_reveal.rs`:
 
 **Phase 1 — Commit:**
 The user submits a `TxCommitment` containing:
@@ -567,7 +569,7 @@ State is committed via `PersistentState::commit_state()` which writes dirty EVM 
 A naive single-queue mempool cannot correctly handle EIP-1559 base fee dynamics, nonce gaps, or transaction replacement. When the base fee rises, previously valid transactions become under-priced; when it falls, previously excluded transactions become eligible. Nonce gaps (e.g., nonce 5 arrives before nonce 4) require parking transactions until the gap is filled.
 
 **Decision:**
-Implement a three-pool architecture in `src/core/mempool.rs`:
+Implement a three-pool architecture in `crates/core/src/mempool.rs`:
 
 ```
 ┌───────────────────────────────────────────────┐
@@ -624,7 +626,7 @@ Each pool is a `HashMap<Address, BTreeMap<u64, Transaction>>` — per-sender que
 Every block must produce a verifiable commitment to the entire chain state. This commitment (the state root) enables light clients to verify state proofs without downloading the full state. The choice of tree structure affects proof size, computation cost, and compatibility with existing tooling.
 
 **Decision:**
-Implement a **binary Merkle tree** over sorted key-value pairs in `src/core/state.rs`. The algorithm:
+Implement a **binary Merkle tree** over sorted key-value pairs in `crates/core/src/state.rs`. The algorithm:
 
 1. Collect all key-value pairs from all sled trees (accounts, storage, prime_orders, bridge queues).
 2. Sort by key (lexicographic).
@@ -660,7 +662,7 @@ Merkle proofs (`StateProof`) contain the sibling hashes along the path from the 
 Transactions must be cryptographically authenticated. The choice of signature scheme affects wallet compatibility, verification speed, and aggregate signature possibilities.
 
 **Decision:**
-Use **ECDSA over the secp256k1 curve** via the `k256` crate (v0.13), matching Ethereum's transaction signing scheme. Implementation details (`src/crypto/mod.rs`):
+Use **ECDSA over the secp256k1 curve** via the `k256` crate (v0.13), matching Ethereum's transaction signing scheme. Implementation details (`crates/core/src/crypto/mod.rs`):
 
 - **Signing hash**: `keccak256(chain_id || nonce || gas_price || gas_limit || to || value || data)` — an EIP-155-inspired format with chain ID replay protection.
 - **Signature format**: `(r, s, v)` where `v = recovery_id + 35 + chain_id * 2` (EIP-155).
@@ -961,7 +963,7 @@ All transactions with a signature are verified in `verify_tx_signature()` before
 | Timeout slash | 100 bps (1%) | Liveness incentive |
 | Escalation step | 25 bps per repeat offense | Progressive punishment |
 | Escalation max | 1000 bps (10%) | Safety cap on slashing |
-| Burn ratio | 50% of block reward | Deflationary pressure |
+| Burn | Scheduled reward − distributed rewards (rounding dust + supply-cap excess) | Deflationary pressure |
 
 ### 5.5 Network Security
 
@@ -983,8 +985,8 @@ Multi-stage build optimized for minimal production image:
 
 ```
 ┌──────────────────────────────────────┐
-│  Stage 1: Builder (rust:1.85-slim)   │
-│  - Copies Cargo.toml, src/, tests/   │
+│  Stage 1: Builder (rust:1.82-slim)   │
+│  - Copies workspace Cargo.toml, crates/ │
 │  - cargo build --release --bin       │
 └──────────────┬───────────────────────┘
                │
@@ -1047,7 +1049,10 @@ The `AppConfig` structure supports JSON configuration with sensible defaults:
 | `slashing` | double_sign_bps, timeout_bps, escalation | 500, 100, 25/1000 |
 | `token_economics` | max_supply, reward_per_block, halving | 1B PRIM, 10 PRIM, 35M blocks |
 | `rpc` | enabled, addr | false, 127.0.0.1:8545 |
-| `p2p` | listen, peers, block_time_ms | 0.0.0.0:30303, [], 1000 |
+| `p2p` | listen, peers, block_time_ms, noise_enabled | 0.0.0.0:30303, [], 1000, false |
+| `ws` | enabled, addr | false, 127.0.0.1:9945 |
+| `zk` | enabled, checkpoint_interval | false, 100 |
+| `privacy` | mode_activated, activation_height, dkg_epoch_length_blocks, threshold_k/n | false, null, 18000, 2/3 |
 
 ---
 
@@ -1055,34 +1060,41 @@ The `AppConfig` structure supports JSON configuration with sensible defaults:
 
 | Module | Path | Lines | Responsibility |
 |---|---|---|---|
-| `engine` | `src/core/engine.rs` | ~1,505 | Block production, tx execution, EIP-1559 fee market, coordinator |
-| `consensus` | `src/core/consensus.rs` | ~851 | CometBFT-style consensus, validator set, staking, slashing, rewards |
-| `hotstuff2` | `src/core/hotstuff2.rs` | ~760 | HotStuff-2 two-phase BFT, QC formation, 2-chain commit |
-| `parallel` | `src/core/parallel.rs` | ~589 | Block-STM parallel executor, dependency analysis, MVCC, merge |
-| `prime_orders` | `src/core/prime_orders.rs` | ~800 | CLOB matching engine, margin, liquidation, ADL, insurance fund |
-| `precompiles` | `src/core/precompiles.rs` | ~292 | revm precompile at 0x0100, dispatch, global state context |
-| `precompile_abi` | `src/core/precompile_abi.rs` | ~109 | ABI encoding/decoding, function selectors, gas constants |
-| `fba` | `src/core/fba.rs` | ~392 | Frequent batch auctions, clearing price, pro-rata allocation |
-| `commit_reveal` | `src/core/commit_reveal.rs` | ~130 | Two-phase commit-reveal for MEV protection |
-| `state` | `src/core/state.rs` | ~959 | sled persistence, Merkle tree, snapshots, proofs, pruning |
-| `mempool` | `src/core/mempool.rs` | ~513 | Three-pool mempool, nonce gaps, fee eviction, promote/demote |
-| `bridge` | `src/core/bridge.rs` | ~85 | Cross-domain message queues (orders↔evm) |
-| `events` | `src/core/events.rs` | ~varies | Domain event types (PrimeOrders, Bridge) |
-| `errors` | `src/errors.rs` | ~varies | Error types for PrimeOrders and RPC |
-| `rpc` | `src/rpc/rpc.rs` | ~970 | JSON-RPC server (tiny_http), Ethereum-compatible API |
-| `rpc_router` | `src/rpc/rpc_router.rs` | ~795 | RPC method dispatch, parameter parsing, response formatting |
-| `p2p` | `src/network/p2p.rs` | ~499 | P2P network simulation, node management, real gossip loop |
-| `net_transport` | `src/network/net_transport.rs` | ~525 | UDP gossip, TCP sync, peer management, deduplication |
-| `network` | `src/network/network.rs` | ~varies | Network simulation for consensus testing |
-| `crypto` | `src/crypto/mod.rs` | ~152 | ECDSA signing, recovery, address derivation |
-| `config` | `src/config/config.rs` | ~360 | JSON configuration loading, defaults, parsing utilities |
-| `prometheus` | `src/prometheus/prometheus.rs` | ~137 | Prometheus metrics exporter, metric registry |
-| `metrics` | `src/metrics/metric.rs` | ~5 | Re-export of prometheus module |
-| `identity` | `src/identity/identity.rs` | ~varies | Node identity management |
-| `governance` | `src/governance/governance.rs` | ~varies | Governance system |
-| `lib` | `src/lib.rs` | ~47 | Module declarations and path mapping |
+| `engine` | `crates/core/src/engine.rs` | ~3,004 | Block production, tx execution, EIP-1559 fee market, coordinator |
+| `consensus` | `crates/core/src/consensus.rs` | ~895 | CometBFT-style consensus, validator set, staking, slashing, rewards |
+| `hotstuff2` | `crates/core/src/hotstuff2.rs` | ~765 | HotStuff-2 two-phase BFT, QC formation, 2-chain commit |
+| `parallel` | `crates/core/src/parallel.rs` | ~584 | Block-STM parallel executor, dependency analysis, MVCC, merge |
+| `prime_orders` | `crates/core/src/prime_orders.rs` | ~863 | CLOB matching engine, margin, liquidation, ADL, insurance fund |
+| `precompiles` | `crates/core/src/precompiles.rs` | ~684 | revm precompiles (CLOB 0x0100, shielded 0x0200/0x0201, state proof 0x0300) |
+| `precompile_abi` | `crates/core/src/precompile_abi.rs` | ~253 | ABI encoding/decoding, function selectors, gas constants |
+| `fba` | `crates/core/src/fba.rs` | ~389 | Frequent batch auctions, clearing price, pro-rata allocation |
+| `commit_reveal` | `crates/core/src/commit_reveal.rs` | ~129 | Two-phase commit-reveal for MEV protection |
+| `state` | `crates/core/src/state.rs` | ~1,061 | sled persistence, Merkle tree, snapshots, proofs, pruning |
+| `state_redb` | `crates/core/src/state_redb.rs` | ~819 | redb storage backend (`StateBackend` trait) |
+| `mempool` | `crates/core/src/mempool.rs` | ~520 | Three-pool mempool, nonce gaps, fee eviction, promote/demote |
+| `dag_mempool` | `crates/core/src/dag_mempool.rs` | ~677 | DAG mempool |
+| `bridge` | `crates/core/src/bridge.rs` | ~89 | Cross-domain message queues (orders↔evm) |
+| `shielded_*` | `crates/core/src/shielded_{evm,orders,state,persistence}.rs` | ~2,527 | Privacy fork: shielded notes, orders, state, persistence |
+| `zk_proofs` / `zk_sp1` | `crates/core/src/zk_{proofs,sp1}.rs` | ~931 | ZK state proofs, SP1 integration |
+| `events` | `crates/core/src/events.rs` | ~192 | Domain event types (PrimeOrders, Bridge) |
+| `errors` | `crates/core/src/errors.rs` | ~65 | Error types for PrimeOrders and RPC |
+| `rpc` | `crates/rpc/src/rpc.rs` | ~1,816 | JSON-RPC server (tiny_http), Ethereum-compatible API |
+| `rpc_router` | `crates/rpc/src/rpc_router.rs` | ~1,021 | RPC method dispatch, parameter parsing, response formatting |
+| `rpc_shielded` | `crates/rpc/src/rpc_shielded.rs` | ~2,118 | Shielded/privacy RPC methods, viewing keys, state proofs |
+| `ws` | `crates/rpc/src/ws.rs` | ~737 | WebSocket subscriptions |
+| `p2p` | `crates/network/src/p2p.rs` | ~506 | P2P node management, real gossip loop |
+| `net_transport` | `crates/network/src/net_transport.rs` | ~530 | UDP gossip, TCP sync, peer management, deduplication |
+| `noise` | `crates/network/src/noise.rs` | ~283 | Noise protocol P2P encryption |
+| `crypto` | `crates/core/src/crypto/` | ~1,024 | ECDSA signing, recovery, address derivation, RLP decoding |
+| `config` | `crates/core/src/config.rs` | ~517 | JSON configuration loading, defaults, parsing utilities |
+| `prometheus` | `crates/core/src/prometheus.rs` | ~200 | Prometheus metrics exporter, metric registry |
+| `identity` | `crates/core/src/identity.rs` | ~58 | Node identity management |
+| `governance` | `crates/core/src/governance.rs` | ~225 | Governance system |
+| `zkp` crate | `crates/zkp/src/` | ~5,775 | Poseidon, Pedersen, notes/nullifiers, threshold ElGamal, Noir/SP1 |
+| `state-proof` crate | `crates/state-proof/src/` | ~941 | revm-free state-transition proof envelopes, SP1 glue |
+| `lib` | `crates/core/src/lib.rs` | ~48 | Module declarations and path mapping |
 
 ---
 
-*Document generated from source analysis of prime-chain at commit HEAD on branch `docs/whitepaper-v5-technical`.*
-*For protocol specification details, see [whitepaper.md](./whitepaper.md).*
+*Document generated from source analysis of the Mersennet codebase (repository `prime-chain`).*
+*For protocol specification details, see [whitepaper.md](./whitepaper.md). For later ADRs (014–019), see [docs/adr/](./adr/).*

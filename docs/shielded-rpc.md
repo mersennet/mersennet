@@ -1,7 +1,7 @@
 # Shielded JSON-RPC + WebSocket Reference
 
 **Audience:** SDK authors, wallet developers, indexers.
-**Chain:** 7920 (privacy testnet) and 7919 (post-hard-fork mainnet).
+**Chain:** 7920 (privacy testnet), 7919 (transparent testnet), and 13370 (mainnet, post-hard-fork).
 **Pre-activation:** All mutation methods return `-32605` ("disabled
 in current chain mode"). Read methods return zero/empty values until
 the activation height is reached.
@@ -24,7 +24,7 @@ Field names use camelCase in JSON to match Ethereum conventions.
 
 ## 2. Shielded RPC methods
 
-### `prime_getChainConfig()`
+### `prime_getChainConfig()` *(planned — not yet implemented; use `prime_chainId` / `eth_chainId` today)*
 
 Returns the chain ID, privacy activation height, and feature flags.
 
@@ -188,15 +188,13 @@ wscat -c ws://localhost:8546
 
 | Code | Meaning |
 |---|---|
-| `-32600` | Invalid request |
+| `-32700` | Parse error (invalid JSON) |
 | `-32601` | Method not found |
-| `-32602` | Invalid params |
-| `-32603` | Internal error |
+| `-32602` | Invalid params — also used for proof rejected, stale anchor root, double-spend (nullifier already in the set), and unregistered/under-bonded liquidators; the specific reason is in the error message |
+| `-32604` | Forbidden (viewing-key grant missing, expired, or revoked) |
 | `-32605` | **Method disabled in current chain mode** (privacy mode inactive) |
-| `-32606` | Proof rejected by verifier |
-| `-32607` | Stale anchor root (note tree advanced past the wallet's snapshot) |
-| `-32608` | Double-spend (nullifier already in the set) |
-| `-32609` | Liquidator not registered / bond below minimum |
+| `-32000` | Internal error |
+| `-32005` | Transaction rejected (with `reason` in data) |
 
 ---
 

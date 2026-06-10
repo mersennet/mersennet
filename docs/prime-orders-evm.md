@@ -38,8 +38,8 @@ Provide a dual-system chain: **PrimeOrders** (high‑throughput order book + ris
   - `primeorders_cancelOrder`
   - `primeorders_getOrderBook`
   - `primeorders_getOpenOrders`
-  - `primeorders_getPositions`
-  - `primeorders_getTrades`
+  - `primeorders_getPositions` *(planned — not yet implemented)*
+  - `primeorders_getTrades` *(planned — not yet implemented)*
 - **PrimeEVM**
   - Keep existing JSON‑RPC methods for EVM.
 

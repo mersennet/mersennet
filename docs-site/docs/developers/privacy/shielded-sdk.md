@@ -51,12 +51,12 @@ Rebuild private balances locally from encrypted notes (see [Note scanning](../..
 ```ts
 import { scanAndReconstructBalances } from '@prime-chain/sdk';
 
-const portfolio = await scanAndReconstructBalances(
+const result = await scanAndReconstructBalances(
   provider,          // PrimeProvider
-  viewingMaterial,   // GrantedViewingMaterial (owner or grantee)
-  { grantIdHex },    // options: drives a paged prime_viewBalances scan
+  viewingMaterial,   // GrantedViewingMaterial (carries the grant id)
+  { limit: 100 },    // options: drives a paged prime_viewBalances scan
 );
-// portfolio.balances → per-asset totals, spent notes excluded via nullifiers
+// result.perAsset → per-asset totals, spent notes excluded via nullifiers
 ```
 
 Lower-level building blocks are also exported: `scanGrantedNotes` (decrypt authorized notes), `defaultNullifierDeriver` (derive nullifiers), and `reconstructPortfolio` (sum unspent notes).

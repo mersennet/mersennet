@@ -67,6 +67,7 @@ programs/       — SP1 program (state-transition proof body)
 | `prime-chain-rpc` (`crates/rpc`) | JSON-RPC + WebSocket | [`rpc.rs`](../crates/rpc/src/rpc.rs), [`rpc_shielded.rs`](../crates/rpc/src/rpc_shielded.rs), [`ws.rs`](../crates/rpc/src/ws.rs) |
 | `prime-chain-node` (`crates/node`) | Binaries — `prime-chain`, `genesis`, `migrate-genesis`, `faucet`, `loadtest`, `stresstest` | `src/bin/*.rs` |
 | `prime-zkp` (`crates/zkp`) | ZK primitives — Poseidon, Pedersen, BLS threshold, merkle, nullifier, noir/sp1 stubs | `src/lib.rs` |
+| `prime-state-proof` (`crates/state-proof`) | revm-free state-transition proof envelopes + SP1 prover/verifier glue | `src/lib.rs` |
 
 ### Shielded subsystem map (where the privacy work lives)
 
@@ -152,7 +153,7 @@ cargo build --workspace --features prover  # real BN254 + BLS crypto
 ### Test
 
 ```bash
-cargo test --workspace --lib --tests       # 286+ tests, ~5 min
+cargo test --workspace --lib --tests       # 241 tests, ~5 min
 cargo test -p prime-zkp --features prover  # 43 cryptographic tests
 cargo test -p prime-chain --test privacy_migration_e2e  # migration E2E
 ```
@@ -205,9 +206,9 @@ Standard Ethereum-style methods plus `prime_*` extensions:
 | Method | Purpose |
 |---|---|
 | `eth_blockNumber`, `eth_getBlockByNumber` (header-only post-fork), `eth_call`, `eth_sendRawTransaction`, … | Standard EVM |
-| `prime_getChainConfig` | Chain ID + activation heights + feature flags |
-| `prime_getMarkets`, `prime_getOrderBook`, `prime_submitOrder` | PrimeOrders CLOB |
-| `prime_getBridgeQueue` | Bridge state |
+| `prime_chainId`, `prime_blockNumber`, `prime_getBalance`, `prime_validators`, … | `prime_*` aliases + chain extensions |
+| `primeorders_addMarket`, `primeorders_getOrderBook`, `primeorders_submitOrder`, `primeorders_cancelOrder`, … | PrimeOrders CLOB |
+| `primebridge_enqueueOrdersToEvm` / `primebridge_dequeueEvmToOrders` (and the reverse pair) | Bridge queues |
 
 Post-fork retrieval rule:
 
@@ -321,6 +322,7 @@ what's left is [`STATUS.md`](STATUS.md).
   - ADR-016: Liquidation auctions
   - ADR-017: SP1 state proofs
   - ADR-018: Privacy hard fork
+  - ADR-019: Selective-disclosure viewing keys
 - **Cryptography spec** (for the auditor) — [`security/cryptography-spec.md`](security/cryptography-spec.md)
 - **Privacy invariants** — [`security/privacy-invariants.md`](security/privacy-invariants.md)
 - **Privacy testnet runbook** — [`runbooks/privacy-testnet-bootstrap.md`](runbooks/privacy-testnet-bootstrap.md)

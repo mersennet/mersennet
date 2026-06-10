@@ -24,15 +24,15 @@ Mersennet exposes metrics that you should monitor:
 
 | Metric | Description |
 |--------|-------------|
-| `prime_chain_block_height` | Current block height; should increase steadily |
+| `prime_chain_height` | Latest committed block height; should increase steadily |
 | `prime_chain_total_stake` | Total staked PRIM across all validators |
-| `prime_chain_tx_count` | Transaction count (per block or cumulative) |
-| `prime_chain_pending_txs` | Mempool size; high values may indicate congestion |
-| `prime_chain_peer_count` | Number of connected P2P peers |
-| `prime_chain_validator_missed_blocks` | Blocks you failed to sign (slashing risk) |
+| `prime_chain_block_tx_count` | Transaction count in the latest block |
+| `prime_chain_mempool_size` | Mempool size; high values may indicate congestion |
+| `prime_chain_validators_active` | Number of active validators |
+| `prime_chain_slashing_events` | Slashing evidence events by kind (slashing risk) |
 
 :::tip
-Metric names may vary by implementation. Check your node's `/metrics` endpoint or documentation for the exact names.
+The full metric list is exposed at the node's `/metrics` endpoint (served on the RPC port). See [Run a Node — Monitoring Setup](/validators/run-a-node#monitoring-setup) for the complete table.
 :::
 
 ## Prometheus Setup
@@ -61,11 +61,12 @@ global:
 
 scrape_configs:
   - job_name: 'prime-chain'
+    metrics_path: '/metrics'
     static_configs:
-      - targets: ['localhost:9091']  # Mersennet metrics port
+      - targets: ['localhost:8545']  # Mersennet RPC port (serves /metrics)
 ```
 
-Ensure your Mersennet node exposes metrics on the configured port (e.g. 9091). The exact port is set in the node config.
+Mersennet serves Prometheus metrics at `GET /metrics` on the JSON-RPC port (`rpc.addr`, default 8545). The RPC server must be enabled (`rpc.enabled: true`).
 
 ### 3. Start Prometheus
 
@@ -101,12 +102,12 @@ sudo systemctl start grafana-server
 
 Create panels for:
 
-- **Block height** — Graph of `prime_chain_block_height` over time
+- **Block height** — Graph of `prime_chain_height` over time
 - **Total stake** — Gauge or stat for `prime_chain_total_stake`
-- **Transaction count** — Rate of `prime_chain_tx_count`
-- **Pending transactions** — `prime_chain_pending_txs`
-- **Peer count** — `prime_chain_peer_count`
-- **Missed blocks** — `prime_chain_validator_missed_blocks` (critical for validators)
+- **Blocks produced** — Rate of `prime_chain_blocks_produced_total`
+- **Pending transactions** — `prime_chain_mempool_size`
+- **Active validators** — `prime_chain_validators_active`
+- **Slashing events** — `prime_chain_slashing_events` (critical for validators)
 
 ## Alert Rules
 
@@ -122,7 +123,7 @@ groups:
     rules:
       # Block production stalled
       - alert: MersennetBlockStalled
-        expr: increase(prime_chain_block_height[5m]) == 0
+        expr: increase(prime_chain_height[5m]) == 0
         for: 2m
         labels:
           severity: critical
@@ -130,15 +131,15 @@ groups:
           summary: "Mersennet block production stalled"
           description: "No new blocks in 5 minutes. Node may be out of sync or consensus may be stuck."
 
-      # Missed blocks (slashing risk)
-      - alert: MersennetMissedBlocks
-        expr: increase(prime_chain_validator_missed_blocks[1h]) > 0
+      # Slashing events (slashing risk)
+      - alert: MersennetSlashingEvents
+        expr: increase(prime_chain_slashing_events[1h]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Validator missed blocks"
-          description: "Validator has missed blocks in the last hour. Risk of downtime slashing."
+          summary: "Validator slashing evidence recorded"
+          description: "Slashing evidence (timeout or double-sign) recorded in the last hour."
 
       # Low disk space
       - alert: MersennetLowDiskSpace
@@ -150,15 +151,15 @@ groups:
           summary: "Low disk space on Mersennet node"
           description: "Less than 10% disk space remaining. Node may stop if disk fills."
 
-      # Peer count too low
-      - alert: MersennetLowPeerCount
-        expr: prime_chain_peer_count < 3
+      # Mempool approaching capacity
+      - alert: MersennetHighMempool
+        expr: prime_chain_mempool_size > 8000
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Low P2P peer count"
-          description: "Fewer than 3 peers connected. Network connectivity may be degraded."
+          summary: "Mempool approaching capacity"
+          description: "Mempool above 8000 of the default 10000 limit. Network may be congested."
 ```
 
 Reference the rules file in `prometheus.yml`:

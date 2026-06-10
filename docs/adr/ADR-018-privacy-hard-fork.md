@@ -26,9 +26,10 @@ hard fork because:
 
 ## Decision
 
-Activate at a fixed height `H` on chain ID 7919 (Mersennet
-mainnet). Pre-activation testnet runs for at least 8 weeks with the
-identical fork rules.
+Activate at a fixed height `H` on the production chain (chain ID
+13370 for mainnet; 7919 is the default/transparent testnet chain ID).
+Pre-activation testnet runs for at least 8 weeks with the identical
+fork rules.
 
 ### Activation behavior
 

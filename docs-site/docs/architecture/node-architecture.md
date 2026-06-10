@@ -65,7 +65,7 @@ A running Mersennet node is composed of five cooperating subsystems:
 
 ## Module Breakdown
 
-The codebase is organized into four Rust crates:
+The codebase is organized into six Rust crates: `core`, `network`, `rpc`, `node`, `zkp`, and `state-proof`. The four below make up the node runtime; `crates/zkp/` (`prime-zkp`) provides the zero-knowledge primitives (Poseidon hash, Pedersen commitments, threshold ElGamal, Noir circuit harness) and `crates/state-proof/` (`prime-state-proof`) provides the SP1 state-transition proof envelopes.
 
 ### `crates/core/` — Core Domain Logic
 
@@ -112,6 +112,7 @@ The executable entry point that wires all components together:
 | `bin/faucet.rs` | Testnet faucet HTTP server |
 | `bin/stresstest.rs` | Transaction stress test tool |
 | `bin/loadtest.rs` | Network load testing tool |
+| `bin/migrate_genesis.rs` | Genesis migration utility |
 
 ### `crates/rpc/` — JSON-RPC Server
 
@@ -286,8 +287,12 @@ Beyond the standard Ethereum precompiles (ecRecover, SHA-256, RIPEMD-160, identi
 | Address | Name | Description |
 |---------|------|-------------|
 | `0x0100` | **PrimeOrders** | Native on-chain order book. Solidity contracts can place/cancel orders, query order books, and manage positions atomically within a transaction |
+| `0x0200` | **Shielded Transfer** | Private note-to-note transfer (`shieldedTransfer(bytes)`); activates with the privacy hard fork |
+| `0x0201` | **Shield / Unshield** | Transparent ⇄ shielded bridge (`shield`, `unshield`); activates with the privacy hard fork |
+| `0x0202` | **Code Publication** | Register/revoke a contract code attestation |
+| `0x0300` | **State-Proof Verifier** | Verify an SP1 state-transition proof on-chain (`verifyStateProof(bytes)`) |
 
-The PrimeOrders precompile is registered via a custom `EvmHandler` that injects it into the precompile table before each block's execution. A thread-local context (`PRIME_ORDERS_CTX`) provides the precompile access to the order book state.
+The PrimeOrders precompile is registered via a custom `EvmHandler` that injects it into the precompile table before each block's execution. A global context (`PRIME_ORDERS_CTX`) provides the precompile access to the order book state.
 
 ### Gas Metering
 

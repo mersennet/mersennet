@@ -3,6 +3,7 @@
 ## Pre-Launch
 
 - [ ] All tests passing
+- [ ] Genesis parameters verified ([`genesis.json`](genesis.json): chain ID 13370, PRIM / 18 decimals, 1B max supply, 10 PRIM/block initial reward, halving every 35,000,000 blocks)
 - [ ] Security audit complete
 - [ ] Genesis validator set confirmed (minimum 7 validators)
 - [ ] Genesis config signed by all validators

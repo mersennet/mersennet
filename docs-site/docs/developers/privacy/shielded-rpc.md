@@ -125,11 +125,9 @@ wscat -c ws://46.225.30.187:8546
 | `-32601` | Method not found |
 | `-32602` | Invalid params |
 | `-32603` | Internal error |
+| `-32604` | Forbidden — grant missing, expired, revoked, or out of scope |
 | `-32605` | **Method disabled in current chain mode** (privacy inactive) |
-| `-32606` | Proof rejected by verifier |
-| `-32607` | Stale anchor root (note tree advanced past the wallet's snapshot) |
-| `-32608` | Double-spend (nullifier already in the set) |
-| `-32609` | Liquidator not registered / bond below minimum |
+| `-32000` | Execution error — carries a descriptive message (e.g. proof rejected, stale anchor root, double-spent nullifier, liquidator not registered / bond below minimum) |
 
 ## See also
 

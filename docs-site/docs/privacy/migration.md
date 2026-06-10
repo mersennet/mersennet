@@ -39,13 +39,15 @@ The TypeScript SDK exposes the migration surface as typed functions:
 import { planMigration, confirmMigration } from '@prime-chain/sdk';
 
 // 1. Plan and show the user what will happen
-const plan = planMigration({ amount, asset, ownerPubKey });
+const plan = planMigration(accounts); // accounts: MigrationNoteParams[]
+// plan.notes → derived notes + expected commitments
+// plan.totalsByAsset → per-asset totals for user review
 
-// 2. Shield via RPC (prime_submitShield) using plan.note ...
+// 2. Shield via RPC (prime_submitShield) using each planned note ...
 
-// 3. Confirm the result deterministically
-const result = confirmMigration({ plan, onChainCommitment });
-if (!result.ok) {
+// 3. Confirm the result deterministically against the scanned notes
+const result = confirmMigration(accounts, scannedNotes);
+if (!result.complete) {
   // surface a clear error; do not assume success
 }
 ```

@@ -2476,6 +2476,8 @@ Mersennet supports two storage backends via the `StateBackend` trait, selectable
 
 ### 15.3 Code Organization
 
+> **Note:** The codebase is organized as a 6-crate Cargo workspace — `crates/core` (`prime-chain`), `crates/network` (`prime-chain-network`), `crates/rpc` (`prime-chain-rpc`), `crates/node` (`prime-chain-node`, all binaries), `crates/zkp` (`prime-zkp`), and `crates/state-proof` (`prime-state-proof`). The historical tree below maps to `crates/*/src/`; see [TECHNICAL_REFERENCE.md](./TECHNICAL_REFERENCE.md) for the current module map.
+
 ```
 src/
 ├── bin/
@@ -2553,7 +2555,7 @@ explorer/                       # Block Explorer (1,272 lines) [v7.0]
 └── app.js
 ```
 
-**Total implementation**: ~15,205 lines of Rust across 36 source files, plus ~1,924 lines of tests, ~1,012 lines TypeScript SDK, and ~1,272 lines block explorer. 72 tests passing.
+**Total implementation**: ~44,000 lines of Rust across ~97 source files in a 6-crate workspace, plus ~1,012 lines TypeScript SDK and ~1,272 lines block explorer. 241 Rust tests passing.
 
 ### 15.4 Configuration System
 
@@ -2675,7 +2677,7 @@ The following items from v5.0's roadmap have been implemented:
 
 - **Flat State Architecture**: Separate state storage from state trie computation. Store current account state in a flat key-value table; compute Merkle proofs only when needed (for light clients or bridges).
 - **Grafana Dashboards**: Pre-built dashboards for all Prometheus metrics.
-- **Cargo Workspace Restructure**: Migrate single-crate to multi-crate workspace (Reth pattern) for independent compilation and testing.
+- **Cargo Workspace Restructure**: ✅ Done — the repo is now a 6-crate workspace (`crates/{core,network,rpc,node,zkp,state-proof}`, Reth pattern) for independent compilation and testing.
 - **SP1 ZK Integration**: Replace MockProver with SP1 zkVM for production-grade state transition proofs.
 
 ### 16.4 Medium-Term (Months 4-6)
@@ -2902,7 +2904,7 @@ Mersennet v7.0 represents a production-grade blockchain architecture that unifie
 11. **Block Pipeline**: Overlapping execution and consensus for doubled effective throughput (Monad-class pipelining)
 12. **Developer Tooling**: TypeScript SDK (1,012 lines), Block Explorer (1,272 lines), WebSocket subscriptions for real-time events
 13. **Economic Security**: PoS with escalating slashing, insurance fund, auto-deleveraging, and halving token economics
-14. **Production Hardening**: Graceful shutdown, health checks, 72 tests passing, comprehensive benchmarks
+14. **Production Hardening**: Graceful shutdown, health checks, 241 tests passing, comprehensive benchmarks
 
 **Competitive positioning:**
 

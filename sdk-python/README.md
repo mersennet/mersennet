@@ -121,10 +121,10 @@ sub.disconnect()
 ## Error Handling
 
 ```python
-from prime_chain.provider import MersennetError
+from prime_chain.provider import PrimeChainError
 
 try:
     balance = provider.get_balance("0x...")
-except MersennetError as e:
+except PrimeChainError as e:
     print(f"Error {e.code}: {e}")
 ```

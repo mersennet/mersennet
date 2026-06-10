@@ -40,7 +40,7 @@ validator_reward = (block_reward × validator_stake) / total_stake
 ```
 
 - **Initial block reward**: 10 PRIM per block
-- **Halving**: Every 35,000,000 blocks (~2.22 years)
+- **Halving**: Every 35,000,000 blocks (~1.1 years at ~1 s blocks)
 - **Crediting**: Rewards are applied directly to validator/delegator balances—no claiming step required
 
 Example with 4 validators each staking 1M PRIM:
@@ -58,8 +58,8 @@ When you **unbond** (withdraw) staked PRIM:
 
 | Network | Unbonding Period |
 |---------|------------------|
-| **Testnet** | 2 blocks |
-| **Mainnet** | Governance-configurable (typically longer) |
+| **Testnet** | 100 blocks (per the shipped testnet configs; the code default is 2) |
+| **Mainnet** | 100 blocks at genesis; governance-configurable |
 
 :::note
 During unbonding, your tokens can still be slashed if the validator commits an offense. Only after the unbonding period completes are tokens safely returned.
@@ -100,7 +100,7 @@ Penalties **escalate** with repeated offenses (e.g. +0.25% per offense, capped a
 | **Minimum stake** | Set by governance; check network params |
 | **Delegation** | Stake with validators to earn rewards without running a node |
 | **Rewards** | Proportional to stake; credited automatically |
-| **Unbonding** | 2 blocks on testnet; tokens locked until period ends |
+| **Unbonding** | 100 blocks on testnet; tokens locked until period ends |
 | **Slashing** | Double-sign → tombstoned; downtime → jailed + penalty |
 
 For operational details, see [Validator Overview](/validators/overview) and [Monitoring & Alerts](/validators/monitoring).

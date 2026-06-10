@@ -91,14 +91,14 @@ See [RPC Methods Reference](/developers/rpc/methods) for full details.
 ## Transaction Format
 
 :::important
-Mersennet uses a **custom raw transaction format** (not standard RLP). Standard tools that sign and send via `eth_sendRawTransaction` (e.g., `forge create`, some wallet libraries) may not work. Use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked, or ensure your client uses the Mersennet transaction format.
+`eth_sendRawTransaction` accepts **both** standard Ethereum RLP-encoded transactions (legacy, EIP-2930, EIP-1559) and Mersennet's custom binary format. MetaMask-, ethers.js-, and Foundry-signed transactions work natively.
 :::
 
-For deployment and sending transactions, prefer:
+For deployment and sending transactions, you can use:
 
-- **Hardhat** with `eth_sendTransaction` (via ethers/wallet)
+- **Hardhat / Foundry / ethers.js** signing locally and submitting via `eth_sendRawTransaction`
 - **Remix** with MetaMask (injected provider)
-- **prime_sendTransaction** for server-side flows with unlocked accounts
+- **eth_sendTransaction / prime_sendTransaction** for server-side flows with unlocked accounts
 
 ## Error Handling
 

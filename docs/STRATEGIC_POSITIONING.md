@@ -7,7 +7,7 @@
 
 Mersennet is the **only Layer 1 blockchain with native, deterministic order matching** built into its consensus layer. This unique architecture—combining full EVM compatibility with institutional-grade trading infrastructure—solves a critical gap in the $16T+ Real-World Asset (RWA) tokenization market AND the $2.5T+ on-chain institutional credit market.
 
-**Current State (v6.0)**: Mersennet v6.0 is complete with a working testnet, 62 passing tests, and comprehensive documentation. **Measured performance**: 72K TPS (EVM), 2.4M CLOB ops/s, HotStuff-2 ~200ms finality. The CLOB precompile (0x0100) enables **atomic EVM ↔ CLOB composability** — Solidity contracts can trade on the order book in the same transaction. FBA (Federated Byzantine Agreement) provides MEV protection.
+**Current State (v6.0)**: Mersennet v6.0 is complete with a working testnet, 241 passing tests, and comprehensive documentation. **Measured performance**: 72K TPS (EVM), 2.4M CLOB ops/s, HotStuff-2 ~200ms finality. The CLOB precompile (0x0100) enables **atomic EVM ↔ CLOB composability** — Solidity contracts can trade on the order book in the same transaction. FBA (Frequent Batch Auctions) provides MEV protection.
 
 **The Opportunity**: Traditional finance is tokenizing trillions in assets (bonds, commodities, real estate, trade finance) AND credit instruments (loans, credit derivatives, trade finance credit), but existing blockchains lack the deterministic, auditable trading infrastructure required by regulators and institutions.
 

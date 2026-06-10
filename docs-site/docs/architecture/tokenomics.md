@@ -58,7 +58,7 @@ Private and public sale allocation. 6-month cliff + 18-month linear vesting.
 | **Initial Reward per Block** | 10 PRIM |
 | **Halving Interval** | 35,000,000 blocks |
 | **Block Time** | ~1 second |
-| **Halving Period** | ~2.22 years |
+| **Halving Period** | ~1.11 years |
 
 ### Halving Epochs
 
@@ -87,14 +87,14 @@ total = initial_reward × halving_interval × 2
 
 | Milestone | Era | Approx. Time | Block Rewards Minted | % of Pool |
 |-----------|-----|---------------|----------------------|------------|
-| First halving | 1 | ~2.2 years | 350,000,000 | 50.0% |
-| Second halving | 2 | ~4.4 years | 525,000,000 | 75.0% |
-| 87.5% minted | 3 | ~6.7 years | 612,500,000 | 87.5% |
-| 93.75% minted | 4 | ~8.9 years | 656,250,000 | 93.75% |
-| 96.9% minted | 5 | ~11.1 years | 678,125,000 | 96.9% |
-| **99%+ minted** | **6** | **~13 years** | **689,062,500** | **98.4%** |
+| First halving | 1 | ~1.1 years | 350,000,000 | 50.0% |
+| Second halving | 2 | ~2.2 years | 525,000,000 | 75.0% |
+| 87.5% minted | 3 | ~3.3 years | 612,500,000 | 87.5% |
+| 93.75% minted | 4 | ~4.4 years | 656,250,000 | 93.75% |
+| 96.9% minted | 5 | ~5.5 years | 678,125,000 | 96.9% |
+| **99%+ minted** | **6** | **~6.7 years** | **689,062,500** | **98.4%** |
 
-**99% of block rewards are emitted by approximately year 13.**
+**99% of block rewards are emitted by approximately year 7** (at ~1 s block time).
 
 ## Reward Distribution
 
@@ -143,7 +143,7 @@ Due to integer division with 18-decimal precision, the sum of individual rewards
 |-------|---------|
 | **Max supply** | 1 billion PRIM |
 | **Block rewards** | 70% of supply, 10 PRIM/block initially |
-| **Halving** | Every 35M blocks (~2.22 years) |
-| **99% emission** | ~year 13 |
+| **Halving** | Every 35M blocks (~1.11 years at ~1 s blocks) |
+| **99% emission** | ~year 7 |
 | **Distribution** | Proportional to validator stake |
 | **Allocations** | 70% rewards, 10% ecosystem, 10% foundation, 5% team, 5% sales |

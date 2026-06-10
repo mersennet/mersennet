@@ -81,7 +81,7 @@ These are measured benchmarks, not theoretical maximums.
 
 1. **Architecture:** Deterministic execution means every state transition is reproducible and auditable
 2. **MEV Protection:** Frequent Batch Auctions (FBA) eliminate front-running and sandwich attacks
-3. **Testing:** 62+ tests passing, Foundry test suite for contracts
+3. **Testing:** 241 Rust tests passing, Foundry test suite for contracts
 4. **Audit Plan:** Tier-1 security audit scheduled for Q3 2026 (pre-mainnet)
 5. **Bug Bounty:** Program planned for post-audit
 6. **Slashing:** Double-sign (5%), timeout (1%), escalating penalties up to 10%

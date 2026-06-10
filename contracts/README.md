@@ -34,6 +34,16 @@ On Mersennet, the CLOB is a **precompile** — a native extension of the EVM. On
 5. Call an AMM to hedge
 6. All revert if any step fails
 
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/primeorders/` | CLOB precompile example strategies (VaultStrategy, AtomicArbitrage, SmartContractMM) |
+| `src/foundation/` | WPRIM, Multicall3, MockERC20 |
+| `src/dex/` | PrimeSwap V2-style AMM (factory, pair, router) |
+| `src/zk/` | Ethereum-side ZK bridge — Groth16Verifier + PrimeChainBridge (see [`src/zk/README.md`](src/zk/README.md)) |
+| `test/` | Foundry tests — 49 tests total, incl. 21 in `test/zk/` (`forge test`) |
+
 ## Contracts Overview
 
 ### VaultStrategy.sol
@@ -68,9 +78,10 @@ On Mersennet, the CLOB is a **precompile** — a native extension of the EVM. On
 ### Deploy with Foundry
 
 ```bash
-forge create contracts/VaultStrategy.sol:VaultStrategy \
+cd contracts
+forge create src/primeorders/VaultStrategy.sol:VaultStrategy \
   --constructor-args 1 50 1000 \
-  --rpc-url https://testnet.primechain.xyz
+  --rpc-url https://rpc.primechain.xyz
 ```
 
 Constructor args for `VaultStrategy`: `(marketId, spreadBps, maxPositionSize)`.

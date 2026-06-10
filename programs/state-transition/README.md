@@ -107,9 +107,11 @@ The remaining cut-over from this minimal ELF to the full block prover is:
 2. Re-run the full block transition inside the zkVM: tx decoding,
   Noir-proof verification, nullifier/commitment updates, and market
   matching.
-3. Swap `SP1Prover::new(ProverMode::Mock)` in
-   `crates/core/src/state_proof.rs` for
-   `sp1_sdk::ProverClient::network()` (or `local()` for self-hosting).
+3. Point `SP1Prover::runtime_default()` (used by
+   `crates/core/src/state_proof.rs`) at the real adapters via
+   `PRIME_SP1_PROVE_ADAPTER` / `PRIME_SP1_VERIFY_ADAPTER`, with
+   `PRIME_SP1_MODE=network` for delegated proving (or `local` for
+   self-hosting); without adapters it stays on the deterministic mock.
 4. Produce a release-grade prove/verify transcript against the pinned
   ELF and vkey hash.
 5. The on-chain verifier precompile at `0x0300` consumes the

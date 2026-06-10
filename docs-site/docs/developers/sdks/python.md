@@ -117,7 +117,7 @@ tx_hash = provider.send_raw_transaction("0xSignedTxHex")
 ```
 
 :::note
-Mersennet uses a custom raw transaction format. Use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked. For wallet-signed transactions, ensure your signing library produces the Mersennet format.
+`eth_sendRawTransaction` accepts standard Ethereum RLP-encoded transactions (e.g. signed with `eth-account`/web3.py) as well as Mersennet's custom binary format. Alternatively, use `eth_sendTransaction` or `prime_sendTransaction` when the node has the account unlocked.
 :::
 
 ## PrimeOrders
@@ -220,13 +220,13 @@ WebSocket support may vary by node configuration. If subscriptions fail, use HTT
 
 ```python
 from prime_chain import PrimeProvider
-from prime_chain.provider import MersennetError
+from prime_chain.provider import PrimeChainError
 
 provider = PrimeProvider("http://46.225.30.187:8545")
 
 try:
     balance = provider.get_balance("0x...")
-except MersennetError as e:
+except PrimeChainError as e:
     print(f"RPC error: {e}, code: {e.code}")
 ```
 

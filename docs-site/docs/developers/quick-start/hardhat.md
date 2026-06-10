@@ -49,7 +49,7 @@ export default config;
 ```
 
 :::note HttpNetworkConfig
-Mersennet uses standard JSON-RPC. If you encounter issues with gas estimation or fee history (e.g., `eth_feeHistory` is not supported), you may need to add `httpHeaders` or adjust `timeout` in the network config. For deployment, the default config works with `eth_sendTransaction`.
+Mersennet uses standard JSON-RPC, including `eth_feeHistory` (priority-fee rewards are always 0 — there is no tip). If you encounter issues with gas estimation, you may need to adjust `timeout` in the network config or pin a fixed `gasPrice`. Deployment works with locally signed transactions via `eth_sendRawTransaction` (the Hardhat default) or with `eth_sendTransaction` against a node with an unlocked account.
 :::
 
 ## Sample ERC-20 Contract
@@ -148,7 +148,7 @@ Or use the [block explorer](http://46.225.30.187) to view the transaction and co
 
 | Issue | Solution |
 |-------|----------|
-| `eth_feeHistory` not supported | Mersennet does not support EIP-1559 fee history. Use `--legacy` or ensure your tooling uses legacy transactions. |
+| Fee estimation looks off | `eth_feeHistory` is supported, but priority-fee rewards are always 0 (no tip on Mersennet). Legacy gas-price transactions are the simplest fit. |
 | Gas estimation fails | Try increasing `gasLimit` in the deployment script or use a fixed value (e.g., `3000000`). |
 | Connection refused | Ensure the RPC URL `http://46.225.30.187:8545` is reachable from your network. |
 | Insufficient funds | Get testnet PRIM from the [faucet](http://46.225.30.187:4003). |

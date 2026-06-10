@@ -87,7 +87,7 @@ bash scripts/ci/check-privacy-invariants.sh
 ```
 
 Expected pre-existing exceptions (do not block the merge on these — they predate this work and are tracked separately):
-- Two `state_proof` tests can fail under `--features sp1` (`invalid block tx encoding`, `shielded event root mismatch`) on branches that do not yet carry the E2 parity fixes. After `feat/zk-sp1-hardening` is merged, re-run `cargo test -p prime-chain-core --features sp1` and confirm they pass; if they still fail, the failure is the known parity gap, not a regression from consolidation.
+- Two `state_proof` tests can fail under `--features sp1` (`invalid block tx encoding`, `shielded event root mismatch`) on branches that do not yet carry the E2 parity fixes. After `feat/zk-sp1-hardening` is merged, re-run `cargo test -p prime-chain --features sp1` and confirm they pass; if they still fail, the failure is the known parity gap, not a regression from consolidation.
 
 ---
 

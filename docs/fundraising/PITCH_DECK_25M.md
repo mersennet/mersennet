@@ -715,7 +715,7 @@ Atomic commits across all domains in every block.
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | Regulatory uncertainty | High | Early FCA/MAS/SEC engagement via Standard Chartered |
-| Technical execution | Medium | Testnet live, 72K TPS proven, 62+ tests passing |
+| Technical execution | Medium | Testnet live, 72K TPS proven, 241 tests passing |
 | Competition | Medium | 2+ year technical moat (consensus-level CLOB) |
 | Market timing | Medium | Multiple use cases (RWA + Credit + DeFi), flexible positioning |
 | Adoption | Medium | Strategic partners (SC, XDC, Binance) provide guaranteed early TVA |

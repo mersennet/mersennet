@@ -17,7 +17,7 @@
 
 ## Staking Requirements
 
-- **Minimum stake**: 100,000 PRIME tokens
+- **Minimum stake**: 100,000 PRIM tokens
 - **Unbonding period**: 100 blocks (configurable in genesis)
 
 ## Network Requirements

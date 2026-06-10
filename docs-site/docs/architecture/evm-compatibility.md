@@ -23,7 +23,6 @@ Mersennet targets the **Shanghai** EVM specification, which includes:
 
 - All pre-Shanghai opcodes and semantics
 - **PUSH0** (EIP-3855) — Push constant 0 onto the stack
-- **EVM Object Format (EOF)** support for future contract upgrades
 
 This ensures compatibility with the vast majority of Solidity contracts and tooling (Hardhat, Foundry, Remix, and standard wallets).
 
@@ -34,7 +33,7 @@ Mersennet supports the standard Ethereum opcodes defined in the Shanghai spec, i
 - **Arithmetic**: ADD, SUB, MUL, DIV, MOD, etc.
 - **Comparison**: LT, GT, SLT, SGT, EQ, etc.
 - **Bitwise**: AND, OR, XOR, NOT, SHL, SHR, SAR
-- **Crypto**: KECCAK256, ECRE cover, ECRECOVER
+- **Crypto**: KECCAK256, ECRECOVER
 - **Memory/Storage**: MSTORE, MLOAD, SLOAD, SSTORE
 - **Control flow**: JUMP, JUMPI, PC, JUMPDEST
 - **System**: CALL, DELEGATECALL, STATICCALL, CREATE, CREATE2
@@ -81,18 +80,14 @@ Gas costs align with Ethereum's Shanghai spec for predictable behavior when port
 
 ### Transaction Format
 
-Mersennet may use a **custom transaction format** that differs from Ethereum's legacy or EIP-1559 formats. Key points:
+Mersennet uses a **custom binary transaction format** alongside standard Ethereum RLP-encoded (EIP-155) transactions — `eth_sendRawTransaction` accepts both. Key points:
 
-- Transactions still include: `from`, `to`, `value`, `data`, `gasLimit`, `gasPrice` (or equivalent)
-- **EIP-1559** (dynamic base fee + priority fee) may not be fully implemented yet—check the current network configuration
-- Chain ID 7919 is used for replay protection
+- Transactions include: `from`, `to`, `value`, `data`, `gasLimit`, `gasPrice`, `nonce`
+- Chain ID 7919 is used for replay protection (testnet)
 
-### No EIP-1559 Dynamic Fees (Yet)
+### EIP-1559 Base Fee (No Priority Tip)
 
-As of the current implementation, Mersennet may not support EIP-1559's dynamic base fee:
-
-- **Ethereum**: Base fee adjusts per block based on target utilization
-- **Mersennet**: May use a fixed or simpler fee model
+Mersennet implements EIP-1559's dynamic base fee: the base fee adjusts each block based on target utilization (`fee_elasticity_multiplier: 2`, `fee_max_change_denominator: 8`, i.e. up to 12.5% change per block). There is **no separate priority tip** — `eth_maxPriorityFeePerGas` returns `0x0`.
 
 Validators earn primarily from **block rewards**, not transaction fees. Fee market parameters can be updated via governance.
 
@@ -120,8 +115,8 @@ Same decimal precision, so contract logic that assumes 18 decimals works unchang
 | Standard opcodes | ✅ Supported |
 | Standard precompiles | ✅ Supported |
 | PrimeOrders precompile (0x0100) | ✅ Supported |
-| Custom tx format | ⚠️ May differ |
-| EIP-1559 | ⚠️ Check network config |
+| Custom tx format | ✅ Custom binary + Ethereum RLP (EIP-155) both accepted |
+| EIP-1559 | ✅ Dynamic base fee (no priority tip) |
 | Gas metering | ✅ Ethereum-compatible |
 
 Mersennet is designed for **EVM ecosystem compatibility**—deploy your contracts, use your tools, and leverage the native PrimeOrders precompile for advanced DeFi strategies.

@@ -97,10 +97,11 @@ Mersennet is a high-performance EVM-compatible blockchain with a native central 
 
 | Category | Files | Lines (approx.) |
 |----------|-------|-----------------|
-| Core sources (`src/`) | 28 | ~10,600 |
-| Tests (`tests/`) | 10 | ~2,500 |
-| Benchmarks (`benches/`) | 1 | ~200 |
-| **Total** | **39** | **~13,300** |
+| Core sources (`crates/core/src/`) | 50 | ~22,600 |
+| Other crates (`crates/{network,rpc,node,zkp,state-proof}/src/`) | ~33 | ~17,200 |
+| Tests (`crates/core/tests/`) | 12 | ~2,600 |
+| Benchmarks (`crates/core/benches/`) | 2 | ~1,600 |
+| **Total** | **~97** | **~44,000** |
 
 ### Key Dependencies
 
@@ -118,51 +119,71 @@ Mersennet is a high-performance EVM-compatible blockchain with a native central 
 
 ## 2. Module Map
 
+The repository is a 6-crate Cargo workspace:
+
+| Crate | Path | Package Name | Purpose |
+|-------|------|--------------|---------|
+| core | `crates/core` | `prime-chain` | Engine, consensus, CLOB, state, precompiles, shielded subsystems |
+| network | `crates/network` | `prime-chain-network` | UDP gossip, TCP sync, Noise encryption, P2P node |
+| rpc | `crates/rpc` | `prime-chain-rpc` | JSON-RPC 2.0 server, method router, shielded RPC, WebSocket |
+| node | `crates/node` | `prime-chain-node` | Binaries: `prime-chain`, `genesis`, `faucet`, `loadtest`, `stresstest`, `migrate-genesis` |
+| zkp | `crates/zkp` | `prime-zkp` | Poseidon, Pedersen, notes/nullifiers, threshold ElGamal, Noir/SP1 harness |
+| state-proof | `crates/state-proof` | `prime-state-proof` | revm-free state-transition proof envelopes, SP1 prover/verifier glue |
+
 ```
-src/
+crates/core/src/
 ├── lib.rs                          # Module re-exports
-├── bin/prime-chain.rs              # Node entry point (CLI)
-├── core/
-│   ├── engine.rs          (1505)   # Block production, tx execution, subsystem orchestration
-│   ├── consensus.rs        (850)   # CometBFT-style prevote/precommit/commit
-│   ├── hotstuff2.rs        (760)   # HotStuff-2 protocol state machine
-│   ├── prime_orders.rs     (800)   # CLOB matching engine
-│   ├── precompiles.rs      (292)   # EVM precompile bridge to CLOB
-│   ├── precompile_abi.rs   (109)   # ABI encoding/decoding, selectors, gas costs
-│   ├── parallel.rs         (589)   # Block-STM parallel EVM execution
-│   ├── fba.rs              (392)   # Frequent batch auctions
-│   ├── commit_reveal.rs    (129)   # Commit-reveal MEV protection
-│   ├── state.rs            (958)   # Persistent state, Merkle tree, pruning
-│   ├── mempool.rs          (512)   # Multi-pool transaction management
-│   ├── bridge.rs                   # Cross-domain bridge queues
-│   └── events.rs                   # Domain event types
-├── network/
-│   ├── net_transport.rs            # UDP gossip + TCP sync transport
-│   ├── network.rs                  # NetworkSim (vote simulation)
-│   └── p2p.rs                      # P2P node, wire types, NetworkNode
-├── rpc/
-│   ├── rpc.rs                      # JSON-RPC 2.0 server
-│   └── rpc_router.rs               # Method dispatch router
-├── crypto/
-│   └── mod.rs                      # ECDSA signing, recovery, key generation
-├── config/
-│   └── config.rs                   # AppConfig, JSON config, defaults
-├── prometheus/
-│   └── prometheus.rs               # Prometheus exporter, metric registry
-├── errors.rs                       # Error types
-├── metrics/
-│   └── metric.rs                   # Metric helpers
-├── identity/
-│   └── identity.rs                 # Node identity
-└── governance/
-    └── governance.rs               # Governance module
+├── engine.rs            (3004)    # Block production, tx execution, subsystem orchestration
+├── consensus.rs          (895)    # CometBFT-style prevote/precommit/commit
+├── hotstuff2.rs          (765)    # HotStuff-2 protocol state machine
+├── prime_orders.rs       (863)    # CLOB matching engine
+├── precompiles.rs        (684)    # EVM precompiles (CLOB 0x0100, shielded 0x0200/0x0201, state-proof 0x0300)
+├── precompile_abi.rs     (253)    # ABI encoding/decoding, selectors, gas costs
+├── parallel.rs           (584)    # Block-STM parallel EVM execution
+├── fba.rs                (389)    # Frequent batch auctions
+├── commit_reveal.rs      (129)    # Commit-reveal MEV protection
+├── state.rs             (1061)    # Persistent state (sled), Merkle tree, pruning
+├── state_redb.rs         (819)    # redb storage backend
+├── flat_state.rs / state_trait.rs # Flat state + pluggable StateBackend trait
+├── mempool.rs            (520)    # Multi-pool transaction management
+├── dag_mempool.rs        (677)    # DAG mempool
+├── encrypted_mempool.rs / threshold_mempool.rs  # Threshold-encrypted mempool
+├── bridge.rs / bridge_export.rs   # Cross-domain bridge queues, bridge export
+├── cross_chain.rs                 # Cross-chain bridge infrastructure
+├── shielded_evm.rs / shielded_orders.rs / shielded_state.rs / shielded_persistence.rs  # Privacy fork
+├── zk_proofs.rs / zk_sp1.rs / state_proof.rs   # ZK state proofs, SP1 integration
+├── dkg.rs                         # Distributed key generation
+├── liquidation_auction.rs         # Liquidation auctions
+├── account_abstraction.rs         # ERC-4337 account abstraction
+├── governance.rs / identity.rs / events.rs / errors.rs
+├── config.rs             (517)    # AppConfig, JSON config, defaults
+├── crypto/                        # ECDSA signing, recovery, RLP decoding
+├── prometheus.rs / metrics/       # Prometheus exporter, metric helpers
+└── ... (chain_features, code_publication, fba, intents, market_maker,
+         mainnet, pipeline, sharding, formal_verification, engine_snapshot)
+
+crates/network/src/
+├── net_transport.rs               # UDP gossip + TCP sync transport
+├── noise.rs                       # Noise protocol encryption
+└── p2p.rs                         # P2P node, wire types, NetworkNode
+
+crates/rpc/src/
+├── rpc.rs                         # JSON-RPC 2.0 server
+├── rpc_router.rs                  # Method dispatch router
+├── rpc_shielded.rs                # Shielded/privacy RPC methods
+└── ws.rs                          # WebSocket subscriptions
+
+crates/node/src/bin/
+├── prime-chain.rs                 # Node entry point (CLI)
+├── genesis.rs / migrate_genesis.rs
+└── faucet.rs / loadtest.rs / stresstest.rs
 ```
 
 ---
 
 ## 3. Engine — Block Production Pipeline
 
-**File:** `src/core/engine.rs` (~1505 lines)
+**File:** `crates/core/src/engine.rs` (~3,000 lines)
 
 The `Engine` struct is the central orchestrator that owns all subsystems and drives the block production lifecycle.
 
@@ -284,7 +305,7 @@ submit_tx(tx)
 
 ## 4. Parallel EVM Execution
 
-**File:** `src/core/parallel.rs` (589 lines)
+**File:** `crates/core/src/parallel.rs` (~584 lines)
 
 Implements optimistic parallel transaction execution following the Block-STM / Grevm pattern. Achieves ~6x speedup on 8 cores for workloads with independent transactions.
 
@@ -353,7 +374,7 @@ let par_result = executor.execute(&collected_txs, &self.evm.db, ...);
 
 ## 5. HotStuff-2 Consensus
 
-**File:** `src/core/hotstuff2.rs` (760 lines)
+**File:** `crates/core/src/hotstuff2.rs` (~765 lines)
 
 Implements the HotStuff-2 protocol — a linear-communication BFT consensus with a **2-chain commit rule**, reducing the original HotStuff's 3-chain requirement to 2 consecutive certified rounds.
 
@@ -454,7 +475,7 @@ On `advance_round(new_round)`:
 
 ## 6. CometBFT-Style Consensus
 
-**File:** `src/core/consensus.rs` (~850 lines)
+**File:** `crates/core/src/consensus.rs` (~895 lines)
 
 A CometBFT-inspired prevote/precommit consensus with validator set management, slashing with escalation, jailing, tombstoning, and token economics.
 
@@ -522,7 +543,7 @@ New validators receive a penalty: `-(total_voting_stake + total_voting_stake / 8
 
 ## 7. PrimeOrders — CLOB Matching Engine
 
-**File:** `src/core/prime_orders.rs` (~800 lines)
+**File:** `crates/core/src/prime_orders.rs` (~863 lines)
 
 A full central limit order book with price-time priority matching, margin validation, insurance fund, auto-deleveraging, and market circuit breakers.
 
@@ -619,7 +640,7 @@ When the insurance fund cannot cover a liquidation deficit:
 
 ## 8. CLOB Precompile
 
-**Files:** `src/core/precompiles.rs` (292 lines), `src/core/precompile_abi.rs` (109 lines)
+**Files:** `crates/core/src/precompiles.rs` (~684 lines), `crates/core/src/precompile_abi.rs` (~253 lines)
 
 The CLOB is exposed to EVM smart contracts via a stateful precompile at a fixed address.
 
@@ -628,6 +649,8 @@ The CLOB is exposed to EVM smart contracts via a stateful precompile at a fixed 
 ```
 0x0000000000000000000000000000000000000100
 ```
+
+Additional protocol precompiles registered in `crates/core/src/precompiles.rs`: `0x0200` (`shieldedTransfer(bytes)`), `0x0201` (`shield(uint256,bytes)` / `unshield(bytes)`), and `0x0300` (`verifyStateProof(bytes)` SP1 light-client gate).
 
 ### Function Signatures & Gas Costs
 
@@ -680,7 +703,7 @@ pub fn register_prime_orders_precompile(handler: &mut EvmHandler<'_, (), InMemor
 
 ## 9. Frequent Batch Auctions (FBA)
 
-**File:** `src/core/fba.rs` (392 lines)
+**File:** `crates/core/src/fba.rs` (~389 lines)
 
 Implements frequent batch auctions for fair price discovery, reducing the advantage of speed-based MEV strategies.
 
@@ -738,7 +761,7 @@ pub fn execute_batch_auctions(&mut self) -> Vec<AuctionResult> {
 
 ## 10. Commit-Reveal MEV Protection
 
-**File:** `src/core/commit_reveal.rs` (129 lines)
+**File:** `crates/core/src/commit_reveal.rs` (129 lines)
 
 A two-phase commit-reveal scheme that prevents front-running and sandwich attacks by hiding transaction details until after ordering is finalized.
 
@@ -798,7 +821,7 @@ pool.prune_expired(current_block);        // Garbage collect
 
 ## 11. Mempool
 
-**File:** `src/core/mempool.rs` (~512 lines)
+**File:** `crates/core/src/mempool.rs` (~520 lines)
 
 A three-pool transaction management system inspired by Geth's design.
 
@@ -854,7 +877,7 @@ Checks: nonce ordering, balance sufficiency (`gas_limit × gas_price + value ≤
 
 ## 12. State & Persistence
 
-**File:** `src/core/state.rs` (~958 lines)
+**File:** `crates/core/src/state.rs` (~1,061 lines; `crates/core/src/state_redb.rs` provides an alternative redb backend via the `StateBackend` trait)
 
 ### Storage Backend
 
@@ -942,7 +965,7 @@ Exports/imports a self-contained bincode archive containing all account records,
 
 ## 13. Networking
 
-**Files:** `src/network/p2p.rs`, `src/network/net_transport.rs`
+**Files:** `crates/network/src/p2p.rs`, `crates/network/src/net_transport.rs`, `crates/network/src/noise.rs`
 
 ### Transport Layers
 
@@ -1002,7 +1025,7 @@ Spawns three background threads:
 
 ## 14. RPC Interface
 
-**File:** `src/rpc/rpc.rs` (~970 lines)
+**Files:** `crates/rpc/src/rpc.rs` (~1,816 lines), `crates/rpc/src/rpc_router.rs` (~1,021 lines), `crates/rpc/src/rpc_shielded.rs` (~2,118 lines), `crates/rpc/src/ws.rs` (~737 lines)
 
 JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatible method aliases.
 
@@ -1030,8 +1053,12 @@ JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatib
 | `prime_gasPrice` | `eth_gasPrice` | Current base fee |
 | `prime_call` | `eth_call` | Simulate call (no state change) |
 | — | `eth_estimateGas` | Gas estimation |
-| — | `net_version` | Network version |
-| — | `web3_clientVersion` | Client version |
+| — | `eth_feeHistory` / `eth_maxPriorityFeePerGas` | Fee market queries |
+| — | `eth_syncing` / `eth_mining` / `eth_accounts` / `eth_protocolVersion` | Node status compatibility |
+| — | `net_version` / `net_listening` / `net_peerCount` | Network status |
+| — | `web3_clientVersion` | Client version (`Mersennet/0.1.0`) |
+| — | `txpool_status` | Mempool pool sizes |
+| `prime_validators` | — | Active validator set |
 
 #### Blocks & Transactions
 
@@ -1040,6 +1067,7 @@ JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatib
 | `prime_getBlockByNumber` / `eth_getBlockByNumber` | Block by number (supports "latest") |
 | `eth_getBlockByHash` | Block by hash |
 | `prime_sendTransaction` / `eth_sendTransaction` | Submit transaction |
+| `eth_sendRawTransaction` | Submit RLP-encoded signed transaction |
 | `prime_getTransactionReceipt` / `eth_getTransactionReceipt` | Transaction receipt |
 | `prime_getTransactionByHash` / `eth_getTransactionByHash` | Transaction by hash |
 | `prime_getLogs` / `eth_getLogs` | Log filtering with block range, addresses, topics |
@@ -1068,6 +1096,27 @@ JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatib
 | `primebridge_dequeueOrdersToEvm` | Dequeue message: orders → EVM |
 | `primebridge_dequeueEvmToOrders` | Dequeue message: EVM → orders |
 
+#### Filters & Subscriptions
+
+| Method | Description |
+|--------|-------------|
+| `eth_newFilter` / `eth_newBlockFilter` / `eth_newPendingTransactionFilter` | Install filters |
+| `eth_getFilterChanges` / `eth_getFilterLogs` / `eth_uninstallFilter` | Poll / drain / remove filters |
+| `eth_subscribe` / `eth_unsubscribe` (also `prime_subscribe` / `prime_unsubscribe`) | WebSocket subscriptions (`crates/rpc/src/ws.rs`) |
+
+#### Shielded & State Proofs (`crates/rpc/src/rpc_shielded.rs`)
+
+| Method | Description |
+|--------|-------------|
+| `prime_submitShield` / `prime_submitUnshield` | Move funds into / out of the shielded pool |
+| `prime_submitShieldedTransfer` / `prime_submitShieldedOrder` | Shielded transfers and CLOB orders |
+| `prime_getShieldedRoot` / `prime_getShieldedNotes` / `prime_getShieldedBalance` / `prime_getShieldedMarketAggregates` | Shielded state queries |
+| `prime_viewGrantToken` / `prime_viewRevokeToken` / `prime_viewGrantStatus` | Selective-disclosure viewing keys |
+| `prime_viewBalances` / `prime_viewNotes` / `prime_viewOrders` / `prime_viewPositions` / `prime_viewPortfolioDigest` | Viewing-key scoped reads |
+| `prime_getStateProof` / `prime_getLatestStateProof` / `prime_verifyStateProof` | SP1 state proofs |
+| `prime_registerLiquidator` / `prime_submitLiquidationClaim` / `prime_submitLiquidationExecute` | Shielded liquidation auction flow |
+| `prime_getCodeHash` / `prime_getCodeAttestation` | Code publication queries |
+
 ### Error Codes
 
 | Code | Meaning |
@@ -1082,7 +1131,7 @@ JSON-RPC 2.0 server built on `tiny_http` with CORS support and Ethereum-compatib
 
 ## 15. Cryptography
 
-**File:** `src/crypto/mod.rs` (152 lines)
+**Files:** `crates/core/src/crypto/mod.rs` (~484 lines), `crates/core/src/crypto/rlp_decode.rs` (~540 lines)
 
 ECDSA secp256k1 signatures using the `k256` crate.
 
@@ -1125,7 +1174,7 @@ Standard Ethereum: `keccak256(uncompressed_public_key[1..])[12..]`
 
 ## 16. Bridge
 
-**Files:** `src/core/bridge.rs`
+**Files:** `crates/core/src/bridge.rs`, `crates/core/src/bridge_export.rs`
 
 Bidirectional message queue between the PrimeOrders domain and the EVM domain.
 
@@ -1163,7 +1212,7 @@ Bridge state is persisted to sled on each block commit and restored on node star
 
 ### Prometheus Metrics
 
-**File:** `src/prometheus/prometheus.rs` (137 lines)
+**File:** `crates/core/src/prometheus.rs` (~200 lines)
 
 Initialized once via `prometheus::init()`. All metrics are pre-described with HELP/TYPE annotations.
 
@@ -1213,7 +1262,7 @@ Key log points:
 
 ## 18. Configuration Reference
 
-**File:** `src/config/config.rs` (360 lines)
+**File:** `crates/core/src/config.rs` (~517 lines)
 
 JSON-based configuration loaded from a file path. All fields have defaults.
 
@@ -1226,7 +1275,8 @@ JSON-based configuration loaded from a file path. All fields have defaults.
     "state_path": "state",
     "gas_limit_per_block": 30000000,
     "fee_elasticity_multiplier": 2,
-    "fee_max_change_denominator": 8
+    "fee_max_change_denominator": 8,
+    "storage_backend": "sled"
   },
   "mempool": {
     "max_total": 10000,
@@ -1247,6 +1297,9 @@ JSON-based configuration loaded from a file path. All fields have defaults.
         "balance": "1000000000000000000000",
         "nonce": 0
       }
+    ],
+    "validators": [
+      { "address": "0x...", "stake": "1000000000000000000000" }
     ]
   },
   "slashing": {
@@ -1271,7 +1324,23 @@ JSON-based configuration loaded from a file path. All fields have defaults.
     "peer_store_path": "state/peers.json",
     "listen": "0.0.0.0:30303",
     "peers": [],
-    "block_time_ms": 1000
+    "block_time_ms": 1000,
+    "noise_enabled": false
+  },
+  "ws": {
+    "enabled": false,
+    "addr": "127.0.0.1:9945"
+  },
+  "zk": {
+    "enabled": false,
+    "checkpoint_interval": 100
+  },
+  "privacy": {
+    "mode_activated": false,
+    "activation_height": null,
+    "dkg_epoch_length_blocks": 18000,
+    "threshold_k": 2,
+    "threshold_n": 3
   }
 }
 ```
@@ -1299,6 +1368,12 @@ JSON-based configuration loaded from a file path. All fields have defaults.
 | `rpc.addr` | 127.0.0.1:8545 | — |
 | `p2p.listen` | 0.0.0.0:30303 | — |
 | `p2p.block_time_ms` | 1,000 | milliseconds |
+| `p2p.noise_enabled` | false | — |
+| `ws.addr` | 127.0.0.1:9945 | — |
+| `zk.checkpoint_interval` | 100 | blocks |
+| `privacy.dkg_epoch_length_blocks` | 18,000 | blocks |
+| `privacy.threshold_k` / `privacy.threshold_n` | 2 / 3 | — |
+| `engine.storage_backend` | "sled" | "sled" or "redb" |
 
 ---
 
@@ -1410,7 +1485,7 @@ curl http://localhost:8545/metrics
 docker build -t prime-chain:latest .
 ```
 
-The multi-stage Dockerfile uses `rust:1.85-slim` for building and `debian:bookworm-slim` for the runtime image.
+The multi-stage Dockerfile uses `rust:1.82-slim` for building and `debian:bookworm-slim` for the runtime image.
 
 **Exposed ports:**
 - `8545` — JSON-RPC
@@ -1627,24 +1702,29 @@ Repeat offenders face escalating penalties: `base_bps + escalation_step × offen
 
 - Unsigned transactions are accepted with a warning (backward compatibility) — production deployments should enforce signatures
 - CLOB margin system uses `initial_margin_bps = 0` by default — must be configured for production
-- UDP gossip is unencrypted — suitable for testnet; production should use encrypted transport
+- UDP gossip is unencrypted by default — Noise protocol encryption (`crates/network/src/noise.rs`) is available via `p2p.noise_enabled`
 - The `InMemoryDB` clone during parallel execution has memory overhead proportional to state size
 
 ---
 
 ## 24. Testing
 
-### Test Files
+The workspace test suite currently has **241 passing Rust tests** (unit + integration across all crates).
+
+### Test Files (`crates/core/tests/`)
 
 | File | Lines | Coverage |
 |------|-------|----------|
-| `tests/state_tests.rs` | ~500 | State persistence, Merkle tree, proofs, pruning, snapshots |
-| `tests/consensus_tests.rs` | ~300 | Validator management, slashing, finality rounds, rewards |
-| `tests/bridge_tests.rs` | ~200 | Bridge queue operations, persistence |
-| `tests/rpc_tests.rs` | ~300 | JSON-RPC method dispatch, error handling |
-| `tests/crypto_tests.rs` | ~150 | ECDSA signing, recovery, determinism |
-| `tests/prime_orders_advanced.rs` | ~400 | CLOB matching, margin, liquidation, ADL |
-| `tests/fuzz_mempool.rs` | ~200 | Fuzz testing for mempool operations |
+| `state_tests.rs` | ~300 | State persistence, Merkle tree, proofs, pruning, snapshots |
+| `consensus_tests.rs` | ~250 | Validator management, slashing, finality rounds, rewards |
+| `consensus_sim.rs` | ~35 | Consensus simulation |
+| `bridge_tests.rs` | ~140 | Bridge queue operations, persistence |
+| `crypto_tests.rs` | ~100 | ECDSA signing, recovery, determinism |
+| `prime_orders_advanced.rs` | ~440 | CLOB matching, margin, liquidation, ADL |
+| `prime_orders_integration.rs` | ~290 | CLOB end-to-end flows |
+| `integration_tests.rs` / `integration_block.rs` | ~540 | Engine + block production integration |
+| `privacy_migration_e2e.rs` | ~130 | Privacy fork migration end-to-end |
+| `fuzz_mempool.rs` / `fuzz_matching.rs` | ~370 | Fuzz testing for mempool and matching engine |
 | Inline tests in `hotstuff2.rs` | ~160 | Quorum threshold, 2-chain commit, timeouts, safety |
 | Inline tests in `crypto/mod.rs` | ~50 | Sign/recover roundtrip |
 

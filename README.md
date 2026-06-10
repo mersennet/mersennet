@@ -6,15 +6,17 @@ privacy layer, built in Rust.
 
 | Chain | ID | Purpose | Status |
 |---|---|---|---|
-| **Mersennet mainnet** | `7919` (1000th prime) | Transparent EVM + CLOB | Live |
-| **Privacy Testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
+| **Public testnet** | `7919` (1000th prime, default chain ID) | Transparent EVM + CLOB | Live |
+| **Privacy testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
+| **Mersennet mainnet** | `13370` | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — PRIM token, 1B max supply, 10 PRIM/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork
 > introduces shielded accounts, ZK-proved risk checks, sealed-bid
 > liquidation auctions, threshold-encrypted mempool, and SP1 state
-> proofs for light clients. All session-executable workstreams (A–D,
-> H, K) are merged on `feat/zk-privacy`. Bring up your own privacy
-> testnet with one command — see
+> proofs for light clients. Workstreams A–F (in-repo), G1–G3 (bridge
+> contracts), H, and K are merged on `feat/zk-privacy`; the E5 Groth16
+> verifying key, external audits (I), and governance activation (J)
+> remain. Bring up your own privacy testnet with one command — see
 > [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/privacy-testnet-bootstrap.md).
 >
 > **New here?** Start with [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
@@ -22,7 +24,7 @@ privacy layer, built in Rust.
 
 ## Features
 
-### Transparent chain (live on 7919)
+### Transparent chain (live on testnet 7919)
 
 - EVM execution (revm) with block production and receipts
 - PrimeOrders CLOB matching engine with margin checks and liquidation hooks
@@ -44,8 +46,9 @@ privacy layer, built in Rust.
   victim identity never revealed
 - **Shielded EVM bridge** — `0x7E` tx type for shielded transfers /
   shield / unshield / shielded orders
-- **SP1 state-transition proofs** attached to every block (mock
-  prover today; sp1up integration tracked in workstream E)
+- **SP1 state-transition proofs** attached to every block
+  (deterministic mock by default; real SP1 path via the
+  `scripts/zk/` adapters with a pinned verifying key — workstream E)
 - **Migration tool** — deterministically mirrors every transparent EOA
   into one shielded note at the activation height
 - **Versioned snapshot envelopes** (`PZS1`) with chain-id check and
@@ -78,7 +81,7 @@ cargo run --bin prime-chain -- --config path/to/config.json --rpc
 ### Tests
 
 ```bash
-cargo test --workspace                                    # full suite (~5 min)
+cargo test --workspace                                    # full suite, 241 tests (~5 min)
 cargo test -p prime-zkp --features prover                 # cryptographic tests
 bash scripts/ci/check-privacy-invariants.sh               # CI K2 privacy grep
 ```
@@ -114,8 +117,8 @@ Full runbook: [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/priva
 ## Project Layout
 
 ```
-crates/
-├── core/                       — Engine, state, consensus, crypto
+crates/                         — Rust workspace (6 crates)
+├── core/                       — Engine, state, consensus, crypto (package `prime-chain`)
 │   └── src/
 │       ├── engine.rs                 — block production
 │       ├── engine_snapshot.rs        — PZS1 versioned snapshot envelope
@@ -127,36 +130,50 @@ crates/
 │       ├── dkg.rs                    — Pedersen-DKG coordinator
 │       ├── shielded_persistence.rs   — redb-backed shielded storage
 │       └── state_proof.rs            — SP1 state-transition proof glue
-├── network/                    — P2P transport layer
-├── rpc/                        — JSON-RPC + WebSocket server
+├── network/                    — P2P transport layer (`prime-chain-network`)
+├── rpc/                        — JSON-RPC + WebSocket server (`prime-chain-rpc`)
 │   ├── src/rpc_shielded.rs           — prime_submit*/prime_get* shielded methods
 │   └── src/ws.rs                     — newShieldedRoot, newClearingPrice…
-├── node/                       — CLI entrypoints
+├── node/                       — CLI entrypoints (`prime-chain-node`)
 │   └── src/bin/
 │       ├── prime-chain.rs            — main node binary
 │       ├── genesis.rs                — generates validator keys + configs
-│       ├── migrate_genesis.rs        — transparent → privacy migration
+│       ├── migrate_genesis.rs        — transparent → privacy migration (`migrate-genesis`)
 │       ├── faucet.rs                 — testnet faucet
 │       └── loadtest.rs / stresstest.rs
-└── zkp/                        — ZK primitives
+├── state-proof/                — proof envelope types shared with the SP1 host (`prime-state-proof`)
+└── zkp/                        — ZK primitives (`prime-zkp`)
     ├── src/poseidon.rs               — Poseidon-2 BN254 (Aztec-pinned)
     ├── src/pedersen.rs               — BN254 Pedersen commitment
     ├── src/bls_threshold.rs          — BLS12-381 threshold ElGamal
     ├── src/threshold.rs              — generic ThresholdElGamal trait
     └── params/poseidon-bn254.bin     — pinned hash parameters
 
+programs/                       — SP1 RISC-V zkVM (built outside the workspace)
+├── state-transition/                 — state-transition program
+└── state-transition-host/            — host runner (mock / real-SP1 / network)
+
 contracts/                      — Solidity contracts (Foundry)
-deploy/                         — Production deployment configs
-testnet/                        — Testnet bring-up
+├── src/foundation/                   — WPRIM, Multicall3, MockERC20
+├── src/dex/                          — PrimeSwap V2-style AMM
+├── src/primeorders/                  — CLOB precompile example strategies
+└── src/zk/                           — Groth16Verifier + PrimeChainBridge
+
+deploy/                         — Hetzner VPS testnet deployment (systemd + scripts)
+testnet/                        — Dockerized testnets
 ├── configs/privacy/                  — 7-validator 5-of-7 configs
-├── docker-compose.privacy.yml        — privacy testnet stack
+├── docker-compose.testnet.yml        — transparent testnet stack (7919)
+├── docker-compose.privacy.yml        — privacy testnet stack (7920)
 └── scripts/                          — bootstrap, load, chaos
+mainnet/                        — Mainnet genesis (13370), compose stack, launch checklist
+monitoring/                     — Prometheus + Grafana dashboards
+validator-explorer/             — Static validator staking explorer (HTML/JS)
 
 docs/
 ├── DEVELOPER_GUIDE.md          — START HERE for new contributors
 ├── STATUS.md                   — workstream progress tracker
 ├── ARCHITECTURE.md             — high-level design (transparent chain)
-├── adr/                        — Architecture Decision Records (014–018)
+├── adr/                        — Architecture Decision Records (014–019)
 ├── security/
 │   ├── cryptography-spec.md          — formal crypto spec for auditor
 │   └── privacy-invariants.md         — CI-enforced rules
@@ -164,9 +181,10 @@ docs/
     ├── privacy-testnet-bootstrap.md  — bring up chain 7920
     └── zk-fork-activation.md         — mainnet hard-fork checklist
 
-scripts/ci/                     — CI helpers (privacy-grep, etc)
+scripts/ci/, scripts/zk/        — CI helpers (privacy-grep) + ZK prover adapters
 sdk/, sdk-go/, sdk-python/      — TypeScript / Go / Python clients
 docs-site/                      — Docusaurus (docs.primechain.xyz)
+website/                        — Mersennet landing site
 ```
 
 ## Branch policy
@@ -230,7 +248,8 @@ All ecosystem applications live in their own repositories:
 - **[Whitepaper](docs/whitepaper.md)**
 - **[Architecture Decision Records](docs/adr/)** — ADR-014 (shielded
   notes), ADR-015 (threshold mempool), ADR-016 (liquidation
-  auctions), ADR-017 (SP1 state proofs), ADR-018 (privacy hard fork).
+  auctions), ADR-017 (SP1 state proofs), ADR-018 (privacy hard fork),
+  ADR-019 (selective disclosure / viewing keys).
 
 ### Security
 

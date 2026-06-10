@@ -51,7 +51,7 @@ validator_reward = (block_reward × validator_stake) / total_stake
 ```
 
 - **Initial reward**: 10 PRIM per block
-- **Halving**: Every 35,000,000 blocks (~2.22 years), the reward halves
+- **Halving**: Every 35,000,000 blocks (~1.1 years at ~1 s blocks), the reward halves
 - **Distribution**: Rewards are credited directly to validator addresses—no claiming required
 
 The more stake you have (your own + delegations), the larger your share of each block's reward.

@@ -606,7 +606,7 @@ $$R(h) = R_0 \cdot 2^{-\lfloor h / H \rfloor}$$
 
 Where:
 - $R_0$ = initial reward per block
-- $H$ = halving interval (default: 35,000,000 blocks, ~2.22 years at 2s block time)
+- $H$ = halving interval (default: 35,000,000 blocks, ~1.1 years at the default 1s block time)
 
 Reward is capped by remaining supply:
 $$R_{effective}(h) = \min(R(h), S_{max} - S_{minted}(h))$$
@@ -1633,7 +1633,7 @@ $$R_0 = 10 \text{ PRIM}$$
 Reward halving schedule:
 $$R(h) = R_0 \cdot 2^{-\lfloor h / H \rfloor}$$
 
-Where $H = 35,000,000$ blocks (~2.22 years at 2s block time). Block rewards pool: 700M PRIM.
+Where $H = 35,000,000$ blocks (~1.1 years at the default 1s block time). Block rewards pool: 700M PRIM.
 
 Reward is capped by remaining block rewards pool (700M PRIM):
 $$R_{effective}(h) = \min(R(h), S_{max} - S_{minted}(h))$$
@@ -2485,84 +2485,36 @@ Mersennet supports two storage backends via the `StateBackend` trait, selectable
 
 ### 15.3 Code Organization
 
+The implementation is a six-crate Cargo workspace:
+
 ```
-src/
-├── bin/
-│   └── prime-chain.rs          # CLI entrypoint with production hardening [v7.0]
-├── core/
-│   ├── engine.rs               # Execution engine (1,505 lines)
-│   ├── consensus.rs            # CometBFT consensus (850 lines)
-│   ├── hotstuff2.rs            # HotStuff-2 protocol (760 lines) [v6.0]
-│   ├── parallel.rs             # Parallel EVM executor (589 lines) [v6.0]
-│   ├── precompiles.rs          # CLOB precompile (291 lines) [v6.0]
-│   ├── precompile_abi.rs       # ABI encoding/decoding (108 lines) [v6.0]
-│   ├── fba.rs                  # Frequent Batch Auctions (391 lines) [v6.0]
-│   ├── commit_reveal.rs        # Commit-Reveal MEV protection (129 lines) [v6.0]
-│   ├── state.rs                # State persistence + Merkle tree (958 lines)
-│   ├── state_trait.rs          # StateBackend trait interface [v7.0]
-│   ├── state_redb.rs           # redb production storage [v7.0]
-│   ├── pipeline.rs             # Block production pipeline [v7.0]
-│   ├── zk_proofs.rs            # ZK state proof framework [v7.0]
-│   ├── account_abstraction.rs  # ERC-4337 Account Abstraction [v7.0]
-│   ├── cross_chain.rs          # Cross-chain bridge infrastructure [v7.0]
-│   ├── prime_orders.rs         # CLOB matching engine (800 lines)
-│   ├── mempool.rs              # Multi-pool transaction pool (512 lines)
-│   ├── bridge.rs               # Cross-domain bridge (84 lines)
-│   └── events.rs               # Domain events (120 lines)
-├── crypto/
-│   └── mod.rs                  # ECDSA signing/verification (151 lines)
-├── network/
-│   ├── network.rs              # Network simulation
-│   ├── noise.rs                # Noise protocol encryption [v7.0]
-│   ├── p2p.rs                  # P2P protocol + wire formats (498 lines)
-│   └── net_transport.rs        # UDP gossip + peer mgmt (524 lines)
-├── rpc/
-│   ├── rpc.rs                  # JSON-RPC + Ethereum compatibility (969 lines)
-│   ├── rpc_router.rs           # Method routing (794 lines)
-│   └── ws.rs                   # WebSocket subscriptions [v7.0]
-├── governance/
-│   └── governance.rs           # On-chain governance
-├── identity/
-│   └── identity.rs             # Node identity (ECDSA keypair)
-├── config/
-│   └── config.rs               # Configuration (WS, ZK, Noise) [v7.0]
-├── prometheus/
-│   └── prometheus.rs           # Metrics registry (136 lines)
-├── metrics/
-│   └── metric.rs               # Metric collection
-├── errors.rs                   # Error types
-└── lib.rs                      # Module registration (36 modules)
-tests/
-├── bridge_tests.rs             # Bridge FIFO/nonce tests
-├── consensus_tests.rs          # Consensus finality/slashing tests
-├── consensus_sim.rs            # Multi-validator simulation
-├── crypto_tests.rs             # ECDSA sign/verify tests
-├── fuzz_mempool.rs             # Mempool fuzzing
-├── integration_block.rs        # Block execution integration
-├── integration_tests.rs        # Phase 3 integration tests [v7.0]
-├── prime_orders_advanced.rs    # Insurance fund/ADL/margin tests
-├── prime_orders_integration.rs # Order lifecycle tests
-├── rpc_tests.rs                # RPC method tests
-└── state_tests.rs              # State persistence + redb tests
-benches/
-├── tps_bench.rs                # TPS benchmarking suite
-└── parallel_bench.rs           # Parallel + storage + ZK benchmarks [v7.0]
-sdk/                            # TypeScript SDK (1,012 lines) [v7.0]
-├── src/
-│   ├── provider.ts             # JSON-RPC client
-│   ├── subscription.ts         # WebSocket subscriptions
-│   ├── prime-orders.ts         # CLOB interaction
-│   ├── precompile.ts           # ABI encoding for 0x0100
-│   └── types.ts                # Type definitions
-├── package.json
-└── tsconfig.json
-explorer/                       # Block Explorer (1,272 lines) [v7.0]
-├── index.html
-├── style.css
-└── app.js
+crates/
+├── core/                       # `prime-chain` — engine, consensus (CometBFT-style
+│   │                           # + hotstuff2.rs), parallel EVM executor, mempool,
+│   │                           # precompiles (CLOB 0x0100 + shielded), FBA,
+│   │                           # commit-reveal, state backends (sled/redb/flat),
+│   │                           # bridge, governance, identity, prometheus,
+│   │                           # shielded_* subsystems, config, crypto
+├── network/                    # `prime-chain-network` — p2p.rs, net_transport.rs
+│   │                           # (TCP sync + UDP gossip), noise.rs encryption
+├── rpc/                        # `prime-chain-rpc` — rpc.rs, rpc_router.rs,
+│   │                           # rpc_shielded.rs, ws.rs (WebSocket subscriptions)
+├── node/                       # `prime-chain-node` — binaries: prime-chain,
+│   │                           # genesis, faucet, loadtest, stresstest,
+│   │                           # migrate-genesis
+├── zkp/                        # `prime-zkp` — Poseidon, Pedersen, threshold
+│   │                           # ElGamal, Noir circuit harness
+└── state-proof/                # `prime-state-proof` — SP1 state-transition
+                                # proof envelopes and prover/verifier glue
+sdk/                            # TypeScript SDK (@prime-chain/sdk)
+sdk-python/                     # Python SDK (prime-chain-sdk)
+sdk-go/                         # Go SDK
+validator-explorer/             # Block explorer web UI (index.html, app.js)
+contracts/                      # Solidity (IPrimeOrders.sol, PrimeChainBridge.sol,
+                                # Groth16Verifier.sol, PrimeSwap, examples)
 ```
 
-**Total implementation**: ~15,205 lines of Rust across 36 source files, plus ~1,924 lines of tests, ~1,012 lines TypeScript SDK, and ~1,272 lines block explorer. 72 tests passing.
+**Total implementation**: ~44,000 lines of Rust across ~97 source files in the workspace, plus the TypeScript/Python/Go SDKs and block explorer. 241 Rust tests passing.
 
 ### 15.4 Configuration System
 
@@ -2606,18 +2558,18 @@ Configuration is JSON-based with hot-reload support:
 
 Prometheus metrics exposed at `/metrics`:
 
-- `prime_chain_up`: Node uptime gauge
-- `blocks_executed_total`: Block execution counter
-- `blocks_finalized_total`: Finalized block counter
-- `tx_submitted_total`: Transaction submission counter
-- `mempool_size_gauge`: Mempool size gauge
-- `block_height_gauge`: Current block height
-- `block_exec_duration_seconds`: Block execution time histogram
-- `rpc_requests_total`: RPC request counter
-- `rpc_request_errors_total`: RPC error counter
-- `rpc_request_duration_seconds`: RPC latency histogram
-- `consensus_rounds_total`: Consensus round counter
-- `consensus_slashing_evidence_total`: Slashing evidence counter
+- `prime_chain_up`: Node liveness gauge
+- `prime_chain_blocks_produced_total`: Block production counter
+- `prime_chain_consensus_finalized`: Finalized block counter
+- `prime_chain_block_tx_count`: Transactions in the latest block
+- `prime_chain_mempool_size`: Mempool size gauge
+- `prime_chain_height`: Current block height
+- `prime_chain_block_execution_seconds`: Block execution time histogram
+- `prime_chain_rpc_requests`: RPC request counter
+- `prime_chain_rpc_errors`: RPC error counter
+- `prime_chain_rpc_duration_seconds`: RPC latency histogram
+- `prime_chain_consensus_rounds`: Consensus round counter
+- `prime_chain_slashing_events`: Slashing evidence counter
 
 ### 15.6 Testing Strategy
 
@@ -2678,14 +2630,14 @@ The following items from v5.0's roadmap have been implemented:
 - ✅ **TypeScript SDK**: `PrimeProvider` (JSON-RPC), `PrimeSubscription` (WebSocket), `PrimeOrders` (CLOB interaction), `PrimePrecompile` (ABI encoding for `0x0100`). 1,012 lines.
 - ✅ **Block Explorer**: Standalone dark-themed web UI for blocks, transactions, order book, validators, and search. 1,272 lines.
 - ✅ **Production Hardening**: Graceful shutdown (Ctrl+C handler), health check logging, startup banner, ZK checkpoint scheduling.
-- ✅ **Test Suite Expansion**: 72 tests passing (13 new integration tests covering redb lifecycle, parallel execution, WebSocket subscriptions, pipeline, ZK proofs, Noise encryption, FBA, and commit-reveal).
+- ✅ **Test Suite Expansion**: 241 tests passing (including integration tests covering redb lifecycle, parallel execution, WebSocket subscriptions, pipeline, ZK proofs, Noise encryption, FBA, and commit-reveal).
 
 ### 16.3 Short-Term (Months 1-3)
 
 - **Flat State Architecture**: Separate state storage from state trie computation. Store current account state in a flat key-value table; compute Merkle proofs only when needed (for light clients or bridges).
 - **Grafana Dashboards**: Pre-built dashboards for all Prometheus metrics.
-- **Cargo Workspace Restructure**: Migrate single-crate to multi-crate workspace (Reth pattern) for independent compilation and testing.
-- **SP1 ZK Integration**: Replace MockProver with SP1 zkVM for production-grade state transition proofs.
+- **Cargo Workspace Restructure** *(completed)*: The repository is now a six-crate workspace (`core`, `network`, `rpc`, `node`, `zkp`, `state-proof`) for independent compilation and testing.
+- **SP1 ZK Integration** *(underway)*: Replace MockProver with the SP1 zkVM for production-grade state transition proofs — the `prime-state-proof` crate ships the SP1 prover/verifier glue behind the `prover`/`sp1` feature flags.
 
 ### 16.4 Medium-Term (Months 4-6)
 
@@ -2704,7 +2656,7 @@ The following items from v5.0's roadmap have been implemented:
 - **DAG-Based Mempool**: Narwhal-style [11] DAG mempool for parallel data dissemination, eliminating redundant transaction broadcasts and enabling horizontal bandwidth scaling.
 - **Consensus Upgrade Path**: Evaluate Bullshark [11] and Shoal for DAG-based consensus with zero communication overhead, potentially achieving 40-80% latency reduction over HotStuff-2.
 - **State Sharding**: Partition PrimeOrders markets across shards for horizontal throughput scaling. Each shard processes its own order book independently; cross-shard trades use atomic commit protocols.
-- **SDK Expansion**: Client libraries in Python, Go, and Rust (TypeScript completed in v7.0).
+- **SDK Expansion**: Python (`sdk-python/`) and Go (`sdk-go/`) client libraries now ship alongside the TypeScript SDK; a Rust client library remains future work.
 - **Public Testnet**: Community-operated testnet with incentivized testing and bug bounties.
 - **Mainnet Launch**: Production deployment with genesis validator ceremony.
 
@@ -2911,7 +2863,7 @@ Mersennet v7.0 represents a production-grade blockchain architecture that unifie
 11. **Block Pipeline**: Overlapping execution and consensus for doubled effective throughput (Monad-class pipelining)
 12. **Developer Tooling**: TypeScript SDK (1,012 lines), Block Explorer (1,272 lines), WebSocket subscriptions for real-time events
 13. **Economic Security**: PoS with escalating slashing, insurance fund, auto-deleveraging, and halving token economics
-14. **Production Hardening**: Graceful shutdown, health checks, 72 tests passing, comprehensive benchmarks
+14. **Production Hardening**: Graceful shutdown, health checks, 241 tests passing, comprehensive benchmarks
 
 **Competitive positioning:**
 
@@ -3191,15 +3143,17 @@ $n$ = mempool/batch size, $k$ = txs per sender or parallel groups, $m$ = selecte
 |--------|-------------|
 | `primeorders_addMarket` | Creates new market |
 | `primeorders_submitOrder` | Submits limit order (continuous CLOB) |
-| `primeorders_submitBatchOrder` | Submits order to FBA batch *(v6.0)* |
 | `primeorders_cancelOrder` | Cancels order |
 | `primeorders_getOrderBook` | Returns order book |
 | `primeorders_getOpenOrders` | Returns user's open orders |
 | `primeorders_depositCollateral` | Deposits collateral |
-| `primeorders_withdrawCollateral` | Withdraws collateral (margin-checked) *(v6.0)* |
+| `primeorders_setMarginParams` | Sets market margin parameters |
+| `primeorders_isLiquidatable` | Checks if an account can be liquidated |
 | `primeorders_liquidate` | Liquidates undercollateralized account |
 
-**Bridge & MEV Methods:**
+Collateral withdrawal is performed via the CLOB precompile (`withdrawCollateral(uint256)` at `0x0100`), not a dedicated RPC method.
+
+**Bridge Methods:**
 
 | Method | Description |
 |--------|-------------|
@@ -3207,8 +3161,6 @@ $n$ = mempool/batch size, $k$ = txs per sender or parallel groups, $m$ = selecte
 | `primebridge_enqueueEvmToOrders` | Enqueues message to Orders |
 | `primebridge_dequeueOrdersToEvm` | Dequeues from Orders→EVM queue |
 | `primebridge_dequeueEvmToOrders` | Dequeues from EVM→Orders queue |
-| `prime_commitTransaction` | Submit commit hash for MEV protection *(v6.0)* |
-| `prime_revealTransaction` | Reveal committed transaction *(v6.0)* |
 
 **Ethereum Compatibility Layer:**
 

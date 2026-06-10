@@ -39,13 +39,13 @@ The TypeScript SDK ships the full pipeline so a wallet does not implement crypto
 ```ts
 import { scanAndReconstructBalances } from '@prime-chain/sdk';
 
-const portfolio = await scanAndReconstructBalances({
-  encryptedNotes,        // from prime_viewNotes / prime_getShieldedNotes
-  viewingMaterial,       // owner or grantee material
-  spentNullifiers,       // from the chain's nullifier set
-});
+const result = await scanAndReconstructBalances(
+  provider,          // PrimeProvider
+  viewingMaterial,   // GrantedViewingMaterial (owner or grantee)
+  { limit: 100 },    // options: drives a paged prime_viewBalances scan
+);
 
-console.log(portfolio.balances); // per-asset totals, spent notes excluded
+console.log(result.perAsset); // per-asset totals, spent notes excluded
 ```
 
 ## Why nullifiers matter here

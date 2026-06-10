@@ -6,7 +6,7 @@ title: "Deploy with Foundry"
 
 # Deploy with Foundry
 
-This guide explains how to build and deploy smart contracts to Mersennet using Foundry. **Important:** Mersennet uses a custom raw transaction format (not standard RLP), so `forge create` with `eth_sendRawTransaction` will not work. Use `eth_sendTransaction` or `prime_sendTransaction` instead.
+This guide explains how to build and deploy smart contracts to Mersennet using Foundry. Mersennet's `eth_sendRawTransaction` accepts standard Ethereum RLP-encoded transactions (legacy, EIP-2930, and EIP-1559) in addition to its own custom binary format, so `forge create` and `cast send` work with locally signed transactions.
 
 ## Prerequisites
 
@@ -37,24 +37,26 @@ prime_testnet = "http://46.225.30.187:8545"
 forge build
 ```
 
-Use the `--legacy` flag if your tooling expects legacy transaction format:
+## Deploy with forge create
 
 ```bash
-forge build --legacy
+forge create src/MyToken.sol:MyToken \
+  --rpc-url http://46.225.30.187:8545 \
+  --private-key $PRIVATE_KEY \
+  --legacy \
+  --constructor-args 1000000
 ```
 
-## Deployment Limitation
+The `--legacy` flag is recommended: Mersennet implements an EIP-1559 base fee but no priority tip (`eth_maxPriorityFeePerGas` returns `0x0`), so legacy gas-price transactions are the simplest fit.
 
-Mersennet does **not** support standard RLP-encoded raw transactions via `eth_sendRawTransaction`. Tools that sign transactions locally and send them as raw hex (including `forge create`) will fail.
-
-**Supported deployment methods:**
+**Other deployment methods:**
 
 - `eth_sendTransaction` — Requires the RPC node to have the deployer account unlocked
 - `prime_sendTransaction` — Mersennet–specific method for sending transactions
 
 ## Node.js Deployment Helper
 
-Use a Node.js script with ethers.js to deploy via `eth_sendTransaction` (with a wallet) or by having the node sign for an unlocked account.
+Alternatively, use a Node.js script with ethers.js, which signs locally and submits via `eth_sendRawTransaction`.
 
 ### 1. Create a deploy script
 
@@ -134,12 +136,12 @@ PRIVATE_KEY=0x_your_key node deploy-with-forge-artifacts.js
 ```
 
 :::tip
-ethers.js v6 uses `eth_sendTransaction` under the hood when you call `contract.deploy()`. The library signs the transaction and sends it. However, if Mersennet expects a custom format for `eth_sendRawTransaction`, ethers may still use that. In that case, ensure your RPC supports `eth_sendTransaction` with a signed payload, or use a node with an unlocked account for deployment.
+ethers.js v6 signs the transaction locally and submits it with `eth_sendRawTransaction`. Mersennet accepts standard Ethereum RLP-encoded transactions, so this works out of the box.
 :::
 
-## Alternative: Cast for Read-Only Operations
+## Cast
 
-For read-only operations, `cast` works normally:
+`cast` works for both reads and writes:
 
 ```bash
 # Get balance
@@ -150,16 +152,20 @@ cast call 0xContractAddress "totalSupply()(uint256)" --rpc-url http://46.225.30.
 
 # Get chain ID
 cast chain-id --rpc-url http://46.225.30.187:8545
+
+# Send a transaction (signed locally)
+cast send 0xRecipient --value 1ether --legacy \
+  --rpc-url http://46.225.30.187:8545 --private-key $PRIVATE_KEY
 ```
 
 ## Summary
 
 | Operation | Supported | Notes |
 |-----------|-----------|-------|
-| `forge build` | ✅ | Use `--legacy` if needed |
+| `forge build` | ✅ | |
 | `forge test` | ✅ | Against local Anvil or Prime RPC |
-| `forge create` | ❌ | Custom tx format; use Node.js helper |
+| `forge create` | ✅ | Use `--legacy` |
 | `cast call` | ✅ | Read-only |
-| `cast send` | ❌ | Same limitation as `forge create` |
-| `eth_sendTransaction` | ✅ | Use for deployment |
-| `eth_feeHistory` | ❌ | Not supported on Mersennet |
+| `cast send` | ✅ | Use `--legacy` |
+| `eth_sendTransaction` | ✅ | Alternative when the node has an unlocked account |
+| `eth_feeHistory` | ✅ | Supported (priority fee rewards are always 0) |
