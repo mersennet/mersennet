@@ -134,7 +134,7 @@ mersennet/
 
 | Repo | Purpose | Status |
 |------|---------|--------|
-| [`mersennet`](https://github.com/PrimeNumbersLabs/mersennet) | Core blockchain + all testnet apps (monorepo) | **Active** — main development |
+| [`mersennet`](https://github.com/mersennet/mersennet) | Core blockchain + all testnet apps (monorepo) | **Active** — main development |
 | [`primescan-explorer`](https://github.com/PrimeNumbersLabs/primescan-explorer) | Block explorer (standalone) | Synced from monorepo `explorer/` |
 | [`primeswap-dex`](https://github.com/PrimeNumbersLabs/primeswap-dex) | DEX frontend (standalone) | Synced from monorepo `dex/` |
 | [`primenodes-dashboard`](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator dashboard (standalone) | Synced from monorepo `validator-explorer/` |

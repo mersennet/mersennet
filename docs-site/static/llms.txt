@@ -59,4 +59,4 @@
 - WebSocket: ws://46.225.30.187:8546
 - Block Explorer: http://46.225.30.187
 - Faucet: http://46.225.30.187:4003
-- GitHub: https://github.com/PrimeNumbersLabs/mersennet
+- GitHub: https://github.com/mersennet/mersennet

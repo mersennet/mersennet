@@ -63,4 +63,4 @@ Mersennet is preparing a formal bug bounty program. The following is an outline 
 
 ## Security Advisories
 
-Security advisories will be published at [Mersennet GitHub Security Advisories](https://github.com/PrimeNumbersLabs/mersennet/security/advisories) (or equivalent) when applicable.
+Security advisories will be published at [Mersennet GitHub Security Advisories](https://github.com/mersennet/mersennet/security/advisories) (or equivalent) when applicable.
