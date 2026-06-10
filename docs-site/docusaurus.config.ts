@@ -57,7 +57,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/',
-          editUrl: 'https://github.com/mersennet/mersennet/tree/main/docs-site/',
+          editUrl: 'https://github.com/mersennet/docs/tree/main/',
           showLastUpdateTime: true,
           remarkPlugins: [remarkMath],
           rehypePlugins: [rehypeKatex],
