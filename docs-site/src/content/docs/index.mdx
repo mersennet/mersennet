@@ -1,0 +1,54 @@
+---
+title: Mersennet Documentation
+description: Build private DeFi on a zero-knowledge EVM Layer 1 — shielded accounts, a native on-chain order book, and SP1-proven state.
+template: splash
+hero:
+  title: Build on the private, verifiable network.
+  tagline: Mersennet is a zero-knowledge EVM Layer 1 — account-level privacy, a native on-chain order book at precompile 0x0100, and every block proven with SP1. Your Solidity stack works unchanged.
+  actions:
+    - text: Start building
+      link: /developers/quick-start/hardhat/
+      icon: right-arrow
+      variant: primary
+    - text: Explore the network
+      link: /getting-started/network-info/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="Deploy in minutes" icon="rocket">
+    Hardhat, Foundry, ethers — unchanged. Chain ID `131071`, ~1s blocks, EVM Shanghai.
+
+    [Deploy with Hardhat](/developers/quick-start/hardhat/) ·
+    [Deploy with Foundry](/developers/quick-start/foundry/)
+  </Card>
+  <Card title="Go private" icon="seti:lock">
+    Shielded accounts, note scanning, and ZK risk checks — proofs built in the browser, keys never leave the device.
+
+    [Privacy overview](/privacy/overview/) ·
+    [Shielded SDK](/developers/privacy/shielded-sdk/)
+  </Card>
+  <Card title="Trade on-chain" icon="random">
+    A native order book exposed to Solidity through precompile `0x0100` — atomic placement and fills in one transaction.
+
+    [PrimeOrders architecture](/architecture/prime-orders/) ·
+    [DeFi integration](/developers/contracts/defi-integration/)
+  </Card>
+  <Card title="Run a validator" icon="seti:powershell">
+    Stake MRSN, secure the network, and earn block rewards on a HotStuff-2 BFT chain.
+
+    [Run a node](/validators/run-a-node/) ·
+    [Staking guide](/validators/staking/)
+  </Card>
+</CardGrid>
+
+## Quick links
+
+<CardGrid>
+  <LinkCard title="Network information" description="RPC endpoints, chain ID, faucet, and explorer." href="/getting-started/network-info/" />
+  <LinkCard title="JSON-RPC reference" description="Every eth_* and prime_* method, with examples." href="/developers/rpc/methods/" />
+  <LinkCard title="Whitepaper" description="Consensus, matching engine, shielded state, and proofs." href="/whitepaper/" />
+  <LinkCard title="Tokenomics" description="MRSN supply, emission schedule, and validator rewards." href="/architecture/tokenomics/" />
+</CardGrid>

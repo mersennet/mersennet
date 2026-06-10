@@ -1,7 +1,7 @@
 # Shielded JSON-RPC + WebSocket Reference
 
 **Audience:** SDK authors, wallet developers, indexers.
-**Chain:** 7920 (privacy testnet) and 7919 (post-hard-fork mainnet).
+**Chain:** 7920 (privacy testnet), 131071 (transparent testnet), and 8191 (mainnet, post-hard-fork).
 **Pre-activation:** All mutation methods return `-32605` ("disabled
 in current chain mode"). Read methods return zero/empty values until
 the activation height is reached.
@@ -15,7 +15,7 @@ For the formal cryptographic definitions of every blob below, see
 
 All opaque ZK payloads — proofs, encrypted blobs, intent envelopes —
 are encoded as `bincode` over the typed Rust struct, then 0x-hex.
-A wallet that imports the [`prime-chain SDK`](../sdk/) gets these
+A wallet that imports the [`mersennet SDK`](../sdk/) gets these
 encoders for free.
 
 Field names use camelCase in JSON to match Ethereum conventions.
@@ -24,13 +24,13 @@ Field names use camelCase in JSON to match Ethereum conventions.
 
 ## 2. Shielded RPC methods
 
-### `prime_getChainConfig()`
+### `prime_getChainConfig()` *(planned — not yet implemented; use `mersennetId` / `eth_chainId` today)*
 
 Returns the chain ID, privacy activation height, and feature flags.
 
 ```json
 {
-  "chainId": "0x1ef0",            // 7920
+  "chainId": "0x1ef0",            // 131071
   "privacyModeActivated": false,
   "privacyActivationHeight": 100,
   "dkg": { "epochLengthBlocks": 1800, "k": 5, "n": 7 }
@@ -96,7 +96,7 @@ victim's nullifier, mints the bounty + insurance commitments.
 ### `prime_registerLiquidator({ bondCommitment, bondAmount })`
 
 One-time registration with a Pedersen bond commitment. Requires
-`bondAmount >= MIN_LIQUIDATOR_BOND` (10,000 PRIM at 18 decimals).
+`bondAmount >= MIN_LIQUIDATOR_BOND` (10,000 MRSN at 18 decimals).
 
 ### `prime_getStateProof(blockNumberOrTag?)`
 
@@ -188,15 +188,13 @@ wscat -c ws://localhost:8546
 
 | Code | Meaning |
 |---|---|
-| `-32600` | Invalid request |
+| `-32700` | Parse error (invalid JSON) |
 | `-32601` | Method not found |
-| `-32602` | Invalid params |
-| `-32603` | Internal error |
+| `-32602` | Invalid params (malformed envelopes, missing fields, bad bincode) |
+| `-32604` | Forbidden (viewing-key grant missing, expired, or revoked) |
 | `-32605` | **Method disabled in current chain mode** (privacy mode inactive) |
-| `-32606` | Proof rejected by verifier |
-| `-32607` | Stale anchor root (note tree advanced past the wallet's snapshot) |
-| `-32608` | Double-spend (nullifier already in the set) |
-| `-32609` | Liquidator not registered / bond below minimum |
+| `-32000` | Internal / engine rejection — proof rejected, stale anchor root, double-spend (nullifier already in the set), unregistered or under-bonded liquidator; the specific reason is in the error message |
+| `-32005` | Transaction rejected (with `reason` in data) |
 
 ---
 

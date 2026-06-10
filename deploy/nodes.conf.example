@@ -1,4 +1,4 @@
-# Prime Chain Testnet Node Configuration
+# Mersennet Testnet Node Configuration
 # Copy this file to nodes.conf and fill in your VPS IPs.
 # cp deploy/nodes.conf.example deploy/nodes.conf
 
@@ -14,8 +14,8 @@ PUBLIC_NODE=
 # SSH user (default: root for Hetzner)
 SSH_USER=root
 
-# Chain configuration
-CHAIN_ID=7919
+# Chain configuration (testnet = 131071, the Mersenne prime 2^17-1)
+CHAIN_ID=131071
 BLOCK_TIME_MS=2000
 
 # Optional: domain for TLS on public RPC (e.g. rpc.primechain.io)

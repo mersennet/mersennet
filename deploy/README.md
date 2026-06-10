@@ -1,4 +1,4 @@
-# Prime Chain Testnet Deployment
+# Mersennet Testnet Deployment
 
 One-command deployment of a 4-validator + 1 public-node testnet to Hetzner VPS.
 
@@ -37,7 +37,8 @@ One-command deployment of a 4-validator + 1 public-node testnet to Hetzner VPS.
 ## Quick Start
 
 ```bash
-# 1. Edit the config with your VPS IPs
+# 1. Copy the example config and fill in your VPS IPs
+cp deploy/nodes.conf.example deploy/nodes.conf
 nano deploy/nodes.conf
 
 # 2. Deploy everything (builds, generates genesis, deploys to all 5 nodes)
@@ -81,7 +82,7 @@ That's it. The script will:
 |---------|-----|
 | JSON-RPC | `http://<PUBLIC_IP>:8545` |
 | Faucet | `http://<PUBLIC_IP>:8080` |
-| Grafana | `http://<PUBLIC_IP>:3000` (admin/primechain) |
+| Grafana | `http://<PUBLIC_IP>:3000` (admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`) |
 | Prometheus | `http://<PUBLIC_IP>:9090` |
 | Metrics | `http://<PUBLIC_IP>:8545/metrics` |
 
@@ -110,14 +111,14 @@ Point DNS A records to `PUBLIC_NODE` IP. Caddy auto-provisions Let's Encrypt cer
 
 ```bash
 # Check service status on a node
-ssh root@<IP> systemctl status prime-chain
+ssh root@<IP> systemctl status mersennet
 
 # View full logs
-ssh root@<IP> journalctl -u prime-chain -n 100 --no-pager
+ssh root@<IP> journalctl -u mersennet -n 100 --no-pager
 
 # Check disk usage
-ssh root@<IP> du -sh /opt/prime-chain/data/
+ssh root@<IP> du -sh /opt/mersennet/data/
 
 # Manual restart
-ssh root@<IP> systemctl restart prime-chain
+ssh root@<IP> systemctl restart mersennet
 ```

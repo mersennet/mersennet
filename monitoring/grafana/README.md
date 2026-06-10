@@ -1,10 +1,10 @@
-# Prime Chain Grafana Dashboards
+# Mersennet Grafana Dashboards
 
-This directory contains Grafana dashboard JSON files for monitoring Prime Chain nodes.
+This directory contains Grafana dashboard JSON files for monitoring Mersennet nodes.
 
 ## Dashboards
 
-### Prime Chain Overview (`prime-chain-overview.json`)
+### Mersennet Overview (`mersennet-overview.json`)
 Comprehensive overview of chain health, throughput, execution engine, CLOB, and consensus:
 
 - **Chain Health**: Blocks produced, block height, node uptime, block time
@@ -13,7 +13,7 @@ Comprehensive overview of chain health, throughput, execution engine, CLOB, and 
 - **PrimeOrders CLOB**: Orders matched, active markets, CLOB activity
 - **Consensus & Network**: Consensus rounds, validators, finalization, RPC messages
 
-### Prime Chain Performance (`prime-chain-performance.json`)
+### Mersennet Performance (`mersennet-performance.json`)
 Performance-focused metrics:
 
 - **EVM TPS**: Transaction throughput over time
@@ -28,7 +28,7 @@ Performance-focused metrics:
 ### Option 1: Manual Import (UI)
 
 1. Start Grafana (see `../docker-compose.monitoring.yml`)
-2. Log in (default: admin / primechain)
+2. Log in (default: admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`)
 3. Go to **Dashboards** → **Import**
 4. Click **Upload JSON file** and select a dashboard file
 5. Select your Prometheus datasource from the dropdown
@@ -36,19 +36,14 @@ Performance-focused metrics:
 
 ### Option 2: Provisioning (Automatic)
 
-1. Copy dashboards to Grafana's provisioning directory:
-   ```bash
-   mkdir -p monitoring/grafana/provisioning/dashboards
-   cp monitoring/grafana/prime-chain-*.json monitoring/grafana/provisioning/dashboards/
-   ```
-
-2. Create `monitoring/grafana/provisioning/dashboards/dashboards.yml`:
+1. The provisioning config is already checked in at
+   `monitoring/grafana/provisioning/dashboards/dashboards.yml`:
    ```yaml
    apiVersion: 1
    providers:
-     - name: 'Prime Chain'
+     - name: 'Mersennet'
        orgId: 1
-       folder: 'Prime Chain'
+       folder: 'Mersennet'
        type: file
        disableDeletion: false
        updateIntervalSeconds: 30
@@ -56,20 +51,22 @@ Performance-focused metrics:
          path: /var/lib/grafana/dashboards
    ```
 
-3. Mount the provisioning path in docker-compose (see `docker-compose.monitoring.yml`)
+2. Mount the provisioning path and the dashboard JSON files in
+   docker-compose (see `../docker-compose.monitoring.yml`, which mounts
+   this directory at `/var/lib/grafana/dashboards`)
 
 ### Option 3: Grafana API
 
 ```bash
 curl -X POST -H "Content-Type: application/json" \
-  -d @monitoring/grafana/prime-chain-overview.json \
-  -u admin:primechain \
+  -d @monitoring/grafana/mersennet-overview.json \
+  -u admin:changeme \
   http://localhost:3000/api/dashboards/db
 ```
 
 ## Prerequisites
 
-- **Prometheus** must be scraping the Prime Chain node's `/metrics` endpoint
+- **Prometheus** must be scraping the Mersennet node's `/metrics` endpoint
 - Configure the Prometheus datasource in Grafana to point to your Prometheus instance (default: `http://prometheus:9090` when using docker-compose)
 
 ## Datasource Variable

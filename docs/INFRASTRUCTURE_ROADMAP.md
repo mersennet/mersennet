@@ -1,14 +1,14 @@
-# Prime Chain Infrastructure Roadmap
+# Mersennet Infrastructure Roadmap
 
 **Version:** 1.0
 **Period:** 12 months (Q1 2026 -- Q1 2027)
-**Target:** Mainnet launch (Chain ID 13370) by end of Q4
+**Target:** Mainnet launch (Chain ID 8191) by end of Q4
 
 ---
 
 ## Executive Summary
 
-This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4 validators on Hetzner VPS) to a production-grade mainnet with 21+ validators, a complete developer ecosystem, and institutional-grade operations. The plan is conservative by design: the first three quarters focus on hardening, testing, and security, with mainnet launch gated by a completed external audit.
+This roadmap defines a 4-quarter path from the current testnet (Chain ID 131071, 4 validators on Hetzner VPS) to a production-grade mainnet with 21+ validators, a complete developer ecosystem, and institutional-grade operations. The plan is conservative by design: the first three quarters focus on hardening, testing, and security, with mainnet launch gated by a completed external audit.
 
 ---
 
@@ -73,9 +73,9 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Location | Description |
 |------|----------|-------------|
-| Docker image CI | `.github/workflows/ci.yml` | Build multi-arch Docker images on push/tag. Push to GitHub Container Registry (`ghcr.io/primenumberslabs/prime-chain`). |
+| Docker image CI | `.github/workflows/ci.yml` | Build multi-arch Docker images on push/tag. Push to GitHub Container Registry (`ghcr.io/primenumberslabs/mersennet`). |
 | Integration test job | `.github/workflows/integration.yml` | Spin up 3-node Docker testnet in CI. Run RPC conformance test suite against it (eth_* method coverage). |
-| Contract test suite | `contracts/test/` | Hardhat/Foundry tests for WPRIM, PrimeSwapFactory, PrimeSwapRouter, MockERC20 tokens. Cover swap, liquidity, edge cases. |
+| Contract test suite | `contracts/test/` | Hardhat/Foundry tests for WMRSN, PrimeSwapFactory, PrimeSwapRouter, MockERC20 tokens. Cover swap, liquidity, edge cases. |
 | Release automation | `.github/workflows/release.yml` | Tag-based builds. Auto-generate changelog from conventional commits. Attach binaries + Docker tags to GitHub Releases. |
 | Benchmark regression | `.github/workflows/ci.yml` | Run `tps_bench` and `parallel_bench` in CI. Fail if TPS drops below threshold. Store results as artifacts for trend tracking. |
 
@@ -120,7 +120,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Description |
 |------|-------------|
-| Testnet bridge | Prime Chain (7919) <-> Sepolia bridge. Lock-and-mint architecture for ETH and ERC-20 tokens. Relayer service. |
+| Testnet bridge | Mersennet (131071) <-> Sepolia bridge. Lock-and-mint architecture for ETH and ERC-20 tokens. Relayer service. |
 | Bridge monitoring | Dashboard for bridge balances, pending transfers, relayer health. Alerts for stuck transactions or balance discrepancies. |
 | Audit preparation | Document bridge contract architecture, threat model, and known risks. Prepare scope for inclusion in the security audit. |
 
@@ -128,10 +128,10 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Description |
 |------|-------------|
-| TypeScript SDK | Publish `@primechain/sdk` to npm. Wraps ethers.js/viem with Prime Chain defaults (chain config, PrimeOrders ABI, contract addresses). |
-| Python SDK | Publish `primechain` to PyPI. Web3.py wrapper with PrimeOrders support. |
+| TypeScript SDK | Publish `@mersennet/sdk` to npm. Wraps ethers.js/viem with Mersennet defaults (chain config, PrimeOrders ABI, contract addresses). |
+| Python SDK | Publish `mersennet-sdk` to PyPI. Web3.py wrapper with PrimeOrders support. |
 | SDK documentation | API reference, getting-started guide, code examples for common operations (connect, send tx, call PrimeOrders, read events). |
-| Hardhat plugin | `@primechain/hardhat-plugin`: auto-configure network, deploy helpers, PrimeOrders task integration. |
+| Hardhat plugin | `@mersennet/hardhat-plugin`: auto-configure network, deploy helpers, PrimeOrders task integration. |
 
 ### 2.4 Security Hardening
 
@@ -156,7 +156,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 - [ ] Indexer service live with GraphQL API
 - [ ] `debug_traceTransaction` and `trace_block` implemented
-- [ ] Testnet bridge (Prime Chain <-> Sepolia) operational
+- [ ] Testnet bridge (Mersennet <-> Sepolia) operational
 - [ ] TypeScript SDK published to npm
 - [ ] Python SDK published to PyPI
 - [ ] Hardhat plugin published
@@ -238,7 +238,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 |------|-------------|
 | Audit remediation verification | All critical and high-severity findings resolved. Re-verified by auditor or internal review. |
 | Genesis validator set | Minimum 7 validators confirmed. Target 21. Hardware requirements met (`mainnet/validator-requirements.md`: 16+ cores, 64 GB RAM, 2 TB NVMe). |
-| Genesis ceremony | Multi-party genesis generation. Each validator generates keys independently. Genesis block assembled from validator registrations. Chain ID 13370. |
+| Genesis ceremony | Multi-party genesis generation. Each validator generates keys independently. Genesis block assembled from validator registrations. Chain ID 8191. |
 | Stress test | Sustained load test for 72+ hours. Target: 1,000+ TPS with mixed workload (transfers, DEX swaps, PrimeOrders). Monitor for memory leaks, state bloat, consensus liveness. |
 | Mainnet dry run | Deploy mainnet binary on an isolated network. Run through the full launch sequence. Verify monitoring, alerting, and incident response procedures. |
 
@@ -246,10 +246,10 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 
 | Task | Description |
 |------|-------------|
-| Genesis block | Mainnet genesis block produced. Chain ID 13370. Initial token distribution per tokenomics (700M block rewards pool, team/foundation/ecosystem allocations). |
+| Genesis block | Mainnet genesis block produced. Chain ID 8191. Initial token distribution per tokenomics (700M block rewards pool, team/foundation/ecosystem allocations). |
 | Validator monitoring | 24/7 monitoring with on-call rotation. Alert escalation path defined and tested. |
 | Ecosystem apps on mainnet | Explorer, DEX, validator dashboard, docs all pointed to mainnet. Testnet versions remain available on separate URLs. |
-| Bridge activation | Prime Chain <-> Ethereum mainnet bridge. Start with ETH and USDC. Conservative initial limits. |
+| Bridge activation | Mersennet <-> Ethereum mainnet bridge. Start with ETH and USDC. Conservative initial limits. |
 | SDK mainnet update | SDK packages updated with mainnet chain config, contract addresses, and RPC endpoints. |
 | Documentation update | All docs updated for mainnet: network info, contract addresses, wallet setup, developer guides. Testnet docs moved to a "Testnet" section. |
 
@@ -268,10 +268,10 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 - [ ] All audit findings resolved and verified
 - [ ] Genesis ceremony complete
 - [ ] 72-hour stress test passed
-- [ ] Mainnet genesis block (Chain ID 13370)
+- [ ] Mainnet genesis block (Chain ID 8191)
 - [ ] 21+ validators active
 - [ ] Explorer, DEX, dashboard live on mainnet
-- [ ] Bridge active (Prime Chain <-> Ethereum)
+- [ ] Bridge active (Mersennet <-> Ethereum)
 - [ ] SDKs updated for mainnet
 - [ ] 30-day stability window completed at 99.9% uptime
 - [ ] First governance proposal executed

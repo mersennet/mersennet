@@ -36,7 +36,7 @@
 use crate::shielded_state::ShieldedState;
 use k256::ecdsa::signature::hazmat::PrehashVerifier;
 use k256::ecdsa::{Signature, VerifyingKey};
-use prime_zkp::{
+use mersennet_zkp::{
     Fr, NoteCommitment, Nullifier,
     noir::{Circuit, CircuitProof, Verifier, VerifyError, default_verifier},
 };
@@ -46,7 +46,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 #[cfg(test)]
-use prime_zkp::noir::MockVerifier;
+use mersennet_zkp::noir::MockVerifier;
 
 /// EIP-2718 type byte for shielded transactions.
 pub const SHIELDED_TX_TYPE: u8 = 0x7E;
@@ -391,7 +391,7 @@ impl ShieldedEvm {
         // 2. Verify the output circuit proof.
         let public_inputs = vec![
             tx.output_commitment,
-            Fr::ZERO, // asset_id = 0 (native PRIM); a real impl reads from `tx`
+            Fr::ZERO, // asset_id = 0 (native MRSN); a real impl reads from `tx`
             Fr::from_u64(u256_low(&tx.amount)),
         ];
         self.verifier
@@ -487,14 +487,14 @@ impl MigrationPlan {
             // locally without any on-chain link.
             let rho = derive_migration_rho(owner, self.activation_height);
             let psi = derive_migration_psi(owner, self.activation_height);
-            let note = prime_zkp::note::Note {
+            let note = mersennet_zkp::note::Note {
                 value: u256_low(&amount) as u128,
                 asset_id: 0,
                 owner_pk,
                 rho,
                 psi,
             };
-            let cm = note.commit(&prime_zkp::poseidon::Poseidon::default());
+            let cm = note.commit(&mersennet_zkp::poseidon::Poseidon::default());
             let _ = evm.state.insert_note(cm)?;
             // Clear the transparent balance; from now on the funds
             // live as a shielded note.
@@ -530,8 +530,8 @@ fn derive_migration_psi(source_eoa: Address, height: u64) -> Fr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prime_zkp::note::Note;
-    use prime_zkp::poseidon::Poseidon;
+    use mersennet_zkp::note::Note;
+    use mersennet_zkp::poseidon::Poseidon;
 
     #[test]
     fn shield_round_trip() {

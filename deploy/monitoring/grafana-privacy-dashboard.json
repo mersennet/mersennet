@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Prime Chain privacy testnet (chain ID 7920) — operator dashboard. All panels obey CI K2: no address labels.",
+  "description": "Mersennet privacy testnet (chain ID 7920) — operator dashboard. All panels obey CI K2: no address labels.",
   "editable": false,
   "graphTooltip": 1,
   "id": null,
@@ -13,7 +13,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_privacy_mode_active",
+          "expr": "mersennet_privacy_mode_active",
           "legendFormat": "active",
           "refId": "A"
         }
@@ -31,7 +31,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_height",
+          "expr": "mersennet_height",
           "legendFormat": "height",
           "refId": "A"
         }
@@ -44,7 +44,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_validators_active",
+          "expr": "mersennet_validators_active",
           "refId": "A"
         }
       ],
@@ -56,7 +56,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_privacy_activation_height",
+          "expr": "mersennet_privacy_activation_height",
           "refId": "A"
         }
       ],
@@ -68,7 +68,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_threshold_mempool_pending",
+          "expr": "mersennet_threshold_mempool_pending",
           "legendFormat": "pending",
           "refId": "A"
         }
@@ -81,12 +81,12 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_shielded_notes_total",
+          "expr": "mersennet_shielded_notes_total",
           "legendFormat": "notes",
           "refId": "A"
         },
         {
-          "expr": "prime_chain_shielded_nullifiers_total",
+          "expr": "mersennet_shielded_nullifiers_total",
           "legendFormat": "nullifiers",
           "refId": "B"
         }
@@ -99,7 +99,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "rate(prime_chain_shielded_root_advanced_total[1m])",
+          "expr": "rate(mersennet_shielded_root_advanced_total[1m])",
           "legendFormat": "roots/sec",
           "refId": "A"
         }
@@ -112,17 +112,17 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(prime_chain_threshold_decryption_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(mersennet_threshold_decryption_seconds_bucket[5m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(prime_chain_threshold_decryption_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(mersennet_threshold_decryption_seconds_bucket[5m]))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(prime_chain_threshold_decryption_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(mersennet_threshold_decryption_seconds_bucket[5m]))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -135,7 +135,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "rate(prime_chain_fba_cleared_total[1m])",
+          "expr": "rate(mersennet_fba_cleared_total[1m])",
           "legendFormat": "market {{market_id}}",
           "refId": "A"
         }
@@ -148,7 +148,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "prime_chain_fba_clearing_price",
+          "expr": "mersennet_fba_clearing_price",
           "legendFormat": "market {{market_id}}",
           "refId": "A"
         }
@@ -161,12 +161,12 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "rate(prime_chain_liquidation_claims_received_total[5m])",
+          "expr": "rate(mersennet_liquidation_claims_received_total[5m])",
           "legendFormat": "claims/s",
           "refId": "A"
         },
         {
-          "expr": "rate(prime_chain_liquidation_auctions_settled_total[5m])",
+          "expr": "rate(mersennet_liquidation_auctions_settled_total[5m])",
           "legendFormat": "settlements/s",
           "refId": "B"
         }
@@ -179,17 +179,17 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "rate(prime_chain_dkg_ceremonies_started_total[5m])",
+          "expr": "rate(mersennet_dkg_ceremonies_started_total[5m])",
           "legendFormat": "started/s",
           "refId": "A"
         },
         {
-          "expr": "rate(prime_chain_dkg_ceremonies_completed_total[5m])",
+          "expr": "rate(mersennet_dkg_ceremonies_completed_total[5m])",
           "legendFormat": "completed/s",
           "refId": "B"
         },
         {
-          "expr": "rate(prime_chain_dkg_complaints_total[5m])",
+          "expr": "rate(mersennet_dkg_complaints_total[5m])",
           "legendFormat": "complaints/s",
           "refId": "C"
         }
@@ -202,12 +202,12 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(prime_chain_state_proof_generation_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(mersennet_state_proof_generation_seconds_bucket[5m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(prime_chain_state_proof_generation_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(mersennet_state_proof_generation_seconds_bucket[5m]))",
           "legendFormat": "p95",
           "refId": "B"
         }
@@ -220,7 +220,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "increase(prime_chain_state_proofs_attached_total[1m])",
+          "expr": "increase(mersennet_state_proofs_attached_total[1m])",
           "legendFormat": "proofs",
           "refId": "A"
         }
@@ -230,9 +230,9 @@
   ],
   "refresh": "10s",
   "schemaVersion": 39,
-  "tags": ["prime-chain", "privacy", "testnet", "chain-7920"],
+  "tags": ["mersennet", "privacy", "testnet", "chain-7920"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
-  "title": "Prime Chain — Privacy Testnet",
+  "title": "Mersennet — Privacy Testnet",
   "version": 1
 }

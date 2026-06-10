@@ -38,8 +38,8 @@ Provide a dual-system chain: **PrimeOrders** (high‑throughput order book + ris
   - `primeorders_cancelOrder`
   - `primeorders_getOrderBook`
   - `primeorders_getOpenOrders`
-  - `primeorders_getPositions`
-  - `primeorders_getTrades`
+  - `primeorders_getPositions` *(planned — not yet implemented)*
+  - `primeorders_getTrades` *(planned — not yet implemented)*
 - **PrimeEVM**
   - Keep existing JSON‑RPC methods for EVM.
 
@@ -175,12 +175,12 @@ Use the CLI to stream state snapshots over TCP in chunks with hash verification.
 
 **Serve a snapshot**:
 ```
-prime-chain --snapshot-listen 127.0.0.1:43000
+mersennet --snapshot-listen 127.0.0.1:43000
 ```
 
 **Fetch a snapshot**:
 ```
-prime-chain --snapshot-fetch 127.0.0.1:43000 --snapshot-out snapshot.bin
+mersennet --snapshot-fetch 127.0.0.1:43000 --snapshot-out snapshot.bin
 ```
 
 **Optional tuning**:

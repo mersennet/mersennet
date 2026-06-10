@@ -1,6 +1,6 @@
-# Prime Chain (PRIM) Tokenomics
+# Mersennet (MRSN) Tokenomics
 
-Complete technical documentation of PRIM token economics, emission schedule, allocations, validator incentives, and slashing mechanics.
+Complete technical documentation of MRSN token economics, emission schedule, allocations, validator incentives, and slashing mechanics.
 
 ---
 
@@ -8,12 +8,12 @@ Complete technical documentation of PRIM token economics, emission schedule, all
 
 | Parameter | Value |
 |-----------|-------|
-| **Token Name** | Prime Chain |
-| **Ticker** | PRIM |
+| **Token Name** | Mersennet |
+| **Ticker** | MRSN |
 | **Total Supply** | 1,000,000,000 (1 Billion) |
-| **Decimal Places** | 18 (1 PRIM = 10^18 wei) |
-| **Consensus** | Proof-of-Stake (Tendermint BFT) |
-| **Block Time** | ~2 seconds |
+| **Decimal Places** | 18 (1 MRSN = 10^18 wei) |
+| **Consensus** | Proof-of-Stake (HotStuff-2 BFT) |
+| **Block Time** | ~1 second (default) |
 
 ---
 
@@ -21,7 +21,7 @@ Complete technical documentation of PRIM token economics, emission schedule, all
 
 | Category | Percentage | Tokens | Vesting Schedule |
 |----------|-----------|--------|-----------------|
-| **Block Rewards** | 70% | 700,000,000 | Halving every ~2.2 years (see §3) |
+| **Block Rewards** | 70% | 700,000,000 | Halving every 35M blocks (~1.1 years at 1 s blocks) (see §3) |
 | **Ecosystem & Grants** | 10% | 100,000,000 | 5-year linear from TGE |
 | **Foundation Reserve** | 10% | 100,000,000 | 1-year cliff + 4-year linear |
 | **Team & Core Contributors** | 5% | 50,000,000 | 1-year cliff + 3-year linear |
@@ -55,10 +55,10 @@ Combined private and public sale allocation for fundraising. 6-month cliff follo
 
 | Parameter | Value |
 |-----------|-------|
-| **Block Rewards Pool** | 700,000,000 PRIM |
-| **Initial Reward** | 10 PRIM per block |
-| **Halving Interval** | 35,000,000 blocks (~2.22 years at 2s) |
-| **Block Time** | ~2 seconds |
+| **Block Rewards Pool** | 700,000,000 MRSN |
+| **Initial Reward** | 10 MRSN per block |
+| **Halving Interval** | 35,000,000 blocks (~1.1 years at the 1 s default block time) |
+| **Block Time** | ~1 second (config default; mainnet genesis currently specifies 200 ms — see note below) |
 
 ### 3.2 Halving Curve
 
@@ -67,37 +67,41 @@ Rewards follow a Bitcoin-style halving schedule:
 ```
 Era   Block Range                  Reward/Block    Minted in Era
 ───   ───────────────────────────  ────────────    ─────────────
-0     0 — 34,999,999              10 PRIM         350,000,000
-1     35,000,000 — 69,999,999      5 PRIM         175,000,000
-2     70,000,000 — 104,999,999     2.5 PRIM        87,500,000
-3     105,000,000 — 139,999,999    1.25 PRIM       43,750,000
-4     140,000,000 — 174,999,999    0.625 PRIM      21,875,000
-5     175,000,000 — 209,999,999    0.3125 PRIM     10,937,500
-6     210,000,000 — 244,999,999    0.15625 PRIM     5,468,750
+0     0 — 34,999,999              10 MRSN         350,000,000
+1     35,000,000 — 69,999,999      5 MRSN         175,000,000
+2     70,000,000 — 104,999,999     2.5 MRSN        87,500,000
+3     105,000,000 — 139,999,999    1.25 MRSN       43,750,000
+4     140,000,000 — 174,999,999    0.625 MRSN      21,875,000
+5     175,000,000 — 209,999,999    0.3125 MRSN     10,937,500
+6     210,000,000 — 244,999,999    0.15625 MRSN     5,468,750
 ...   (continues halving)
 ```
 
-The geometric series converges to exactly 700,000,000 PRIM:
+The geometric series converges to exactly 700,000,000 MRSN:
 
 ```
 total = initial_reward × halving_interval × 2
       = 10 × 35,000,000 × 2
-      = 700,000,000 PRIM ✓
+      = 700,000,000 MRSN ✓
 ```
 
 ### 3.3 Emission Timeline
 
+Times below assume the 1 s default block time (`block_time_ms: 1000`, the config default also used by the testnet configs).
+
 | Milestone | Era | Approximate Time | Block Rewards Minted | % of Pool |
 |-----------|-----|-----------------|---------------------|-----------|
-| First halving | 1 | ~2.2 years | 350,000,000 | 50.0% |
-| Second halving | 2 | ~4.4 years | 525,000,000 | 75.0% |
-| 87.5% minted | 3 | ~6.7 years | 612,500,000 | 87.5% |
-| 93.75% minted | 4 | ~8.9 years | 656,250,000 | 93.75% |
-| 96.9% minted | 5 | ~11.1 years | 678,125,000 | 96.9% |
-| **99.2% minted** | **6** | **~13.3 years** | **689,062,500** | **98.4%** |
-| 99.6% minted | 7 | ~15.6 years | 694,531,250 | 99.2% |
+| First halving | 1 | ~1.1 years | 350,000,000 | 50.0% |
+| Second halving | 2 | ~2.2 years | 525,000,000 | 75.0% |
+| 87.5% minted | 3 | ~3.3 years | 612,500,000 | 87.5% |
+| 93.75% minted | 4 | ~4.4 years | 656,250,000 | 93.75% |
+| 96.9% minted | 5 | ~5.5 years | 678,125,000 | 96.9% |
+| **99.2% minted** | **6** | **~6.7 years** | **689,062,500** | **98.4%** |
+| 99.6% minted | 7 | ~7.8 years | 694,531,250 | 99.2% |
 
-**99% of block rewards are emitted by approximately year 13.** The supply cap enforces a hard ceiling — if somehow the remaining supply is less than the scheduled reward, only the remainder is distributed.
+**99% of block rewards are emitted by approximately year 7 at 1 s blocks.** The supply cap enforces a hard ceiling — if somehow the remaining supply is less than the scheduled reward, only the remainder is distributed.
+
+> **Note — block-time dependence:** the emission schedule is defined in blocks, so wall-clock timing scales with the configured block time. `mainnet/genesis.json` currently specifies `block_time_ms: 200`, which would compress the schedule 5x (first halving in ~81 days). The mainnet block time and/or halving interval should be reconciled before launch.
 
 ### 3.4 Supply Cap Enforcement
 
@@ -139,20 +143,20 @@ validator_reward = (effective_reward × validator_stake) / total_stake
 **Example with 4 equal-stake validators:**
 
 ```
-total_stake    = 4,000,000 PRIM (1M each)
-reward/block   = 10 PRIM
-each validator = 10 × 1,000,000 / 4,000,000 = 2.5 PRIM per block
+total_stake    = 4,000,000 MRSN (1M each)
+reward/block   = 10 MRSN
+each validator = 10 × 1,000,000 / 4,000,000 = 2.5 MRSN per block
 ```
 
 ### 4.2 Unequal Stake Example
 
 ```
-Validator A: 5M stake → 5/10 = 50% of reward = 5.0 PRIM
-Validator B: 3M stake → 3/10 = 30% of reward = 3.0 PRIM
-Validator C: 1.5M stake → 1.5/10 = 15% of reward = 1.5 PRIM
-Validator D: 0.5M stake → 0.5/10 =  5% of reward = 0.5 PRIM
+Validator A: 5M stake → 5/10 = 50% of reward = 5.0 MRSN
+Validator B: 3M stake → 3/10 = 30% of reward = 3.0 MRSN
+Validator C: 1.5M stake → 1.5/10 = 15% of reward = 1.5 MRSN
+Validator D: 0.5M stake → 0.5/10 =  5% of reward = 0.5 MRSN
                                                     ─────────
-                                                    10.0 PRIM
+                                                    10.0 MRSN
 ```
 
 ### 4.3 Rounding and Burns
@@ -186,7 +190,7 @@ fn apply_rewards(&mut self, rewards: &[Reward]) -> Result<()> {
 
 ### 5.1 Becoming a Validator
 
-To become a validator, an address must stake PRIM tokens:
+To become a validator, an address must stake MRSN tokens:
 
 ```rust
 engine.add_validator(address, stake)
@@ -224,13 +228,13 @@ Weights are normalized to prevent overflow with 18-decimal stake values. Validat
 
 ### 5.4 Estimated Validator APY
 
-At genesis with 4 validators (1M PRIM staked each):
+At genesis with 4 validators (1M MRSN staked each):
 
 ```
 blocks/year       ≈ 15,768,000 (at 2s block time)
-reward/block      = 10 PRIM
-validator/block   = 2.5 PRIM (with 4 equal validators)
-annual/validator  = 2.5 × 15,768,000 = 39,420,000 PRIM
+reward/block      = 10 MRSN
+validator/block   = 2.5 MRSN (with 4 equal validators)
+annual/validator  = 2.5 × 15,768,000 = 39,420,000 MRSN
 APY               = 39,420,000 / 1,000,000 = 3,942%
 ```
 
@@ -324,7 +328,7 @@ Every block includes:
 
 ### 7.3 EIP-1559 Fee Market
 
-Prime Chain implements EIP-1559 base fee adjustment:
+Mersennet implements EIP-1559 base fee adjustment:
 
 ```
 gas_limit_per_block     = 30,000,000
@@ -366,9 +370,9 @@ Governance requires:
 | **Cosmos** | ~750M | 68.5% | 3.2% | 3.8% | 3.1% | Perpetual |
 | **Celestia** | 1B | (inflation) | 17.6% | 35.6% | 26.8% | Perpetual |
 | **Polkadot** | 2.1B | Halving | ~5% | ~13% | ~17% | ~12+ years |
-| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~13 years** |
+| **MRSN** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
 
-Prime Chain's allocation is closest to Cosmos (high block rewards) with the halving discipline of Bitcoin/Polkadot and a conservative team allocation.
+Mersennet's allocation is closest to Cosmos (high block rewards) with the halving discipline of Bitcoin/Polkadot and a conservative team allocation.
 
 ---
 

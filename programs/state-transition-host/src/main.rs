@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use alloy_primitives::{B256, keccak256};
-use prime_state_proof::zk_proofs::{ProofType, StateTransitionProof};
-use prime_state_proof::zk_sp1::{SP1Proof, SP1ProofVerifier};
-use prime_zkp::sp1::{
+use mersennet_state_proof::zk_proofs::{ProofType, StateTransitionProof};
+use mersennet_state_proof::zk_sp1::{SP1Proof, SP1ProofVerifier};
+use mersennet_zkp::sp1::{
     BlockHeaderWitness, BlockProgramInput, BlockProgramOutput, derive_block_hash,
     execute_block_program, hash_market_aggregates,
 };
@@ -627,7 +627,7 @@ mod tests {
             transparent_balances: Vec::new(),
             pre_tick_witness: Default::default(),
             expected_block_hash: derive_block_hash(12, &header),
-            expected_market_state_hash: prime_zkp::sp1::hash_market_aggregates(&[]),
+            expected_market_state_hash: mersennet_zkp::sp1::hash_market_aggregates(&[]),
         };
         let proof = build_proof(&ProveRequest {
             block_program_input_hex: hex::encode(bincode::serialize(&program_input).unwrap()),
@@ -660,8 +660,8 @@ mod tests {
             program_elf_path: None,
         };
 
-        let tmp = std::env::temp_dir().join("prime-chain-state-transition-host-test.json");
-        let out = std::env::temp_dir().join("prime-chain-state-transition-host-test-out.json");
+        let tmp = std::env::temp_dir().join("mersennet-state-transition-host-test.json");
+        let out = std::env::temp_dir().join("mersennet-state-transition-host-test-out.json");
         write_json(&tmp, &request).unwrap();
         run_verify(&tmp, &out).unwrap();
         let response: VerifyResponse = read_json(&out).unwrap();

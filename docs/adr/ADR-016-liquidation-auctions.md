@@ -25,7 +25,7 @@ Replace the open-scan model with a **sealed-bid auction by bonded
 liquidators**, using ZK claims and executes:
 
 1. **Bonded liquidator set.** Anyone can deposit `MIN_LIQUIDATOR_BOND`
-   PRIM via a precompile to become a liquidator. The bond is
+   MRSN via a precompile to become a liquidator. The bond is
    slashable for false claims.
 2. **Liquidate-claim proof** (`Circuit::LiquidateClaim`). A
    liquidator proves "there exists some position note in the tree

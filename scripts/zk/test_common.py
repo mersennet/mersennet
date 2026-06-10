@@ -9,8 +9,8 @@ import common
 class CommonParityTests(unittest.TestCase):
     def test_to_wsl_path_translates_windows_drive_paths(self) -> None:
         self.assertEqual(
-            common.to_wsl_path(r"C:\Users\rod_o\Documents\projects\personal\prime-chain\request.json"),
-            "/mnt/c/Users/rod_o/Documents/projects/personal/prime-chain/request.json",
+            common.to_wsl_path(r"C:\Users\rod_o\Documents\projects\personal\mersennet\request.json"),
+            "/mnt/c/Users/rod_o/Documents/projects/personal/mersennet/request.json",
         )
 
     def test_with_wsl_paths_only_rewrites_selected_keys(self) -> None:
@@ -43,10 +43,10 @@ class CommonParityTests(unittest.TestCase):
             "/mnt/c/tmp/response.json",
         ]
 
-        wrapped = common.build_wsl_command(command, Path(r"C:\repo\prime-chain"))
+        wrapped = common.build_wsl_command(command, Path(r"C:\repo\mersennet"))
 
         self.assertEqual(wrapped[:3], [r"C:\Windows\System32\wsl.exe", "bash", "-lc"])
-        self.assertIn("cd /mnt/c/repo/prime-chain && cargo run", wrapped[3])
+        self.assertIn("cd /mnt/c/repo/mersennet && cargo run", wrapped[3])
         self.assertIn("--features real-sp1", wrapped[3])
         self.assertIn("/mnt/c/tmp/request.json", wrapped[3])
 
@@ -55,7 +55,7 @@ class CommonParityTests(unittest.TestCase):
     def test_build_wsl_command_includes_env_overrides(self, _which: object) -> None:
         wrapped = common.build_wsl_command(
             ["cargo", "run", "--release"],
-            Path(r"C:\repo\prime-chain"),
+            Path(r"C:\repo\mersennet"),
             {"PRIME_SP1_PROOF_SYSTEM": "core", "RAYON_NUM_THREADS": "1"},
         )
 

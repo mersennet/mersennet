@@ -1,6 +1,6 @@
 # Privacy Testnet Bootstrap Runbook
 
-**Audience:** Operators bringing up the Prime Chain privacy testnet
+**Audience:** Operators bringing up the Mersennet privacy testnet
 (chain ID **7920**).
 **Status:** Workstream H3 (testnet phase).
 **Pre-reqs:** Docker 24+, Docker Compose v2+, Linux/macOS host with
@@ -16,14 +16,14 @@ running testnet and just want to roll a new validator in, jump to
 ## 1. Clone + build
 
 ```bash
-git clone https://github.com/PrimeNumbersLabs/prime-chain.git
-cd prime-chain
+git clone https://github.com/mersennet/mersennet.git
+cd mersennet
 cargo build --release --workspace
 ```
 
 Build artifacts you'll need:
 
-- `target/release/prime-chain` — the node binary.
+- `target/release/mersennet` — the node binary.
 - `target/release/genesis` — generates validator keys + initial
   configs.
 - `target/release/migrate-genesis` — migrates a pre-fork snapshot
@@ -32,7 +32,7 @@ Build artifacts you'll need:
 Smoke check:
 
 ```bash
-./target/release/prime-chain --help
+./target/release/mersennet --help
 ./target/release/migrate-genesis --help
 ```
 
@@ -44,10 +44,10 @@ Two paths:
 
 ### 2a. Migrate from a pre-fork snapshot (recommended)
 
-Export a snapshot from the live transparent-chain (chain ID 7919):
+Export a snapshot from the live transparent-chain (chain ID 131071):
 
 ```bash
-./target/release/prime-chain --config /etc/prime-chain/config.json \
+./target/release/mersennet --config /etc/mersennet/config.json \
     --export-snapshot ./prefork-snapshot.bin
 ```
 
@@ -145,7 +145,7 @@ Once block height reaches `ACTIVATION_HEIGHT` (default 100), every
 validator should log:
 
 ```
-WARN  Prime Chain privacy hard fork activated — shielded tx type 0x7E now accepted
+WARN  Mersennet privacy hard fork activated — shielded tx type 0x7E now accepted
 INFO  DKG ceremony started for new epoch  epoch=0
 ```
 

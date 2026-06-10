@@ -1,4 +1,4 @@
-# Prime Chain — Financial Model & Unit Economics
+# Mersennet — Financial Model & Unit Economics
 
 > **Confidential** | Series A — $25M | March 2026
 
@@ -6,12 +6,12 @@
 
 ## 1. Revenue Model Architecture
 
-Prime Chain generates revenue through four complementary streams, all driven by the volume of tokenized assets trading on the network.
+Mersennet generates revenue through four complementary streams, all driven by the volume of tokenized assets trading on the network.
 
 ```
                     ┌──────────────────────────┐
                     │   TOKENIZED ASSETS ON     │
-                    │   PRIME CHAIN (TVA)        │
+                    │   MERSENNET (TVA)        │
                     └─────────┬────────────────┘
                               │
           ┌───────────┬───────┼───────┬──────────────┐
@@ -25,7 +25,7 @@ Prime Chain generates revenue through four complementary streams, all driven by 
     └───────────┘ └───────┘ └──────┘ └───────────┘  │
                                                      │
                     ┌────────────────────────────────┘
-                    │ VALIDATOR ECONOMICS (PRIM TOKEN)
+                    │ VALIDATOR ECONOMICS (MRSN TOKEN)
                     │ Block rewards, staking yields,
                     │ gas fees — separate from protocol revenue
                     └────────────────────────────────
@@ -43,7 +43,7 @@ Prime Chain generates revenue through four complementary streams, all driven by 
 | On-chain credit TAM (2030) | $2.5T+ | BIS, World Economic Forum |
 | Combined TAM (2030) | $18.5T+ | Composite |
 | Annual growth rate (2024–2030) | ~85% CAGR | BCG estimates |
-| Prime Chain market penetration (Year 3) | 0.14% of TAM | Conservative |
+| Mersennet market penetration (Year 3) | 0.14% of TAM | Conservative |
 
 ### Business Assumptions
 
@@ -288,7 +288,7 @@ Prime Chain generates revenue through four complementary streams, all driven by 
 |--------|-------------|-----------|
 | Comparable raises (pre-revenue L1s) | $150M–$300M | Average pre-revenue L1 raises at $800M–$3B FDV |
 | Comparable revenue multiples (Year 2) | $425M–$850M | 5–10x Year 2 projected revenue of $85M |
-| Discounted Hyperliquid | $300M–$500M | Hyperliquid at $4.5B; Prime Chain has better tech, earlier stage |
+| Discounted Hyperliquid | $300M–$500M | Hyperliquid at $4.5B; Mersennet has better tech, earlier stage |
 | Sum-of-parts (tech + partnerships) | $200M–$400M | Engineering moat + institutional partnerships |
 
 **Suggested valuation:** $150M–$250M pre-money (attractive entry for $25M raise at 10–17% dilution).

@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This directory holds Prime Chain's ADRs. Each ADR captures a single
+This directory holds Mersennet's ADRs. Each ADR captures a single
 decision that materially shapes the codebase, the operations posture,
 or the protocol. ADRs are immutable once accepted; if a decision is
 later revisited, a new ADR supersedes it and links back.
@@ -11,7 +11,7 @@ later revisited, a new ADR supersedes it and links back.
 | 015 | [Threshold-encrypted mempool](ADR-015-threshold-encrypted-mempool.md) | Accepted | Encrypt incoming intents under a validator-held BLS threshold key; decrypt in batches per block. |
 | 016 | [Liquidation auctions](ADR-016-liquidation-auctions.md) | Accepted | Replace open `liquidate(addr)` with sealed-bid auctions for bonded liquidators. |
 | 017 | [SP1 state proofs](ADR-017-sp1-state-proofs.md) | Accepted | Attach a succinct SP1 proof of re-execution to every block for light clients and the Ethereum bridge. |
-| 018 | [Privacy hard fork](ADR-018-privacy-hard-fork.md) | Proposed (testnet ready) | Activate the privacy stack atomically at a fixed height on chain 7919, with chain 7920 as the rehearsal. |
+| 018 | [Privacy hard fork](ADR-018-privacy-hard-fork.md) | Proposed (testnet ready) | Activate the privacy stack atomically at a fixed height on the production chain (mainnet 8191), with chain 7920 as the rehearsal. |
 | 019 | [Selective disclosure and viewing keys](ADR-019-selective-disclosure-viewing-keys.md) | Proposed | Use scoped, revocable capability tokens for self-view, delegation, and regulator disclosure without reopening public trader state. |
 
 ## How to write an ADR

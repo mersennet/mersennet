@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 /// @title Multicall3
 /// @notice Aggregate results from multiple function calls
-/// @dev Canonical Multicall3 for Prime Chain — deployed at a well-known address
+/// @dev Canonical Multicall3 for Mersennet — deployed at a well-known address
 contract Multicall3 {
     struct Call {
         address target;

@@ -1,7 +1,7 @@
 import hashlib
 import unittest
 
-from prime_chain.shielded import (
+from mersennet.shielded import (
     GrantedNoteDecryptInput,
     make_mock_note_decryptor,
     parse_encrypted_note_payload,

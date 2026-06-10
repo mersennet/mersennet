@@ -1,4 +1,4 @@
-package primechain
+package mersennet
 
 import (
 	"crypto/sha256"
@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// EncryptedNoteEnvelope is the canonical encrypted note wrapper emitted by Prime Chain.
+// EncryptedNoteEnvelope is the canonical encrypted note wrapper emitted by Mersennet.
 type EncryptedNoteEnvelope struct {
 	Recipient   string
 	Ciphertext  []byte

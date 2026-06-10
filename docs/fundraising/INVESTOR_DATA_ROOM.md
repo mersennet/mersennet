@@ -1,4 +1,4 @@
-# Prime Chain — Investor Data Room
+# Mersennet — Investor Data Room
 
 > **Confidential** | Series A — $25M | March 2026
 > Access granted to: [Investor Name] on [Date]
@@ -7,10 +7,10 @@
 
 ## Data Room Structure
 
-This data room contains all materials required for due diligence on Prime Chain's $25M Series A round. Documents are organized by category with security classification.
+This data room contains all materials required for due diligence on Mersennet's $25M Series A round. Documents are organized by category with security classification.
 
 ```
-📁 PRIME CHAIN DATA ROOM
+📁 MERSENNET DATA ROOM
 │
 ├── 📁 1. FUNDRAISING MATERIALS
 │   ├── 📄 Pitch Deck (16 slides)                    ← PITCH_DECK_25M.md
@@ -74,7 +74,7 @@ This data room contains all materials required for due diligence on Prime Chain'
 │   └── 📄 GitHub Organization: PrimeNumbersLabs
 │
 ├── 📁 8. CODEBASE (available on request)
-│   ├── 📄 Core Chain (Rust)                          ← crates/ (28 modules, 10,600+ LOC)
+│   ├── 📄 Core Chain (Rust)                          ← crates/ (6-crate workspace, 44,000+ LOC)
 │   ├── 📄 Smart Contracts (Solidity)                 ← contracts/ (Foundry, 28 tests)
 │   ├── 📄 Explorer                                   ← explorer/
 │   ├── 📄 DEX                                        ← dex/
@@ -120,8 +120,8 @@ This data room contains all materials required for due diligence on Prime Chain'
 
 - [ ] Review whitepaper v7.0 (architecture, consensus, PrimeOrders)
 - [ ] Review technical reference (implementation details)
-- [ ] Test live testnet (Chain ID 7919, RPC: http://46.225.30.187:8545)
-- [ ] Review codebase (Rust core — 28 modules, 10,600+ LOC)
+- [ ] Test live testnet (Chain ID 131071, RPC: http://46.225.30.187:8545)
+- [ ] Review codebase (Rust core — 6-crate workspace, 44,000+ LOC)
 - [ ] Verify performance claims (72K TPS, 2.4M CLOB ops/s, ~200ms finality)
 - [ ] Review smart contracts (Foundry, 28 tests)
 - [ ] Evaluate CLOB precompile (0x0100) atomic composability
@@ -172,8 +172,8 @@ This data room contains all materials required for due diligence on Prime Chain'
 
 ### Quick Start (Try the Testnet)
 
-1. Add Prime Chain to MetaMask: Chain ID `7919`, RPC `http://46.225.30.187:8545`
-2. Get testnet PRIM from the faucet: http://46.225.30.187:8080
+1. Add Mersennet to MetaMask: Chain ID `131071`, RPC `http://46.225.30.187:8545`
+2. Get testnet MRSN from the faucet: http://46.225.30.187:8080
 3. Trade on PrimeSwap: http://46.225.30.187:4000
 4. View your transactions: http://46.225.30.187/
 

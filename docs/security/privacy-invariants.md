@@ -66,7 +66,7 @@ clearing price, matched size, the winner's `winner_bond_commitment`
 would tag the activity to a specific EOA, which is the exact privacy
 violation the redesign exists to prevent.
 
-### R5 — `prime-zkp` is address-free entirely
+### R5 — `mersennet-zkp` is address-free entirely
 
 `crates/zkp/src/` is the cryptography crate. Its public API works
 in `Fr` (BN254 scalar field), `G1`/`G2` (BN254 or BLS12-381 curve
@@ -75,7 +75,7 @@ under `crates/zkp/src/` is almost always a layering bug — the
 shielded EVM bridge belongs in `crates/core/src/shielded_evm.rs`,
 not in the cryptography crate.
 
-If a `prime-zkp` file genuinely needs to mention `Address` (e.g. a
+If a `mersennet-zkp` file genuinely needs to mention `Address` (e.g. a
 docstring quoting the bridge behaviour), add a
 `// privacy-allow: docstring` comment on that line.
 

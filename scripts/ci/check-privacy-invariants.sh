@@ -128,7 +128,7 @@ check \
     "${SHIELDED_FILES[@]}"
 
 # ────────────────────────────────────────────────────────────────────
-# Rule 5. `prime-zkp` is supposed to be address-free entirely — Fr
+# Rule 5. `mersennet-zkp` is supposed to be address-free entirely — Fr
 # field elements only. A bare `Address` mention in `crates/zkp/src/`
 # is almost always a layering bug. (Allowlist via `privacy-allow:` if
 # unavoidable.)
@@ -142,8 +142,8 @@ if [[ -n "$ZKP_FILES" ]]; then
         ) || true
         if [[ -n "$m" ]]; then
             VIOLATIONS=$((VIOLATIONS + 1))
-            FAIL_LIST+=("prime-zkp module $f references Address")
-            echo "::error::Privacy-invariant violation: prime-zkp module references Address (layering bug)" >&2
+            FAIL_LIST+=("mersennet-zkp module $f references Address")
+            echo "::error::Privacy-invariant violation: mersennet-zkp module references Address (layering bug)" >&2
             echo "$m" >&2
             echo "" >&2
         fi

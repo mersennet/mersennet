@@ -1,12 +1,12 @@
 #!/bin/bash
-# Check Prime Chain node health
+# Check Mersennet node health
 # Returns 0 if healthy, 1 if not
 # Usage: ./health-check.sh [--rpc-url URL] [--data-dir DIR]
 
 set -e
 
 RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
-DATA_DIR="${DATA_DIR:-/var/lib/prime-chain}"
+DATA_DIR="${DATA_DIR:-/var/lib/mersennet}"
 REQUIRED_DISK_GB=10
 
 while [[ $# -gt 0 ]]; do
@@ -34,11 +34,11 @@ exit_code=0
 
 # Check if process is running (Docker or native)
 check_process() {
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q prime-chain; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q mersennet; then
         echo "OK: Validator container is running"
         return 0
     fi
-    if pgrep -f "prime-chain.*validator" >/dev/null 2>&1; then
+    if pgrep -f "mersennet.*validator" >/dev/null 2>&1; then
         echo "OK: Validator process is running"
         return 0
     fi
@@ -113,7 +113,7 @@ check_disk() {
 }
 
 # Run all checks
-echo "==> Prime Chain Health Check"
+echo "==> Mersennet Health Check"
 echo ""
 
 check_process || exit_code=1

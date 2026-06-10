@@ -1,6 +1,6 @@
 /* =============================================================================
-   PrimeNodes — Validator Dashboard for Prime Chain (Chain ID 7919)
-   Design System: PrimeFi / PrimeStaking UI v2
+   Mersennet Validators — network dashboard for Mersennet (Chain ID 131071)
+   Design System: Mersennet terminal (phosphor green on black)
    Light mode default — toggle dark with .dark-mode on <body>
    ============================================================================= */
 
@@ -8,31 +8,31 @@
    1. CSS VARIABLES — Light Mode (default)
    ========================================= */
 :root {
-    --color-main: #9461FF;
-    --color-secondary: #6A2FFF;
-    --color-deep: #4901FF;
-    --color-accent: #00FFF9;
+      --color-main: #0c8f43;
+    --color-secondary: #0a8f50;
+    --color-deep: #07703e;
+    --color-accent: #0c8f43;
 
-    --text-primary: #3A334D;
-    --text-secondary: #99B2C6;
-    --text-muted: #99B2C6;
-    --text-dim: #BCC8D4;
+    --text-primary: #2E3B33;
+    --text-secondary: #6e8276;
+    --text-muted: #8FA89A;
+    --text-dim: #aebbb2;
 
-    --bg-100: #F8F9FE;
-    --bg-200: #F3EDFF;
-    --bg-300: #E8DCFF;
+    --bg-100: #F8FDF9;
+    --bg-200: #EAF9EF;
+    --bg-300: #D6F4E0;
     --bg-card: #FFFFFF;
-    --bg-card-hover: #F3EDFF;
-    --bg-surface: #F1F5F7;
-    --bg-input: #F8F9FE;
+    --bg-card-hover: #F2FBF5;
+    --bg-surface: #F1F7F3;
+    --bg-input: #F8FDF9;
 
-    --color-border: #F1F5F7;
-    --border: #F1F5F7;
-    --border-subtle: #E8ECF0;
-    --border-accent: rgba(148, 97, 255, 0.25);
+    --color-border: #E5F0E8;
+    --border: #E5F0E8;
+    --border-subtle: #EDF4EF;
+    --border-accent: rgba(12, 143, 67, 0.25);
 
-    --accent-subtle: rgba(148, 97, 255, 0.08);
-    --accent-glow: rgba(148, 97, 255, 0.12);
+    --accent-subtle: rgba(12, 143, 67, 0.08);
+    --accent-glow: rgba(12, 143, 67, 0.12);
 
     --success: #22C55E;
     --success-bg: rgba(34, 197, 94, 0.08);
@@ -52,13 +52,13 @@
     --shadow-sm: 0px 2px 4px rgba(0, 0, 0, 0.05);
     --shadow-md: 0px 4px 12px rgba(0, 0, 0, 0.06);
     --shadow-lg: 0px 8px 24px rgba(0, 0, 0, 0.08);
-    --shadow-glow: 0px 2px 8px rgba(148, 97, 255, 0.06);
-    --shadow-glow-accent: 0px 4px 16px rgba(148, 97, 255, 0.1);
+    --shadow-glow: 0px 2px 8px rgba(125, 255, 155, 0.06);
+    --shadow-glow-accent: 0px 4px 16px rgba(125, 255, 155, 0.1);
 
-    --gradient-primary: linear-gradient(90deg, #9461FF 35%, #6A2FFF 100%);
-    --gradient-accent: linear-gradient(90deg, #6A2FFF, #00FFF9);
-    --gradient-title: linear-gradient(82.84deg, #3a334d 51.47%, #9461ff 99.63%);
-    --gradient-bar: linear-gradient(90deg, #9461FF, #6A2FFF, #00FFF9);
+    --gradient-primary: linear-gradient(90deg, #7dff9b 35%, #7dff9b 100%);
+    --gradient-accent: linear-gradient(90deg, #7dff9b, #40e0b4);
+    --gradient-title: linear-gradient(82.84deg, #3a334d 51.47%, #7dff9b 99.63%);
+    --gradient-bar: linear-gradient(90deg, #7dff9b, #7dff9b, #40e0b4);
 
     --ease: cubic-bezier(0.4, 0, 0.2, 1);
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
@@ -71,44 +71,44 @@
    1b. CSS VARIABLES — Dark Mode
    ========================================= */
 body.dark-mode {
-    --color-main: #EFE8FF;
-    --color-secondary: #4901FF;
+      --color-main: #7dff9b;
+    --color-secondary: #7dff9b;
 
-    --text-primary: #FFFFFF;
-    --text-secondary: #B4B1F5;
-    --text-muted: #B4B1F5;
-    --text-dim: #7C6DB5;
+    --text-primary: #ececef;
+    --text-secondary: #9a9aa6;
+    --text-muted: #9a9aa6;
+    --text-dim: #62626f;
 
-    --bg-100: #0D002F;
-    --bg-200: #513197;
-    --bg-300: #9461FF;
-    --bg-card: #281459;
-    --bg-card-hover: #351D6E;
-    --bg-surface: #1A0A4A;
-    --bg-input: #160838;
+    --bg-100: #000000;
+    --bg-200: #101312;
+    --bg-300: #1c201d;
+    --bg-card: #0a0c0b;
+    --bg-card-hover: #11140f;
+    --bg-surface: #0d100e;
+    --bg-input: #070908;
 
-    --color-border: #472F83;
-    --border: #472F83;
-    --border-subtle: rgba(71, 47, 131, 0.6);
-    --border-accent: rgba(148, 97, 255, 0.4);
+    --color-border: rgba(255, 255, 255, 0.1);
+    --border: rgba(255, 255, 255, 0.1);
+    --border-subtle: rgba(255, 255, 255, 0.07);
+    --border-accent: rgba(125, 255, 155, 0.4);
 
-    --accent-subtle: rgba(148, 97, 255, 0.15);
-    --accent-glow: rgba(148, 97, 255, 0.2);
+    --accent-subtle: rgba(125, 255, 155, 0.08);
+    --accent-glow: rgba(125, 255, 155, 0.16);
 
-    --success: #3FE57F;
-    --success-bg: rgba(63, 229, 127, 0.1);
-    --danger: #EF2961;
-    --danger-bg: rgba(239, 41, 97, 0.1);
-    --warn: #F8D353;
-    --warn-bg: rgba(248, 211, 83, 0.1);
+    --success: #34d399;
+    --success-bg: rgba(52, 211, 153, 0.1);
+    --danger: #ff8d80;
+    --danger-bg: rgba(255, 141, 128, 0.1);
+    --warn: #f5c66b;
+    --warn-bg: rgba(245, 198, 107, 0.1);
 
-    --shadow-sm: 0px 2px 4px rgba(0, 0, 0, 0.2);
-    --shadow-md: 0px 4px 12px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0px 8px 24px rgba(0, 0, 0, 0.4);
-    --shadow-glow: 0px 2px 8px rgba(148, 97, 255, 0.12);
-    --shadow-glow-accent: 0px 4px 16px rgba(148, 97, 255, 0.2);
+    --shadow-sm: 0px 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0px 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0px 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0px 2px 8px rgba(125, 255, 155, 0.10);
+    --shadow-glow-accent: 0px 4px 16px rgba(125, 255, 155, 0.18);
 
-    --gradient-title: linear-gradient(82.84deg, #ffffff 51.47%, #bfa0ff 99.63%);
+    --gradient-title: linear-gradient(82.84deg, #ffffff 51.47%, #7dff9b 99.63%);
 }
 
 /* =========================================
@@ -153,7 +153,7 @@ body.dark-mode a { color: var(--color-accent); }
 body.dark-mode a:hover { color: #6dfffc; }
 
 ::selection {
-    background: rgba(148, 97, 255, 0.2);
+    background: rgba(125, 255, 155, 0.2);
     color: var(--text-primary);
 }
 
@@ -175,7 +175,7 @@ input, button, textarea, select { font: inherit; }
    ========================================= */
 .top-accent {
     height: 3px;
-    background: linear-gradient(90deg, #9461FF, #6A2FFF, #00FFF9);
+    background: linear-gradient(90deg, #7dff9b, #7dff9b, #40e0b4);
     background-size: 200% 100%;
     animation: accentShift 8s ease infinite;
     position: relative;
@@ -215,7 +215,7 @@ input, button, textarea, select { font: inherit; }
 }
 
 body.dark-mode .header {
-    background: rgba(13, 0, 47, 0.85);
+    background: rgba(0, 0, 0, 0.7);
     box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.3);
 }
 
@@ -555,18 +555,18 @@ main {
     width: 140%;
     height: 220%;
     background:
-        radial-gradient(ellipse 60% 40% at 30% 50%, rgba(148, 97, 255, 0.06) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 40% at 70% 40%, rgba(106, 47, 255, 0.04) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 30% at 50% 60%, rgba(0, 255, 249, 0.03) 0%, transparent 50%);
+        radial-gradient(ellipse 60% 40% at 30% 50%, rgba(125, 255, 155, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 70% 40%, rgba(125, 255, 155, 0.04) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 30% at 50% 60%, rgba(64, 224, 180, 0.03) 0%, transparent 50%);
     pointer-events: none;
     animation: heroFloat 20s ease-in-out infinite alternate;
 }
 
 body.dark-mode .hero-banner::before {
     background:
-        radial-gradient(ellipse 60% 40% at 30% 50%, rgba(148, 97, 255, 0.1) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 40% at 70% 40%, rgba(0, 255, 249, 0.06) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 30% at 50% 60%, rgba(106, 47, 255, 0.05) 0%, transparent 50%);
+        radial-gradient(ellipse 60% 40% at 30% 50%, rgba(125, 255, 155, 0.1) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 70% 40%, rgba(64, 224, 180, 0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 30% at 50% 60%, rgba(125, 255, 155, 0.05) 0%, transparent 50%);
 }
 
 @keyframes heroFloat {
@@ -646,15 +646,15 @@ body.dark-mode .hero-banner::before {
     font-size: 1.1rem;
 }
 
-.stat-card-icon.accent-bg { background: rgba(148, 97, 255, 0.1); color: #9461FF; }
-.stat-card-icon.violet-bg { background: rgba(106, 47, 255, 0.1); color: #6A2FFF; }
-.stat-card-icon.pink-bg { background: rgba(0, 255, 249, 0.1); color: #00C4BF; }
+.stat-card-icon.accent-bg { background: rgba(125, 255, 155, 0.1); color: #7dff9b; }
+.stat-card-icon.violet-bg { background: rgba(125, 255, 155, 0.1); color: #7dff9b; }
+.stat-card-icon.pink-bg { background: rgba(64, 224, 180, 0.1); color: #40e0b4; }
 .stat-card-icon.success-bg { background: var(--success-bg); color: var(--success); }
 .stat-card-icon.warn-bg { background: var(--warn-bg); color: var(--warn); }
 
-body.dark-mode .stat-card-icon.accent-bg { background: rgba(148, 97, 255, 0.2); color: #BFA0FF; }
-body.dark-mode .stat-card-icon.violet-bg { background: rgba(106, 47, 255, 0.2); color: #9461FF; }
-body.dark-mode .stat-card-icon.pink-bg { background: rgba(0, 255, 249, 0.15); color: #00FFF9; }
+body.dark-mode .stat-card-icon.accent-bg { background: rgba(125, 255, 155, 0.2); color: #7dff9b; }
+body.dark-mode .stat-card-icon.violet-bg { background: rgba(125, 255, 155, 0.2); color: #7dff9b; }
+body.dark-mode .stat-card-icon.pink-bg { background: rgba(64, 224, 180, 0.15); color: #40e0b4; }
 
 .stat-card-label {
     font-size: 0.72rem;
@@ -829,9 +829,9 @@ body.dark-mode .td-addr:hover { color: #6dfffc; }
     position: relative;
 }
 
-.stake-bar-fill.gradient-1 { background: linear-gradient(90deg, #9461FF, #6A2FFF); }
-.stake-bar-fill.gradient-2 { background: linear-gradient(90deg, #6A2FFF, #00FFF9); }
-.stake-bar-fill.gradient-3 { background: linear-gradient(90deg, #9461FF, #00FFF9); }
+.stake-bar-fill.gradient-1 { background: linear-gradient(90deg, #7dff9b, #7dff9b); }
+.stake-bar-fill.gradient-2 { background: linear-gradient(90deg, #7dff9b, #40e0b4); }
+.stake-bar-fill.gradient-3 { background: linear-gradient(90deg, #7dff9b, #40e0b4); }
 
 .stake-pct {
     font-family: var(--font-mono);
@@ -1296,14 +1296,14 @@ body.dark-mode .spinner { border-top-color: var(--color-accent); }
 .new-item { animation: itemPulse 0.6s var(--ease); }
 
 @keyframes itemPulse {
-    0% { background: rgba(148, 97, 255, 0.1); box-shadow: inset 0 0 0 1px rgba(148, 97, 255, 0.15); }
+    0% { background: rgba(125, 255, 155, 0.1); box-shadow: inset 0 0 0 1px rgba(125, 255, 155, 0.15); }
     100% { background: transparent; box-shadow: inset 0 0 0 1px transparent; }
 }
 
 body.dark-mode .new-item { animation: itemPulseDark 0.6s var(--ease); }
 
 @keyframes itemPulseDark {
-    0% { background: rgba(0, 255, 249, 0.1); box-shadow: inset 0 0 0 1px rgba(0, 255, 249, 0.15); }
+    0% { background: rgba(64, 224, 180, 0.1); box-shadow: inset 0 0 0 1px rgba(64, 224, 180, 0.15); }
     100% { background: transparent; box-shadow: inset 0 0 0 1px transparent; }
 }
 
@@ -1346,7 +1346,7 @@ body.dark-mode :focus-visible { outline-color: var(--color-accent); }
     padding: 3rem 2rem;
     text-align: center;
     color: var(--text-muted);
-    background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(148, 97, 255, 0.04), transparent);
+    background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(125, 255, 155, 0.04), transparent);
     border-radius: var(--radius);
 }
 
@@ -1385,13 +1385,13 @@ body.dark-mode :focus-visible { outline-color: var(--color-accent); }
     font-weight: 600;
     cursor: pointer;
     transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-    box-shadow: 0 2px 8px rgba(148, 97, 255, 0.25);
+    box-shadow: 0 2px 8px rgba(125, 255, 155, 0.25);
 }
 
 .btn-primary:hover {
     opacity: 0.9;
     transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(148, 97, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(125, 255, 155, 0.3);
 }
 
 .btn-primary:active { transform: translateY(0); }
@@ -1510,3 +1510,18 @@ body.dark-mode .theme-toggle:hover {
     .stat-card, .panel, .table-wrap, .detail-card { border: 1px solid #ddd; box-shadow: none; background: #fff; }
     a { color: #111; text-decoration: underline; }
 }
+
+/* Mersennet brand backdrop (dark mode) */
+body.dark-mode::before {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+}
+body.dark-mode::after {
+    content: ''; position: fixed; z-index: 0; pointer-events: none;
+    width: 600px; height: 600px; left: 50%; top: -10%; transform: translateX(-50%);
+    border-radius: 50%; filter: blur(120px); background: rgba(125,255,155,0.08);
+}
+body > * { position: relative; z-index: 1; }
+:focus-visible { outline: 2px solid var(--color-main); outline-offset: 2px; }

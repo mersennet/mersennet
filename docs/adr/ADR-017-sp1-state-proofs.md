@@ -26,9 +26,9 @@ provide privacy.
 Use SP1 for the state-transition program because it is the only
 proving system today that can prove the whole VM (revm + the CLOB
 matching + the Noir-proof verification loop) inside a zkVM. Real
-implementation behind the `sp1` feature on `prime-zkp`.
+implementation behind the `sp1` feature on `mersennet-zkp`.
 
-The SP1 program input/output envelope is `prime_zkp::sp1::BlockProgramInput`
+The SP1 program input/output envelope is `mersennet_zkp::sp1::BlockProgramInput`
 and `BlockProgramOutput`. The chain-side pipeline is in
 `crates/core/src/state_proof.rs`.
 

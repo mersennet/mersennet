@@ -2,7 +2,7 @@ const RPC = process.env.RPC_URL || 'http://46.225.30.187:8545';
 const FROM = '0x7f5ce38fb2553e95dd8ef9182a80bc219c9a0d45';
 const { keccak_256 } = require('@noble/hashes/sha3');
 
-const WPRIM = '0x079bf1207b51acda83e2e8178344f62a883f8479';
+const WMRSN = '0x079bf1207b51acda83e2e8178344f62a883f8479';
 const USDC  = '0xb22f77d89122e9e3784bfd3eee9616273f38238d';
 const USDT  = '0x877feca38919acd7aaf7cb81f100e0454aa95c17';
 const DAI   = '0xb88d63a65691effbf4b6808325b1588912c15cf4';
@@ -143,10 +143,10 @@ async function approve(token, spender, label) {
 async function depositWPRIM(amount) {
     const data = fnSelector('deposit()');
     const value = '0x' + amount.toString(16);
-    console.log(`  Wrapping ${Number(amount / E18)} PRIM -> WPRIM...`);
-    const r = await sendTx(WPRIM, data, value);
+    console.log(`  Wrapping ${Number(amount / E18)} MRSN -> WMRSN...`);
+    const r = await sendTx(WMRSN, data, value);
     console.log(`    TX: ${r.txHash} status=${r.status}`);
-    if (r.status !== '0x1') throw new Error('WPRIM deposit failed');
+    if (r.status !== '0x1') throw new Error('WMRSN deposit failed');
 }
 
 async function createPool(token0, token1, fee, sqrtPriceX96, label) {
@@ -182,9 +182,9 @@ async function mintPosition(token0, token1, fee, tickLower, tickUpper, amount0, 
 }
 
 const POOLS = [
-    { a: WPRIM, b: USDC, dA: 18, dB: 6,  fee: FEE_MEDIUM, amtA: 10000n * E18, amtB: 10000n * E6,  name: 'WPRIM/USDC' },
-    { a: WPRIM, b: USDT, dA: 18, dB: 6,  fee: FEE_MEDIUM, amtA: 10000n * E18, amtB: 10000n * E6,  name: 'WPRIM/USDT' },
-    { a: WPRIM, b: DAI,  dA: 18, dB: 18, fee: FEE_MEDIUM, amtA: 10000n * E18, amtB: 10000n * E18, name: 'WPRIM/DAI' },
+    { a: WMRSN, b: USDC, dA: 18, dB: 6,  fee: FEE_MEDIUM, amtA: 10000n * E18, amtB: 10000n * E6,  name: 'WMRSN/USDC' },
+    { a: WMRSN, b: USDT, dA: 18, dB: 6,  fee: FEE_MEDIUM, amtA: 10000n * E18, amtB: 10000n * E6,  name: 'WMRSN/USDT' },
+    { a: WMRSN, b: DAI,  dA: 18, dB: 18, fee: FEE_MEDIUM, amtA: 10000n * E18, amtB: 10000n * E18, name: 'WMRSN/DAI' },
     { a: USDC,  b: USDT, dA: 6,  dB: 6,  fee: FEE_LOW,    amtA: 10000n * E6,  amtB: 10000n * E6,  name: 'USDC/USDT' },
     { a: USDC,  b: DAI,  dA: 6,  dB: 18, fee: FEE_LOW,    amtA: 10000n * E6,  amtB: 10000n * E18, name: 'USDC/DAI' },
     { a: USDT,  b: DAI,  dA: 6,  dB: 18, fee: FEE_LOW,    amtA: 10000n * E6,  amtB: 10000n * E18, name: 'USDT/DAI' },
@@ -196,18 +196,18 @@ async function main() {
     console.log(`NFT Position Manager: ${NFT_POSITION_MANAGER}\n`);
 
     const balance = BigInt(await rpc('eth_getBalance', [FROM, 'latest']));
-    console.log(`PRIM balance: ${balance / E18} PRIM\n`);
+    console.log(`MRSN balance: ${balance / E18} MRSN\n`);
 
     console.log('=== Step 1: Mint test tokens ===');
     await mintTokens(USDC, 30000n * E6, 6, 'USDC');
     await mintTokens(USDT, 30000n * E6, 6, 'USDT');
     await mintTokens(DAI, 30000n * E18, 18, 'DAI');
 
-    console.log('\n=== Step 2: Wrap PRIM -> WPRIM ===');
+    console.log('\n=== Step 2: Wrap MRSN -> WMRSN ===');
     await depositWPRIM(40000n * E18);
 
     console.log('\n=== Step 3: Approve NFT Position Manager ===');
-    await approve(WPRIM, NFT_POSITION_MANAGER, 'WPRIM');
+    await approve(WMRSN, NFT_POSITION_MANAGER, 'WMRSN');
     await approve(USDC, NFT_POSITION_MANAGER, 'USDC');
     await approve(USDT, NFT_POSITION_MANAGER, 'USDT');
     await approve(DAI, NFT_POSITION_MANAGER, 'DAI');

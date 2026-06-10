@@ -1,7 +1,7 @@
 # ZK Adapter Scripts
 
 These scripts are the reference implementations for the runtime hooks
-added in `prime-zkp` and `prime-chain`.
+added in `mersennet-zkp` and `mersennet`.
 
 ## Files
 
@@ -146,7 +146,7 @@ Notes:
   `PRIME_SP1_VKEY_HASH` is enough to close E3.
 - E4: the `sp1-sdk/network` vs `revm` `c-kzg` conflict is resolved — the
   SP1 host no longer depends on `revm` (proof types moved to the
-  `prime-state-proof` crate). Build the host with `--features network` to
+  `mersennet-state-proof` crate). Build the host with `--features network` to
   enable `PRIME_SP1_MODE=network`
   (`ProverClient::builder().network().build()`, credentials from
   `NETWORK_PRIVATE_KEY` / `NETWORK_RPC_URL`). Without the `network`
@@ -225,7 +225,7 @@ cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --
 cargo run --manifest-path programs/state-transition-host/Cargo.toml --example render_verify_request -- \
   scripts/zk/sp1-network-prove-response.json \
   scripts/zk/sp1-network-verify-request.request.json \
-  programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition
+  programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition
 
 PRIME_SP1_MODE=network \
 cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- \
@@ -346,7 +346,7 @@ so the verifying key is reproducible by any auditor rather than tied to a
 single developer's absolute build path.
 
 - Canonical ELF path:
-  `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition`
+  `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition`
 - ELF sha256:
   `9debe1cc1267c4f51a1e15885a051a6cd70dcd05b48e0995b6324f43ae22bd89`
 - Captured verifying-key hash:

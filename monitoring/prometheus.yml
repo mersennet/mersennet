@@ -2,7 +2,7 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'prime-chain'
+  - job_name: 'mersennet'
     static_configs:
       - targets: ['host.docker.internal:8545']
     metrics_path: '/metrics'

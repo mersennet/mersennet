@@ -16,15 +16,15 @@ case "$NODE" in
     1|2|3|4)
         IP="${VALIDATORS[$((NODE-1))]}"
         echo "==> Streaming logs from validator-$NODE ($IP)..."
-        ssh "$SSH_USER@$IP" "journalctl -u prime-chain -f --no-hostname -n 50"
+        ssh "$SSH_USER@$IP" "journalctl -u mersennet -f --no-hostname -n 50"
         ;;
     public|rpc|5)
         echo "==> Streaming logs from public node ($PUBLIC_NODE)..."
-        ssh "$SSH_USER@$PUBLIC_NODE" "journalctl -u prime-chain -f --no-hostname -n 50"
+        ssh "$SSH_USER@$PUBLIC_NODE" "journalctl -u mersennet -f --no-hostname -n 50"
         ;;
     faucet)
         echo "==> Streaming faucet logs from public node ($PUBLIC_NODE)..."
-        ssh "$SSH_USER@$PUBLIC_NODE" "journalctl -u prime-chain-faucet -f --no-hostname -n 50"
+        ssh "$SSH_USER@$PUBLIC_NODE" "journalctl -u mersennet-faucet -f --no-hostname -n 50"
         ;;
     *)
         echo "Usage: $0 [1|2|3|4|public|faucet]"

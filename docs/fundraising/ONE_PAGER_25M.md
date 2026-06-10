@@ -1,4 +1,4 @@
-# PRIME CHAIN — Investor One-Pager
+# MERSENNET — Investor One-Pager
 
 > **Confidential** | Series A — $25M | March 2026
 
@@ -7,7 +7,7 @@
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
-║   ◆ PRIME CHAIN — The Institutional Trading Layer                            ║
+║   ◆ MERSENNET — The Institutional Trading Layer                            ║
 ║     for Real-World Assets + On-Chain Credit Markets                          ║
 ║                                                                              ║
 ║   The only Layer 1 blockchain with atomic EVM ↔ CLOB composability.          ║
@@ -56,13 +56,13 @@
 ║   Monad           ❌       ❌       ✅    ~1,000ms    ❌         ❌            ║
 ║   dYdX            ✅       ❌       ❌     ~1,000ms   ❌         ❌            ║
 ║   ──────────────────────────────────────────────────────────────────          ║
-║   PRIME CHAIN     ✅    ✅ ATOMIC   ✅      200ms     ✅         ✅            ║
+║   MERSENNET     ✅    ✅ ATOMIC   ✅      200ms     ✅         ✅            ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
-║   TRACTION & PARTNERSHIPS             TOKENOMICS (PRIM)                      ║
+║   TRACTION & PARTNERSHIPS             TOKENOMICS (MRSN)                      ║
 ║   ───────────────────────             ─────────────────                      ║
-║   ✅ Standard Chartered               Max Supply: 1B PRIM                    ║
+║   ✅ Standard Chartered               Max Supply: 1B MRSN                    ║
 ║      RWA + credit pilot (Q1 2026)     70% block rewards (halving)            ║
 ║   ✅ XDC Network                      10% ecosystem  ·  10% foundation       ║
 ║      Trade finance integration        5% team (1y cliff + 3y vest)           ║
@@ -71,7 +71,7 @@
 ║   ✅ Greg Kidd (Advisor)              Lowest insider allocation (10%)        ║
 ║      Early Coinbase/Ripple/Square     of any major L1 in 3 years.            ║
 ║                                                                              ║
-║   TESTNET LIVE: Chain ID 7919                                                ║
+║   TESTNET LIVE: Chain ID 131071                                                ║
 ║   12 products built · 6 live                                                 ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -88,7 +88,7 @@
 ║                                                                              ║
 ║   ROADMAP                                                                    ║
 ║   Q1 2026: Pilot + $5M strategic      Q3 2026: Public testnet + audit       ║
-║   Q2 2026: Live trading + $15M        Q4 2026: Mainnet (Chain 13370)        ║
+║   Q2 2026: Live trading + $15M        Q4 2026: Mainnet (Chain 8191)        ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
@@ -101,7 +101,7 @@
 ║   5. 12–18 month window to define the "institutional trading L1" category   ║
 ║                                                                              ║
 ║   COMPARABLE: Hyperliquid ($4.5B FDV) has async CLOB + alpha EVM.           ║
-║   Prime Chain has atomic CLOB + full EVM + institutional focus at           ║
+║   Mersennet has atomic CLOB + full EVM + institutional focus at           ║
 ║   early-stage pricing.                                                       ║
 ║                                                                              ║
 ║   Contact: [founders@primechain.network]                                     ║

@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/nodes.conf"
 VALIDATORS=("$VALIDATOR_1" "$VALIDATOR_2" "$VALIDATOR_3" "$VALIDATOR_4")
 
 echo "╔══════════════════════════════════════════════════╗"
-echo "║          Prime Chain Testnet Status              ║"
+echo "║          Mersennet Testnet Status              ║"
 echo "╠══════════════════════════════════════════════════╣"
 
 for i in 1 2 3 4; do

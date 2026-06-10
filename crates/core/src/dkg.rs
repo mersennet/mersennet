@@ -3,7 +3,7 @@
 //!
 //! See [`crates/core/src/dkg.rs`] body below for the full protocol
 //! description. This file is the in-engine wiring; the underlying
-//! group arithmetic lives in [`prime_zkp::bls_threshold`] behind the
+//! group arithmetic lives in [`mersennet_zkp::bls_threshold`] behind the
 //! `prover` feature.
 
 #![allow(dead_code)]
@@ -263,7 +263,7 @@ impl DkgCoordinator {
         // feature) we use a deterministic Keccak digest of the
         // commitment fingerprints — enough to exercise the
         // engine-side wiring; the real aggregation lives in
-        // `prime_zkp::bls_threshold::Inner::aggregate_dkg_output`
+        // `mersennet_zkp::bls_threshold::Inner::aggregate_dkg_output`
         // (Workstream D4 second pass, post-mainnet-bake).
         let mut h = Keccak256::new();
         h.update(b"PrimeChain-DKG-AggPk-v0");

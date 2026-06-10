@@ -1,6 +1,6 @@
 #!/bin/bash
-# Backup Prime Chain state data
-# Usage: ./backup-state.sh --data-dir /var/lib/prime-chain --backup-dir /backups
+# Backup Mersennet state data
+# Usage: ./backup-state.sh --data-dir /var/lib/mersennet --backup-dir /backups
 
 set -e
 
@@ -12,7 +12,7 @@ usage() {
     echo "Usage: $0 --data-dir DIR --backup-dir DIR [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --data-dir DIR      Source data directory (default: /var/lib/prime-chain)"
+    echo "  --data-dir DIR      Source data directory (default: /var/lib/mersennet)"
     echo "  --backup-dir DIR    Destination backup directory"
     echo "  --no-compress       Skip gzip compression"
     echo "  -h, --help          Show this help"
@@ -43,8 +43,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-DATA_DIR="${DATA_DIR:-/var/lib/prime-chain}"
-BACKUP_DIR="${BACKUP_DIR:-/backups/prime-chain}"
+DATA_DIR="${DATA_DIR:-/var/lib/mersennet}"
+BACKUP_DIR="${BACKUP_DIR:-/backups/mersennet}"
 
 if [[ ! -d "$DATA_DIR" ]]; then
     echo "Error: Data directory does not exist: $DATA_DIR"
@@ -53,9 +53,9 @@ fi
 
 mkdir -p "$BACKUP_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="prime-chain-state-$TIMESTAMP"
+BACKUP_NAME="mersennet-state-$TIMESTAMP"
 
-echo "==> Backing up Prime Chain state"
+echo "==> Backing up Mersennet state"
 echo "  Source:      $DATA_DIR"
 echo "  Destination: $BACKUP_DIR/$BACKUP_NAME"
 echo ""

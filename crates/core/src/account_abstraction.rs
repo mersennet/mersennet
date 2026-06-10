@@ -1,4 +1,4 @@
-//! ERC-4337 Account Abstraction module for Prime Chain.
+//! ERC-4337 Account Abstraction module for Mersennet.
 //!
 //! Enables smart contract wallets to pay gas with any token, batch transactions,
 //! and use social recovery — critical for UX on a trading chain.

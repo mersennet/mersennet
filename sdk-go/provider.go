@@ -1,4 +1,4 @@
-package primechain
+package mersennet
 
 import (
 	"bytes"
@@ -8,17 +8,17 @@ import (
 	"net/http"
 )
 
-// PrimeChainError represents an RPC or SDK error
-type PrimeChainError struct {
+// MersennetError represents an RPC or SDK error
+type MersennetError struct {
 	Message string
 	Code    int
 }
 
-func (e *PrimeChainError) Error() string {
+func (e *MersennetError) Error() string {
 	return e.Message
 }
 
-// Provider is the JSON-RPC client for Prime Chain
+// Provider is the JSON-RPC client for Mersennet
 type Provider struct {
 	URL string
 	id  int
@@ -72,7 +72,7 @@ func (p *Provider) request(method string, params []interface{}) (json.RawMessage
 		return nil, err
 	}
 	if rpcResp.Error != nil {
-		return nil, &PrimeChainError{
+		return nil, &MersennetError{
 			Message: rpcResp.Error.Message,
 			Code:    rpcResp.Error.Code,
 		}

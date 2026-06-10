@@ -1,6 +1,6 @@
-use prime_chain::bridge::{BridgeDomain, BridgeQueue};
-use prime_chain::engine::Engine;
-use prime_chain::events::{BridgeEvent, BridgeQueueKind, DomainEvent};
+use mersennet::bridge::{BridgeDomain, BridgeQueue};
+use mersennet::engine::Engine;
+use mersennet::events::{BridgeEvent, BridgeQueueKind, DomainEvent};
 use revm::primitives::Bytes;
 use tempfile::TempDir;
 

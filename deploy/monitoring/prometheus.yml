@@ -3,13 +3,13 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: 'prime-chain-local'
+  - job_name: 'mersennet-local'
     static_configs:
       - targets: ['host.docker.internal:8545']
         labels:
           node: 'public-rpc'
 
-  - job_name: 'prime-chain-validators'
+  - job_name: 'mersennet-validators'
     static_configs:
       - targets: ['46.225.183.192:8545']
         labels:

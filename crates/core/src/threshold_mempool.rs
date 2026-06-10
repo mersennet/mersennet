@@ -1,10 +1,10 @@
-//! v2 encrypted mempool, built on the [`prime_zkp::threshold`]
+//! v2 encrypted mempool, built on the [`mersennet_zkp::threshold`]
 //! trait surface so the cryptographic core can be swapped between
 //!
 //! - the `DummyThreshold` provider (workspace default, used in tests
 //!   and devnet),
 //! - a real BLS12-381 threshold ElGamal provider gated behind the
-//!   `prover` feature on `prime-zkp` (Phase 1.3 follow-up).
+//!   `prover` feature on `mersennet-zkp` (Phase 1.3 follow-up).
 //!
 //! This module is intentionally separate from the legacy
 //! [`crate::encrypted_mempool`], which sits behind
@@ -29,7 +29,7 @@
 
 #![allow(dead_code)]
 
-use prime_zkp::{
+use mersennet_zkp::{
     DecryptionShare, EncryptedPayload, ThresholdElGamal, ThresholdError,
     sp1::DecryptedIntentWitness, threshold::DummyThreshold,
 };
@@ -107,7 +107,7 @@ impl std::fmt::Debug for ThresholdMempool {
 
 impl ThresholdMempool {
     /// Build a mempool using the workspace-default
-    /// [`prime_zkp::threshold::DummyThreshold`] provider.
+    /// [`mersennet_zkp::threshold::DummyThreshold`] provider.
     pub fn new(threshold: u32, total_validators: u32, max_size: usize) -> Self {
         let provider: Box<dyn ThresholdElGamal> =
             Box::new(DummyThreshold::new(threshold, total_validators, 0));

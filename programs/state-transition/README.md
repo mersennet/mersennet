@@ -1,17 +1,17 @@
 # SP1 state-transition program
 
-Proves that a Prime Chain block's state transition is valid, end to
+Proves that a Mersennet block's state transition is valid, end to
 end. The proof is consumed by:
 
 - **Light clients** verifying chain state without re-executing.
-- **Bridges** receiving Prime Chain state updates on other chains
+- **Bridges** receiving Mersennet state updates on other chains
   (verifier precompile `0x0300`).
 - **The chain itself**, optionally, as a "self-checkpointing" mechanism
   for restart-from-snapshot scenarios.
 
 ## Inputs (private witness)
 
-Bincode-encoded [`prime_zkp::sp1::BlockProgramInput`]:
+Bincode-encoded [`mersennet_zkp::sp1::BlockProgramInput`]:
 
 | Field | Source |
 |---|---|
@@ -24,7 +24,7 @@ Bincode-encoded [`prime_zkp::sp1::BlockProgramInput`]:
 
 ## Public output
 
-Bincode-encoded [`prime_zkp::sp1::BlockProgramOutput`]:
+Bincode-encoded [`mersennet_zkp::sp1::BlockProgramOutput`]:
 
 | Field | Meaning |
 |---|---|
@@ -63,7 +63,7 @@ For every tx in `txs`, in order:
 ## Today
 
 [`crate::state_proof`] now proves from canonical
-`prime_zkp::sp1::BlockProgramInput`, and the checked-in SP1 program in
+`mersennet_zkp::sp1::BlockProgramInput`, and the checked-in SP1 program in
 [src/main.rs](./src/main.rs) re-derives `BlockProgramOutput` from that
 input inside the zkVM. The host-echo contract is gone.
 
@@ -85,7 +85,7 @@ chain, host runner, and zkVM:
 That means the program now consumes the real private-witness shape and
 computes its own public values for the shielded tx sub-path plus the
 deterministic market-clearing hash, but it does not yet replay the full
-Prime Chain engine (`revm`, order admission, liquidation claim/settle,
+Mersennet engine (`revm`, order admission, liquidation claim/settle,
 full header derivation) inside the zkVM.
 
 Reference request/response adapters for the real prover live under
@@ -107,9 +107,11 @@ The remaining cut-over from this minimal ELF to the full block prover is:
 2. Re-run the full block transition inside the zkVM: tx decoding,
   Noir-proof verification, nullifier/commitment updates, and market
   matching.
-3. Swap `SP1Prover::new(ProverMode::Mock)` in
-   `crates/core/src/state_proof.rs` for
-   `sp1_sdk::ProverClient::network()` (or `local()` for self-hosting).
+3. Point `SP1Prover::runtime_default()` (used by
+   `crates/core/src/state_proof.rs`) at the real adapters via
+   `PRIME_SP1_PROVE_ADAPTER` / `PRIME_SP1_VERIFY_ADAPTER`, with
+   `PRIME_SP1_MODE=network` for delegated proving (or `local` for
+   self-hosting); without adapters it stays on the deterministic mock.
 4. Produce a release-grade prove/verify transcript against the pinned
   ELF and vkey hash.
 5. The on-chain verifier precompile at `0x0300` consumes the

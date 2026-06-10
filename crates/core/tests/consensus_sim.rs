@@ -1,5 +1,5 @@
-use prime_chain::consensus::{Consensus, EvidenceKind};
-use prime_chain::network::NetworkSim;
+use mersennet::consensus::{Consensus, EvidenceKind};
+use mersennet::network::NetworkSim;
 use revm::primitives::{Address, B256, U256};
 
 #[test]

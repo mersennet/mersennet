@@ -1,11 +1,11 @@
-"""Setup script for prime-chain-sdk."""
+"""Setup script for mersennet-sdk."""
 
 from setuptools import setup, find_packages
 
 setup(
-    name="prime-chain-sdk",
+    name="mersennet-sdk",
     version="0.7.0",
-    description="Python SDK for Prime Chain - JSON-RPC, CLOB, and WebSocket client",
+    description="Python SDK for Mersennet - JSON-RPC, CLOB, and WebSocket client",
     long_description=open("README.md").read() if __import__("os").path.exists("README.md") else "",
     long_description_content_type="text/markdown",
     packages=find_packages(),

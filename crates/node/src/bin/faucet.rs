@@ -1,9 +1,9 @@
-//! Testnet faucet for Prime Chain.
+//! Testnet faucet for Mersennet.
 //! Serves a simple HTTP endpoint that funds accounts with test tokens.
 
 use k256::ecdsa::SigningKey;
-use prime_chain::crypto::{encode_raw_signed_tx, sign_transaction};
-use prime_chain::engine::Transaction;
+use mersennet::crypto::{encode_raw_signed_tx, sign_transaction};
+use mersennet::engine::Transaction;
 use revm::primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = args.port;
 
     let faucet_key = load_faucet_key(&args.private_key)?;
-    let faucet_address = prime_chain::crypto::address_from_signing_key(&faucet_key);
+    let faucet_address = mersennet::crypto::address_from_signing_key(&faucet_key);
     let chain_id = fetch_chain_id(&rpc_url)?;
     let rate_limit: Mutex<HashMap<String, RateLimit>> = Mutex::new(HashMap::new());
 
@@ -166,12 +166,12 @@ fn handle_request(
 
         let nonce = fetch_nonce(
             &rpc_url,
-            &prime_chain::crypto::address_from_signing_key(&faucet_key),
+            &mersennet::crypto::address_from_signing_key(&faucet_key),
         )?;
         let gas_price = fetch_gas_price(&rpc_url)?;
 
         let tx = Transaction {
-            from: prime_chain::crypto::address_from_signing_key(&faucet_key),
+            from: mersennet::crypto::address_from_signing_key(&faucet_key),
             to: Some(address),
             value: U256::from_str_radix(FAUCET_AMOUNT.trim_start_matches("0x"), 10)
                 .unwrap_or_else(|_| U256::from(1000u64) * U256::from(10u64).pow(U256::from(18))),
@@ -353,7 +353,7 @@ fn handle_claim_token(
         }
     };
 
-    let faucet_address = prime_chain::crypto::address_from_signing_key(faucet_key);
+    let faucet_address = mersennet::crypto::address_from_signing_key(faucet_key);
     let gas_price = match fetch_gas_price(rpc_url) {
         Ok(p) => p,
         Err(e) => {
@@ -477,7 +477,7 @@ fn parse_args() -> Args {
                     DEFAULT_PORT
                 );
                 println!(
-                    "  --rpc-url URL       Prime Chain RPC URL (default: http://localhost:8545)"
+                    "  --rpc-url URL       Mersennet RPC URL (default: http://localhost:8545)"
                 );
                 println!(
                     "  --private-key PATH  Path to faucet key JSON (default: faucet-key.json)"

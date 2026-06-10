@@ -1,5 +1,5 @@
 /**
- * PrimeSubscription - WebSocket subscriptions for Prime Chain.
+ * PrimeSubscription - WebSocket subscriptions for Mersennet.
  * Uses eth_subscribe and prime_subscribe. In Node.js, WebSocket is available
  * in Node 18+; for older Node, use a polyfill (e.g. ws package).
  */

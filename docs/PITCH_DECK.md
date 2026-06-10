@@ -1,4 +1,4 @@
-# Prime Chain: Investor Pitch Deck
+# Mersennet: Investor Pitch Deck
 
 **Recommended Tools**: 
 - **Pitch.com** (Best for collaboration, YC-style templates)
@@ -13,7 +13,7 @@
 ## Slide Structure (12-15 Slides)
 
 ### Slide 1: Cover Slide
-**Title**: Prime Chain  
+**Title**: Mersennet  
 **Tagline**: The Institutional Trading Layer for Real-World Assets + On-Chain Credit
 
 **Visual Elements**:
@@ -24,7 +24,7 @@
 
 **Content**:
 ```
-PRIME CHAIN
+MERSENNET
 
 The Only Blockchain with Native Order Matching
 Built for Institutional Finance
@@ -34,7 +34,7 @@ Built for Institutional Finance
 
 **Design Notes**:
 - Use dark blue/black background with subtle tech pattern
-- Large, bold font for "PRIME CHAIN"
+- Large, bold font for "MERSENNET"
 - Smaller tagline below
 - Professional, institutional aesthetic
 
@@ -72,7 +72,7 @@ Result: $18.5T market opportunity blocked by infrastructure gap
 ---
 
 ### Slide 3: The Solution
-**Title**: Prime Chain: Native Order Matching + EVM
+**Title**: Mersennet: Native Order Matching + EVM
 
 **Visual Elements**:
 - Architecture diagram (EVM + Order Matching + Bridge)
@@ -83,7 +83,7 @@ Result: $18.5T market opportunity blocked by infrastructure gap
 ```
 THE SOLUTION
 
-Prime Chain: The only L1 blockchain with native, deterministic 
+Mersennet: The only L1 blockchain with native, deterministic 
 order matching built into consensus
 
 ✅ Sub-second finality (vs. 12s Ethereum)
@@ -220,7 +220,7 @@ Competitive Moat: Native matching requires consensus-level changes
 
 **Design Notes**:
 - Technical architecture diagram
-- Comparison table (Prime Chain vs. Ethereum, Solana)
+- Comparison table (Mersennet vs. Ethereum, Solana)
 - Icons for each differentiator
 - Professional, technical aesthetic
 
@@ -242,7 +242,7 @@ RWA Trading:
   📊 Tokenized Bonds: $100M corporate bond, instant settlement
   🏢 Real Estate: Fractional commercial property, 24/7 trading
   🛢️ Commodities: Gold/oil trading with built-in margin
-  💼 Trade Finance: XDC instruments trading on Prime Chain
+  💼 Trade Finance: XDC instruments trading on Mersennet
 
 On-Chain Credit:
   💳 Corporate Credit: $500M loan portfolio, order book trading
@@ -307,7 +307,7 @@ Pilot Programs: Q1 2026 | Partnerships: Q2 2026 | Mainnet: Q4 2026
 ---
 
 ### Slide 9: Competitive Advantage
-**Title**: Why Prime Chain Wins
+**Title**: Why Mersennet Wins
 
 **Visual Elements**:
 - Competitive matrix/table
@@ -589,7 +589,7 @@ Milestones:
 ```
 THANK YOU
 
-Prime Chain
+Mersennet
 The Institutional Trading Layer for Real-World Assets + On-Chain Credit
 
 Contact:

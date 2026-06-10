@@ -1,4 +1,4 @@
-# PRIME CHAIN — $25M Series A Pitch Deck
+# MERSENNET — $25M Series A Pitch Deck
 
 > **Confidential** | March 2026 | For Qualified Investors Only
 
@@ -9,7 +9,7 @@
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║                                                                  ║
-║                        ◆ PRIME CHAIN ◆                           ║
+║                        ◆ MERSENNET ◆                           ║
 ║                                                                  ║
 ║     The Institutional Trading Layer for Real-World Assets         ║
 ║              + On-Chain Credit Markets                            ║
@@ -65,7 +65,7 @@
 
 ---
 
-## Slide 3: The Solution — Prime Chain
+## Slide 3: The Solution — Mersennet
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
@@ -242,19 +242,19 @@ function tradeOnOrderBook(uint256 marketId, int256 qty, uint256 price) external 
   Sei v2                  ⚠️          ❌         ✅        400ms     ❌
   dYdX                    ✅          ❌         ❌        ~1s       ❌
   ─────────────────────────────────────────────────────────────────────
-  PRIME CHAIN             ✅       ✅ ATOMIC     ✅        200ms     ✅
+  MERSENNET             ✅       ✅ ATOMIC     ✅        200ms     ✅
 ```
 
-### Head-to-Head: Prime Chain vs. Hyperliquid (Our Closest Competitor)
+### Head-to-Head: Mersennet vs. Hyperliquid (Our Closest Competitor)
 
-| Dimension | Hyperliquid | Prime Chain | Winner |
+| Dimension | Hyperliquid | Mersennet | Winner |
 |-----------|------------|-------------|--------|
-| CLOB Speed | 200K ops/s | **2.4M ops/s** | **Prime Chain (12x)** |
-| EVM ↔ CLOB | Async (CoreWriter, seconds delay, stale reads) | **Atomic (same transaction)** | **Prime Chain** |
-| EVM Maturity | HyperEVM (alpha, limited) | **Full revm v12, Shanghai** | **Prime Chain** |
-| Use Case | Crypto perps/derivatives | **RWA + Credit + DeFi** | **Prime Chain (bigger TAM)** |
-| Institutional | No compliance features | **Deterministic, auditable** | **Prime Chain** |
-| DeFi Composability | Limited (async boundary) | **Full (atomic boundary)** | **Prime Chain** |
+| CLOB Speed | 200K ops/s | **2.4M ops/s** | **Mersennet (12x)** |
+| EVM ↔ CLOB | Async (CoreWriter, seconds delay, stale reads) | **Atomic (same transaction)** | **Mersennet** |
+| EVM Maturity | HyperEVM (alpha, limited) | **Full revm v12, Shanghai** | **Mersennet** |
+| Use Case | Crypto perps/derivatives | **RWA + Credit + DeFi** | **Mersennet (bigger TAM)** |
+| Institutional | No compliance features | **Deterministic, auditable** | **Mersennet** |
+| DeFi Composability | Limited (async boundary) | **Full (atomic boundary)** | **Mersennet** |
 
 **The Punchline:** Hyperliquid trades crypto derivatives. We trade the entire $18.5T institutional finance stack.
 
@@ -282,7 +282,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 │      COMBINED STRATEGIC VALUE: $11–15M + MARKET ACCESS       │
 │      ═══════════════════════════════════════════════          │
 │                                                              │
-│      TESTNET LIVE (Chain ID 7919):                           │
+│      TESTNET LIVE (Chain ID 131071):                           │
 │      ✅ 4-Validator Network  ✅ PrimeScan Explorer            │
 │      ✅ PrimeSwap DEX        ✅ PrimeNodes Dashboard          │
 │      ✅ Faucet               ✅ Documentation Portal           │
@@ -318,7 +318,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 │   USE CASE 1: STANDARD CHARTERED TOKENIZED BONDS             │
 │   ──────────────────────────────────────────────             │
 │                                                              │
-│   TODAY:                          WITH PRIME CHAIN:           │
+│   TODAY:                          WITH MERSENNET:           │
 │   ┌──────────┐                    ┌──────────────┐           │
 │   │ $100M    │  T+2 settlement    │ $100M        │           │
 │   │ Corporate│  High fees ($$$)   │ Corporate    │  Instant  │
@@ -378,7 +378,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 │   3 partners     12 partners   30 partners   50+ partners    │
 │   $500M TVA      $5B TVA       $25B TVA      $100B TVA       │
 │                                                              │
-│   TVA = Total Value of Assets traded on Prime Chain          │
+│   TVA = Total Value of Assets traded on Mersennet          │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -404,12 +404,12 @@ Native order matching requires **consensus-level integration** — you can't bol
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                                                              │
-│         PRIM TOKEN — 1 BILLION MAX SUPPLY                    │
+│         MRSN TOKEN — 1 BILLION MAX SUPPLY                    │
 │                                                              │
 │   ┌─────────────────────────────────────────────────┐        │
 │   │                                                 │        │
 │   │   ██████████████████████████████████████ 70%    │ Block  │
-│   │   Block Rewards (700M PRIM)              Rewards│        │
+│   │   Block Rewards (700M MRSN)              Rewards│        │
 │   │                                                 │        │
 │   │   ██████ 10%  Ecosystem & Grants (100M)         │        │
 │   │   ██████ 10%  Foundation Reserve (100M)         │        │
@@ -419,10 +419,10 @@ Native order matching requires **consensus-level integration** — you can't bol
 │   └─────────────────────────────────────────────────┘        │
 │                                                              │
 │   HALVING SCHEDULE (Bitcoin-style):                          │
-│   Era 0: 10 PRIM/block  ────►  50% emitted by Year 2.2      │
-│   Era 1:  5 PRIM/block  ────►  75% emitted by Year 4.4      │
-│   Era 2: 2.5 PRIM/block ────►  87.5% emitted by Year 6.7    │
-│   Era 3: 1.25 PRIM/block ───►  99% emitted by Year 13       │
+│   Era 0: 10 MRSN/block  ────►  50% emitted by Year 2.2      │
+│   Era 1:  5 MRSN/block  ────►  75% emitted by Year 4.4      │
+│   Era 2: 2.5 MRSN/block ────►  87.5% emitted by Year 6.7    │
+│   Era 3: 1.25 MRSN/block ───►  99% emitted by Year 13       │
 │                                                              │
 │   VESTING:                                                   │
 │   Team:  1y cliff + 3y linear                                │
@@ -442,9 +442,9 @@ Native order matching requires **consensus-level integration** — you can't bol
 | Celestia | 1B | Inflation | 17.6% | 35.6% | 26.8% | Perpetual |
 | Aptos | ~1.1B | Inflation | 19% | 49% | 32% | Perpetual |
 | Sui | 10B | Inflation | 14% | 48% | 38% | Perpetual |
-| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~13 years** |
+| **MRSN** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
 
-**Key Insight:** PRIM has the lowest team + investor allocation (10%) of any major L1 launched in the last 3 years. 70% goes to validators. This is a network-first, community-first token design.
+**Key Insight:** MRSN has the lowest team + investor allocation (10%) of any major L1 launched in the last 3 years. 70% goes to validators. This is a network-first, community-first token design.
 
 ---
 
@@ -458,7 +458,7 @@ Native order matching requires **consensus-level integration** — you can't bol
     └──────────┘         └──────────┘         └──────────┘         └──────────┘
 
     ✅ SC pilot           ✅ Live RWA          ✅ Public testnet    ✅ Mainnet
-      commitment            trading              (15+ validators)    (Chain 13370)
+      commitment            trading              (15+ validators)    (Chain 8191)
     ✅ XDC partnership    ✅ Regulatory         ✅ Developer eco    ✅ Institutional
     ✅ Greg Kidd            feedback             growth               trading live
       advisory            ✅ 3+ institutional  ✅ Security audit   ✅ $100M+ TVA
@@ -478,7 +478,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 | Q1 | Consensus over P2P, block timestamps, RPC completion | SC pilot, XDC partnership | $5M strategic |
 | Q2 | Indexer, bridge (testnet↔Sepolia), SDKs published | Live RWA + Credit trading, regulatory feedback | $15M cumulative |
 | Q3 | Public testnet (15+ validators), security audit | Developer ecosystem, DeFi integrations | $25M closed |
-| Q4 | Mainnet launch (Chain ID 13370), genesis | Institutional trading live, $100M+ TVA | Strategic partnerships |
+| Q4 | Mainnet launch (Chain ID 8191), genesis | Institutional trading live, $100M+ TVA | Strategic partnerships |
 
 ---
 
@@ -491,8 +491,8 @@ Native order matching requires **consensus-level integration** — you can't bol
 │                                                              │
 │   Rodolfo Cova — Founder & Lead Engineer                     │
 │   ─────────────────────────────────────                      │
-│   Full-stack blockchain architect. Built Prime Chain from     │
-│   scratch: 10,600+ lines of Rust across 28 modules.          │
+│   Full-stack blockchain architect. Built Mersennet from     │
+│   scratch: 44,000+ lines of Rust, 6-crate workspace.           │
 │   Complete L1 with EVM, CLOB, consensus, P2P, RPC.           │
 │                                                              │
 │                   STRATEGIC ADVISORS                          │
@@ -598,12 +598,12 @@ Native order matching requires **consensus-level integration** — you can't bol
 
 ---
 
-## Slide 15: Why Prime Chain — The Investment Thesis
+## Slide 15: Why Mersennet — The Investment Thesis
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║                                                                  ║
-║     5 REASONS TO INVEST IN PRIME CHAIN                           ║
+║     5 REASONS TO INVEST IN MERSENNET                           ║
 ║                                                                  ║
 ║     1. ONLY L1 WITH ATOMIC EVM ↔ CLOB                           ║
 ║        2+ year engineering moat. Can't be bolted on.             ║
@@ -634,7 +634,7 @@ Native order matching requires **consensus-level integration** — you can't bol
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║                                                                  ║
-║                        ◆ PRIME CHAIN ◆                           ║
+║                        ◆ MERSENNET ◆                           ║
 ║                                                                  ║
 ║     The Institutional Trading Layer for                           ║
 ║     Real-World Assets + On-Chain Credit Markets                  ║
@@ -643,12 +643,12 @@ Native order matching requires **consensus-level integration** — you can't bol
 ║                                                                  ║
 ║     🌐  docs.primechain.network                                  ║
 ║     📧  [founders@primechain.network]                            ║
-║     𝕏   [@PrimeChainHQ]                                         ║
+║     𝕏   [@MersennetHQ]                                         ║
 ║     📍  GitHub: PrimeNumbersLabs                                 ║
 ║                                                                  ║
 ║     ─────────────────────────────────────────                    ║
 ║                                                                  ║
-║     TESTNET LIVE:  Chain ID 7919                                 ║
+║     TESTNET LIVE:  Chain ID 131071                                 ║
 ║     Explorer:      primescan.io                                  ║
 ║     DEX:           primeswap.io                                  ║
 ║     Docs:          docs.primechain.network                       ║
@@ -706,7 +706,7 @@ Atomic commits across all domains in every block.
 | Sei | Series A ($30M) | $800M FDV | ~$50M annualized | Deprecated DEX module |
 | Berachain | Series A ($69M) | $1.5B FDV | Pre-revenue | DeFi-native, no CLOB |
 
-**Prime Chain at $25M raise:** Early-stage pricing for a project that combines the best features of Hyperliquid (native CLOB) + Monad (parallel EVM) + institutional focus no one else has.
+**Mersennet at $25M raise:** Early-stage pricing for a project that combines the best features of Hyperliquid (native CLOB) + Monad (parallel EVM) + institutional focus no one else has.
 
 ---
 
@@ -715,7 +715,7 @@ Atomic commits across all domains in every block.
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | Regulatory uncertainty | High | Early FCA/MAS/SEC engagement via Standard Chartered |
-| Technical execution | Medium | Testnet live, 72K TPS proven, 62+ tests passing |
+| Technical execution | Medium | Testnet live, 72K TPS proven, 241 tests passing |
 | Competition | Medium | 2+ year technical moat (consensus-level CLOB) |
 | Market timing | Medium | Multiple use cases (RWA + Credit + DeFi), flexible positioning |
 | Adoption | Medium | Strategic partners (SC, XDC, Binance) provide guaranteed early TVA |

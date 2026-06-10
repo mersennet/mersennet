@@ -1,8 +1,9 @@
-# Prime Chain Mainnet Launch Checklist
+# Mersennet Mainnet Launch Checklist
 
 ## Pre-Launch
 
 - [ ] All tests passing
+- [ ] Genesis parameters verified ([`genesis.json`](genesis.json): chain ID 8191, MRSN / 18 decimals, 1B max supply, 10 MRSN/block initial reward, halving every 35,000,000 blocks)
 - [ ] Security audit complete
 - [ ] Genesis validator set confirmed (minimum 7 validators)
 - [ ] Genesis config signed by all validators

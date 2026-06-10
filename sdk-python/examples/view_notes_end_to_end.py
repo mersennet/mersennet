@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from prime_chain import GrantedViewingMaterial, PrimeProvider, ShieldedNote, make_mock_note_decryptor, scan_granted_notes
+from mersennet import GrantedViewingMaterial, PrimeProvider, ShieldedNote, make_mock_note_decryptor, scan_granted_notes
 
 GRANT_ID_HEX = "0x" + "11" * 32
 RECIPIENT_PUBLIC_KEY = "0x" + "22" * 32

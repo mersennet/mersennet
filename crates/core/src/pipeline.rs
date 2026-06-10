@@ -1,4 +1,4 @@
-//! Block production pipeline for Prime Chain.
+//! Block production pipeline for Mersennet.
 //!
 //! Overlaps execution of block N+1 with consensus of block N to effectively double throughput.
 

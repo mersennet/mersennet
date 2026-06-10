@@ -1,15 +1,15 @@
 # Competitive Analysis: Native Order Book Blockchains
 
-**Prepared for Prime Chain Development Team**
+**Prepared for Mersennet Development Team**
 **Date: March 2026**
 
 ---
 
 ## Executive Summary
 
-This document analyzes the three most significant production blockchain projects that implement native order books — dYdX v4, Sei Network, and Hyperliquid — and extracts architectural patterns, lessons learned, and specific recommendations for Prime Chain. Each represents a distinct design philosophy, and Prime Chain's unified EVM+PrimeOrders architecture can learn from both their successes and their limitations.
+This document analyzes the three most significant production blockchain projects that implement native order books — dYdX v4, Sei Network, and Hyperliquid — and extracts architectural patterns, lessons learned, and specific recommendations for Mersennet. Each represents a distinct design philosophy, and Mersennet's unified EVM+PrimeOrders architecture can learn from both their successes and their limitations.
 
-**Key finding:** The industry is converging on a consensus that high-performance trading requires order books outside the traditional EVM execution path, but disagrees on how tightly coupled the order book should be with general-purpose smart contracts. Prime Chain's approach of embedding both in a single state and block is architecturally novel and, if executed well, addresses the primary weakness of every competitor analyzed.
+**Key finding:** The industry is converging on a consensus that high-performance trading requires order books outside the traditional EVM execution path, but disagrees on how tightly coupled the order book should be with general-purpose smart contracts. Mersennet's approach of embedding both in a single state and block is architecturally novel and, if executed well, addresses the primary weakness of every competitor analyzed.
 
 ---
 
@@ -64,7 +64,7 @@ Each `Orderbook` maintains:
 
 ### 1.3 Order State Management: The Dual-State Model
 
-**This is dYdX's most important architectural decision and the one most relevant to Prime Chain.**
+**This is dYdX's most important architectural decision and the one most relevant to Mersennet.**
 
 dYdX separates orders into two categories with fundamentally different state management:
 
@@ -83,7 +83,7 @@ dYdX separates orders into two categories with fundamentally different state man
 - Designed for retail traders and long-lived limit orders
 - Lower throughput, consensus-speed placement
 
-**Prime Chain implication:** Prime Chain's PrimeOrders currently treats all orders uniformly. dYdX's dual-state approach is a pragmatic optimization — short-term orders never touch consensus, dramatically reducing state bloat and increasing throughput. Prime Chain should consider a similar tiered model, but the advantage of Prime Chain's unified state is that it can offer stronger guarantees than dYdX's "optimistic" matching for short-term orders.
+**Mersennet implication:** Mersennet's PrimeOrders currently treats all orders uniformly. dYdX's dual-state approach is a pragmatic optimization — short-term orders never touch consensus, dramatically reducing state bloat and increasing throughput. Mersennet should consider a similar tiered model, but the advantage of Mersennet's unified state is that it can offer stronger guarantees than dYdX's "optimistic" matching for short-term orders.
 
 ### 1.4 How Orders Interact with Consensus
 
@@ -107,11 +107,11 @@ The `PrepareCheckState` function is particularly noteworthy — it runs a 9-step
 8. Deleverage subaccounts that can't be liquidated
 9. Gate withdrawals if negative-TNC subaccounts exist
 
-**Prime Chain implication:** dYdX's approach of replaying local state against committed state is necessary because each validator's order book can diverge. Prime Chain's deterministic matching within a single block avoids this complexity, but must ensure the matching engine is fast enough to handle the load that dYdX offloads to the off-chain memclob.
+**Mersennet implication:** dYdX's approach of replaying local state against committed state is necessary because each validator's order book can diverge. Mersennet's deterministic matching within a single block avoids this complexity, but must ensure the matching engine is fast enough to handle the load that dYdX offloads to the off-chain memclob.
 
 ### 1.5 Matching Algorithm
 
-dYdX uses price-time priority matching identical in concept to Prime Chain's PrimeOrders, but with several important implementation details:
+dYdX uses price-time priority matching identical in concept to Mersennet's PrimeOrders, but with several important implementation details:
 
 - **Branched context for matching:** Uses `ctx.CacheContext()` to create a branched state, only writing if matching succeeds. This ensures atomic matching — if any step fails (collateralization check, etc.), all state changes are discarded.
 - **Collateralization checks during matching:** Each fill is validated against the subaccount's collateral in real-time, not just at order placement.
@@ -138,7 +138,7 @@ dYdX has evolved through multiple MEV mitigation strategies:
   - No reordering MEV (order sequence doesn't affect matching outcome in FBA)
   - Reduced colocation advantage (must disseminate to majority, not just proposer)
 
-**Prime Chain implication:** Prime Chain currently lacks any MEV protection mechanism. This is a critical gap. The FBA approach is particularly relevant because it's compatible with CLOB-style matching. Prime Chain should implement either (a) FBA-style batch auctions per block, (b) ABCI-style collaborative block building, or (c) a threshold encryption scheme where order contents are encrypted until committed. Without MEV protection, block proposers in Prime Chain have enormous power to front-run, sandwich, or censor trades.
+**Mersennet implication:** Mersennet currently lacks any MEV protection mechanism. This is a critical gap. The FBA approach is particularly relevant because it's compatible with CLOB-style matching. Mersennet should implement either (a) FBA-style batch auctions per block, (b) ABCI-style collaborative block building, or (c) a threshold encryption scheme where order contents are encrypted until committed. Without MEV protection, block proposers in Mersennet have enormous power to front-run, sandwich, or censor trades.
 
 ### 1.7 Margin and Liquidation System
 
@@ -169,7 +169,7 @@ Recent optimizations (2025) include:
 
 ### 2.1 Architecture Overview
 
-Sei represents an interesting case study because it **pivoted** from being a DEX-focused chain (Sei v1) with a built-in `x/dex` module to becoming a general-purpose parallelized EVM chain (Sei v2). This pivot itself contains lessons for Prime Chain.
+Sei represents an interesting case study because it **pivoted** from being a DEX-focused chain (Sei v1) with a built-in `x/dex` module to becoming a general-purpose parallelized EVM chain (Sei v2). This pivot itself contains lessons for Mersennet.
 
 **Sei v1:** Built-in native order matching engine with CosmWasm integration
 **Sei v2:** Parallelized EVM + CosmWasm with native optimizations, deprecated the built-in DEX module in favor of allowing DEXs to be built as smart contracts on the optimized runtime
@@ -199,7 +199,7 @@ Sei's primary innovation is its consensus optimization suite, not a novel algori
 - Deterministic finality within 1-2 blocks (~400-800ms)
 - Multi-step DeFi operations (approve + swap + deposit) complete in ~1.2 seconds
 
-**Prime Chain implication:** Sei's consensus optimizations are directly applicable to Prime Chain's BFT consensus. The key techniques — pipelining execution with voting, pre-consensus transaction preparation, and aggressive timeout tuning — should all be implemented. Prime Chain's whitepaper targets "sub-second finality" but doesn't describe the specific optimizations to achieve it. Sei proves that aggressive Tendermint tuning can achieve 400ms blocks.
+**Mersennet implication:** Sei's consensus optimizations are directly applicable to Mersennet's BFT consensus. The key techniques — pipelining execution with voting, pre-consensus transaction preparation, and aggressive timeout tuning — should all be implemented. Mersennet's whitepaper targets "sub-second finality" but doesn't describe the specific optimizations to achieve it. Sei proves that aggressive Tendermint tuning can achieve 400ms blocks.
 
 ### 2.3 Parallel Order Processing (Optimistic Parallelization)
 
@@ -215,7 +215,7 @@ For order processing specifically:
 - Orders within the same market must be serialized (price-time priority requires sequential processing)
 - Conflict detection catches any violations
 
-**Prime Chain implication:** Prime Chain should implement parallel processing for independent markets. The key insight is that orders in BTC-PERP and ETH-PERP are independent and can be matched concurrently. Only when cross-market operations occur (e.g., portfolio margin checks) do they need to synchronize. PrimeOrders should be designed with per-market parallelism from the start.
+**Mersennet implication:** Mersennet should implement parallel processing for independent markets. The key insight is that orders in BTC-PERP and ETH-PERP are independent and can be matched concurrently. Only when cross-market operations occur (e.g., portfolio margin checks) do they need to synchronize. PrimeOrders should be designed with per-market parallelism from the start.
 
 ### 2.4 Order Matching: Frequent Batch Auctions (FBA)
 
@@ -239,7 +239,7 @@ Sei distinguishes between:
 - **"Bad" MEV** (frontrunning by validators/bots): Eliminated by FBA
 - **"Good" MEV** (liquidations, arbitrage): Maximized through private, off-chain blind auctions similar to Flashbots' MEV-Boost
 
-**Prime Chain implication:** Prime Chain's current price-time-priority matching is the industry standard but is vulnerable to MEV. Consider offering BOTH matching modes: standard CLOB for markets that need continuous price discovery, and FBA for markets where frontrunning protection is more important than order-by-order priority. This gives market creators flexibility.
+**Mersennet implication:** Mersennet's current price-time-priority matching is the industry standard but is vulnerable to MEV. Consider offering BOTH matching modes: standard CLOB for markets that need continuous price discovery, and FBA for markets where frontrunning protection is more important than order-by-order priority. This gives market creators flexibility.
 
 ### 2.5 CosmWasm Integration (The x/dex Module)
 
@@ -250,9 +250,9 @@ Sei v1's approach to composability:
 - Order books organized by contract address + price denom + asset denom
 - Multi-market support with shared liquidity
 
-**Why Sei deprecated x/dex:** Sei's pivot to v2 (parallelized EVM) suggests the team concluded that a built-in DEX module was too limiting. By making the EVM fast enough, they could let DEXs be built as smart contracts, gaining more flexibility at the cost of some performance. This is the opposite of Prime Chain's approach.
+**Why Sei deprecated x/dex:** Sei's pivot to v2 (parallelized EVM) suggests the team concluded that a built-in DEX module was too limiting. By making the EVM fast enough, they could let DEXs be built as smart contracts, gaining more flexibility at the cost of some performance. This is the opposite of Mersennet's approach.
 
-**Prime Chain implication:** Sei's pivot is a cautionary tale but not necessarily applicable to Prime Chain. Sei deprecated x/dex because they wanted to be a general-purpose chain — DEX was just one use case. Prime Chain's thesis is that order matching is a first-class citizen alongside EVM, not an add-on. The key lesson is that the DEX module must be genuinely better than what smart contracts can do (in performance, features, or guarantees) to justify its existence as a native module.
+**Mersennet implication:** Sei's pivot is a cautionary tale but not necessarily applicable to Mersennet. Sei deprecated x/dex because they wanted to be a general-purpose chain — DEX was just one use case. Mersennet's thesis is that order matching is a first-class citizen alongside EVM, not an add-on. The key lesson is that the DEX module must be genuinely better than what smart contracts can do (in performance, features, or guarantees) to justify its existence as a native module.
 
 ### 2.6 SeiDB
 
@@ -261,7 +261,7 @@ Sei built a custom storage layer optimized for high-throughput state access:
 - Optimized for the read/write patterns of order book state
 - State prefetching integrated with consensus pipeline
 
-**Prime Chain implication:** Prime Chain uses `sled` as its storage backend. For order book workloads (many small writes, range queries on price levels), storage performance is critical. Consider whether sled's characteristics match order book access patterns, or whether a custom storage layer would be beneficial.
+**Mersennet implication:** Mersennet uses `sled` as its storage backend. For order book workloads (many small writes, range queries on price levels), storage performance is critical. Consider whether sled's characteristics match order book access patterns, or whether a custom storage layer would be beneficial.
 
 ---
 
@@ -293,7 +293,7 @@ Unlike dYdX (Go) and Sei (Go), Hyperliquid implements all state transition logic
 - 0.9s 99th percentile latency
 - Vanilla Tendermint comparison: ~1,000 TPS, 2-5x longer latency
 
-**Prime Chain implication:** Prime Chain is also written in Rust with `revm` for EVM execution. This is a strong foundation. Hyperliquid proves that Rust + purpose-built consensus can dramatically outperform Go/Cosmos SDK implementations. Prime Chain should leverage this advantage.
+**Mersennet implication:** Mersennet is also written in Rust with `revm` for EVM execution. This is a strong foundation. Hyperliquid proves that Rust + purpose-built consensus can dramatically outperform Go/Cosmos SDK implementations. Mersennet should leverage this advantage.
 
 ### 3.3 Fully On-Chain Order Book
 
@@ -314,7 +314,7 @@ A unique Hyperliquid innovation: the mempool and consensus layer understand orde
 
 Within each category, the original proposer ordering is preserved. Modifies are categorized according to the new order they place.
 
-**Prime Chain implication:** This is directly applicable. Prime Chain should implement semantic-aware transaction ordering within blocks. By processing orders before cancels, and cancels before non-order transactions, the matching engine can operate more efficiently and provide better execution quality. This is simple to implement and provides immediate benefits.
+**Mersennet implication:** This is directly applicable. Mersennet should implement semantic-aware transaction ordering within blocks. By processing orders before cancels, and cancels before non-order transactions, the matching engine can operate more efficiently and provide better execution quality. This is simple to implement and provides immediate benefits.
 
 ### 3.4 Margin System
 
@@ -323,11 +323,11 @@ Hyperliquid's margin handling:
 - This ensures margining consistency despite oracle price fluctuations between order placement and fill
 - Critical for resting orders that may sit on the book for extended periods
 
-**Prime Chain implication:** Prime Chain's whitepaper describes margin checks but doesn't specify whether they occur at placement only or also at match time. Hyperliquid's approach of checking at BOTH times is more robust and should be adopted. Oracle prices can move significantly between when a resting order is placed and when it's eventually filled.
+**Mersennet implication:** Mersennet's whitepaper describes margin checks but doesn't specify whether they occur at placement only or also at match time. Hyperliquid's approach of checking at BOTH times is more robust and should be adopted. Oracle prices can move significantly between when a resting order is placed and when it's eventually filled.
 
 ### 3.5 HyperCore <> HyperEVM Integration
 
-This is the area most relevant to Prime Chain's cross-domain bridge.
+This is the area most relevant to Mersennet's cross-domain bridge.
 
 #### Read Path (Synchronous)
 Smart contracts can query HyperCore state via precompiled contracts at `0x...0800`:
@@ -354,14 +354,14 @@ HyperEVM uses a two-tier block system:
 - HyperCore → HyperEVM: Queued for next EVM block
 - No wrapped tokens — same asset exists in both environments
 
-**Critical limitation:** The async write path means smart contracts CANNOT atomically compose with order book operations. A smart contract can't place an order and react to the fill result in the same transaction. This is the primary weakness Hyperliquid acknowledges, and it's exactly what Prime Chain's cross-domain bridge is designed to solve.
+**Critical limitation:** The async write path means smart contracts CANNOT atomically compose with order book operations. A smart contract can't place an order and react to the fill result in the same transaction. This is the primary weakness Hyperliquid acknowledges, and it's exactly what Mersennet's cross-domain bridge is designed to solve.
 
-**Prime Chain implication:** Prime Chain's bridge providing atomic cross-domain calls is a genuine competitive advantage over Hyperliquid's async model. However, Prime Chain must ensure the bridge doesn't introduce excessive latency. The ideal design allows a smart contract to:
+**Mersennet implication:** Mersennet's bridge providing atomic cross-domain calls is a genuine competitive advantage over Hyperliquid's async model. However, Mersennet must ensure the bridge doesn't introduce excessive latency. The ideal design allows a smart contract to:
 1. Read order book state (synchronous)
 2. Place orders and receive fill results (synchronous, within the same block)
 3. React to fills with further smart contract logic (atomic)
 
-This "synchronous composability" is Prime Chain's single biggest differentiator.
+This "synchronous composability" is Mersennet's single biggest differentiator.
 
 ### 3.6 Performance Engineering
 
@@ -379,11 +379,11 @@ Hyperliquid's performance comes from:
 - 2-of-3 multisig for bridged assets
 - Closed-source trading engine limits auditability
 
-**Prime Chain implication:** Prime Chain should aim for greater decentralization from launch. A larger validator set and open-source codebase are competitive advantages.
+**Mersennet implication:** Mersennet should aim for greater decentralization from launch. A larger validator set and open-source codebase are competitive advantages.
 
 ### 3.8 HyperEVM Deep Dive (Updated March 2026)
 
-This section provides a detailed technical analysis of Hyperliquid's HyperEVM, the EVM layer added to complement their native HyperCore trading engine. Understanding HyperEVM's architecture and limitations is critical for positioning Prime Chain's unified execution model.
+This section provides a detailed technical analysis of Hyperliquid's HyperEVM, the EVM layer added to complement their native HyperCore trading engine. Understanding HyperEVM's architecture and limitations is critical for positioning Mersennet's unified execution model.
 
 #### HyperEVM Architecture
 
@@ -393,7 +393,7 @@ Hyperliquid uses a **dual-execution model** under HyperBFT consensus:
 - **HyperEVM:** Cancun-spec EVM for smart contracts.
 - **Execution order:** HyperCore and HyperEVM run **sequentially**, not in parallel. They are **NOT** the same execution environment — state is bridged between two distinct runtimes.
 
-This separation is fundamental. Unlike Prime Chain's unified EVM+PrimeOrders architecture, Hyperliquid maintains two execution silos that communicate asynchronously.
+This separation is fundamental. Unlike Mersennet's unified EVM+PrimeOrders architecture, Hyperliquid maintains two execution silos that communicate asynchronously.
 
 #### Dual-Block Architecture
 
@@ -440,9 +440,9 @@ The CoreWriter system contract at `0x3333...3333` allows smart contracts to **wr
 | **Alpha status** | Write precompiles still evolving; API may change |
 | **47K gas per call** | Non-trivial cost for high-frequency strategies |
 
-#### Comparison: HyperEVM vs Prime Chain Precompile
+#### Comparison: HyperEVM vs Mersennet Precompile
 
-| Capability | Hyperliquid HyperEVM | Prime Chain Precompile |
+| Capability | Hyperliquid HyperEVM | Mersennet Precompile |
 |------------|----------------------|------------------------|
 | **Place order from Solidity** | Yes (via CoreWriter) | Yes (at 0x0100) |
 | **Read current book** | No (1 block stale) | Yes (same-block state) |
@@ -451,9 +451,9 @@ The CoreWriter system contract at `0x3333...3333` allows smart contracts to **wr
 | **Smart contract market maker** | Limited (no fill feedback) | Full (atomic feedback loop) |
 | **Gas cost** | ~47K per CoreWriter call | Lower (single precompile path) |
 
-#### Why Prime Chain Wins
+#### Why Mersennet Wins
 
-Prime Chain's precompile at `0x0100` executes in the **SAME transaction**:
+Mersennet's precompile at `0x0100` executes in the **SAME transaction**:
 
 1. Place order
 2. Get fill result
@@ -462,7 +462,7 @@ Prime Chain's precompile at `0x0100` executes in the **SAME transaction**:
 
 This is **atomic composability**. Hyperliquid's model is **asynchronous composability** — next-block execution with seconds of delay. This is a **structural architectural difference** that Hyperliquid cannot fix without rebuilding their dual-execution model. Their design choice (sequential execution, intentional write delay) is baked into the consensus and block structure.
 
-#### Updated Prime Chain Benchmarks (March 2026)
+#### Updated Mersennet Benchmarks (March 2026)
 
 | Component | Throughput | Notes |
 |-----------|------------|-------|
@@ -481,10 +481,10 @@ This is **atomic composability**. Hyperliquid's model is **asynchronous composab
 | Approach | Used By | Pros | Cons |
 |----------|---------|------|------|
 | **In-memory only** (off-chain) | dYdX short-term orders | Highest performance, no state bloat | Orders lost on restart, non-deterministic across nodes |
-| **Fully on-chain** | Hyperliquid, Prime Chain | Deterministic, censorship-resistant, auditable | Higher state growth, consensus overhead |
+| **Fully on-chain** | Hyperliquid, Mersennet | Deterministic, censorship-resistant, auditable | Higher state growth, consensus overhead |
 | **Hybrid** | dYdX (short-term + stateful) | Best of both worlds | Complex state reconciliation logic |
 
-**Recommendation for Prime Chain:** Adopt a hybrid approach. Keep the on-chain order book as the source of truth (matching Prime Chain's current design), but introduce a "fast path" for short-term orders that can be matched in-memory before being committed. This preserves determinism while improving latency.
+**Recommendation for Mersennet:** Adopt a hybrid approach. Keep the on-chain order book as the source of truth (matching Mersennet's current design), but introduce a "fast path" for short-term orders that can be matched in-memory before being committed. This preserves determinism while improving latency.
 
 ### 4.2 Deterministic Matching Across Distributed Nodes
 
@@ -494,14 +494,14 @@ All three projects solve this differently:
 - **Sei:** FBA ensures matching is independent of arrival order. Determinism comes from the batch semantics, not from synchronized order books.
 - **Hyperliquid:** Fully on-chain order book. All nodes execute the same sequence of operations and arrive at the same state. True determinism.
 
-**Prime Chain's approach** (per the whitepaper) matches Hyperliquid's: all nodes process the same ordered sequence of operations deterministically. This is the strongest guarantee but requires the most consensus throughput. To make this work at scale, Prime Chain needs:
+**Mersennet's approach** (per the whitepaper) matches Hyperliquid's: all nodes process the same ordered sequence of operations deterministically. This is the strongest guarantee but requires the most consensus throughput. To make this work at scale, Mersennet needs:
 1. Aggressive consensus optimization (like Sei's Twin Turbo)
 2. Per-market parallelism (like Sei's OCC)
 3. Efficient state management (like Hyperliquid's custom representation)
 
 ### 4.3 Risk Engine Integration
 
-| Feature | dYdX | Hyperliquid | Prime Chain (current) |
+| Feature | dYdX | Hyperliquid | Mersennet (current) |
 |---------|------|-------------|----------------------|
 | Margin check at placement | Yes | Yes | Yes |
 | Margin check at match | Yes (collateralization check during matching) | Yes (at each match) | Not specified |
@@ -512,7 +512,7 @@ All three projects solve this differently:
 | Cross-margin | Yes | Yes | Not described |
 | Isolated margin | Yes (isolated subaccounts) | Yes | Not described |
 
-**Recommendation:** Prime Chain's whitepaper describes a basic margin system (collateral, positions, PnL) but lacks several production-critical features:
+**Recommendation:** Mersennet's whitepaper describes a basic margin system (collateral, positions, PnL) but lacks several production-critical features:
 1. **Insurance fund:** Must exist to absorb losses from liquidations where the position is underwater
 2. **Deleveraging mechanism:** Needed when insurance fund is depleted — force-close opposing positions at bankruptcy price
 3. **Withdrawal gating:** When any account has negative equity, restrict all withdrawals to prevent bank runs
@@ -526,24 +526,24 @@ All three projects solve this differently:
 | dYdX v4 | None (CLOB isolated from EVM) | N/A | N/A |
 | Hyperliquid | Read=sync, Write=async | Reads only | 1-2 blocks for writes |
 | Sei v1 | CosmWasm bindings | Module-level | Same block |
-| **Prime Chain** | Cross-domain bridge with ordered queues | Full atomic | Same block |
+| **Mersennet** | Cross-domain bridge with ordered queues | Full atomic | Same block |
 | RISE (emerging) | EVM-native MarketCore | Full atomic (EVM) | Same tx |
 
-**Prime Chain's bridge is a genuine differentiator.** No production system currently offers truly atomic cross-domain composability between a native order book and EVM smart contracts. This is the feature that should be emphasized and perfected.
+**Mersennet's bridge is a genuine differentiator.** No production system currently offers truly atomic cross-domain composability between a native order book and EVM smart contracts. This is the feature that should be emphasized and perfected.
 
 ### 4.5 Order Book Data Structure Comparison
 
 | System | Data Structure | Best Price Access | Insert | Cancel |
 |--------|---------------|-------------------|--------|--------|
 | dYdX | `map[Subticks]*Level` (hash map) + cached BestBid/BestAsk | O(1) cached | O(1) amortized | O(1) |
-| Prime Chain | `BTreeMap` (sorted tree) | O(1) (min/max) | O(log L) | O(log L + k) |
+| Mersennet | `BTreeMap` (sorted tree) | O(1) (min/max) | O(log L) | O(log L + k) |
 | Hyperliquid | Unknown (closed source), likely similar to traditional HFT | O(1) | O(1) | O(1) |
 
-**Recommendation:** dYdX's approach of using hash maps with cached best prices is worth considering. For matching, you only need the best bid/ask (O(1) with caching), not a sorted view of all levels. BTreeMap's O(log L) insert is unnecessary overhead if you maintain best bid/ask invariants. However, BTreeMap provides better worst-case guarantees and simpler implementation for range queries (e.g., "get top 10 levels"). The choice depends on whether Prime Chain prioritizes matching throughput or query flexibility.
+**Recommendation:** dYdX's approach of using hash maps with cached best prices is worth considering. For matching, you only need the best bid/ask (O(1) with caching), not a sorted view of all levels. BTreeMap's O(log L) insert is unnecessary overhead if you maintain best bid/ask invariants. However, BTreeMap provides better worst-case guarantees and simpler implementation for range queries (e.g., "get top 10 levels"). The choice depends on whether Mersennet prioritizes matching throughput or query flexibility.
 
 ---
 
-## 5. Specific Recommendations for Prime Chain
+## 5. Specific Recommendations for Mersennet
 
 ### 5.1 Implementation Status (Updated March 2026)
 
@@ -608,26 +608,26 @@ Many recommendations from this analysis have **already been implemented**. Below
 1. **Fully Off-Chain Order Books** (dYdX's short-term orders)
    - While performant, they sacrifice determinism and auditability
    - Each validator's book diverges, requiring complex reconciliation
-   - Prime Chain's value proposition is deterministic on-chain matching — don't compromise this
+   - Mersennet's value proposition is deterministic on-chain matching — don't compromise this
 
 2. **Async EVM-to-Orderbook Writes** (Hyperliquid's CoreWriter)
    - Breaking atomicity between smart contracts and order book operations negates the primary advantage of having both on the same chain
-   - Prime Chain's bridge must remain synchronous within a block
+   - Mersennet's bridge must remain synchronous within a block
 
 3. **Deprecating the Native Module** (Sei's pivot away from x/dex)
    - Sei abandoned its native DEX because they wanted to be general-purpose
-   - Prime Chain is purpose-built for trading+EVM — the native module IS the product
+   - Mersennet is purpose-built for trading+EVM — the native module IS the product
    - But the lesson stands: the native module must be significantly better than smart-contract alternatives
 
 4. **Excessive Centralization** (Hyperliquid's 23 validators + foundation control)
-   - Prime Chain should target a larger validator set
+   - Mersennet should target a larger validator set
    - Open-source everything from day one
 
-### 5.5 Prime Chain's Unique Advantages
+### 5.5 Mersennet's Unique Advantages
 
-Based on this analysis, Prime Chain's genuine differentiators are:
+Based on this analysis, Mersennet's genuine differentiators are:
 
-1. **Atomic EVM ↔ Order Book Composability:** No competitor achieves this. dYdX has no EVM. Hyperliquid's writes are async. Sei deprecated its native DEX. Prime Chain's bridge enabling synchronous cross-domain calls within a single block is architecturally unique.
+1. **Atomic EVM ↔ Order Book Composability:** No competitor achieves this. dYdX has no EVM. Hyperliquid's writes are async. Sei deprecated its native DEX. Mersennet's bridge enabling synchronous cross-domain calls within a single block is architecturally unique.
 
 2. **Single State Root:** All three domains (EVM, PrimeOrders, Bridge) share one canonical state root. This means light clients can verify order book state with the same proofs they use for EVM state — a significant advantage for cross-chain interoperability.
 
@@ -648,7 +648,7 @@ Based on competitive analysis, the following order of implementation priorities 
 | P1 | Block pipeline (execution + consensus overlap) | Next | Sei Twin Turbo | Further latency reduction |
 | P1 | Per-market parallel matching | **Done** | Sei OCC | Throughput scaling |
 | P1 | Order replacement support | Next | dYdX | Double-fill prevention |
-| P1 | CLOB precompile (atomic EVM ↔ order book) | **Done** | — | Prime Chain differentiator |
+| P1 | CLOB precompile (atomic EVM ↔ order book) | **Done** | — | Mersennet differentiator |
 | P1 | HotStuff-2 consensus | **Done** | — | ~200ms finality |
 | P2 | Frequent Batch Auctions | **Done** | Sei, dYdX proposed | Stronger MEV protection |
 | P2 | Subaccount support | Next | dYdX | User flexibility |
@@ -665,10 +665,10 @@ Based on competitive analysis, the following order of implementation priorities 
 
 The on-chain order book space is rapidly maturing. dYdX v4 has proven that a Cosmos-based CLOB can handle production volumes. Hyperliquid has shown that purpose-built Rust L1s can achieve CEX-grade performance. Sei's evolution demonstrates both the power and the risk of native trading modules.
 
-Prime Chain occupies a unique architectural position: a Rust-native L1 that combines full EVM compatibility with a deterministic order book and atomic cross-domain composability. No competitor currently offers all three. The key risks are:
+Mersennet occupies a unique architectural position: a Rust-native L1 that combines full EVM compatibility with a deterministic order book and atomic cross-domain composability. No competitor currently offers all three. The key risks are:
 
 1. **Execution risk:** The architecture is novel and unproven at scale (as the whitepaper honestly acknowledges)
 2. **MEV vulnerability:** Without protection, the system will be exploited
 3. **Missing safety infrastructure:** Insurance fund, deleveraging, and withdrawal gating are table stakes for production deployment
 
-If these gaps are addressed, Prime Chain's unified architecture represents the most compelling solution in the space — not just a trading chain or an EVM chain, but both in one.
+If these gaps are addressed, Mersennet's unified architecture represents the most compelling solution in the space — not just a trading chain or an EVM chain, but both in one.

@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	primechain "github.com/PrimeNumbersLabs/prime-chain-sdk-go"
+	mersennet "github.com/PrimeNumbersLabs/prime-chain-sdk-go"
 )
 
 const (
@@ -56,12 +56,12 @@ func main() {
 	}))
 	defer server.Close()
 
-	provider := primechain.NewProvider(server.URL)
-	result, err := primechain.ScanGrantedNotes(provider, primechain.GrantedViewingMaterial{
+	provider := mersennet.NewProvider(server.URL)
+	result, err := mersennet.ScanGrantedNotes(provider, mersennet.GrantedViewingMaterial{
 		GrantID:            grantIDHex,
 		RecipientPublicKey: recipientPublicKey,
-		Decrypt:            primechain.NewMockNoteDecryptor(viewSecretHex),
-	}, &primechain.GrantedNoteScanOptions{Limit: 64, IgnoreMalformed: true})
+		Decrypt:            mersennet.NewMockNoteDecryptor(viewSecretHex),
+	}, &mersennet.GrantedNoteScanOptions{Limit: 64, IgnoreMalformed: true})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,8 +78,8 @@ func main() {
 	)
 }
 
-func sampleNote() primechain.ShieldedNote {
-	return primechain.ShieldedNote{
+func sampleNote() mersennet.ShieldedNote {
+	return mersennet.ShieldedNote{
 		Value:   big.NewInt(2500),
 		AssetID: 7,
 		OwnerPK: recipientPublicKey,
@@ -88,7 +88,7 @@ func sampleNote() primechain.ShieldedNote {
 	}
 }
 
-func encodeNotePlaintext(note primechain.ShieldedNote) []byte {
+func encodeNotePlaintext(note mersennet.ShieldedNote) []byte {
 	out := make([]byte, 116)
 	offset := 0
 	copy(out[offset:offset+16], padLittleEndian(note.Value.Bytes(), 16))

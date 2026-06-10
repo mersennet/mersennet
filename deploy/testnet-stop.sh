@@ -9,18 +9,18 @@ source "$SCRIPT_DIR/nodes.conf"
 VALIDATORS=("$VALIDATOR_1" "$VALIDATOR_2" "$VALIDATOR_3" "$VALIDATOR_4")
 SSH_USER="${SSH_USER:-root}"
 
-echo "Stopping all Prime Chain testnet nodes..."
+echo "Stopping all Mersennet testnet nodes..."
 
 for i in 1 2 3 4; do
     IP="${VALIDATORS[$((i-1))]}"
     echo "  Stopping validator-$i ($IP)..."
-    ssh -o StrictHostKeyChecking=no "$SSH_USER@$IP" "systemctl stop prime-chain" 2>/dev/null &
+    ssh -o StrictHostKeyChecking=no "$SSH_USER@$IP" "systemctl stop mersennet" 2>/dev/null &
 done
 
 echo "  Stopping public node ($PUBLIC_NODE)..."
 ssh -o StrictHostKeyChecking=no "$SSH_USER@$PUBLIC_NODE" "\
-    systemctl stop prime-chain-faucet 2>/dev/null; \
-    systemctl stop prime-chain" 2>/dev/null &
+    systemctl stop mersennet-faucet 2>/dev/null; \
+    systemctl stop mersennet" 2>/dev/null &
 
 wait
 echo "All nodes stopped."

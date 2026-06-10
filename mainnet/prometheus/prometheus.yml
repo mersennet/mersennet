@@ -11,7 +11,7 @@ rule_files:
   # - "alerts.yml"
 
 scrape_configs:
-  - job_name: 'prime-chain'
+  - job_name: 'mersennet'
     static_configs:
       - targets: ['validator:8545']
     metrics_path: '/metrics'

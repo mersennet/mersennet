@@ -1,10 +1,10 @@
 /**
- * PrimeProvider - JSON-RPC client for Prime Chain.
+ * PrimeProvider - JSON-RPC client for Mersennet.
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
 import type { Block, CallParams, CodeAttestation, ContractPublicationStatus, Receipt, TransactionParams, ViewBalancesResult, ViewNotesResult, ViewTradingResult } from './types';
 /**
- * Prime Chain JSON-RPC provider.
+ * Mersennet JSON-RPC provider.
  * Connects to the RPC endpoint via HTTP.
  */
 export declare class PrimeProvider {
@@ -48,7 +48,7 @@ export declare class PrimeProvider {
     estimateGas(tx: CallParams): Promise<number>;
     /** eth_sendTransaction / prime_sendTransaction */
     sendTransaction(tx: TransactionParams): Promise<string>;
-    /** eth_chainId / prime_chainId */
+    /** eth_chainId / mersennetId */
     getChainId(): Promise<number>;
     /** prime_viewNotes for grant-gated encrypted note export. */
     viewNotes(grantIdHex: string, options?: {

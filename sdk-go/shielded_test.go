@@ -1,4 +1,4 @@
-package primechain
+package mersennet
 
 import (
 	"encoding/binary"

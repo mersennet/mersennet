@@ -1,4 +1,4 @@
-# Prime Chain — Executive Summary
+# Mersennet — Executive Summary
 
 > **Confidential** | Series A — $25M | March 2026
 
@@ -6,12 +6,12 @@
 
 ## Company Overview
 
-**Prime Chain** is a high-performance Layer 1 blockchain purpose-built for institutional finance. It is the only blockchain where smart contracts and a native central limit order book (CLOB) share a single atomic state — enabling Solidity contracts to trade on the order book within the same transaction.
+**Mersennet** is a high-performance Layer 1 blockchain purpose-built for institutional finance. It is the only blockchain where smart contracts and a native central limit order book (CLOB) share a single atomic state — enabling Solidity contracts to trade on the order book within the same transaction.
 
 This architectural breakthrough, delivered through CLOB precompile `0x0100`, unlocks compliant, auditable, and composable trading of tokenized real-world assets (RWA) and on-chain credit instruments at institutional speed.
 
 **Category:** Institutional Trading Infrastructure
-**Stage:** Pre-mainnet, testnet live (Chain ID 7919)
+**Stage:** Pre-mainnet, testnet live (Chain ID 131071)
 **Raising:** $25M Series A
 **Core Innovation:** Atomic EVM ↔ CLOB composability (unique in market)
 
@@ -43,7 +43,7 @@ Three forces are converging to create a window of 12–18 months:
 
 ## The Solution
 
-Prime Chain unifies three execution domains in a single blockchain:
+Mersennet unifies three execution domains in a single blockchain:
 
 ```
 State = (EVM + PrimeOrders + Bridge)
@@ -66,7 +66,7 @@ State = (EVM + PrimeOrders + Bridge)
 
 ### What This Means
 
-A smart contract on Prime Chain can atomically: accept a tokenized bond deposit, place a limit order on the native order book, receive a fill, and use the proceeds as DeFi collateral — all in a single 200ms transaction. This is impossible on every other blockchain.
+A smart contract on Mersennet can atomically: accept a tokenized bond deposit, place a limit order on the native order book, receive a fill, and use the proceeds as DeFi collateral — all in a single 200ms transaction. This is impossible on every other blockchain.
 
 ---
 
@@ -83,13 +83,13 @@ A smart contract on Prime Chain can atomically: accept a tokenized bond deposit,
 
 ### Technical Progress
 
-- **Testnet live** on 4 Hetzner VPS validators (Chain ID 7919)
+- **Testnet live** on 4 Hetzner VPS validators (Chain ID 131071)
 - **12 products built:** Explorer, DEX, lending, NFT marketplace, wallet (browser + mobile), prediction markets, liquid staking, validator dashboard, SDKs (Python, Go, TypeScript)
 - **6 products deployed** to testnet with live UIs
-- **7 smart contracts** verified and deployed (Multicall3, WPRIM, stablecoins, DEX factory/router)
-- **3 liquidity pools** seeded (WPRIM/USDC, WPRIM/USDT, WPRIM/DAI)
+- **7 smart contracts** verified and deployed (Multicall3, WMRSN, stablecoins, DEX factory/router)
+- **3 liquidity pools** seeded (WMRSN/USDC, WMRSN/USDT, WMRSN/DAI)
 - **Comprehensive documentation portal** (32+ pages, Docusaurus)
-- **Core chain:** 10,600+ lines of Rust across 28 modules
+- **Core chain:** 44,000+ lines of Rust across a 6-crate workspace
 
 ---
 
@@ -117,14 +117,14 @@ A smart contract on Prime Chain can atomically: accept a tokenized bond deposit,
 
 ### Comparable Valuations
 
-| Project | Raise | FDV at Raise | Revenue | Key Difference from Prime Chain |
+| Project | Raise | FDV at Raise | Revenue | Key Difference from Mersennet |
 |---------|-------|-------------|---------|-------------------------------|
 | Hyperliquid | TGE | $4.5B | ~$500M ann. | Async EVM ↔ CLOB, crypto-only |
 | Monad | $225M Series A | $3.0B | Pre-revenue | No CLOB, no institutional focus |
 | Berachain | $69M Series A | $1.5B | Pre-revenue | No CLOB, DeFi-focused |
 | dYdX | $65M Series C | $2.0B | ~$200M ann. | App-chain, no EVM |
 
-Prime Chain at $25M Series A represents early-stage pricing for technology that combines the best attributes of Hyperliquid (native CLOB) and Monad (parallel EVM) with an institutional focus none of them offer.
+Mersennet at $25M Series A represents early-stage pricing for technology that combines the best attributes of Hyperliquid (native CLOB) and Monad (parallel EVM) with an institutional focus none of them offer.
 
 ---
 
@@ -132,9 +132,9 @@ Prime Chain at $25M Series A represents early-stage pricing for technology that 
 
 | Parameter | Value |
 |-----------|-------|
-| Token | PRIM |
+| Token | MRSN |
 | Max Supply | 1,000,000,000 (1B) |
-| Block Rewards | 70% (700M) — Bitcoin-style halving every ~2.2 years |
+| Block Rewards | 70% (700M) — Bitcoin-style halving every 35M blocks (~1.1 years at 1 s blocks) |
 | Ecosystem & Grants | 10% (100M) — 5-year linear |
 | Foundation Reserve | 10% (100M) — 1-year cliff + 4-year linear |
 | Team & Contributors | 5% (50M) — 1-year cliff + 3-year linear |
@@ -166,8 +166,8 @@ Prime Chain at $25M Series A represents early-stage pricing for technology that 
 | 3+ institutional partners | Q2 2026 | Signed agreements |
 | Security audit passed | Q3 2026 | Clean audit from tier-1 firm |
 | Public testnet (15+ validators) | Q3 2026 | Community participation |
-| Mainnet launch | Q4 2026 | Chain ID 13370, institutional trading live |
-| $500M+ TVA | Q4 2026 | Assets trading on Prime Chain |
+| Mainnet launch | Q4 2026 | Chain ID 8191, institutional trading live |
+| $500M+ TVA | Q4 2026 | Assets trading on Mersennet |
 
 ---
 
@@ -200,12 +200,12 @@ Prime Chain at $25M Series A represents early-stage pricing for technology that 
 
 ## Contact
 
-**Prime Chain**
+**Mersennet**
 The Institutional Trading Layer for Real-World Assets + On-Chain Credit Markets
 
 - **Docs:** docs.primechain.network
 - **GitHub:** PrimeNumbersLabs
-- **Testnet Explorer:** Chain ID 7919
+- **Testnet Explorer:** Chain ID 131071
 - **Email:** [founders@primechain.network]
 
 ---

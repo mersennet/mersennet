@@ -1,5 +1,5 @@
-use prime_chain::engine::{Engine, Transaction};
-use prime_chain::fba::BatchOrder;
+use mersennet::engine::{Engine, Transaction};
+use mersennet::fba::BatchOrder;
 use revm::primitives::{Address, Bytes, U256};
 use std::time::Instant;
 
@@ -20,7 +20,7 @@ fn main() {
 
     for batch_size in [100, 500, 1000, 1428] {
         let dir = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir.path().join("s1"));
+        let mut eng = Engine::new_with_state(131071, dir.path().join("s1"));
         eng.add_validator(make_address(1), U256::from(1000u64))
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -42,7 +42,7 @@ fn main() {
                 gas_limit: 21_000,
                 gas_price: U256::from(1u64),
                 nonce: 0,
-                chain_id: Some(7919),
+                chain_id: Some(131071),
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,
@@ -52,7 +52,7 @@ fn main() {
 
         // Sequential execution
         let dir2 = tempfile::tempdir().unwrap();
-        let mut eng2 = Engine::new_with_state(7919, dir2.path().join("s2"));
+        let mut eng2 = Engine::new_with_state(131071, dir2.path().join("s2"));
         eng2.add_validator(make_address(1), U256::from(1000u64))
             .unwrap();
         eng2.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -70,7 +70,7 @@ fn main() {
                 gas_limit: 21_000,
                 gas_price: U256::from(1u64),
                 nonce: 0,
-                chain_id: Some(7919),
+                chain_id: Some(131071),
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,
@@ -107,16 +107,16 @@ fn main() {
     println!("\n=== Frequent Batch Auction Benchmark ===\n");
     for batch_size in [100, 500, 1000, 5000, 10000] {
         let dir = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir.path().join("fba"));
+        let mut eng = Engine::new_with_state(131071, dir.path().join("fba"));
         let market = eng.prime_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
 
         let start = Instant::now();
         for i in 0..batch_size {
             let owner = make_address((i % 500 + 1) as u16);
             let side = if i % 2 == 0 {
-                prime_chain::prime_orders::Side::Buy
+                mersennet::prime_orders::Side::Buy
             } else {
-                prime_chain::prime_orders::Side::Sell
+                mersennet::prime_orders::Side::Sell
             };
             let price = if i % 2 == 0 {
                 U256::from(100 + (i % 5) as u64)
@@ -129,7 +129,7 @@ fn main() {
                 side,
                 price,
                 size: U256::from(10u64),
-                tif: prime_chain::prime_orders::TimeInForce::Gtc,
+                tif: mersennet::prime_orders::TimeInForce::Gtc,
                 sequence: 0,
             });
         }
@@ -156,7 +156,7 @@ fn main() {
     println!("\n=== HotStuff-2 Consensus Benchmark ===\n");
     {
         let dir = tempfile::tempdir().unwrap();
-        let mut eng = Engine::new_with_state(7919, dir.path().join("hs2"));
+        let mut eng = Engine::new_with_state(131071, dir.path().join("hs2"));
         for i in 1..=10u16 {
             eng.add_validator(make_address(i), U256::from(100u64))
                 .unwrap();
@@ -187,7 +187,7 @@ fn main() {
         for backend in ["sled", "redb"] {
             let dir = tempfile::tempdir().unwrap();
             std::fs::create_dir_all(dir.path()).ok();
-            let mut eng = Engine::new_with_backend(7919, dir.path(), backend);
+            let mut eng = Engine::new_with_backend(131071, dir.path(), backend);
             eng.add_validator(make_address(1), U256::from(1000u64))
                 .unwrap();
             eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
@@ -203,7 +203,7 @@ fn main() {
                     gas_limit: 21_000,
                     gas_price: U256::from(1u64),
                     nonce: (i / 255) as u64,
-                    chain_id: Some(7919),
+                    chain_id: Some(131071),
                     signature: None,
                     tx_type: 0,
                     shielded_payload: None,
@@ -227,8 +227,8 @@ fn main() {
     // ZK MockProver prove/verify
     println!("\n=== ZK MockProver Benchmark ===\n");
     {
-        use prime_chain::zk_proofs::{MockProver, StateProver};
-        use prime_zkp::sp1::BlockProgramOutput;
+        use mersennet::zk_proofs::{MockProver, StateProver};
+        use mersennet_zkp::sp1::BlockProgramOutput;
         use revm::primitives::B256;
 
         let prover = MockProver::new();
@@ -289,7 +289,7 @@ fn main() {
     // Pipeline push/pop
     println!("\n=== Block Pipeline Benchmark ===\n");
     {
-        use prime_chain::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
+        use mersennet::pipeline::{BlockPipeline, ExecutedBlock, PipelineConfig, StateDiff};
         use revm::primitives::B256;
         use std::time::Duration;
 

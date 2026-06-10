@@ -43,7 +43,7 @@ impl std::fmt::Debug for RedbState {
 
 impl RedbState {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let db_path = path.as_ref().join("prime_chain.redb");
+        let db_path = path.as_ref().join("mersennet.redb");
         let db = Database::create(&db_path)?;
 
         {

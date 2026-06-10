@@ -1,4 +1,4 @@
-//! Noise Protocol encryption for Prime Chain P2P networking.
+//! Noise Protocol encryption for Mersennet P2P networking.
 //! Uses Noise_XX_25519_ChaChaPoly_BLAKE2s (same pattern as libp2p, WireGuard).
 
 use anyhow::{Result, bail};

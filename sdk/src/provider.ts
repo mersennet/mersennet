@@ -1,5 +1,5 @@
 /**
- * PrimeProvider - JSON-RPC client for Prime Chain.
+ * PrimeProvider - JSON-RPC client for Mersennet.
  * Uses fetch for HTTP (no external deps). Supports eth_* and prime_* methods.
  */
 
@@ -29,7 +29,7 @@ function hexToString(hex: string): string {
 }
 
 /**
- * Prime Chain JSON-RPC provider.
+ * Mersennet JSON-RPC provider.
  * Connects to the RPC endpoint via HTTP.
  */
 export class PrimeProvider {
@@ -188,7 +188,7 @@ export class PrimeProvider {
     return result;
   }
 
-  /** eth_chainId / prime_chainId */
+  /** eth_chainId / mersennetId */
   async getChainId(): Promise<number> {
     const result = (await this.request('eth_chainId')) as string;
     return hexToNumber(result);

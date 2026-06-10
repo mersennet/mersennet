@@ -1,4 +1,4 @@
-package primechain
+package mersennet
 
 // Block represents block data from eth_getBlockByNumber / eth_getBlockByHash
 type Block struct {

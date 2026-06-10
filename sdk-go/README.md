@@ -1,6 +1,6 @@
-# Prime Chain Go SDK
+# Mersennet Go SDK
 
-Go client for Prime Chain - JSON-RPC and CLOB (order book) operations.
+Go client for Mersennet - JSON-RPC and CLOB (order book) operations.
 
 ## Installation
 
@@ -17,11 +17,11 @@ import (
     "fmt"
     "log"
 
-    primechain "github.com/PrimeNumbersLabs/prime-chain-sdk-go"
+    mersennet "github.com/PrimeNumbersLabs/prime-chain-sdk-go"
 )
 
 func main() {
-    provider := primechain.NewProvider("http://localhost:8545")
+    provider := mersennet.NewProvider("http://localhost:8545")
 
     chainID, err := provider.ChainID()
     if err != nil {
@@ -41,7 +41,7 @@ func main() {
     }
     fmt.Println("Balance:", balance)
 
-    orders := primechain.NewOrders(provider)
+    orders := mersennet.NewOrders(provider)
     book, err := orders.GetOrderBook(1)
     if err != nil {
         log.Fatal(err)
@@ -84,13 +84,13 @@ Use `ViewNotes` to fetch encrypted note envelopes, then call `ScanGrantedNotes`
 with a decrypt function that applies your delegated viewing material locally.
 
 ```go
-material := primechain.GrantedViewingMaterial{
+material := mersennet.GrantedViewingMaterial{
     GrantID:            "0x...",
     RecipientPublicKey: "0x...",
-    Decrypt:            primechain.NewMockNoteDecryptor("0x..."),
+    Decrypt:            mersennet.NewMockNoteDecryptor("0x..."),
 }
 
-result, err := primechain.ScanGrantedNotes(provider, material, &primechain.GrantedNoteScanOptions{
+result, err := mersennet.ScanGrantedNotes(provider, material, &mersennet.GrantedNoteScanOptions{
     Limit: 64,
 })
 if err != nil {

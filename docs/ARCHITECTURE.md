@@ -1,4 +1,4 @@
-# Prime Chain — Architecture Decision Records
+# Mersennet — Architecture Decision Records
 
 **Version 2.0 — June 2026**
 **Classification: Technical Architecture Document**
@@ -24,6 +24,7 @@
    - [ADR-011: ECDSA secp256k1 for Transaction Signing](#adr-011-ecdsa-secp256k1-for-transaction-signing)
    - [ADR-012: Insurance Fund and Auto-Deleveraging](#adr-012-insurance-fund-and-auto-deleveraging)
    - [ADR-013: True Atomic vs. Async EVM ↔ CLOB Composability](#adr-013-true-atomic-vs-async-evm--clob-composability)
+   - ADR-014 through ADR-019 (shielded notes, threshold-encrypted mempool, liquidation auctions, SP1 state proofs, privacy hard fork, viewing keys) live in [docs/adr/](./adr/)
 4. [Data Flow Diagrams](#4-data-flow-diagrams)
 5. [Security Architecture](#5-security-architecture)
 6. [Deployment Architecture](#6-deployment-architecture)
@@ -33,18 +34,9 @@
 
 ## 1. Executive Summary
 
-Prime Chain is a privacy-first **Layer 1 blockchain** that combines a
-parallel EVM execution engine, a native order-matching engine, and a
-shielded execution perimeter inside one canonical state transition.
-The protocol's original architectural thesis remains intact — **atomic
-EVM ↔ CLOB composability** via a custom revm precompile at `0x0100` —
-but the current codebase now extends that model with shielded notes,
-threshold-encrypted order flow, liquidation auctions, selective
-disclosure, and chain-side state-transition proofs.
+Mersennet is a **Layer 1 blockchain** that combines a parallel EVM execution engine with a native, high-performance Central Limit Order Book (CLOB). The core differentiator is **atomic EVM ↔ CLOB composability** through a custom revm precompile at address `0x0100`, enabling Solidity smart contracts to place orders, manage collateral, and query positions in a single transaction with no bridge latency.
 
-The current branch objective is not to invent a new execution model;
-it is to close out the remaining production blockers for the privacy
-fork:
+**Competitive positioning:** Hyperliquid has HyperEVM (alpha) alongside its native CLOB, but EVM ↔ CLOB composability is **async** — CoreWriter actions are delayed by seconds, reads are 1 block stale. Mersennet's CLOB precompile is the key architectural differentiator: **true atomic same-transaction EVM ↔ CLOB** — unique in the industry.
 
 - shielded state, shielded orders, threshold mempool, liquidation
      auctions, and shielded EVM bridge are implemented in-repo;
@@ -76,19 +68,17 @@ Concretely, the protocol aims to provide:
 
 | Dimension | Current state |
 |---|---|
-| Rust workspace | `crates/core`, `crates/network`, `crates/rpc`, `crates/node`, `crates/zkp`, `crates/state-proof` |
-| zkVM programs | `programs/state-transition`, `programs/state-transition-host` |
-| EVM backend | `revm` v12 (Shanghai spec) |
-| RPC transport | `tiny_http` + `tungstenite` |
-| Storage | mixed: legacy/public state in `sled`, shielded persistence in `redb` |
-| ZK primitives | Poseidon-2 BN254, Pedersen commitments, BLS12-381 threshold ElGamal, Noir circuits, SP1 proof path |
+| Language | Rust (2024 edition) |
+| Workspace | 6 crates (`crates/{core,network,rpc,node,zkp,state-proof}`) |
+| Source files | ~97 Rust files (~50 in `crates/core/src/`) |
+| Lines of code | ~44,000 |
+| EVM backend | revm v12 (Shanghai spec) |
+| Storage backend | sled 0.34 (embedded) |
+| Cryptography | k256 0.13 (secp256k1 ECDSA) |
 
 ### Architectural Thesis
 
-Prime Chain resolves the historical choice between general-purpose smart
-contracts and high-performance order matching by embedding both into one
-canonical state transition, then extending that state model with a
-shielded perimeter:
+Existing blockchains force a choice: general-purpose smart contracts (Ethereum) **or** high-performance order matching (Hyperliquid). Multi-chain approaches (dYdX v4) lose atomic composability. Mersennet resolves this by embedding both execution domains in a single state tuple:
 
 ```
 S = (S_evm, S_orders, S_shielded, S_bridge, S_proofs)
@@ -130,37 +120,85 @@ earlier monolithic `src/core/*` layout. The canonical execution surfaces are:
 ### 2.2 Current High-Level Architecture
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│                        Prime Chain WORKSPACE                     │
-│                                                                   │
-│  crates/node/            binaries, config, operator tooling       │
-│        │                                                          │
-│        ▼                                                          │
-│  crates/rpc/             Ethereum-compatible RPC + shielded RPC   │
-│        │                  + WebSocket subscriptions               │
-│        ▼                                                          │
-│  crates/core/            canonical execution engine               │
-│  ├─ public EVM (revm)                                             │
-│  ├─ CLOB precompile at 0x0100                                     │
-│  ├─ shielded state + nullifier set                                │
-│  ├─ threshold mempool + shielded order admission                  │
-│  ├─ liquidation auctions + shielded EVM bridge                    │
-│  ├─ state-proof input collection / proof verification             │
-│  └─ bridge export for Ethereum verifier path                      │
-│        │                                                          │
-│        ├──────────────► crates/zkp/        ZK primitives, Noir,   │
-│        │                                  SP1 executor, witnesses │
-│        │                                                          │
-│        ├──────────────► crates/state-proof/ proof envelopes       │
-│        │                                                          │
-│        └──────────────► programs/state-transition{,-host}/        │
-│                               zkVM guest + host prove/verify      │
-│                                                                   │
-│  Persistence                                                       │
-│  ├─ public / legacy account + block state in sled                 │
-│  ├─ shielded persistence in redb                                  │
-│  └─ block/state-proof artifacts committed by the engine           │
-└───────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           MERSENNET NODE                              │
+│                                                                         │
+│  ┌─────────────┐    ┌──────────────────────────────────────────────┐   │
+│  │  JSON-RPC    │    │              ENGINE  (engine.rs)             │   │
+│  │  Server      │───▶│                                              │   │
+│  │  (tiny_http) │    │  ┌────────────┐  ┌────────────────────────┐ │   │
+│  │              │    │  │ MEMPOOL    │  │ COMMIT-REVEAL POOL     │ │   │
+│  │  Eth-compat: │    │  │ pending    │  │ commit()  → hash store │ │   │
+│  │  eth_*       │    │  │ queued     │  │ reveal()  → tx data    │ │   │
+│  │  prime_*     │    │  │ base_fee   │  │ window = 2 blocks      │ │   │
+│  └─────────────┘    │  └─────┬──────┘  └────────────────────────┘ │   │
+│                      │        │                                      │   │
+│  ┌─────────────┐    │        ▼                                      │   │
+│  │ PROMETHEUS  │    │  ┌─────────────────────────────────────────┐ │   │
+│  │ /metrics    │    │  │         BLOCK PRODUCTION                 │ │   │
+│  │ (port 9090) │    │  │                                         │ │   │
+│  └─────────────┘    │  │  ┌───────────────┐ ┌─────────────────┐ │ │   │
+│                      │  │  │ Sequential    │ │ Parallel        │ │ │   │
+│  ┌─────────────┐    │  │  │ execute_block │ │ execute_block_  │ │ │   │
+│  │ P2P NETWORK │    │  │  │               │ │ parallel        │ │ │   │
+│  │             │    │  │  └───────┬───────┘ └────────┬────────┘ │ │   │
+│  │ UDP Gossip  │    │  │          │                   │          │ │   │
+│  │ (port 30303)│    │  │          ▼                   ▼          │ │   │
+│  │             │    │  │  ┌─────────────────────────────────────┐│ │   │
+│  │ TCP Sync    │    │  │  │    revm (Shanghai) + Precompile    ││ │   │
+│  │ (blocks)    │    │  │  │    ┌─────────────────────────┐     ││ │   │
+│  └──────┬──────┘    │  │  │    │ CLOB Precompile 0x0100  │     ││ │   │
+│         │           │  │  │    │ placeOrder / cancel /    │     ││ │   │
+│         │           │  │  │    │ deposit / withdraw /     │     ││ │   │
+│         │           │  │  │    │ getPosition / liquidate  │     ││ │   │
+│         │           │  │  │    └───────────┬─────────────┘     ││ │   │
+│         │           │  │  └────────────────┼───────────────────┘│ │   │
+│         │           │  │                   │                     │ │   │
+│         │           │  │                   ▼                     │ │   │
+│         │           │  │  ┌─────────────────────────────────────┐│ │   │
+│         │           │  │  │         PrimeOrders State           ││ │   │
+│         │           │  │  │  Markets │ OrderBooks │ Positions   ││ │   │
+│         │           │  │  │  Collateral │ Margin │ Insurance    ││ │   │
+│         │           │  │  └───────────────┬─────────────────────┘│ │   │
+│         │           │  │                  │                      │ │   │
+│         │           │  │  ┌───────────────┴─────────────────────┐│ │   │
+│         │           │  │  │       FBA Engine (fba.rs)            ││ │   │
+│         │           │  │  │  BatchAuction → clearing_price       ││ │   │
+│         │           │  │  │  Uniform-price │ Pro-rata allocation ││ │   │
+│         │           │  │  └─────────────────────────────────────┘│ │   │
+│         │           │  │                                         │ │   │
+│         │           │  │  ┌─────────────────────────────────────┐│ │   │
+│         │           │  │  │      BRIDGE  (bridge.rs)             ││ │   │
+│         │           │  │  │  orders_to_evm │ evm_to_orders       ││ │   │
+│         │           │  │  │  VecDeque<BridgeMessage> (nonce seq) ││ │   │
+│         │           │  │  └─────────────────────────────────────┘│ │   │
+│         │           │  └─────────────────────────────────────────┘ │   │
+│         │           │                                              │   │
+│         │           │  ┌──────────────────────────────────────────┐│   │
+│         │           │  │        CONSENSUS                         ││   │
+│         ▼           │  │                                          ││   │
+│  ┌─────────────┐    │  │  ┌──────────────┐  ┌──────────────────┐ ││   │
+│  │ Import /    │    │  │  │ CometBFT-    │  │ HotStuff-2       │ ││   │
+│  │ Broadcast   │───▶│  │  │ style        │  │ 2-phase BFT      │ ││   │
+│  │ Blocks      │    │  │  │ (fallback)   │  │ 2-chain commit   │ ││   │
+│  └─────────────┘    │  │  └──────────────┘  └──────────────────┘ ││   │
+│                      │  │                                          ││   │
+│                      │  │  Validators │ Staking │ Slashing │       ││   │
+│                      │  │  Unbonding  │ Rewards │ Escalation       ││   │
+│                      │  └──────────────────────────────────────────┘│   │
+│                      │                                              │   │
+│                      │  ┌──────────────────────────────────────────┐│   │
+│                      │  │  PERSISTENT STATE  (state.rs + sled)     ││   │
+│                      │  │                                          ││   │
+│                      │  │  accounts │ storage │ prime_orders │      ││   │
+│                      │  │  bridge_queues │ blocks │ pruning │       ││   │
+│                      │  │  height_meta                              ││   │
+│                      │  │                                          ││   │
+│                      │  │  Binary Merkle Tree → state_root (B256)  ││   │
+│                      │  │  Snapshot export/import with root verify  ││   │
+│                      │  └──────────────────────────────────────────┘│   │
+│                      └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.3 Current State Composition
@@ -169,7 +207,39 @@ The protocol has evolved from a public `(S_evm, S_orders, S_bridge)`
 tuple into a privacy-aware multi-domain state model:
 
 ```
-S = (S_evm, S_orders, S_shielded, S_bridge, S_proofs)
+                    ┌──────────────────────┐
+                    │  mersennet          │  (binary entry point)
+                    │  crates/node/src/bin/ │
+                    └──────────┬───────────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │    Engine     │  (orchestrator)
+                    └───┬───┬───┬──┘
+                        │   │   │
+          ┌─────────────┤   │   ├──────────────┐
+          ▼             │   │   │              ▼
+   ┌────────────┐       │   │   │      ┌─────────────┐
+   │ Consensus  │       │   │   │      │   Mempool    │
+   │ + HotStuff2│       │   │   │      └─────────────┘
+   └────────────┘       │   │   │
+                        ▼   │   ▼
+                ┌──────────┐│┌──────────────┐
+                │ EVM/revm │││ PrimeOrders  │
+                │ + Precomp│││ + FBA Engine │
+                └──────────┘│└──────────────┘
+                            ▼
+                   ┌──────────────┐
+                   │    Bridge    │
+                   │ orders↔evm  │
+                   └──────────────┘
+                            │
+                            ▼
+          ┌─────────────────────────────────┐
+          │   PersistentState (sled)        │
+          │   accounts│storage│prime_orders │
+          │   bridge_queues│blocks│merkle   │
+          └─────────────────────────────────┘
 ```
 
 Where:
@@ -212,7 +282,7 @@ status, use:
 **Status:** Accepted
 
 **Context:**
-Prime Chain's thesis requires both general-purpose smart contracts (EVM) and a high-performance order matching engine (CLOB) within a single blockchain. The core question is whether these two execution domains should maintain separate state or share a unified canonical state.
+Mersennet's thesis requires both general-purpose smart contracts (EVM) and a high-performance order matching engine (CLOB) within a single blockchain. The core question is whether these two execution domains should maintain separate state or share a unified canonical state.
 
 Separate state models (as used by dYdX v4 on its app-chain, or Polkadot parachains) introduce composability gaps: operations that span both domains require asynchronous bridge messages, breaking atomicity and introducing latency. For institutional use cases—where a smart contract must atomically deposit collateral, place an order, and react to fill results—this gap is unacceptable.
 
@@ -265,7 +335,7 @@ Sequential EVM execution is the primary throughput bottleneck of Ethereum-compat
 The Block-STM algorithm (pioneered by Aptos for Move VM) and the Grevm adaptation for EVM demonstrate that optimistic concurrency control can yield significant speedups on multi-core hardware without requiring developers to declare access lists.
 
 **Decision:**
-Implement a `ParallelExecutor` (in `src/core/parallel.rs`) that:
+Implement a `ParallelExecutor` (in `crates/core/src/parallel.rs`) that:
 
 1. **Static dependency analysis**: Extracts read/write sets per transaction (`TxAccessSet`) from `tx.from` and `tx.to`. Coinbase is excluded to avoid false dependencies (every transaction writes to coinbase).
 2. **Union-find grouping**: Groups transactions into independent sets using a disjoint-set data structure. Transactions with overlapping write addresses are grouped together.
@@ -304,7 +374,7 @@ Classical BFT protocols like CometBFT (Tendermint) use a three-phase protocol (p
 HotStuff-2 (Malkhi and Nayak, 2023) reduces the protocol to **two phases** while retaining the same safety guarantees (BFT tolerance of f < n/3 Byzantine validators).
 
 **Decision:**
-Implement HotStuff-2 as a standalone module (`src/core/hotstuff2.rs`) with the following design:
+Implement HotStuff-2 as a standalone module (`crates/core/src/hotstuff2.rs`) with the following design:
 
 **Protocol phases:**
 1. **Propose**: The leader for the current round (determined by weighted round-robin) broadcasts a `Proposal` containing the block hash and a `justify` QC from the previous round.
@@ -352,7 +422,7 @@ The existing CometBFT-style three-phase consensus (`consensus.rs`) is retained a
 **Status:** Accepted
 
 **Context:**
-The central value proposition of Prime Chain is that EVM smart contracts can interact atomically with the native order book. The question is *how* to expose order book operations to EVM execution.
+The central value proposition of Mersennet is that EVM smart contracts can interact atomically with the native order book. The question is *how* to expose order book operations to EVM execution.
 
 Options range from asynchronous bridge messages (latent, no atomicity), to implementing the CLOB entirely in Solidity (gas-prohibitive), to a custom EVM precompile that directly mutates native state.
 
@@ -401,7 +471,7 @@ Register a custom precompile at the fixed address `0x000000000000000000000000000
 Continuous limit order books are vulnerable to front-running and MEV extraction. In a continuous CLOB, speed advantage translates directly to profit: a faster participant can observe an incoming order and place their own order ahead of it (sandwich attack) or extract value from the spread (latency arbitrage). This problem is well-documented in traditional finance (see Budish, Cramton, Shim 2015) and is amplified in blockchain settings where mempool contents are public.
 
 **Decision:**
-Implement Frequent Batch Auctions (FBA) via the `FBAEngine` and `BatchAuction` structs in `src/core/fba.rs`. The mechanism works as follows:
+Implement Frequent Batch Auctions (FBA) via the `FBAEngine` and `BatchAuction` structs in `crates/core/src/fba.rs`. The mechanism works as follows:
 
 1. **Collection phase**: Orders are submitted via `submit_order()` with a `sequence` number (monotonically increasing within a batch). Orders accumulate in per-market `BatchAuction` instances.
 2. **Clearing price discovery**: At batch execution time, the engine evaluates all candidate price levels (union of buy and sell prices). For each candidate, it computes aggregate demand (buy volume at or above the price) and supply (sell volume at or below). The price that maximizes matched volume wins; ties are broken in favor of the higher price (benefits sell side, standard FBA convention).
@@ -436,7 +506,7 @@ The batch interval is configurable (default: 100ms). The engine exposes `execute
 EVM transactions are visible in the mempool before execution. This creates a well-known MEV vector: searchers can inspect pending transactions and construct sandwich attacks, generalized front-running, or back-running strategies. While FBA addresses MEV in the CLOB domain, the EVM transaction pool needs its own protection mechanism.
 
 **Decision:**
-Implement a two-phase commit-reveal scheme in `src/core/commit_reveal.rs`:
+Implement a two-phase commit-reveal scheme in `crates/core/src/commit_reveal.rs`:
 
 **Phase 1 — Commit:**
 The user submits a `TxCommitment` containing:
@@ -482,7 +552,7 @@ The pool verifies `keccak256(encrypted_tx || salt) == commitment_hash`. If valid
 **Status:** Accepted
 
 **Context:**
-Prime Chain needs a production-quality EVM implementation in Rust. The implementation must support the Shanghai specification (the latest stable EVM hard fork), custom precompile registration, and integration with Rust-native state backends.
+Mersennet needs a production-quality EVM implementation in Rust. The implementation must support the Shanghai specification (the latest stable EVM hard fork), custom precompile registration, and integration with Rust-native state backends.
 
 **Decision:**
 Use **revm v12** with the following configuration:
@@ -516,7 +586,7 @@ revm is the EVM implementation used by **Reth** (the Rust Ethereum client by Par
 **Status:** Accepted (with planned migration)
 
 **Context:**
-Prime Chain needs an embedded key-value store for persisting EVM account state, contract storage, order book data, bridge queues, and block history. The store must support atomic writes, prefix scans (for iterating an account's storage slots), and reasonable throughput for initial development.
+Mersennet needs an embedded key-value store for persisting EVM account state, contract storage, order book data, bridge queues, and block history. The store must support atomic writes, prefix scans (for iterating an account's storage slots), and reasonable throughput for initial development.
 
 **Decision:**
 Use **sled 0.34**, a Rust-native embedded database built on a lock-free B+ tree with zero-copy reads. sled is used through 8 separate trees within a single database:
@@ -555,7 +625,7 @@ State is committed via `PersistentState::commit_state()` which writes dirty EVM 
 A naive single-queue mempool cannot correctly handle EIP-1559 base fee dynamics, nonce gaps, or transaction replacement. When the base fee rises, previously valid transactions become under-priced; when it falls, previously excluded transactions become eligible. Nonce gaps (e.g., nonce 5 arrives before nonce 4) require parking transactions until the gap is filled.
 
 **Decision:**
-Implement a three-pool architecture in `src/core/mempool.rs`:
+Implement a three-pool architecture in `crates/core/src/mempool.rs`:
 
 ```
 ┌───────────────────────────────────────────────┐
@@ -612,7 +682,7 @@ Each pool is a `HashMap<Address, BTreeMap<u64, Transaction>>` — per-sender que
 Every block must produce a verifiable commitment to the entire chain state. This commitment (the state root) enables light clients to verify state proofs without downloading the full state. The choice of tree structure affects proof size, computation cost, and compatibility with existing tooling.
 
 **Decision:**
-Implement a **binary Merkle tree** over sorted key-value pairs in `src/core/state.rs`. The algorithm:
+Implement a **binary Merkle tree** over sorted key-value pairs in `crates/core/src/state.rs`. The algorithm:
 
 1. Collect all key-value pairs from all sled trees (accounts, storage, prime_orders, bridge queues).
 2. Sort by key (lexicographic).
@@ -648,7 +718,7 @@ Merkle proofs (`StateProof`) contain the sibling hashes along the path from the 
 Transactions must be cryptographically authenticated. The choice of signature scheme affects wallet compatibility, verification speed, and aggregate signature possibilities.
 
 **Decision:**
-Use **ECDSA over the secp256k1 curve** via the `k256` crate (v0.13), matching Ethereum's transaction signing scheme. Implementation details (`src/crypto/mod.rs`):
+Use **ECDSA over the secp256k1 curve** via the `k256` crate (v0.13), matching Ethereum's transaction signing scheme. Implementation details (`crates/core/src/crypto/mod.rs`):
 
 - **Signing hash**: `keccak256(chain_id || nonce || gas_price || gas_limit || to || value || data)` — an EIP-155-inspired format with chain ID replay protection.
 - **Signature format**: `(r, s, v)` where `v = recovery_id + 35 + chain_id * 2` (EIP-155).
@@ -723,7 +793,7 @@ Implement a two-tier insolvency protection mechanism in `PrimeOrdersState`:
 Hyperliquid chose dual-execution (HyperCore + HyperEVM) for maximum CLOB performance but at the cost of async composability. HyperEVM runs as a separate Cancun-spec EVM alongside the native CLOB; they execute sequentially. EVM reads HyperCore state from the previous block (1 block stale). CoreWriter at `0x333...333` queues orders for the next block — seconds delay. This design optimizes for raw CLOB throughput (200K ops/s) but makes atomic EVM ↔ CLOB flows impossible.
 
 **Decision:**
-Prime Chain chose integrated execution with a precompile at `0x0100` that runs PrimeOrders operations **synchronously** within EVM transaction execution. The CLOB state is co-located with EVM state in the same block; precompile calls execute inline during `revm.transact_commit()`. A single transaction can deposit collateral, place an order, and react to the fill in one atomic step.
+Mersennet chose integrated execution with a precompile at `0x0100` that runs PrimeOrders operations **synchronously** within EVM transaction execution. The CLOB state is co-located with EVM state in the same block; precompile calls execute inline during `revm.transact_commit()`. A single transaction can deposit collateral, place an order, and react to the fill in one atomic step.
 
 **Alternatives Considered:**
 
@@ -943,13 +1013,13 @@ All transactions with a signature are verified in `verify_tx_signature()` before
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| Max token supply | 1,000,000,000 PRIM × 10¹⁸ | Deflationary cap |
-| Block reward | 10 PRIM × 10¹⁸ (halving every 35M blocks) | Validator incentive |
+| Max token supply | 1,000,000,000 MRSN × 10¹⁸ | Deflationary cap |
+| Block reward | 10 MRSN × 10¹⁸ (halving every 35M blocks) | Validator incentive |
 | Double-sign slash | 500 bps (5%) | Equivocation deterrent |
 | Timeout slash | 100 bps (1%) | Liveness incentive |
 | Escalation step | 25 bps per repeat offense | Progressive punishment |
 | Escalation max | 1000 bps (10%) | Safety cap on slashing |
-| Burn ratio | 50% of block reward | Deflationary pressure |
+| Burn | Scheduled reward − distributed rewards (rounding dust + supply-cap excess) | Deflationary pressure |
 
 ### 5.5 Network Security
 
@@ -971,8 +1041,8 @@ Multi-stage build optimized for minimal production image:
 
 ```
 ┌──────────────────────────────────────┐
-│  Stage 1: Builder (rust:1.85-slim)   │
-│  - Copies Cargo.toml, src/, tests/   │
+│  Stage 1: Builder (rust:1.82-slim)   │
+│  - Copies workspace Cargo.toml, crates/ │
 │  - cargo build --release --bin       │
 └──────────────┬───────────────────────┘
                │
@@ -982,7 +1052,7 @@ Multi-stage build optimized for minimal production image:
 │  - ca-certificates, libssl3, curl    │
 │  - Copies release binary only        │
 │  - Exposes: 8545, 9090, 9100        │
-│  - ENTRYPOINT: prime-chain           │
+│  - ENTRYPOINT: mersennet           │
 │  - CMD: --config /etc/.../config.json│
 └──────────────────────────────────────┘
 ```
@@ -1028,41 +1098,59 @@ The `AppConfig` structure supports JSON configuration with sensible defaults:
 
 | Section | Key Parameters | Defaults |
 |---|---|---|
-| `engine` | chain_id, state_path, gas_limit_per_block | 7919, "state", 30M |
+| `engine` | chain_id, state_path, gas_limit_per_block | 131071, "state", 30M |
 | `mempool` | max_total, max_per_sender, bump_bps | 10K, 1K, 1000 (10%) |
 | `prime_orders` | initial_margin_bps, maintenance_margin_bps | 0, 0 |
 | `bridge` | max_queue_len | 10,000 |
 | `slashing` | double_sign_bps, timeout_bps, escalation | 500, 100, 25/1000 |
-| `token_economics` | max_supply, reward_per_block, halving | 1B PRIM, 10 PRIM, 35M blocks |
+| `token_economics` | max_supply, reward_per_block, halving | 1B MRSN, 10 MRSN, 35M blocks |
 | `rpc` | enabled, addr | false, 127.0.0.1:8545 |
-| `p2p` | listen, peers, block_time_ms | 0.0.0.0:30303, [], 1000 |
+| `p2p` | listen, peers, block_time_ms, noise_enabled | 0.0.0.0:30303, [], 1000, false |
+| `ws` | enabled, addr | false, 127.0.0.1:9945 |
+| `zk` | enabled, checkpoint_interval | false, 100 |
+| `privacy` | mode_activated, activation_height, dkg_epoch_length_blocks, threshold_k/n | false, null, 18000, 2/3 |
 
 ---
 
 ## 7. Module Index
 
-| Workspace surface | Canonical path | Responsibility |
-|---|---|---|
-| Core execution | `crates/core/src/engine.rs` | block production, public + shielded execution orchestration, state proof attachment |
-| Shielded state | `crates/core/src/shielded_state.rs` | note tree, recent roots, nullifier set |
-| Shielded orders | `crates/core/src/shielded_orders.rs` | shielded order admission, market aggregates, FBA-facing state |
-| Threshold mempool | `crates/core/src/threshold_mempool.rs` | threshold-encrypted order flow admit / decrypt / drain |
-| Shielded EVM bridge | `crates/core/src/shielded_evm.rs` | transparent↔shielded migration, transfer, shield/unshield path |
-| Liquidations | `crates/core/src/liquidation_auction.rs` | bonded liquidation claims, settlement, auction state |
-| Persistence | `crates/core/src/shielded_persistence.rs` | shielded persistence and snapshot materialization |
-| EVM precompiles | `crates/core/src/precompiles.rs` | CLOB precompile, state-proof verify precompile |
-| Bridge export | `crates/core/src/bridge_export.rs` | Groth16 bridge calldata export for Ethereum verifier path |
-| RPC router | `crates/rpc/src/rpc_router.rs` | method dispatch and mode gating |
-| Shielded RPC | `crates/rpc/src/rpc_shielded.rs` | privacy-mode RPCs, grant-gated reads, state-proof reads |
-| WebSocket surface | `crates/rpc/src/ws.rs` | public + privacy-mode subscriptions |
-| Node binaries | `crates/node/src/bin/*` | validator, faucet, genesis, migration, loadtest tooling |
-| Network transport | `crates/network/src/p2p.rs` | gossip, sync, peer wiring |
-| ZK primitives | `crates/zkp/src/*` | Poseidon, Pedersen, BLS threshold, Noir adapters, SP1 executor |
-| Proof envelopes | `crates/state-proof/src/*` | revm-free SP1 / bridge proof interchange |
-| zkVM guest | `programs/state-transition/src/main.rs` | canonical state-transition guest program |
-| zkVM host | `programs/state-transition-host/src/main.rs` | local + network prove/verify runner |
+| Module | Path | Lines | Responsibility |
+|---|---|---|---|
+| `engine` | `crates/core/src/engine.rs` | ~3,004 | Block production, tx execution, EIP-1559 fee market, coordinator |
+| `consensus` | `crates/core/src/consensus.rs` | ~895 | CometBFT-style consensus, validator set, staking, slashing, rewards |
+| `hotstuff2` | `crates/core/src/hotstuff2.rs` | ~765 | HotStuff-2 two-phase BFT, QC formation, 2-chain commit |
+| `parallel` | `crates/core/src/parallel.rs` | ~584 | Block-STM parallel executor, dependency analysis, MVCC, merge |
+| `prime_orders` | `crates/core/src/prime_orders.rs` | ~863 | CLOB matching engine, margin, liquidation, ADL, insurance fund |
+| `precompiles` | `crates/core/src/precompiles.rs` | ~684 | revm precompiles (CLOB 0x0100, shielded 0x0200/0x0201, state proof 0x0300) |
+| `precompile_abi` | `crates/core/src/precompile_abi.rs` | ~253 | ABI encoding/decoding, function selectors, gas constants |
+| `fba` | `crates/core/src/fba.rs` | ~389 | Frequent batch auctions, clearing price, pro-rata allocation |
+| `commit_reveal` | `crates/core/src/commit_reveal.rs` | ~129 | Two-phase commit-reveal for MEV protection |
+| `state` | `crates/core/src/state.rs` | ~1,061 | sled persistence, Merkle tree, snapshots, proofs, pruning |
+| `state_redb` | `crates/core/src/state_redb.rs` | ~819 | redb storage backend (`StateBackend` trait) |
+| `mempool` | `crates/core/src/mempool.rs` | ~520 | Three-pool mempool, nonce gaps, fee eviction, promote/demote |
+| `dag_mempool` | `crates/core/src/dag_mempool.rs` | ~677 | DAG mempool |
+| `bridge` | `crates/core/src/bridge.rs` | ~89 | Cross-domain message queues (orders↔evm) |
+| `shielded_*` | `crates/core/src/shielded_{evm,orders,state,persistence}.rs` | ~2,527 | Privacy fork: shielded notes, orders, state, persistence |
+| `zk_proofs` / `zk_sp1` | `crates/core/src/zk_{proofs,sp1}.rs` | ~931 | ZK state proofs, SP1 integration |
+| `events` | `crates/core/src/events.rs` | ~192 | Domain event types (PrimeOrders, Bridge) |
+| `errors` | `crates/core/src/errors.rs` | ~65 | Error types for PrimeOrders and RPC |
+| `rpc` | `crates/rpc/src/rpc.rs` | ~1,816 | JSON-RPC server (tiny_http), Ethereum-compatible API |
+| `rpc_router` | `crates/rpc/src/rpc_router.rs` | ~1,021 | RPC method dispatch, parameter parsing, response formatting |
+| `rpc_shielded` | `crates/rpc/src/rpc_shielded.rs` | ~2,118 | Shielded/privacy RPC methods, viewing keys, state proofs |
+| `ws` | `crates/rpc/src/ws.rs` | ~737 | WebSocket subscriptions |
+| `p2p` | `crates/network/src/p2p.rs` | ~506 | P2P node management, real gossip loop |
+| `net_transport` | `crates/network/src/net_transport.rs` | ~530 | UDP gossip, TCP sync, peer management, deduplication |
+| `noise` | `crates/network/src/noise.rs` | ~283 | Noise protocol P2P encryption |
+| `crypto` | `crates/core/src/crypto/` | ~1,024 | ECDSA signing, recovery, address derivation, RLP decoding |
+| `config` | `crates/core/src/config.rs` | ~517 | JSON configuration loading, defaults, parsing utilities |
+| `prometheus` | `crates/core/src/prometheus.rs` | ~200 | Prometheus metrics exporter, metric registry |
+| `identity` | `crates/core/src/identity.rs` | ~58 | Node identity management |
+| `governance` | `crates/core/src/governance.rs` | ~225 | Governance system |
+| `zkp` crate | `crates/zkp/src/` | ~5,775 | Poseidon, Pedersen, notes/nullifiers, threshold ElGamal, Noir/SP1 |
+| `state-proof` crate | `crates/state-proof/src/` | ~941 | revm-free state-transition proof envelopes, SP1 glue |
+| `lib` | `crates/core/src/lib.rs` | ~48 | Module declarations and path mapping |
 
 ---
 
-*Revised to match the privacy-fork workspace architecture current through June 2026.*
-*For protocol implementation status, see `docs/STATUS.md`; for protocol specification details, see [whitepaper.md](./whitepaper.md).*
+*Document generated from source analysis of the Mersennet codebase (repository `mersennet`).*
+*For protocol specification details, see [whitepaper.md](./whitepaper.md). For later ADRs (014–019), see [docs/adr/](./adr/).*

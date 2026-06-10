@@ -1,6 +1,6 @@
 #!/bin/bash
-# Deploy a Prime Chain validator node
-# Usage: ./deploy-validator.sh --data-dir /var/lib/prime-chain --config genesis.json
+# Deploy a Mersennet validator node
+# Usage: ./deploy-validator.sh --data-dir /var/lib/mersennet --config genesis.json
 
 set -e
 
@@ -13,7 +13,7 @@ usage() {
     echo "Usage: $0 --data-dir DIR --config CONFIG [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --data-dir DIR     Data directory for state (default: /var/lib/prime-chain)"
+    echo "  --data-dir DIR     Data directory for state (default: /var/lib/mersennet)"
     echo "  --config FILE      Path to config.json (default: mainnet/config/config.json)"
     echo "  --no-docker        Use systemd/native binary instead of Docker"
     echo "  -h, --help         Show this help"
@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-DATA_DIR="${DATA_DIR:-/var/lib/prime-chain}"
+DATA_DIR="${DATA_DIR:-/var/lib/mersennet}"
 CONFIG_PATH="${CONFIG_PATH:-$CONFIG_DIR/config/config.json}"
 
 # Check system requirements
@@ -107,10 +107,10 @@ start_docker() {
 
 # Start via systemd (placeholder - user would need to install the binary)
 start_native() {
-    echo "==> Native mode: ensure prime-chain binary is installed and run:"
-    echo "  prime-chain --config $DATA_DIR/config.json --validator --rpc"
+    echo "==> Native mode: ensure mersennet binary is installed and run:"
+    echo "  mersennet --config $DATA_DIR/config.json --validator --rpc"
     echo ""
-    echo "  Or create a systemd unit and: systemctl start prime-chain"
+    echo "  Or create a systemd unit and: systemctl start mersennet"
 }
 
 # Wait for sync
@@ -132,7 +132,7 @@ wait_for_sync() {
 # Print status
 print_status() {
     echo ""
-    echo "==> Prime Chain Validator Deployment Complete"
+    echo "==> Mersennet Validator Deployment Complete"
     echo ""
     echo "  Data dir:  $DATA_DIR"
     echo "  Config:    $CONFIG_PATH"

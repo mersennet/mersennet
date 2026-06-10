@@ -1,0 +1,23 @@
+[Unit]
+Description=Mersennet Testnet Faucet
+After=mersennet.service
+Wants=mersennet.service
+
+[Service]
+Type=simple
+User=mersennet
+Group=mersennet
+ExecStart=/opt/mersennet/bin/faucet \
+    --port 8080 \
+    --rpc-url http://127.0.0.1:8545 \
+    --private-key /opt/mersennet/keys/faucet-key.json
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+WorkingDirectory=/opt/mersennet/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mersennet-faucet
+
+[Install]
+WantedBy=multi-user.target

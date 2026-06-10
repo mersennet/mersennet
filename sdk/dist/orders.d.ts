@@ -1,5 +1,5 @@
 /**
- * PrimeOrders - High-level API for Prime Chain order book operations.
+ * PrimeOrders - High-level API for Mersennet order book operations.
  * Uses primeorders_* RPC methods and the CLOB precompile for view calls.
  */
 import type { PrimeProvider } from './provider';

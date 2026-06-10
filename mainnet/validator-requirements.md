@@ -1,4 +1,4 @@
-# Prime Chain Mainnet Validator Requirements
+# Mersennet Mainnet Validator Requirements
 
 ## Hardware Requirements
 
@@ -17,7 +17,7 @@
 
 ## Staking Requirements
 
-- **Minimum stake**: 100,000 PRIME tokens
+- **Minimum stake**: 100,000 MRSN tokens
 - **Unbonding period**: 100 blocks (configurable in genesis)
 
 ## Network Requirements

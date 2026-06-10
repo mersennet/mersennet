@@ -1,4 +1,4 @@
-# Prime Chain TODO
+# Mersennet TODO
 
 ## Core Networking & Execution
 - [x] Proper mempool + transaction validation pipeline.
@@ -32,3 +32,13 @@
 - [x] Add cross-domain bridge queue (PrimeOrders ⇄ PrimeEVM).
 - [x] Expose PrimeOrders RPC endpoints + docs.
 - [x] Add end-to-end tests for matching + settlement.
+
+## Privacy Fork (current — see docs/delivery/privacy-fork-remaining-work.md)
+- [x] Shielded state, CLOB/FBA, liquidation auctions, threshold mempool, DKG (A–D).
+- [x] Shielded RPC/WS, SDK shielded clients (TS/Go/Python), privacy testnet tooling (C, F, H, K).
+- [x] SP1 vkey pin + local prove/verify transcript (E1–E3); network host path turnkey (E4, credential-gated).
+- [x] Ethereum bridge contracts + Foundry tests (G1–G3, 21 tests).
+- [ ] E5: Groth16 wrapping circuit + verifying key (out-of-repo; bridge `Groth16Verifier` deployable but unkeyed).
+- [ ] I1–I6: external crypto / protocol / Solidity audits + fix cycle.
+- [ ] J1–J6: governance activation vote + mainnet hard-fork rollout.
+- [ ] H6: 8-week testnet bake (gated on E completion).

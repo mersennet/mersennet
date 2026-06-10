@@ -750,7 +750,7 @@ fn unique_temp_dir(label: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    env::temp_dir().join(format!("prime-chain-{label}-{}-{now}", std::process::id()))
+    env::temp_dir().join(format!("mersennet-{label}-{}-{now}", std::process::id()))
 }
 
 #[cfg(feature = "prover")]

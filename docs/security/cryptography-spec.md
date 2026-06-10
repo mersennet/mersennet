@@ -1,11 +1,11 @@
-# Prime Chain — Cryptography Specification
+# Mersennet — Cryptography Specification
 
 **Status:** Draft for third-party audit (Workstream I)
-**Target chain ID:** 7920 (privacy testnet) → 7919 (mainnet, post-fork)
+**Target chain ID:** 7920 (privacy testnet) → 131071 (mainnet, post-fork)
 **Date:** 2026-05-21
 
 This document formally specifies the cryptographic primitives,
-protocols, and parameter choices used by Prime Chain's privacy
+protocols, and parameter choices used by Mersennet's privacy
 hard-fork. It is the source of truth for the auditor and the
 implementation in `crates/zkp/`, `crates/core/src/shielded_*`, and
 `crates/core/src/dkg.rs`.

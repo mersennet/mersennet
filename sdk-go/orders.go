@@ -1,11 +1,11 @@
-package primechain
+package mersennet
 
 import (
 	"encoding/json"
 	"fmt"
 )
 
-// Orders provides CLOB interaction for Prime Chain
+// Orders provides CLOB interaction for Mersennet
 type Orders struct {
 	provider *Provider
 }

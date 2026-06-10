@@ -9,7 +9,7 @@ if (!process.env.DEPLOYER_KEY) {
     process.exit(1);
 }
 const PRIVATE_KEY = process.env.DEPLOYER_KEY.replace('0x', '');
-const CHAIN_ID = 7919;
+const CHAIN_ID = 131071;
 
 function keccak256(data) {
     return Buffer.from(keccak_256(data));
@@ -157,8 +157,8 @@ async function main() {
     const mc3 = JSON.parse(readFileSync('out/Multicall3.sol/Multicall3.json', 'utf8'));
     contracts.multicall3 = await deploy('Multicall3', mc3.bytecode.object);
 
-    const wprim = JSON.parse(readFileSync('out/WPRIM.sol/WPRIM.json', 'utf8'));
-    contracts.wprim = await deploy('WPRIM', wprim.bytecode.object);
+    const wprim = JSON.parse(readFileSync('out/WMRSN.sol/WMRSN.json', 'utf8'));
+    contracts.wprim = await deploy('WMRSN', wprim.bytecode.object);
 
     const mock = JSON.parse(readFileSync('out/MockERC20.sol/MockERC20.json', 'utf8'));
     contracts.usdc = await deploy('MockUSDC', mock.bytecode.object, abiEncodeConstructor('USD Coin', 'USDC', 6));

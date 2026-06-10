@@ -1,4 +1,4 @@
-# Prime Chain — ZK Privacy Architecture Plan (Internal)
+# Mersennet — ZK Privacy Architecture Plan (Internal)
 
 **Status:** Active. Privacy perimeter hardening is largely landed on
 `feat/zk-privacy`; selective disclosure, real proving backends, wallet
@@ -19,7 +19,7 @@ large traders are reluctant to use any chain where their positions,
 collateral, and proximity to liquidation are publicly readable, because
 those signals are routinely used to engineer cascading liquidations.
 
-Prime Chain's existing CLOB
+Mersennet's existing CLOB
 ([crates/core/src/prime_orders.rs](../../crates/core/src/prime_orders.rs))
 leaks all of this: `Order.owner: Address`, `AccountState`,
 `HashMap<Address, AccountState>`, and `is_liquidatable(addr)`.
@@ -181,7 +181,7 @@ system**:
   disclosure, transparent-compatibility end-state decisions, and
   acceptance coverage for the surviving public surfaces.
 
-### Decision gate: what "real zkEVM" means for Prime Chain
+### Decision gate: what "real zkEVM" means for Mersennet
 
 We must choose one of two targets before doing major additional work.
 

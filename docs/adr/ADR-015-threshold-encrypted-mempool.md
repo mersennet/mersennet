@@ -26,7 +26,7 @@ implement the trait:
   XOR-share aggregation. Not secure on its own; faithful API
   placeholder.
 - `BlsThreshold` (`crates/zkp/src/bls_threshold.rs`, gated behind
-  the `prover` feature on `prime-zkp`): real BLS12-381 KEM/DEM with
+  the `prover` feature on `mersennet-zkp`): real BLS12-381 KEM/DEM with
   Pedersen DKG, k-of-n decryption shares via Lagrange interpolation,
   ChaCha20-Poly1305 symmetric core.
 
@@ -56,7 +56,7 @@ embedded as an extra round in HotStuff-2 consensus.
 ## Phase 1.3.x work plan
 
 1. Add `blstrs = "0.7"` and `group = "0.13"` under the `prover`
-   feature on `prime-zkp`.
+   feature on `mersennet-zkp`.
 2. Implement Pedersen-DKG (`blstrs` G1 / G2).
 3. Wire the DKG ceremony into HotStuff-2.
 4. Slash on wrong-share evidence.

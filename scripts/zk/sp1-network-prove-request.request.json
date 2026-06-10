@@ -7,5 +7,5 @@
   "txsHex": [],
   "prevMarketStateHex": "",
   "vkeyHashHex": "0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d",
-  "programElfPath": "programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/prime-chain-state-transition"
+  "programElfPath": "programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition"
 }

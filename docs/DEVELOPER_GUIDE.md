@@ -1,6 +1,6 @@
-# Prime Chain — Developer Guide
+# Mersennet — Developer Guide
 
-**Audience:** Engineers landing on the Prime Chain repo for the first
+**Audience:** Engineers landing on the Mersennet repo for the first
 time, or returning after a break.
 
 This guide is the single entry point. It tells you:
@@ -16,10 +16,10 @@ deep dive linked from here.
 
 ---
 
-## 1. What is Prime Chain?
+## 1. What is Mersennet?
 
 A Rust-built EVM-compatible L1 with a native CLOB (PrimeOrders) that
-is being upgraded from a transparent chain (chain ID 7919) to a
+is being upgraded from a transparent chain (chain ID 131071) to a
 privacy-first chain (chain ID 7920) via a hard fork. The privacy fork:
 
 - Moves trader-specific state (balances, positions, orders) behind a
@@ -35,7 +35,7 @@ privacy-first chain (chain ID 7920) via a hard fork. The privacy fork:
 **Why:** after October 10, 2025, large traders are unwilling to use
 chains where their positions and proximity to liquidation are
 publicly readable, because those signals get used to engineer
-cascading liquidations. Prime Chain's privacy fork makes those
+cascading liquidations. Mersennet's privacy fork makes those
 signals unobservable.
 
 ---
@@ -62,11 +62,12 @@ programs/       — SP1 program (state-transition proof body)
 
 | Crate | Purpose | Key entry points |
 |---|---|---|
-| `prime-chain` (`crates/core`) | Engine, state, consensus, shielded subsystems | [`engine.rs`](../crates/core/src/engine.rs) |
-| `prime-chain-network` (`crates/network`) | P2P transport | `p2p.rs` |
-| `prime-chain-rpc` (`crates/rpc`) | JSON-RPC + WebSocket | [`rpc.rs`](../crates/rpc/src/rpc.rs), [`rpc_shielded.rs`](../crates/rpc/src/rpc_shielded.rs), [`ws.rs`](../crates/rpc/src/ws.rs) |
-| `prime-chain-node` (`crates/node`) | Binaries — `prime-chain`, `genesis`, `migrate-genesis`, `faucet`, `loadtest`, `stresstest` | `src/bin/*.rs` |
-| `prime-zkp` (`crates/zkp`) | ZK primitives — Poseidon, Pedersen, BLS threshold, merkle, nullifier, noir/sp1 stubs | `src/lib.rs` |
+| `mersennet` (`crates/core`) | Engine, state, consensus, shielded subsystems | [`engine.rs`](../crates/core/src/engine.rs) |
+| `mersennet-network` (`crates/network`) | P2P transport | `p2p.rs` |
+| `mersennet-rpc` (`crates/rpc`) | JSON-RPC + WebSocket | [`rpc.rs`](../crates/rpc/src/rpc.rs), [`rpc_shielded.rs`](../crates/rpc/src/rpc_shielded.rs), [`ws.rs`](../crates/rpc/src/ws.rs) |
+| `mersennet-node` (`crates/node`) | Binaries — `mersennet`, `genesis`, `migrate-genesis`, `faucet`, `loadtest`, `stresstest` | `src/bin/*.rs` |
+| `mersennet-zkp` (`crates/zkp`) | ZK primitives — Poseidon, Pedersen, BLS threshold, merkle, nullifier, noir/sp1 stubs | `src/lib.rs` |
+| `mersennet-state-proof` (`crates/state-proof`) | revm-free state-transition proof envelopes + SP1 prover/verifier glue | `src/lib.rs` |
 
 ### Shielded subsystem map (where the privacy work lives)
 
@@ -93,9 +94,9 @@ programs/       — SP1 program (state-transition proof body)
 ```
 testnet/
 ├── configs/
-│   ├── validator-{1..3}.json              — transparent testnet (chain 7919)
+│   ├── validator-{1..3}.json              — transparent testnet (chain 131071)
 │   └── privacy/
-│       ├── validator-{1..7}.json          — privacy testnet (chain 7920, 5-of-7)
+│       ├── validator-{1..7}.json          — privacy testnet (chain 131071, 5-of-7)
 │       └── rpc-node.json
 ├── docker-compose.testnet.yml             — transparent stack
 ├── docker-compose.privacy.yml             — privacy stack
@@ -112,7 +113,7 @@ testnet/
 
 | Branch | Purpose |
 |---|---|
-| `main` | Production trunk for transparent chain (7919) |
+| `main` | Production trunk for transparent chain (131071) |
 | `feat/zk-privacy` | **Where the privacy testnet work lives.** All current development happens here. |
 | `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived, one PR each |
 | `archive/*` (tags) | Read-only snapshots of retired work |
@@ -152,9 +153,9 @@ cargo build --workspace --features prover  # real BN254 + BLS crypto
 ### Test
 
 ```bash
-cargo test --workspace --lib --tests       # 286+ tests, ~5 min
-cargo test -p prime-zkp --features prover  # 43 cryptographic tests
-cargo test -p prime-chain --test privacy_migration_e2e  # migration E2E
+cargo test --workspace --lib --tests       # 241 tests, ~5 min
+cargo test -p mersennet-zkp --features prover  # 43 cryptographic tests
+cargo test -p mersennet --test privacy_migration_e2e  # migration E2E
 ```
 
 ### Lint + format
@@ -168,7 +169,7 @@ bash scripts/ci/check-privacy-invariants.sh
 ### Run a single-node devnet
 
 ```bash
-cargo run --bin prime-chain -- --rpc
+cargo run --bin mersennet -- --rpc
 # JSON-RPC at http://127.0.0.1:8545
 # Metrics at http://127.0.0.1:8545/metrics
 ```
@@ -198,16 +199,16 @@ headers, roots, fees, timestamps, and transaction hashes remain
 available, but full transaction objects and transaction receipts are no
 longer exposed over public RPC.
 
-### Transparent RPC (works on both 7919 and 7920)
+### Transparent RPC (works on both 131071 and 7920)
 
 Standard Ethereum-style methods plus `prime_*` extensions:
 
 | Method | Purpose |
 |---|---|
 | `eth_blockNumber`, `eth_getBlockByNumber` (header-only post-fork), `eth_call`, `eth_sendRawTransaction`, … | Standard EVM |
-| `prime_getChainConfig` | Chain ID + activation heights + feature flags |
-| `prime_getMarkets`, `prime_getOrderBook`, `prime_submitOrder` | PrimeOrders CLOB |
-| `prime_getBridgeQueue` | Bridge state |
+| `mersennetId`, `prime_blockNumber`, `prime_getBalance`, `prime_validators`, … | `prime_*` aliases + chain extensions |
+| `primeorders_addMarket`, `primeorders_getOrderBook`, `primeorders_submitOrder`, `primeorders_cancelOrder`, … | PrimeOrders CLOB |
+| `primebridge_enqueueOrdersToEvm` / `primebridge_dequeueEvmToOrders` (and the reverse pair) | Bridge queues |
 
 Post-fork retrieval rule:
 
@@ -219,7 +220,7 @@ Post-fork retrieval rule:
 - Expanded block responses with full transaction objects are disabled
   after privacy activation.
 
-### Shielded RPC (gated on privacy activation — chain 7920)
+### Shielded RPC (gated on privacy activation — chain 131071)
 
 All payloads are opaque `bincode-then-0x-hex` blobs. Wallets build
 them locally with the SDK.
@@ -321,6 +322,7 @@ what's left is [`STATUS.md`](STATUS.md).
   - ADR-016: Liquidation auctions
   - ADR-017: SP1 state proofs
   - ADR-018: Privacy hard fork
+  - ADR-019: Selective-disclosure viewing keys
 - **Cryptography spec** (for the auditor) — [`security/cryptography-spec.md`](security/cryptography-spec.md)
 - **Privacy invariants** — [`security/privacy-invariants.md`](security/privacy-invariants.md)
 - **Privacy testnet runbook** — [`runbooks/privacy-testnet-bootstrap.md`](runbooks/privacy-testnet-bootstrap.md)

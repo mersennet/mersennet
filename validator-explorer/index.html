@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PrimeNodes — Validator Dashboard</title>
-    <meta name="description" content="Real-time validator monitoring and network health dashboard for Prime Chain (Chain ID 7919)">
+    <title>Mersennet Validators — Network Dashboard</title>
+    <meta name="description" content="Real-time validator monitoring and network health dashboard for Mersennet (Chain ID 131071)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20viewBox='0%200%20125%2086'%20fill='none'%20xmlns='http%3A//www.w3.org/2000/svg'><path%20d='M0%200C4.65%204.23%205.79%209.68%207.09%2015.62%208.41%2021.18%2010.06%2025.1%2014.72%2028.56%2020.1%2031.38%2024.77%2032.16%2030.72%2030.56%2034.86%2028.52%2036.66%2026.54%2038.84%2022.5%2040.67%2019.13%2041.47%2017.73%2044.72%2015.56%2047.3%2020.77%2046.34%2024%2044.84%2029.43%2040.78%2040.81%2033.12%2049.57%2022.72%2055.56%2013.28%2059.91%203.47%2061.59-6.47%2057.94-20.15%2051.68-27.12%2043.07-32.59%2029.25-34.19%2020.71-34.33%2012.37-30.28%204.56-22.13-5.1-10.58-7.39%200%200Z'%20fill='%234901FF'%20transform='translate(33.28%2C24.44)'/><path%20d='M0%200C10.09%206.6%2017.64%2015.51%2020.59%2027.38%2021.87%2035.58%2021.85%2043.56%2018%2051%2014.35%2055.33%2010.62%2058.67%204.88%2059.4-3.03%2059.34-8.26%2058.88-14.12%2053.25-17.87%2048.7-18.8%2043.14-20.04%2037.52-21.41%2032.48-22.87%2029.81-27.12%2026.75-31.96%2024.27-36.79%2023.27-42.14%2024.49-47.72%2026.74-49.97%2030.54-52.68%2035.76-54%2038-54%2038-57%2040-58.58%2038.42-58.28%2036.88-58.38%2034.69-58.22%2023.85-52.44%2014.54-45%207-32.28-4.18-15.38-8.02%200%200Z'%20fill='%234901FF'%20transform='translate(104%2C6)'/></svg>">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect width='96' height='96' rx='18' fill='black'/><g fill='%237dff9b'><rect x='8' y='14' width='12' height='68' rx='6'/><rect x='25' y='14' width='12' height='30' rx='6'/><rect x='42' y='14' width='12' height='46' rx='6'/><rect x='59' y='14' width='12' height='30' rx='6'/><rect x='76' y='14' width='12' height='68' rx='6'/></g></svg>">
 </head>
 <body>
     <div class="top-accent"></div>
@@ -18,19 +18,10 @@
         <div class="header-inner">
             <a href="#/dashboard" class="logo">
                 <div class="logo-mark">
-                    <svg width="32" height="22" viewBox="0 0 125 86" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M0 0 C4.65 4.23 5.79 9.68 7.09 15.62 C8.41 21.18 10.06 25.1 14.72 28.56 C20.1 31.38 24.77 32.16 30.72 30.56 C34.86 28.52 36.66 26.54 38.84 22.5 C40.67 19.13 41.47 17.73 44.72 15.56 C47.3 20.77 46.34 24 44.84 29.43 C40.78 40.81 33.12 49.57 22.72 55.56 C13.28 59.91 3.47 61.59 -6.47 57.94 C-20.15 51.68 -27.12 43.07 -32.59 29.25 C-34.19 20.71 -34.33 12.37 -30.28 4.56 C-22.13 -5.1 -10.58 -7.39 0 0 Z" fill="#4901FF" transform="translate(33.28,24.44)"/>
-                        <path d="M0 0 C10.09 6.6 17.64 15.51 20.59 27.38 C21.87 35.58 21.85 43.56 18 51 C14.35 55.33 10.62 58.67 4.88 59.4 C-3.03 59.34 -8.26 58.88 -14.12 53.25 C-17.87 48.7 -18.8 43.14 -20.04 37.52 C-21.41 32.48 -22.87 29.81 -27.12 26.75 C-31.96 24.27 -36.79 23.27 -42.14 24.49 C-47.72 26.74 -49.97 30.54 -52.68 35.76 C-54 38 -54 38 -57 40 C-58.58 38.42 -58.28 36.88 -58.38 34.69 C-58.22 23.85 -52.44 14.54 -45 7 C-32.28 -4.18 -15.38 -8.02 0 0 Z" fill="#4901FF" transform="translate(104,6)"/>
-                        <path d="M0 0 C2.18 2.07 2.85 3.64 3.63 6.55 C2.75 9.31 2.75 9.31 1.18 12.34 C0.61 13.49 0.04 14.63 -0.54 15.81 C-0.84 16.41 -1.15 17.02 -1.46 17.65 C-3.02 20.89 -4.37 24.23 -5.73 27.56 C-6.29 28.93 -6.86 30.29 -7.42 31.66 C-8.28 33.75 -9.14 35.85 -10 37.94 C-10.84 40 -11.69 42.07 -12.54 44.12 C-13.04 45.34 -13.53 46.55 -14.05 47.79 C-15.37 50.55 -15.37 50.55 -17.37 51.55 C-26.01 44.98 -31.5 36.33 -33.37 25.55 C-34.03 17.94 -33.91 11.39 -30.37 4.55 C-21.85 -5.54 -11.02 -6.85 0 0 Z" fill="#4901FF" transform="translate(33.37,24.45)"/>
-                        <path d="M0 0 C-0.66 0.33 -1.32 0.66 -2 1 C-2 18.82 -2 36.64 -2 55 C-5.08 51.92 -5.44 47.8 -6.41 43.67 C-7.84 37.94 -9.28 34.24 -14.12 30.75 C-18.96 28.27 -23.79 27.27 -29.14 28.49 C-34.72 30.74 -36.97 34.54 -39.68 39.76 C-41 42 -41 42 -44 44 C-45.58 42.42 -45.28 40.88 -45.38 38.69 C-45.22 27.85 -39.44 18.54 -32 11 C-22.82 2.93 -12.21 -0.97 0 0 Z" fill="#4901FF" transform="translate(91,2)"/>
-                        <path d="M0 0 C2 1 2 1 2.69 2.71 C4.06 12.9 -2.7 22.33 -8.25 30.19 C-13.23 35.28 -19.17 39.77 -26 42 C-27.32 42 -28.64 42 -30 42 C-29.08 38.96 -28.07 35.99 -27 33 C-26.78 32.36 -26.57 31.72 -26.35 31.07 C-21.87 18.08 -21.87 18.08 -17.34 15.47 C-15.46 14.95 -13.57 14.48 -11.66 14.05 C-6.47 12 -4.55 6.68 -2 2 C-1.34 1.34 -0.68 0.68 0 0 Z" fill="#4901FF" transform="translate(77,40)"/>
-                        <path d="M0 0 C0 6.93 0 13.86 0 21 C-0.84 21.22 -0.84 21.22 -5.06 22.31 C-11.29 24.52 -13.51 27.85 -16.56 33.54 C-18 36 -18 36 -21 38 C-22.58 36.42 -22.28 34.88 -22.38 32.69 C-22.22 21.79 -16.38 12.65 -9 5 C-3.22 0 -3.22 0 0 0 Z" fill="#4901FF" transform="translate(68,8)"/>
-                        <path d="M0 0 C2.57 3.85 1.83 5.59 1 10 C-1.69 11.25 -1.69 11.25 -5 12 C-7.94 10.56 -7.94 10.56 -10 8 C-10.06 4.38 -10.06 4.38 -9 1 C-6.05 -1.53 -3.57 -1.22 0 0 Z" fill="#4901FF" transform="translate(67,37)"/>
-                        <path d="M0 0 C1.32 0 2.64 0 4 0 C4 3.63 4 7.26 4 11 C0 10 0 10 -2 8 C-1.42 1.42 -1.42 1.42 0 0 Z" fill="#4901FF" transform="translate(59,37)"/>
-                    </svg>
+                    <svg width="32" height="22" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg"><g fill="#7dff9b"><rect x="8" y="14" width="12" height="68" rx="6"/><rect x="25" y="14" width="12" height="30" rx="6"/><rect x="42" y="14" width="12" height="46" rx="6"/><rect x="59" y="14" width="12" height="30" rx="6"/><rect x="76" y="14" width="12" height="68" rx="6"/></g></svg>
                 </div>
                 <div class="logo-text">
-                    <span class="logo-name">PrimeNodes</span>
+                    <span class="logo-name">Mersennet</span>
                     <span class="logo-sub">Validator Dashboard</span>
                 </div>
             </a>
@@ -59,7 +50,7 @@
                 <div class="header-stat-sep"></div>
                 <div class="header-stat">
                     <span class="header-stat-label">Chain</span>
-                    <span class="header-stat-value mono">7919</span>
+                    <span class="header-stat-value mono">131071</span>
                 </div>
                 <div class="header-stat-sep"></div>
                 <button class="theme-toggle" id="themeToggle" title="Toggle theme">
@@ -78,7 +69,7 @@
         <div id="pageContent">
             <div class="page-loading">
                 <div class="spinner"></div>
-                <span>Connecting to Prime Chain...</span>
+                <span>Connecting to Mersennet...</span>
             </div>
         </div>
     </main>
@@ -102,10 +93,10 @@
                 <span class="footer-sep">&middot;</span>
                 <a href="http://46.225.30.187:3001" target="_blank">Docs</a>
                 <span class="footer-sep">&middot;</span>
-                <a href="https://github.com/PrimeNumbersLabs/prime-chain" target="_blank">GitHub</a>
+                <a href="https://github.com/mersennet/mersennet" target="_blank">GitHub</a>
             </div>
             <div class="footer-meta">
-                <span>Chain ID: <strong>7919</strong></span>
+                <span>Chain ID: <strong>131071</strong></span>
                 <span class="footer-sep">&middot;</span>
                 <span>Block: <strong id="footerBlock">&mdash;</strong></span>
             </div>
@@ -119,7 +110,7 @@
         var btn = document.getElementById('themeToggle');
         var sunIcon = btn.querySelector('.theme-icon-sun');
         var moonIcon = btn.querySelector('.theme-icon-moon');
-        var isDark = localStorage.getItem('theme') === 'dark';
+        var isDark = localStorage.getItem('theme') ? localStorage.getItem('theme') === 'dark' : true;
 
         function apply() {
             document.body.classList.toggle('dark-mode', isDark);

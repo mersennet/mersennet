@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "prime-chain-sdk"
+name = "mersennet-sdk"
 version = "0.7.0"
-description = "Python SDK for Prime Chain - JSON-RPC, CLOB, and WebSocket client"
+description = "Python SDK for Mersennet - JSON-RPC, CLOB, and WebSocket client"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Prime Numbers Labs" }]
-keywords = ["blockchain", "prime-chain", "rpc", "clob"]
+keywords = ["blockchain", "mersennet", "rpc", "clob"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -31,4 +31,4 @@ dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["prime_chain*"]
+include = ["mersennet*"]

@@ -1,0 +1,24 @@
+[Unit]
+Description=Mersennet RPC Node (Full Node)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mersennet
+Group=mersennet
+ExecStart=/opt/mersennet/bin/mersennet \
+    --config /opt/mersennet/config/config.json \
+    --mode full \
+    --rpc
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+Environment=RUST_LOG=info
+WorkingDirectory=/opt/mersennet/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mersennet
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-# Prime Chain Public Testnet
+# Mersennet Public Testnet
 # 4 validators, 1 RPC node, 1 faucet, Prometheus + Grafana
 #
 # Prerequisites:
@@ -17,9 +17,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: prime-testnet-validator-1
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./genesis-output/configs/validator-1.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/configs/validator-1.json:/etc/mersennet/config.json:ro
       - ./genesis-output/keys/validator-1.json:/data/node_key.json:ro
       - validator-1-data:/data
     ports:
@@ -42,9 +42,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: prime-testnet-validator-2
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./genesis-output/configs/validator-2.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/configs/validator-2.json:/etc/mersennet/config.json:ro
       - ./genesis-output/keys/validator-2.json:/data/node_key.json:ro
       - validator-2-data:/data
     ports:
@@ -67,9 +67,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: prime-testnet-validator-3
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./genesis-output/configs/validator-3.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/configs/validator-3.json:/etc/mersennet/config.json:ro
       - ./genesis-output/keys/validator-3.json:/data/node_key.json:ro
       - validator-3-data:/data
     ports:
@@ -92,9 +92,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: prime-testnet-validator-4
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./genesis-output/configs/validator-4.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/configs/validator-4.json:/etc/mersennet/config.json:ro
       - ./genesis-output/keys/validator-4.json:/data/node_key.json:ro
       - validator-4-data:/data
     ports:
@@ -118,9 +118,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: prime-testnet-rpc
-    command: ["--config", "/etc/prime-chain/config.json", "--mode", "full", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--mode", "full", "--rpc"]
     volumes:
-      - ./genesis-output/configs/rpc-node.json:/etc/prime-chain/config.json:ro
+      - ./genesis-output/configs/rpc-node.json:/etc/mersennet/config.json:ro
       - rpc-node-data:/data
     ports:
       - "8545:8545"

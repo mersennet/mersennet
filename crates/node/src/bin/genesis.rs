@@ -1,14 +1,15 @@
-//! Genesis ceremony tool for Prime Chain testnet.
+//! Genesis ceremony tool for Mersennet testnet.
 //! Generates validator keys, genesis config, and Docker Compose for N validators.
 
 use std::fs;
 use std::path::Path;
 
 const DEFAULT_VALIDATORS: u32 = 4;
-const DEFAULT_CHAIN_ID: u64 = 7919;
+/// Testnet chain id — the Mersenne prime 2^17 − 1 (mainnet uses 8191 = 2^13 − 1).
+const DEFAULT_CHAIN_ID: u64 = 131_071;
 const DEFAULT_OUTPUT_DIR: &str = "genesis-output";
-const TOKENS_PER_VALIDATOR: &str = "10000000000000000000000000"; // 10M PRIM (18 decimals)
-const STAKE_PER_VALIDATOR: &str = "1000000000000000000000000"; // 1M PRIM staked
+const TOKENS_PER_VALIDATOR: &str = "10000000000000000000000000"; // 10M MRSN (18 decimals)
+const STAKE_PER_VALIDATOR: &str = "1000000000000000000000000"; // 1M MRSN staked
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args();
@@ -32,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut validator_addresses = Vec::new();
 
     for i in 1..=n {
-        let (signing_key, address) = prime_chain::crypto::generate_keypair();
+        let (signing_key, address) = mersennet::crypto::generate_keypair();
         let key_path = keys_dir.join(format!("validator-{}.json", i));
         fs::write(
             &key_path,
@@ -65,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
-    let (faucet_key, faucet_address) = prime_chain::crypto::generate_keypair();
+    let (faucet_key, faucet_address) = mersennet::crypto::generate_keypair();
     let faucet_addr_hex = format!("0x{}", hex::encode(faucet_address.as_slice()));
     let faucet_key_path = keys_dir.join("faucet-key.json");
     fs::write(
@@ -276,9 +277,9 @@ fn generate_docker_compose(n: u32, _chain_id: u64) -> String {
             r#"  validator-{}:
     build: ..
     container_name: prime-validator-{}
-    command: ["--config", "/etc/prime-chain/config.json", "--validator", "--rpc"]
+    command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/validator-{}.json:/etc/prime-chain/config.json:ro
+      - ./configs/validator-{}.json:/etc/mersennet/config.json:ro
       - ./keys/validator-{}.json:/data/node_key.json:ro
       - validator-{}-data:/data
     ports:

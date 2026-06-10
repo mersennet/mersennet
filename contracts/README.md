@@ -1,10 +1,10 @@
-# Prime Chain Solidity Example Contracts
+# Mersennet Solidity Example Contracts
 
 This directory contains example Solidity contracts that demonstrate **atomic EVM ↔ CLOB interaction** via the Prime Orders precompile at address `0x0100`. These strategies are **impossible on Hyperliquid** and other chains where the CLOB and EVM run asynchronously.
 
 ## CLOB Precompile at 0x0100
 
-Prime Chain embeds a native CLOB (Central Limit Order Book) matching engine that is **synchronously callable from EVM contracts**. The precompile at `0x0100` exposes:
+Mersennet embeds a native CLOB (Central Limit Order Book) matching engine that is **synchronously callable from EVM contracts**. The precompile at `0x0100` exposes:
 
 | Selector | Function | Description |
 |----------|----------|-------------|
@@ -25,7 +25,7 @@ On Hyperliquid (and similar architectures):
 - Cross-domain messaging (e.g. IBC, bridges) introduces latency and async semantics
 - You cannot build **atomic** strategies like: "buy on CLOB, sell on AMM, all-or-nothing"
 
-On Prime Chain, the CLOB is a **precompile** — a native extension of the EVM. One transaction can:
+On Mersennet, the CLOB is a **precompile** — a native extension of the EVM. One transaction can:
 
 1. Deposit collateral
 2. Place a limit order
@@ -33,6 +33,16 @@ On Prime Chain, the CLOB is a **precompile** — a native extension of the EVM. 
 4. Read the new position
 5. Call an AMM to hedge
 6. All revert if any step fails
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/primeorders/` | CLOB precompile example strategies (VaultStrategy, AtomicArbitrage, SmartContractMM) |
+| `src/foundation/` | WMRSN, Multicall3, MockERC20 |
+| `src/dex/` | PrimeSwap V2-style AMM (factory, pair, router) |
+| `src/zk/` | Ethereum-side ZK bridge — Groth16Verifier + PrimeChainBridge (see [`src/zk/README.md`](src/zk/README.md)) |
+| `test/` | Foundry tests — 49 tests total, incl. 21 in `test/zk/` (`forge test`) |
 
 ## Contracts Overview
 
@@ -63,14 +73,15 @@ On Prime Chain, the CLOB is a **precompile** — a native extension of the EVM. 
 ### Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/) or [Hardhat](https://hardhat.org/)
-- Prime Chain node (testnet or local)
+- Mersennet node (testnet or local)
 
 ### Deploy with Foundry
 
 ```bash
-forge create contracts/VaultStrategy.sol:VaultStrategy \
+cd contracts
+forge create src/primeorders/VaultStrategy.sol:VaultStrategy \
   --constructor-args 1 50 1000 \
-  --rpc-url https://testnet.primechain.xyz
+  --rpc-url https://rpc.primechain.xyz
 ```
 
 Constructor args for `VaultStrategy`: `(marketId, spreadBps, maxPositionSize)`.
@@ -139,6 +150,6 @@ Actual gas depends on order book depth and number of fills.
 ## Security Notes
 
 - Contracts use `onlyOwner` for sensitive operations
-- Precompile address `0x0100` is fixed in Prime Chain; do not deploy on other chains
+- Precompile address `0x0100` is fixed in Mersennet; do not deploy on other chains
 - Always verify `getPosition` after `placeOrder` when expecting fills
 - Consider reentrancy if integrating with external protocols
