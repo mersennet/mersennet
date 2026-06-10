@@ -15,8 +15,23 @@ export function Verifiability() {
     <section className={`${styles.shell}`} id="verifiable">
       <div className={`${styles.section} ${styles.sectionDark}`}>
         <Reveal as="header" className={styles.secHead}>
-          <span className={styles.secIndex}>[ 04 ] // Verifiable state</span>
+          <span className={styles.secIndex}>[ 05 ] // Verifiable state</span>
           <h2 className={styles.secTitle}>Don&apos;t trust the node. Verify the proof.</h2>
+        </Reveal>
+
+        <Reveal as="div" className={styles.pipeline} aria-label="Proof pipeline">
+          {['Shielded txs', 'FBA tick', 'SP1 zkVM', 'Groth16', 'Ethereum'].map(
+            (stage, i, arr) => (
+              <span key={stage} className={styles.pipeStage}>
+                <span className={styles.pipeNode}>{stage}</span>
+                {i < arr.length - 1 ? (
+                  <span className={styles.pipeLink} aria-hidden="true">
+                    <span className={styles.pipePulse} style={{ animationDelay: `${i * 0.55}s` }} />
+                  </span>
+                ) : null}
+              </span>
+            ),
+          )}
         </Reveal>
 
         <div className={styles.proof}>

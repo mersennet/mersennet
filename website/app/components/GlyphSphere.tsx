@@ -22,12 +22,12 @@ type Blob = {
 
 const CHARS = '01234567891379∑∏√π∞≡⊕⊗×÷ΛΦ◇▷◁';
 const BLOB_COLORS = [
-  '255,82,64', // red
-  '255,154,60', // amber
-  '91,140,255', // blue
-  '176,124,255', // violet
   '125,255,155', // phosphor green
-  '255,255,255', // white
+  '64,224,180', // teal
+  '125,255,155', // phosphor green
+  '90,200,250', // cold cyan
+  '125,255,155', // phosphor green
+  '236,236,239', // off-white
 ];
 
 // Signature hero: a slowly rotating sphere woven from prime digits and math

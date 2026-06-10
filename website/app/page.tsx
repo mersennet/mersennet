@@ -5,6 +5,7 @@ import { Ticker } from './components/Ticker';
 import { StatBand } from './components/StatBand';
 import { Pillars } from './components/Pillars';
 import { HowItWorks } from './components/HowItWorks';
+import { BuildShowcase } from './components/BuildShowcase';
 import { SelectiveDisclosure } from './components/SelectiveDisclosure';
 import { Verifiability } from './components/Verifiability';
 import { Ecosystem } from './components/Ecosystem';
@@ -20,15 +21,16 @@ export default function Home() {
       <main>
         <Hero />
         <Ticker />
-        <div style={{ padding: '3.5rem 0 0' }}>
+        <div className={styles.statBandWrap}>
           <StatBand />
         </div>
         <Pillars />
         <HowItWorks />
+        <BuildShowcase />
         <SelectiveDisclosure />
         <Verifiability />
         <Ecosystem />
-        <div style={{ padding: '4.5rem 0 5.5rem' }}>
+        <div className={styles.ctaBandWrap}>
           <CtaBand />
         </div>
       </main>

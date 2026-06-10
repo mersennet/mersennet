@@ -62,6 +62,24 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport = {
+  themeColor: '#000000',
+};
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: SITE.name,
+  url: SITE.url,
+  description: SITE.description,
+  publisher: {
+    '@type': 'Organization',
+    name: 'Prime Numbers Labs',
+    url: SITE.url,
+    logo: `${SITE.url}/logo.svg`,
+  },
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -72,7 +90,13 @@ export default function RootLayout({
       lang="en"
       className={`${schibsted.variable} ${jetbrainsMono.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        {children}
+      </body>
     </html>
   );
 }
