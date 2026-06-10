@@ -25,7 +25,7 @@ export function HowItWorks() {
     <section className={styles.shell} id="how">
       <div className={styles.section}>
         <Reveal as="header" className={styles.secHead}>
-          <span className={styles.secIndex}>[ 02 ] // Protocol</span>
+          <span className={styles.secIndex}>[ 04 ] // Protocol</span>
           <h2 className={styles.secTitle}>Private by construction. Verifiable by anyone.</h2>
         </Reveal>
         <div className={styles.steps}>

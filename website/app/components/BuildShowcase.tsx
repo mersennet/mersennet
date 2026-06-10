@@ -9,7 +9,7 @@ export function BuildShowcase() {
     <section className={styles.shell} id="build">
       <div className={styles.section}>
         <Reveal as="header" className={styles.secHead}>
-          <span className={styles.secIndex}>[ 03 ] // Build</span>
+          <span className={styles.secIndex}>[ 05 ] // Build</span>
           <h2 className={styles.secTitle}>Your stack already works here.</h2>
           <p className={styles.secLead}>
             Solidity, Hardhat, Foundry, ethers — unchanged. Privacy is one import away:

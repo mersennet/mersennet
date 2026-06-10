@@ -4,6 +4,9 @@ import { Hero } from './components/Hero';
 import { Ticker } from './components/Ticker';
 import { StatBand } from './components/StatBand';
 import { Pillars } from './components/Pillars';
+import { Thesis } from './components/Thesis';
+import { Edge } from './components/Edge';
+import { Momentum } from './components/Momentum';
 import { HowItWorks } from './components/HowItWorks';
 import { BuildShowcase } from './components/BuildShowcase';
 import { SelectiveDisclosure } from './components/SelectiveDisclosure';
@@ -25,10 +28,13 @@ export default function Home() {
           <StatBand />
         </div>
         <Pillars />
+        <Thesis />
+        <Edge />
         <HowItWorks />
         <BuildShowcase />
         <SelectiveDisclosure />
         <Verifiability />
+        <Momentum />
         <Ecosystem />
         <div className={styles.ctaBandWrap}>
           <CtaBand />

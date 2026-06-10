@@ -15,7 +15,7 @@ export function Verifiability() {
     <section className={`${styles.shell}`} id="verifiable">
       <div className={`${styles.section} ${styles.sectionDark}`}>
         <Reveal as="header" className={styles.secHead}>
-          <span className={styles.secIndex}>[ 05 ] // Verifiable state</span>
+          <span className={styles.secIndex}>[ 07 ] // Verifiable state</span>
           <h2 className={styles.secTitle}>Don&apos;t trust the node. Verify the proof.</h2>
         </Reveal>
 

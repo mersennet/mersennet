@@ -21,7 +21,7 @@ export function SelectiveDisclosure() {
     <section className={styles.shell} id="privacy">
       <div className={styles.section}>
         <Reveal as="header" className={styles.secHead}>
-          <span className={styles.secIndex}>[ 04 ] // Selective disclosure</span>
+          <span className={styles.secIndex}>[ 06 ] // Selective disclosure</span>
           <h2 className={styles.secTitle}>Private by default. Auditable on your terms.</h2>
           <p className={styles.secLead}>
             Grant a viewing key to an auditor, exchange, or counterparty and reveal exactly

@@ -16,7 +16,7 @@ export function Ecosystem() {
     <section className={styles.shell} id="ecosystem">
       <div className={styles.section}>
         <Reveal as="header" className={styles.secHead}>
-          <span className={styles.secIndex}>[ 06 ] // Ecosystem</span>
+          <span className={styles.secIndex}>[ 09 ] // Ecosystem</span>
           <h2 className={styles.secTitle}>Everything you need, already on testnet.</h2>
           <p className={styles.secLead}>
             Swaps, order-book trading, a shielded pool, and tooling are live on the{' '}

@@ -1178,3 +1178,253 @@
 .page section[id] {
   scroll-margin-top: 4.5rem;
 }
+
+/* Thesis ------------------------------------------------------------------- */
+.thesisGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+}
+.thesisCard {
+  padding: 1.6rem 1.5rem 1.5rem;
+  background: rgba(0, 0, 0, 0.5);
+  transition: border-color 0.25s ease, transform 0.25s ease;
+}
+.thesisCard:hover {
+  border-color: var(--acc-dim);
+  transform: translateY(-2px);
+}
+.thesisStat {
+  font-family: var(--mono);
+  font-size: clamp(2rem, 3.4vw, 2.7rem);
+  font-weight: 700;
+  color: var(--acc);
+  letter-spacing: -0.02em;
+}
+.thesisStatLabel {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0.3rem 0 1.3rem;
+}
+.thesisTitle {
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin: 0 0 0.6rem;
+}
+.thesisText {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0;
+}
+@media (max-width: 960px) {
+  .thesisGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Edge: charts -------------------------------------------------------------- */
+.edgeCharts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
+}
+.chart {
+  padding: 1.3rem 1.4rem 1.5rem;
+  background: rgba(0, 0, 0, 0.5);
+}
+.chartTitle {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1.1rem;
+}
+.chartRow {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr 5.5rem;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0.55rem 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.chartName {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chartTrack {
+  position: relative;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.chartBar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--line-2);
+}
+.chartBarUs {
+  background: var(--acc);
+  box-shadow: 0 0 14px rgba(125, 255, 155, 0.35);
+}
+.chartVal {
+  text-align: right;
+  color: var(--text);
+}
+.chartRow:first-of-type .chartName,
+.chartRow:first-of-type .chartVal {
+  color: var(--acc);
+  font-weight: 700;
+}
+@media (max-width: 960px) {
+  .edgeCharts {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Edge: moat table ----------------------------------------------------------- */
+.moatWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.5);
+}
+.moat {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  min-width: 640px;
+}
+.moat th,
+.moat td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+.moat th:first-child,
+.moat td:first-child {
+  text-align: left;
+  color: var(--muted);
+}
+.moat th {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.moat tbody tr:last-child td {
+  border-bottom: 0;
+}
+.moatUsCol {
+  background: rgba(125, 255, 155, 0.05);
+  border-left: 1px solid var(--acc-dim);
+  border-right: 1px solid var(--acc-dim);
+}
+.moat th.moatUsCol {
+  color: var(--acc);
+}
+.moatYes {
+  color: var(--acc);
+  font-weight: 700;
+}
+.moatNo {
+  color: var(--faint);
+}
+.moatPart {
+  color: var(--muted);
+}
+.finePrint {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.6;
+  color: var(--faint);
+  margin: 1rem 0 0;
+  max-width: 60rem;
+}
+
+/* Momentum ------------------------------------------------------------------- */
+.phases {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+}
+.phase {
+  padding: 1.4rem 1.5rem 1.5rem;
+  background: rgba(0, 0, 0, 0.5);
+}
+.phaseHead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.phaseTag,
+.phaseTagLive {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line-2);
+  color: var(--muted);
+}
+.phaseTagLive {
+  border-color: var(--acc-dim);
+  color: var(--acc);
+  background: rgba(125, 255, 155, 0.07);
+}
+.phaseDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 10px var(--acc);
+  animation: phasePulse 2s ease-in-out infinite;
+}
+@keyframes phasePulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phaseDot {
+    animation: none;
+  }
+}
+.phaseTitle {
+  font-size: 1.08rem;
+  font-weight: 700;
+  margin: 0 0 0.7rem;
+}
+.phaseList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.phaseList li {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--muted);
+  padding-left: 1.1rem;
+  position: relative;
+}
+.phaseList li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--acc-dim);
+}
+@media (max-width: 960px) {
+  .phases {
+    grid-template-columns: 1fr;
+  }
+}
