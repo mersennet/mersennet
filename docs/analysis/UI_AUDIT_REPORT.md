@@ -104,7 +104,7 @@ Card Tabs:
 - Centered card with "Swap" header
 - Settings icon (top right of card)
 - Two token input sections:
-  - Top: "PRIM" selected, 0.0 input
+  - Top: "MRSN" selected, 0.0 input
   - Bottom: "Select a token" button, 0.0 input
 - Swap direction arrow between inputs
 - "Connect Wallet" button at bottom
@@ -123,7 +123,7 @@ Card Tabs:
 - Card with "Swap | Pool" tabs at top
 - "From" section (labeled):
   - 0.0 input (left)
-  - "PRIM" token button (right) with gradient icon
+  - "MRSN" token button (right) with gradient icon
 - Swap arrow in center
 - "To" section (labeled):
   - 0.0 input (left)

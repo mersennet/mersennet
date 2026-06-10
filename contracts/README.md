@@ -39,7 +39,7 @@ On Mersennet, the CLOB is a **precompile** — a native extension of the EVM. On
 | Path | Contents |
 |---|---|
 | `src/primeorders/` | CLOB precompile example strategies (VaultStrategy, AtomicArbitrage, SmartContractMM) |
-| `src/foundation/` | WPRIM, Multicall3, MockERC20 |
+| `src/foundation/` | WMRSN, Multicall3, MockERC20 |
 | `src/dex/` | PrimeSwap V2-style AMM (factory, pair, router) |
 | `src/zk/` | Ethereum-side ZK bridge — Groth16Verifier + PrimeChainBridge (see [`src/zk/README.md`](src/zk/README.md)) |
 | `test/` | Foundry tests — 49 tests total, incl. 21 in `test/zk/` (`forge test`) |

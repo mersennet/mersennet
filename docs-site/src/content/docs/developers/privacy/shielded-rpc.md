@@ -39,7 +39,7 @@ Public per-market stats for the most recent batch-auction tick: `{ markets: [{ m
 | `prime_submitShieldedOrder({ anchorRootHex, nullifierHex, newCommitmentHex, marketId, side, price, size, ownerPkHex, saltHex, tif?, gasLimit?, maxFeePerGas?, proofBytesHex? })` | Submit a threshold-encrypted shielded order intent; returns an `intentId`. |
 | `prime_submitLiquidationClaim({ claimBincodeHex })` | Bonded-liquidator-only encrypted liquidation claim. |
 | `prime_submitLiquidationExecute({ executeBincodeHex })` | Auction winner settles the victim's nullifier; mints bounty + insurance. |
-| `prime_registerLiquidator({ bondCommitmentHex, bondAmount })` | One-time registration with a Pedersen bond (`bondAmount >= 10,000 PRIM`). |
+| `prime_registerLiquidator({ bondCommitmentHex, bondAmount })` | One-time registration with a Pedersen bond (`bondAmount >= 10,000 MRSN`). |
 
 See [Risk checks in zero knowledge](../../privacy/zk-risk-checks.md) for the liquidation model.
 

@@ -519,7 +519,7 @@
                         <div class="stat-card-icon violet-bg">&#9733;</div>
                         <div class="stat-card-label">Total Staked</div>
                         <div class="stat-card-value">${formatPrimShort(total.toString())}</div>
-                        <div class="stat-card-sub">PRIM</div>
+                        <div class="stat-card-sub">MRSN</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-icon pink-bg">&#9632;</div>
@@ -616,7 +616,7 @@
                     <h1 style="font-size:1.35rem;font-weight:700;letter-spacing:-0.3px;">Validators</h1>
                     <p style="color:var(--text-muted);font-size:0.85rem;margin-top:0.15rem;">
                         ${state.validators.length} validators &middot; ${activeCount} active &middot;
-                        ${formatPrimShort(total.toString())} PRIM staked
+                        ${formatPrimShort(total.toString())} MRSN staked
                     </p>
                 </div>
 
@@ -642,7 +642,7 @@
                                 <tr>
                                     <th>Rank</th>
                                     <th>Validator</th>
-                                    <th>Stake (PRIM)</th>
+                                    <th>Stake (MRSN)</th>
                                     <th>Status</th>
                                     <th>% of Total Stake</th>
                                     <th>Blocks Proposed</th>
@@ -758,7 +758,7 @@
                     <div class="stat-card">
                         <div class="stat-card-label">Stake Amount</div>
                         <div class="stat-card-value">${formatPrim(v.stake)}</div>
-                        <div class="stat-card-sub">PRIM (${pct.toFixed(2)}% of total)</div>
+                        <div class="stat-card-sub">MRSN (${pct.toFixed(2)}% of total)</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-label">Blocks Proposed</div>
@@ -792,7 +792,7 @@
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Stake</span>
-                            <span class="detail-val mono">${formatPrim(v.stake)} PRIM</span>
+                            <span class="detail-val mono">${formatPrim(v.stake)} MRSN</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Status</span>
@@ -1057,7 +1057,7 @@
                                 <canvas id="netPieChart" width="260" height="260"></canvas>
                                 <div class="pie-center">
                                     <div class="pie-center-value">${formatPrimShort(totalStake().toString())}</div>
-                                    <div class="pie-center-label">Total PRIM</div>
+                                    <div class="pie-center-label">Total MRSN</div>
                                 </div>
                             </div>
                         </div>

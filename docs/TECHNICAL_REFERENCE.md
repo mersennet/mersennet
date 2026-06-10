@@ -537,7 +537,7 @@ New validators receive a penalty: `-(total_voting_stake + total_voting_stake / 8
 - **Distribution:** Pro-rata by stake
 - **Burn:** `burned = scheduled_reward - Σ(distributed_rewards)` (rounding dust)
 - **Supply cap:** Rewards capped at `remaining_supply = max_supply - total_minted`
-- **Defaults:** 1B PRIM max supply (18 decimals), 10 PRIM/block initial reward, 35M block halving interval. Block rewards: 70% of supply.
+- **Defaults:** 1B MRSN max supply (18 decimals), 10 MRSN/block initial reward, 35M block halving interval. Block rewards: 70% of supply.
 
 ---
 
@@ -1364,8 +1364,8 @@ JSON-based configuration loaded from a file path. All fields have defaults.
 | `slashing.escalation_max_bps` | 1,000 | basis points (10%) |
 | `slashing.round_timeout_ms` | 500 | milliseconds |
 | `slashing.unbonding_period` | 2 | blocks |
-| `token_economics.max_supply` | 1B × 10^18 (PRIM) | wei |
-| `token_economics.initial_reward_per_block` | 10 × 10^18 (PRIM) | wei |
+| `token_economics.max_supply` | 1B × 10^18 (MRSN) | wei |
+| `token_economics.initial_reward_per_block` | 10 × 10^18 (MRSN) | wei |
 | `token_economics.halving_interval` | 35,000,000 | blocks |
 | `rpc.addr` | 127.0.0.1:8545 | — |
 | `p2p.listen` | 0.0.0.0:30303 | — |

@@ -75,7 +75,7 @@ This roadmap defines a 4-quarter path from the current testnet (Chain ID 7919, 4
 |------|----------|-------------|
 | Docker image CI | `.github/workflows/ci.yml` | Build multi-arch Docker images on push/tag. Push to GitHub Container Registry (`ghcr.io/primenumberslabs/mersennet`). |
 | Integration test job | `.github/workflows/integration.yml` | Spin up 3-node Docker testnet in CI. Run RPC conformance test suite against it (eth_* method coverage). |
-| Contract test suite | `contracts/test/` | Hardhat/Foundry tests for WPRIM, PrimeSwapFactory, PrimeSwapRouter, MockERC20 tokens. Cover swap, liquidity, edge cases. |
+| Contract test suite | `contracts/test/` | Hardhat/Foundry tests for WMRSN, PrimeSwapFactory, PrimeSwapRouter, MockERC20 tokens. Cover swap, liquidity, edge cases. |
 | Release automation | `.github/workflows/release.yml` | Tag-based builds. Auto-generate changelog from conventional commits. Attach binaries + Docker tags to GitHub Releases. |
 | Benchmark regression | `.github/workflows/ci.yml` | Run `tps_bench` and `parallel_bench` in CI. Fail if TPS drops below threshold. Store results as artifacts for trend tracking. |
 

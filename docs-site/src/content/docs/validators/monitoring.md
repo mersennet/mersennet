@@ -21,7 +21,7 @@ Mersennet exposes metrics that you should monitor:
 | Metric | Description |
 |--------|-------------|
 | `mersennet_height` | Latest committed block height; should increase steadily |
-| `mersennet_total_stake` | Total staked PRIM across all validators |
+| `mersennet_total_stake` | Total staked MRSN across all validators |
 | `mersennet_block_tx_count` | Transaction count in the latest block |
 | `mersennet_mempool_size` | Mempool size; high values may indicate congestion |
 | `mersennet_validators_active` | Number of active validators |

@@ -13,7 +13,7 @@ const CHAIN_ID = 7919;
 
 const deployments = JSON.parse(readFileSync(__dirname + '/../deployments.json', 'utf8'));
 const ROUTER = deployments.contracts.PrimeSwapRouter;
-const WPRIM = deployments.contracts.WPRIM;
+const WMRSN = deployments.contracts.WMRSN;
 const USDC = deployments.contracts.MockUSDC;
 const USDT = deployments.contracts.MockUSDT;
 const DAI = deployments.contracts.MockDAI;
@@ -102,8 +102,8 @@ async function approve(token, spender, amount, label) {
 
 async function depositWPRIM(amount) {
     const data = '0x' + fnSelector('deposit()');
-    console.log(`  Depositing ${Number(amount / E18)} PRIM -> WPRIM...`);
-    const r = await sendTx(WPRIM, data, amount);
+    console.log(`  Depositing ${Number(amount / E18)} MRSN -> WMRSN...`);
+    const r = await sendTx(WMRSN, data, amount);
     console.log(`    TX: ${r.txHash} status=${r.status}`);
 }
 
@@ -135,25 +135,25 @@ async function main() {
     await mintTokens(USDT, usdtAmount, `${Number(usdtAmount / E6)} USDT`);
     await mintTokens(DAI, daiAmount, `${Number(daiAmount / E18)} DAI`);
 
-    console.log('\n--- Step 2: Wrap PRIM -> WPRIM ---');
+    console.log('\n--- Step 2: Wrap MRSN -> WMRSN ---');
     await depositWPRIM(wprimAmount);
 
     console.log('\n--- Step 3: Approve router ---');
     const MAX = (2n ** 256n) - 1n;
-    await approve(WPRIM, ROUTER, MAX, 'WPRIM');
+    await approve(WMRSN, ROUTER, MAX, 'WMRSN');
     await approve(USDC, ROUTER, MAX, 'USDC');
     await approve(USDT, ROUTER, MAX, 'USDT');
     await approve(DAI, ROUTER, MAX, 'DAI');
 
     console.log('\n--- Step 4: Add liquidity ---');
-    await addLiquidity(WPRIM, USDC, 10000n * E18, usdcAmount, 'WPRIM/USDC (10000 WPRIM + 10000 USDC)');
-    await addLiquidity(WPRIM, USDT, 10000n * E18, usdtAmount, 'WPRIM/USDT (10000 WPRIM + 10000 USDT)');
-    await addLiquidity(WPRIM, DAI, 10000n * E18, daiAmount, 'WPRIM/DAI (10000 WPRIM + 10000 DAI)');
+    await addLiquidity(WMRSN, USDC, 10000n * E18, usdcAmount, 'WMRSN/USDC (10000 WMRSN + 10000 USDC)');
+    await addLiquidity(WMRSN, USDT, 10000n * E18, usdtAmount, 'WMRSN/USDT (10000 WMRSN + 10000 USDT)');
+    await addLiquidity(WMRSN, DAI, 10000n * E18, daiAmount, 'WMRSN/DAI (10000 WMRSN + 10000 DAI)');
 
     console.log('\n=== LIQUIDITY POOLS SEEDED SUCCESSFULLY ===');
-    console.log('WPRIM/USDC: 10,000 WPRIM + 10,000 USDC (implied price: 1 PRIM = 1 USDC)');
-    console.log('WPRIM/USDT: 10,000 WPRIM + 10,000 USDT (implied price: 1 PRIM = 1 USDT)');
-    console.log('WPRIM/DAI:  10,000 WPRIM + 10,000 DAI  (implied price: 1 PRIM = 1 DAI)');
+    console.log('WMRSN/USDC: 10,000 WMRSN + 10,000 USDC (implied price: 1 MRSN = 1 USDC)');
+    console.log('WMRSN/USDT: 10,000 WMRSN + 10,000 USDT (implied price: 1 MRSN = 1 USDT)');
+    console.log('WMRSN/DAI:  10,000 WMRSN + 10,000 DAI  (implied price: 1 MRSN = 1 DAI)');
 }
 
 main().catch(e => { console.error('FATAL:', e.message); process.exit(1); });

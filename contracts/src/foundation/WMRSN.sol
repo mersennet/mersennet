@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @title Wrapped PRIM (WPRIM)
-/// @notice ERC-20 wrapper for the native PRIM token on Mersennet
-/// @dev Identical interface to WETH9 — deposit native PRIM, get WPRIM ERC-20
-contract WPRIM {
-    string public constant name     = "Wrapped PRIM";
-    string public constant symbol   = "WPRIM";
+/// @title Wrapped MRSN (WMRSN)
+/// @notice ERC-20 wrapper for the native MRSN token on Mersennet
+/// @dev Identical interface to WETH9 — deposit native MRSN, get WMRSN ERC-20
+contract WMRSN {
+    string public constant name     = "Wrapped MRSN";
+    string public constant symbol   = "WMRSN";
     uint8  public constant decimals = 18;
 
     event Approval(address indexed src, address indexed guy, uint256 wad);
@@ -27,7 +27,7 @@ contract WPRIM {
     }
 
     function withdraw(uint256 wad) public {
-        require(balanceOf[msg.sender] >= wad, "WPRIM: insufficient balance");
+        require(balanceOf[msg.sender] >= wad, "WMRSN: insufficient balance");
         balanceOf[msg.sender] -= wad;
         payable(msg.sender).transfer(wad);
         emit Withdrawal(msg.sender, wad);
@@ -48,9 +48,9 @@ contract WPRIM {
     }
 
     function transferFrom(address src, address dst, uint256 wad) public returns (bool) {
-        require(balanceOf[src] >= wad, "WPRIM: insufficient balance");
+        require(balanceOf[src] >= wad, "WMRSN: insufficient balance");
         if (src != msg.sender && allowance[src][msg.sender] != type(uint256).max) {
-            require(allowance[src][msg.sender] >= wad, "WPRIM: insufficient allowance");
+            require(allowance[src][msg.sender] >= wad, "WMRSN: insufficient allowance");
             allowance[src][msg.sender] -= wad;
         }
         balanceOf[src] -= wad;

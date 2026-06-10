@@ -25,7 +25,7 @@ Mersennet generates revenue through four complementary streams, all driven by th
     └───────────┘ └───────┘ └──────┘ └───────────┘  │
                                                      │
                     ┌────────────────────────────────┘
-                    │ VALIDATOR ECONOMICS (PRIM TOKEN)
+                    │ VALIDATOR ECONOMICS (MRSN TOKEN)
                     │ Block rewards, staking yields,
                     │ gas fees — separate from protocol revenue
                     └────────────────────────────────

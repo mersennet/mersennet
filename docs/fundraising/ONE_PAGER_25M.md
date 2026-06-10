@@ -60,9 +60,9 @@
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
-║   TRACTION & PARTNERSHIPS             TOKENOMICS (PRIM)                      ║
+║   TRACTION & PARTNERSHIPS             TOKENOMICS (MRSN)                      ║
 ║   ───────────────────────             ─────────────────                      ║
-║   ✅ Standard Chartered               Max Supply: 1B PRIM                    ║
+║   ✅ Standard Chartered               Max Supply: 1B MRSN                    ║
 ║      RWA + credit pilot (Q1 2026)     70% block rewards (halving)            ║
 ║   ✅ XDC Network                      10% ecosystem  ·  10% foundation       ║
 ║      Trade finance integration        5% team (1y cliff + 3y vest)           ║

@@ -15,13 +15,13 @@ Mersennet uses **Delegated Proof-of-Stake (DPoS)** with round-robin proposer sel
 
 ## Validator Selection
 
-Validators are nodes that have **staked** PRIM tokens and registered in the validator set. Voting power is proportional to stake:
+Validators are nodes that have **staked** MRSN tokens and registered in the validator set. Voting power is proportional to stake:
 
 ```
 voting_power(validator) ∝ staked_amount
 ```
 
-Token holders can **delegate** their PRIM to validators, increasing that validator's voting power. The validator set is dynamic—new validators can join by staking, and existing validators can leave by unbonding.
+Token holders can **delegate** their MRSN to validators, increasing that validator's voting power. The validator set is dynamic—new validators can join by staking, and existing validators can leave by unbonding.
 
 ## Proposer Rotation
 
@@ -45,7 +45,7 @@ priority[proposer] -= total_weight     (after selection)
 proposer = argmax(priority)
 ```
 
-Weights are normalized from stake to prevent overflow with 18-decimal PRIM values.
+Weights are normalized from stake to prevent overflow with 18-decimal MRSN values.
 
 ## Block Production Cycle
 
@@ -435,8 +435,8 @@ Complete reference of all configuration parameters with their default values.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `max_supply` | `string` | `"1000000000000000000000000000"` | Maximum PRIM supply (1B × 10¹⁸) |
-| `initial_reward_per_block` | `string` | `"10000000000000000000"` | Block reward (10 PRIM × 10¹⁸) |
+| `max_supply` | `string` | `"1000000000000000000000000000"` | Maximum MRSN supply (1B × 10¹⁸) |
+| `initial_reward_per_block` | `string` | `"10000000000000000000"` | Block reward (10 MRSN × 10¹⁸) |
 | `halving_interval` | `u64` | `35000000` | Blocks between reward halvings |
 
 ### `prime_orders` — PrimeOrders Precompile

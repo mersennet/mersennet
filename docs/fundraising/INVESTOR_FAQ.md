@@ -237,7 +237,7 @@ Raising less would risk under-funding business development (the partnerships are
 | Aptos | 19% | 49% | **68%** |
 | Sui | 14% | 48% | **62%** |
 | Avalanche | 20% | 4% | **24%** |
-| **PRIM** | **5%** | **5%** | **10%** |
+| **MRSN** | **5%** | **5%** | **10%** |
 
 70% goes to block rewards (validators), ensuring network security and genuine decentralization. The 5% sales allocation is sufficient for a $25M raise while maintaining an investor-friendly supply structure.
 
@@ -245,10 +245,10 @@ Raising less would risk under-funding business development (the partnerships are
 
 ### Q: What's the token utility?
 
-**A:** PRIM serves four functions:
+**A:** MRSN serves four functions:
 
-1. **Staking:** Validators stake PRIM to participate in consensus and earn block rewards
-2. **Gas:** Transaction fees paid in PRIM (EIP-1559 base fee model)
+1. **Staking:** Validators stake MRSN to participate in consensus and earn block rewards
+2. **Gas:** Transaction fees paid in MRSN (EIP-1559 base fee model)
 3. **Governance:** Token-weighted voting on protocol parameters
 4. **Collateral:** Can be used as collateral in PrimeFi lending and PrimeOrders margin
 
@@ -256,13 +256,13 @@ Raising less would risk under-funding business development (the partnerships are
 
 ### Q: What's the expected initial APY for stakers?
 
-**A:** At genesis with 4 validators (1M PRIM staked each):
+**A:** At genesis with 4 validators (1M MRSN staked each):
 
 ```
 Annual blocks:     ~15,768,000 (at 2s block time)
-Reward per block:  10 PRIM
-Per validator:     2.5 PRIM/block
-Annual yield:      39,420,000 PRIM per validator
+Reward per block:  10 MRSN
+Per validator:     2.5 MRSN/block
+Annual yield:      39,420,000 MRSN per validator
 APY:               ~3,942%
 ```
 
@@ -314,7 +314,7 @@ The native CLOB + EVM combination has value even if RWA tokenization takes longe
 
 ### Q: What is the investment instrument?
 
-**A:** SAFT (Simple Agreement for Future Tokens). Investors receive the right to PRIM tokens at Token Generation Event (TGE), subject to vesting. The SAFT is a widely used instrument in crypto fundraising with established legal precedent.
+**A:** SAFT (Simple Agreement for Future Tokens). Investors receive the right to MRSN tokens at Token Generation Event (TGE), subject to vesting. The SAFT is a widely used instrument in crypto fundraising with established legal precedent.
 
 ---
 
@@ -340,7 +340,7 @@ The native CLOB + EVM combination has value even if RWA tokenization takes longe
 
 **A:**
 
-1. **TGE + Exchange Listing:** PRIM listed on major exchanges at mainnet (Q4 2026). Post-vesting liquidity via public markets.
+1. **TGE + Exchange Listing:** MRSN listed on major exchanges at mainnet (Q4 2026). Post-vesting liquidity via public markets.
 2. **Secondary Sales:** OTC sales to institutional buyers (with issuer consent during vesting).
 3. **Strategic Acquisition:** Enterprise blockchain or exchange acquiring the technology platform.
 4. **Token Appreciation:** Protocol revenue growth drives token value (comparable: Hyperliquid $4.5B FDV with $500M annual fees).

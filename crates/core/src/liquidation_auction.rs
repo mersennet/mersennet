@@ -9,7 +9,7 @@
 //! This module replaces both with:
 //!
 //! 1. **Bonded liquidator set.** Anyone can stake `MIN_LIQUIDATOR_BOND`
-//!    PRIM to become an authorized liquidator. The bond is slashable
+//!    MRSN to become an authorized liquidator. The bond is slashable
 //!    for falsified claims.
 //! 2. **Liquidate-claim proof** (`Circuit::LiquidateClaim`). A
 //!    liquidator proves "there exists some position note `c` in the
@@ -56,8 +56,8 @@ use thiserror::Error;
 #[cfg(test)]
 use mersennet_zkp::noir::MockVerifier;
 
-/// Minimum bond, in PRIM lowest units, to register as a liquidator.
-/// Configurable via governance after launch. Default = 10_000 PRIM.
+/// Minimum bond, in MRSN lowest units, to register as a liquidator.
+/// Configurable via governance after launch. Default = 10_000 MRSN.
 pub const MIN_LIQUIDATOR_BOND: u128 = 10_000 * 1_000_000_000_000_000_000;
 
 /// Bid-revelation delay in blocks. Losing bids are made public this

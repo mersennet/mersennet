@@ -147,8 +147,8 @@ Mersennet uses a JSON configuration file. Create `config.json` with the sections
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `max_supply` | `string` | `"1000000000000000000000000000"` | Max PRIM supply (1B × 10¹⁸) |
-| `initial_reward_per_block` | `string` | `"10000000000000000000"` | Block reward (10 PRIM) |
+| `max_supply` | `string` | `"1000000000000000000000000000"` | Max MRSN supply (1B × 10¹⁸) |
+| `initial_reward_per_block` | `string` | `"10000000000000000000"` | Block reward (10 MRSN) |
 | `halving_interval` | `u64` | `35000000` | Blocks between reward halvings |
 
 #### `prime_orders` — PrimeOrders Precompile
@@ -222,13 +222,13 @@ For a **non-validator** (sentinel/full node), start with `--mode full`. The node
 
 To join the validator set:
 
-1. **Stake PRIM** — Send a staking transaction to register your validator address with your desired stake amount. See [Staking Guide](/validators/staking).
+1. **Stake MRSN** — Send a staking transaction to register your validator address with your desired stake amount. See [Staking Guide](/validators/staking).
 
 2. **Ensure your node is synced** — Wait until your node has caught up to the latest block height.
 
 3. **Node key** — Your `p2p.node_key_path` must point to a key file that corresponds to the address you staked from. The node will automatically begin participating in consensus once registered and synced.
 
-Validator registration happens through the genesis configuration (for initial validators) or via staking transactions. There is no separate RPC method for registration—once you stake PRIM and your node is synced with the correct validator key, you join the active set.
+Validator registration happens through the genesis configuration (for initial validators) or via staking transactions. There is no separate RPC method for registration—once you stake MRSN and your node is synced with the correct validator key, you join the active set.
 
 ## Systemd Service (Production)
 
@@ -384,7 +384,7 @@ Mersennet exposes Prometheus-compatible metrics at the `/metrics` endpoint on th
 | `mersennet_consensus_rounds` | Counter | Total consensus rounds |
 | `mersennet_consensus_finalized` | Counter | Total blocks finalized |
 | `mersennet_validators_active` | Gauge | Active validator count |
-| `mersennet_total_stake` | Gauge | Total staked PRIM |
+| `mersennet_total_stake` | Gauge | Total staked MRSN |
 | `mersennet_slashing_events` | Counter | Slashing events by kind |
 | `mersennet_mempool_size` | Gauge | Current mempool transaction count |
 | `mersennet_mempool_rejected` | Counter | Rejected transactions by reason |
@@ -536,7 +536,7 @@ Never run two nodes with the same `node_key.json` simultaneously — this may tr
 
 | Symptom | Cause | Solution |
 |---------|-------|----------|
-| No `block produced` logs | Not registered as validator | Stake PRIM and verify your node key matches |
+| No `block produced` logs | Not registered as validator | Stake MRSN and verify your node key matches |
 | Only importing blocks | Node is syncing | Wait for sync to complete to chain tip |
 | `consensus timeout` repeated | Network partition or clock drift | Check peers list; sync system clock with NTP |
 
@@ -589,7 +589,7 @@ du -sh /var/lib/mersennet/state/
 
 ## Next Steps
 
-- [Staking Guide](/validators/staking) — Stake PRIM and manage delegations
+- [Staking Guide](/validators/staking) — Stake MRSN and manage delegations
 - [Monitoring & Alerts](/validators/monitoring) — Set up Prometheus and Grafana
 - [Node Architecture](/architecture/node-architecture) — Understand the node internals
 - [Consensus Mechanism](/architecture/consensus) — Deep dive into DPoS and BFT

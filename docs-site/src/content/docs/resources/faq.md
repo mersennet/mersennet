@@ -8,7 +8,7 @@ title: "FAQ"
 
 ### What is Mersennet?
 
-**Mersennet** is a high-performance, EVM-compatible Layer 1 blockchain built for speed, composability, and institutional-grade DeFi. It combines Ethereum's smart contract ecosystem with a **native order matching engine (PrimeOrders)**—enabling atomic cross-domain workflows (EVM + CLOB) in a single transaction. Key features include ~1 second block times, DPoS consensus, and a 1 billion PRIM max supply with halving block rewards.
+**Mersennet** is a high-performance, EVM-compatible Layer 1 blockchain built for speed, composability, and institutional-grade DeFi. It combines Ethereum's smart contract ecosystem with a **native order matching engine (PrimeOrders)**—enabling atomic cross-domain workflows (EVM + CLOB) in a single transaction. Key features include ~1 second block times, DPoS consensus, and a 1 billion MRSN max supply with halving block rewards.
 
 ### Is Mersennet EVM compatible?
 
@@ -27,16 +27,16 @@ Yes. Mersennet is fully EVM compatible. You can deploy Solidity contracts withou
 ### How do I get testnet tokens?
 
 1. Add Mersennet to your wallet (see [Wallet Setup](/getting-started/wallet-setup)).
-2. Use the **Faucet** at [http://46.225.30.187:4003](http://46.225.30.187:4003) to receive testnet PRIM.
+2. Use the **Faucet** at [http://46.225.30.187:4003](http://46.225.30.187:4003) to receive testnet MRSN.
 3. For mock stablecoins (USDC, USDT, DAI), call the `faucet()` function on each contract—see [Deployed Contracts](/resources/contracts).
 
-### What is the max supply of PRIM?
+### What is the max supply of MRSN?
 
-**1 billion (1,000,000,000) PRIM** with 18 decimals. 70% is allocated to block rewards (halving schedule), 10% ecosystem/grants, 10% foundation, 5% team, 5% sales. See [Tokenomics](/architecture/tokenomics) for details.
+**1 billion (1,000,000,000) MRSN** with 18 decimals. 70% is allocated to block rewards (halving schedule), 10% ecosystem/grants, 10% foundation, 5% team, 5% sales. See [Tokenomics](/architecture/tokenomics) for details.
 
-### What is WPRIM?
+### What is WMRSN?
 
-**WPRIM** is the ERC-20 wrapped version of native PRIM. It's required for DEX pairs (e.g., WPRIM/USDC on PrimeSwap) and DeFi protocols that expect ERC-20 tokens. Wrap with `deposit()` and unwrap with `withdraw()`. Address: `0x079bf1207b51acda83e2e8178344f62a883f8479`.
+**WMRSN** is the ERC-20 wrapped version of native MRSN. It's required for DEX pairs (e.g., WMRSN/USDC on PrimeSwap) and DeFi protocols that expect ERC-20 tokens. Wrap with `deposit()` and unwrap with `withdraw()`. Address: `0x079bf1207b51acda83e2e8178344f62a883f8479`.
 
 ## Development
 

@@ -134,8 +134,8 @@ async function main() {
     const mc3 = JSON.parse(readFileSync('out/Multicall3.sol/Multicall3.json', 'utf8'));
     contracts.multicall3 = await deploy('Multicall3', mc3.bytecode.object);
 
-    const wprim = JSON.parse(readFileSync('out/WPRIM.sol/WPRIM.json', 'utf8'));
-    contracts.wprim = await deploy('WPRIM', wprim.bytecode.object);
+    const wprim = JSON.parse(readFileSync('out/WMRSN.sol/WMRSN.json', 'utf8'));
+    contracts.wprim = await deploy('WMRSN', wprim.bytecode.object);
 
     const mock = JSON.parse(readFileSync('out/MockERC20.sol/MockERC20.json', 'utf8'));
     const abi = new TextEncoder();

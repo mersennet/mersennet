@@ -4,8 +4,8 @@
   "block_time_ms": 200,
   "genesis_timestamp": "2026-06-01T00:00:00Z",
   "token": {
-    "name": "PRIM",
-    "symbol": "PRIM",
+    "name": "MRSN",
+    "symbol": "MRSN",
     "decimals": 18,
     "max_supply": "1000000000000000000000000000",
     "initial_reward_per_block": "10000000000000000000",

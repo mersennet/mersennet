@@ -8,7 +8,7 @@ privacy layer, built in Rust.
 |---|---|---|---|
 | **Public testnet** | `7919` (1000th prime, default chain ID) | Transparent EVM + CLOB | Live |
 | **Privacy testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
-| **Mersennet mainnet** | `13370` | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — PRIM token, 1B max supply, 10 PRIM/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
+| **Mersennet mainnet** | `13370` | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 1B max supply, 10 MRSN/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork
 > introduces shielded accounts, ZK-proved risk checks, sealed-bid
@@ -154,7 +154,7 @@ programs/                       — SP1 RISC-V zkVM (built outside the workspace
 └── state-transition-host/            — host runner (mock / real-SP1 / network)
 
 contracts/                      — Solidity contracts (Foundry)
-├── src/foundation/                   — WPRIM, Multicall3, MockERC20
+├── src/foundation/                   — WMRSN, Multicall3, MockERC20
 ├── src/dex/                          — PrimeSwap V2-style AMM
 ├── src/primeorders/                  — CLOB precompile example strategies
 └── src/zk/                           — Groth16Verifier + PrimeChainBridge
@@ -206,7 +206,7 @@ All ecosystem applications live in their own repositories:
 | **PrimeSwap DEX** | [primeswap-dex](https://github.com/PrimeNumbersLabs/primeswap-dex) | Lightweight swap interface (vanilla JS) |
 | **Validator Explorer** | [mersennet-explorer](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Validator staking metrics and delegation UI |
 | **Node Dashboard** | [primenodes-dashboard](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator monitoring and analytics |
-| **Faucet** | [prime-faucet](https://github.com/PrimeNumbersLabs/prime-faucet) | Testnet PRIM token faucet |
+| **Faucet** | [prime-faucet](https://github.com/PrimeNumbersLabs/prime-faucet) | Testnet MRSN token faucet |
 | **Trading Bots** | [prime-bots](https://github.com/PrimeNumbersLabs/prime-bots) | Market maker, trader, and volume bots for CLOB testing |
 | **SDK** | [mersennet-sdk](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK for JSON-RPC and PrimeOrders |
 

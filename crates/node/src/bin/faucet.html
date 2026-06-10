@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mersennet Faucet</title>
-    <meta name="description" content="Get testnet PRIM and mock tokens for development on Mersennet (Chain ID 7919)">
+    <meta name="description" content="Get testnet MRSN and mock tokens for development on Mersennet (Chain ID 7919)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -307,12 +307,12 @@
     <div class="container">
         <div class="hero">
             <h2 class="gradient-title">Mersennet Faucet</h2>
-            <p>Get testnet PRIM tokens for development and testing on Mersennet.</p>
+            <p>Get testnet MRSN tokens for development and testing on Mersennet.</p>
         </div>
 
         <div class="card">
-            <div class="card-title">Request PRIM</div>
-            <div class="card-desc">Enter your wallet address to receive 1,000 testnet PRIM. Rate limited to 1 request per address per hour.</div>
+            <div class="card-title">Request MRSN</div>
+            <div class="card-desc">Enter your wallet address to receive 1,000 testnet MRSN. Rate limited to 1 request per address per hour.</div>
 
             <form id="faucet-form" autocomplete="off">
                 <label for="address">Wallet Address</label>
@@ -324,7 +324,7 @@
                 <button type="submit" class="submit-btn" id="submit-btn">
                     <div>
                         <span class="spinner" id="spinner"></span>
-                        <span id="btn-text">Request 1,000 PRIM</span>
+                        <span id="btn-text">Request 1,000 MRSN</span>
                     </div>
                 </button>
             </form>
@@ -335,7 +335,7 @@
         <div class="info-section">
             <div class="info-card">
                 <div class="info-label">Amount</div>
-                <div class="info-value accent">1,000 PRIM</div>
+                <div class="info-value accent">1,000 MRSN</div>
             </div>
             <div class="info-card">
                 <div class="info-label">Rate Limit</div>
@@ -347,7 +347,7 @@
             </div>
             <div class="info-card">
                 <div class="info-label">Currency</div>
-                <div class="info-value">PRIM</div>
+                <div class="info-value">MRSN</div>
             </div>
         </div>
 
@@ -467,7 +467,7 @@
                             params: [{
                                 chainId: '0x1EEF',
                                 chainName: 'Mersennet Testnet',
-                                nativeCurrency: { name: 'PRIM', symbol: 'PRIM', decimals: 18 },
+                                nativeCurrency: { name: 'MRSN', symbol: 'MRSN', decimals: 18 },
                                 rpcUrls: [window.location.protocol + '//' + window.location.hostname + ':8545'],
                                 blockExplorerUrls: [window.location.protocol + '//' + window.location.hostname]
                             }]
@@ -511,7 +511,7 @@
             if (data.success) {
                 const txUrl = EXPLORER_BASE + '/#/tx/' + data.tx_hash;
                 showResult('success',
-                    'Sent 1,000 PRIM successfully!<br>' +
+                    'Sent 1,000 MRSN successfully!<br>' +
                     'Tx: <a href="' + txUrl + '" target="_blank">' + data.tx_hash.slice(0,18) + '...</a>'
                 );
             } else {
@@ -527,7 +527,7 @@
     function setLoading(on) {
         submitBtn.disabled = on;
         spinner.style.display = on ? 'inline-block' : 'none';
-        btnText.textContent = on ? 'Sending...' : 'Request 1,000 PRIM';
+        btnText.textContent = on ? 'Sending...' : 'Request 1,000 MRSN';
     }
 
     function showResult(type, html) {
@@ -562,7 +562,7 @@
                         params: [{
                             chainId: CHAIN_ID_HEX,
                             chainName: 'Mersennet Testnet',
-                            nativeCurrency: { name: 'PRIM', symbol: 'PRIM', decimals: 18 },
+                            nativeCurrency: { name: 'MRSN', symbol: 'MRSN', decimals: 18 },
                             rpcUrls: [location.protocol + '//' + location.hostname + ':8545'],
                             blockExplorerUrls: [EXPLORER_BASE]
                         }]

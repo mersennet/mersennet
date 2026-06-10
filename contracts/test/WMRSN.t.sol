@@ -2,22 +2,22 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../src/foundation/WPRIM.sol";
+import "../src/foundation/WMRSN.sol";
 
 contract WPRIMTest is Test {
-    WPRIM public wprim;
+    WMRSN public wprim;
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
 
     function setUp() public {
-        wprim = new WPRIM();
+        wprim = new WMRSN();
         vm.deal(alice, 100 ether);
         vm.deal(bob, 50 ether);
     }
 
     function test_metadata() public view {
-        assertEq(wprim.name(), "Wrapped PRIM");
-        assertEq(wprim.symbol(), "WPRIM");
+        assertEq(wprim.name(), "Wrapped MRSN");
+        assertEq(wprim.symbol(), "WMRSN");
         assertEq(wprim.decimals(), 18);
     }
 
@@ -48,7 +48,7 @@ contract WPRIMTest is Test {
     function test_withdraw_insufficient() public {
         vm.startPrank(alice);
         wprim.deposit{value: 1 ether}();
-        vm.expectRevert("WPRIM: insufficient balance");
+        vm.expectRevert("WMRSN: insufficient balance");
         wprim.withdraw(2 ether);
         vm.stopPrank();
     }
@@ -97,7 +97,7 @@ contract WPRIMTest is Test {
         wprim.approve(bob, 1 ether);
 
         vm.prank(bob);
-        vm.expectRevert("WPRIM: insufficient allowance");
+        vm.expectRevert("WMRSN: insufficient allowance");
         wprim.transferFrom(alice, bob, 5 ether);
     }
 

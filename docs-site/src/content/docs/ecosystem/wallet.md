@@ -16,15 +16,15 @@ title: "PrimeXDC Wallet"
 
 ## Features
 
-### Send & Receive PRIM
+### Send & Receive MRSN
 
-- Send native PRIM to any address on Mersennet.
-- Receive PRIM by sharing your wallet address.
+- Send native MRSN to any address on Mersennet.
+- Receive MRSN by sharing your wallet address.
 - View transaction history and confirmations.
 
 ### Token Management
 
-- View ERC-20 token balances (WPRIM, USDC, USDT, etc.).
+- View ERC-20 token balances (WMRSN, USDC, USDT, etc.).
 - Send and receive tokens.
 - Add custom tokens by contract address.
 
@@ -45,7 +45,7 @@ title: "PrimeXDC Wallet"
 1. Install the PrimeXDC Wallet browser extension (Chrome/Chromium).
 2. Create a new wallet or import via seed phrase.
 3. Mersennet testnet (Chain ID 7919) is preconfigured.
-4. Use the [Faucet](http://46.225.30.187:4003) to get testnet PRIM.
+4. Use the [Faucet](http://46.225.30.187:4003) to get testnet MRSN.
 
 :::tip
 PrimeXDC Wallet uses the same provider interface as MetaMask. dApps that support MetaMask can connect to PrimeXDC Wallet when it's installed.
@@ -81,5 +81,5 @@ If you prefer MetaMask, you can add Mersennet manually. See [Wallet Setup](/gett
 ## Related Resources
 
 - [Wallet Setup](/getting-started/wallet-setup) — Add Mersennet to MetaMask or PrimeXDC
-- [Faucet](/getting-started/faucet) — Get testnet PRIM
-- [First Transaction](/getting-started/first-transaction) — Send your first PRIM
+- [Faucet](/getting-started/faucet) — Get testnet MRSN
+- [First Transaction](/getting-started/first-transaction) — Send your first MRSN

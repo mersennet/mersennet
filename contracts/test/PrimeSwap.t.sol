@@ -2,14 +2,14 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../src/foundation/WPRIM.sol";
+import "../src/foundation/WMRSN.sol";
 import "../src/foundation/MockERC20.sol";
 import "../src/dex/PrimeSwapFactory.sol";
 import "../src/dex/PrimeSwapRouter.sol";
 import "../src/dex/PrimeSwapPair.sol";
 
 contract PrimeSwapTest is Test {
-    WPRIM public wprim;
+    WMRSN public wprim;
     MockERC20 public usdc;
     MockERC20 public dai;
     PrimeSwapFactory public factory;
@@ -17,7 +17,7 @@ contract PrimeSwapTest is Test {
     address public alice = makeAddr("alice");
 
     function setUp() public {
-        wprim = new WPRIM();
+        wprim = new WMRSN();
         usdc = new MockERC20("USD Coin", "USDC", 6);
         dai = new MockERC20("Dai", "DAI", 18);
         factory = new PrimeSwapFactory(address(this));
@@ -125,7 +125,7 @@ contract PrimeSwapTest is Test {
         );
 
         uint256 primAfter = alice.balance;
-        assertTrue(primAfter > primBefore, "Should receive PRIM");
+        assertTrue(primAfter > primBefore, "Should receive MRSN");
         vm.stopPrank();
     }
 
@@ -161,7 +161,7 @@ contract PrimeSwapTest is Test {
         );
 
         assertTrue(usdc.balanceOf(alice) > usdcBefore, "Should get USDC back");
-        assertTrue(alice.balance > primBefore, "Should get PRIM back");
+        assertTrue(alice.balance > primBefore, "Should get MRSN back");
         vm.stopPrank();
     }
 

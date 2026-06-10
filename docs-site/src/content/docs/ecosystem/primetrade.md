@@ -41,14 +41,14 @@ PrimeTrade supports any pair listed on the PrimeOrders book. Current testnet pai
 
 | Pair | Base Token | Quote Token |
 |------|-----------|-------------|
-| WPRIM/USDC | WPRIM | MockUSDC |
-| WPRIM/USDT | WPRIM | MockUSDT |
+| WMRSN/USDC | WMRSN | MockUSDC |
+| WMRSN/USDT | WMRSN | MockUSDT |
 
 ## Getting Started
 
 1. Visit [http://46.225.30.187:4004](http://46.225.30.187:4004)
 2. Connect your MetaMask wallet to Mersennet (Chain ID 7919)
-3. Get testnet PRIM from the [Faucet](/getting-started/faucet)
+3. Get testnet MRSN from the [Faucet](/getting-started/faucet)
 4. Get test stablecoins by calling `faucet()` on the [mock token contracts](/resources/contracts)
 5. Approve the token you want to trade
 6. Place limit or market orders

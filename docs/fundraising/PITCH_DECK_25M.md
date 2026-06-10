@@ -404,12 +404,12 @@ Native order matching requires **consensus-level integration** — you can't bol
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                                                              │
-│         PRIM TOKEN — 1 BILLION MAX SUPPLY                    │
+│         MRSN TOKEN — 1 BILLION MAX SUPPLY                    │
 │                                                              │
 │   ┌─────────────────────────────────────────────────┐        │
 │   │                                                 │        │
 │   │   ██████████████████████████████████████ 70%    │ Block  │
-│   │   Block Rewards (700M PRIM)              Rewards│        │
+│   │   Block Rewards (700M MRSN)              Rewards│        │
 │   │                                                 │        │
 │   │   ██████ 10%  Ecosystem & Grants (100M)         │        │
 │   │   ██████ 10%  Foundation Reserve (100M)         │        │
@@ -419,10 +419,10 @@ Native order matching requires **consensus-level integration** — you can't bol
 │   └─────────────────────────────────────────────────┘        │
 │                                                              │
 │   HALVING SCHEDULE (Bitcoin-style):                          │
-│   Era 0: 10 PRIM/block  ────►  50% emitted by Year 2.2      │
-│   Era 1:  5 PRIM/block  ────►  75% emitted by Year 4.4      │
-│   Era 2: 2.5 PRIM/block ────►  87.5% emitted by Year 6.7    │
-│   Era 3: 1.25 PRIM/block ───►  99% emitted by Year 13       │
+│   Era 0: 10 MRSN/block  ────►  50% emitted by Year 2.2      │
+│   Era 1:  5 MRSN/block  ────►  75% emitted by Year 4.4      │
+│   Era 2: 2.5 MRSN/block ────►  87.5% emitted by Year 6.7    │
+│   Era 3: 1.25 MRSN/block ───►  99% emitted by Year 13       │
 │                                                              │
 │   VESTING:                                                   │
 │   Team:  1y cliff + 3y linear                                │
@@ -442,9 +442,9 @@ Native order matching requires **consensus-level integration** — you can't bol
 | Celestia | 1B | Inflation | 17.6% | 35.6% | 26.8% | Perpetual |
 | Aptos | ~1.1B | Inflation | 19% | 49% | 32% | Perpetual |
 | Sui | 10B | Inflation | 14% | 48% | 38% | Perpetual |
-| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
+| **MRSN** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
 
-**Key Insight:** PRIM has the lowest team + investor allocation (10%) of any major L1 launched in the last 3 years. 70% goes to validators. This is a network-first, community-first token design.
+**Key Insight:** MRSN has the lowest team + investor allocation (10%) of any major L1 launched in the last 3 years. 70% goes to validators. This is a network-first, community-first token design.
 
 ---
 

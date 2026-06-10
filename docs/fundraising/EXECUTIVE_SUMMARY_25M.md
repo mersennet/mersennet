@@ -86,8 +86,8 @@ A smart contract on Mersennet can atomically: accept a tokenized bond deposit, p
 - **Testnet live** on 4 Hetzner VPS validators (Chain ID 7919)
 - **12 products built:** Explorer, DEX, lending, NFT marketplace, wallet (browser + mobile), prediction markets, liquid staking, validator dashboard, SDKs (Python, Go, TypeScript)
 - **6 products deployed** to testnet with live UIs
-- **7 smart contracts** verified and deployed (Multicall3, WPRIM, stablecoins, DEX factory/router)
-- **3 liquidity pools** seeded (WPRIM/USDC, WPRIM/USDT, WPRIM/DAI)
+- **7 smart contracts** verified and deployed (Multicall3, WMRSN, stablecoins, DEX factory/router)
+- **3 liquidity pools** seeded (WMRSN/USDC, WMRSN/USDT, WMRSN/DAI)
 - **Comprehensive documentation portal** (32+ pages, Docusaurus)
 - **Core chain:** 44,000+ lines of Rust across a 6-crate workspace
 
@@ -132,7 +132,7 @@ Mersennet at $25M Series A represents early-stage pricing for technology that co
 
 | Parameter | Value |
 |-----------|-------|
-| Token | PRIM |
+| Token | MRSN |
 | Max Supply | 1,000,000,000 (1B) |
 | Block Rewards | 70% (700M) — Bitcoin-style halving every 35M blocks (~1.1 years at 1 s blocks) |
 | Ecosystem & Grants | 10% (100M) — 5-year linear |

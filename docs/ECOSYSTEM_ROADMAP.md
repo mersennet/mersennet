@@ -23,7 +23,7 @@
 | Contract | Address | Description |
 |----------|---------|-------------|
 | Multicall3 | `0x973ee1bf0907287d1eb8a144d88b34f515c83f29` | Batch RPC calls |
-| WPRIM | `0x079bf1207b51acda83e2e8178344f62a883f8479` | Wrapped PRIM (ERC-20) |
+| WMRSN | `0x079bf1207b51acda83e2e8178344f62a883f8479` | Wrapped MRSN (ERC-20) |
 | MockUSDC | `0xb22f77d89122e9e3784bfd3eee9616273f38238d` | Testnet USDC (6 decimals) |
 | MockUSDT | `0x877feca38919acd7aaf7cb81f100e0454aa95c17` | Testnet USDT (6 decimals) |
 | MockDAI | `0xb88d63a65691effbf4b6808325b1588912c15cf4` | Testnet DAI (18 decimals) |
@@ -34,9 +34,9 @@
 
 | Pool | Reserves | Implied Price |
 |------|----------|---------------|
-| WPRIM/USDC | 10,000 WPRIM + 10,000 USDC | 1 PRIM = 1 USDC |
-| WPRIM/USDT | 10,000 WPRIM + 10,000 USDT | 1 PRIM = 1 USDT |
-| WPRIM/DAI | 10,000 WPRIM + 10,000 DAI | 1 PRIM = 1 DAI |
+| WMRSN/USDC | 10,000 WMRSN + 10,000 USDC | 1 MRSN = 1 USDC |
+| WMRSN/USDT | 10,000 WMRSN + 10,000 USDT | 1 MRSN = 1 USDT |
+| WMRSN/DAI | 10,000 WMRSN + 10,000 DAI | 1 MRSN = 1 DAI |
 
 ### Built Locally (Not Yet Deployed to Mersennet)
 
@@ -79,12 +79,12 @@
 | # | Need | Status |
 |---|------|--------|
 | 7 | DEX / AMM (PrimeSwap) | **DONE** — Factory + Router deployed |
-| 8 | Wrapped PRIM (WPRIM) | **DONE** — deployed |
+| 8 | Wrapped MRSN (WMRSN) | **DONE** — deployed |
 | 9 | Stablecoin Mocks | **DONE** — USDC, USDT, DAI deployed |
 | 10 | Multicall3 Contract | **DONE** — deployed |
 | 11 | Contract Verification | **DONE** — verified contracts shown in explorer |
 | 12 | Ecosystem Landing Page | **DONE** — in docs portal |
-| 13 | Liquidity Pools | **DONE** — WPRIM/USDC, WPRIM/USDT, WPRIM/DAI seeded |
+| 13 | Liquidity Pools | **DONE** — WMRSN/USDC, WMRSN/USDT, WMRSN/DAI seeded |
 | 14 | Whitepaper in Docs | **DONE** — /whitepaper route on docs portal |
 | 15 | GitHub Organization | **DONE** — README, CONTRIBUTING, templates, branch cleanup |
 | 16 | PrimeSwap DEX Frontend | **DONE** — http://46.225.30.187:4000 |
@@ -101,7 +101,7 @@
 
 These require pointing existing apps to chain 7919:
 
-1. PrimeFi — deploy lending contracts, configure markets with WPRIM + mock stablecoins
+1. PrimeFi — deploy lending contracts, configure markets with WMRSN + mock stablecoins
 2. Primeport — deploy Seaport, point UI + NestJS backend to testnet RPC
 3. xdc-markets — deploy prediction market contracts, point frontend to testnet
 4. PrimeXDC Wallet — update chain ID to 7919, add default RPC/explorer URLs

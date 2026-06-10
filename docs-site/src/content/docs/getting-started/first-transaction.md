@@ -2,22 +2,22 @@
 title: "Your First Transaction"
 ---
 
-This guide walks you through sending PRIM, deploying a simple contract, and viewing it on the explorer.
+This guide walks you through sending MRSN, deploying a simple contract, and viewing it on the explorer.
 
 ## Prerequisites
 
 - [Wallet configured](/getting-started/wallet-setup) with Mersennet testnet
-- [Testnet PRIM](/getting-started/faucet) from the faucet
+- [Testnet MRSN](/getting-started/faucet) from the faucet
 
 ---
 
-## Step 1: Send PRIM
+## Step 1: Send MRSN
 
 ### Using MetaMask
 
 1. Click **Send** in MetaMask.
 2. Enter the recipient address.
-3. Enter the amount in PRIM.
+3. Enter the amount in MRSN.
 4. Confirm the transaction.
 
 ### Using ethers.js
@@ -101,7 +101,7 @@ For contract deployments, the explorer shows the contract address. You can click
 
 | Action | Tool |
 |--------|------|
-| Send PRIM | MetaMask or `wallet.sendTransaction()` |
+| Send MRSN | MetaMask or `wallet.sendTransaction()` |
 | Deploy contract | ethers.js, Hardhat, Foundry, or Remix |
 | View tx | http://46.225.30.187 |
 

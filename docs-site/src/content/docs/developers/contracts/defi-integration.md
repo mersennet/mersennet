@@ -10,7 +10,7 @@ Mersennet has an on-chain DEX called **PrimeSwap** — a Uniswap V2–style AMM.
 |----------|---------|
 | PrimeSwapFactory | `0x63f7a64db6d2b965189b8b48b7435668021f6b17` |
 | PrimeSwapRouter | `0x9f337f433e71ce969b991511f1dcd3d0622116bb` |
-| WPRIM | `0x079bf1207b51acda83e2e8178344f62a883f8479` |
+| WMRSN | `0x079bf1207b51acda83e2e8178344f62a883f8479` |
 | MockUSDC | `0xb22f77d89122e9e3784bfd3eee9616273f38238d` |
 | MockUSDT | `0x877feca38919acd7aaf7cb81f100e0454aa95c17` |
 | MockDAI | `0xb88d63a65691effbf4b6808325b1588912c15cf4` |
@@ -29,7 +29,7 @@ const ROUTER_ABI = [
   "function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB)",
   "function removeLiquidityPRIM(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountPRIMMin, address to, uint256 deadline) returns (uint256 amountToken, uint256 amountPRIM)",
   "function factory() view returns (address)",
-  "function WPRIM() view returns (address)",
+  "function WMRSN() view returns (address)",
 ];
 ```
 
@@ -43,23 +43,23 @@ const { ethers } = require("ethers");
 const RPC_URL = "http://46.225.30.187:8545";
 const CHAIN_ID = 7919;
 const ROUTER = "0x9f337f433e71ce969b991511f1dcd3d0622116bb";
-const WPRIM = "0x079bf1207b51acda83e2e8178344f62a883f8479";
+const WMRSN = "0x079bf1207b51acda83e2e8178344f62a883f8479";
 const MOCK_USDC = "0xb22f77d89122e9e3784bfd3eee9616273f38238d";
 
 const provider = new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);
 const router = new ethers.Contract(ROUTER, ROUTER_ABI, provider);
 
-// How much USDC for 1 PRIM? (path: WPRIM -> USDC)
+// How much USDC for 1 MRSN? (path: WMRSN -> USDC)
 const amountIn = ethers.parseEther("1");
-const path = [WPRIM, MOCK_USDC];
+const path = [WMRSN, MOCK_USDC];
 const amounts = await router.getAmountsOut(amountIn, path);
-console.log("1 PRIM -> USDC:", ethers.formatUnits(amounts[1], 6));
+console.log("1 MRSN -> USDC:", ethers.formatUnits(amounts[1], 6));
 
-// How much PRIM for 100 USDC? (path: USDC -> WPRIM)
+// How much MRSN for 100 USDC? (path: USDC -> WMRSN)
 const amountOut = ethers.parseUnits("100", 6);
-const pathReverse = [MOCK_USDC, WPRIM];
+const pathReverse = [MOCK_USDC, WMRSN];
 const amountsIn = await router.getAmountsIn(amountOut, pathReverse);
-console.log("100 USDC needs PRIM:", ethers.formatEther(amountsIn[0]));
+console.log("100 USDC needs MRSN:", ethers.formatEther(amountsIn[0]));
 ```
 
 ## Swap Tokens
@@ -98,12 +98,12 @@ await tx.wait();
 console.log("Swap complete");
 ```
 
-### PRIM → Token (e.g., PRIM → USDC)
+### MRSN → Token (e.g., MRSN → USDC)
 
 ```javascript
 const amountOutMin = 0n; // Or use getAmountsOut for a minimum
-const path = [WPRIM, MOCK_USDC];
-const value = ethers.parseEther("0.5"); // 0.5 PRIM
+const path = [WMRSN, MOCK_USDC];
+const value = ethers.parseEther("0.5"); // 0.5 MRSN
 const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
 
 const tx = await router.swapExactPRIMForTokens(
@@ -116,11 +116,11 @@ const tx = await router.swapExactPRIMForTokens(
 await tx.wait();
 ```
 
-### Token → PRIM (e.g., USDC → PRIM)
+### Token → MRSN (e.g., USDC → MRSN)
 
 ```javascript
 const amountIn = ethers.parseUnits("50", 6); // 50 USDC
-const path = [MOCK_USDC, WPRIM];
+const path = [MOCK_USDC, WMRSN];
 const amounts = await router.getAmountsOut(amountIn, path);
 const amountOutMin = amounts[1] * 95n / 100n;
 
@@ -163,7 +163,7 @@ const tx = await router.addLiquidity(
 await tx.wait();
 ```
 
-### Add PRIM / Token (e.g., PRIM/USDC)
+### Add MRSN / Token (e.g., MRSN/USDC)
 
 ```javascript
 const amountTokenDesired = ethers.parseUnits("100", 6);
@@ -180,7 +180,7 @@ const tx = await router.addLiquidityPRIM(
   amountPRIMMin,
   wallet.address,
   deadline,
-  { value: ethers.parseEther("1") } // PRIM sent as msg.value
+  { value: ethers.parseEther("1") } // MRSN sent as msg.value
 );
 await tx.wait();
 ```
@@ -216,8 +216,8 @@ const factory = new ethers.Contract(
   provider
 );
 
-const pair = await factory.getPair(WPRIM, MOCK_USDC);
-console.log("WPRIM/USDC pair:", pair);
+const pair = await factory.getPair(WMRSN, MOCK_USDC);
+console.log("WMRSN/USDC pair:", pair);
 ```
 
 ## Pair: Get Reserves

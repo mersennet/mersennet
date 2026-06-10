@@ -29,7 +29,7 @@ PrimeFi smart contracts are built and audited. They are ready for deployment to 
 
 ### Borrow
 
-1. Supply collateral first (e.g., WPRIM, USDC).
+1. Supply collateral first (e.g., WMRSN, USDC).
 2. Call `borrow(asset, amount, interestRateMode, onBehalfOf)`.
 3. Receive borrowed assets to your wallet.
 4. Interest accrues on the borrowed amount. Repay with `repay()` to reduce debt and free collateral.
@@ -54,7 +54,7 @@ PrimeFi will support the core Mersennet assets:
 
 | Asset | Use Case |
 |-------|----------|
-| **WPRIM** | Collateral, supply |
+| **WMRSN** | Collateral, supply |
 | **USDC** | Collateral, supply, borrow |
 | **USDT** | Collateral, supply, borrow |
 | **DAI** | Collateral, supply, borrow |
@@ -89,7 +89,7 @@ Exact support depends on deployment configuration and oracle integration.
 
 - **PrimeSwap** — Borrow stablecoins, swap on PrimeSwap, supply for yield.
 - **PrimeOrders** — Future: collateralize positions, use CLOB for hedging.
-- **WPRIM** — Native token wrapper used as collateral and supply asset.
+- **WMRSN** — Native token wrapper used as collateral and supply asset.
 
 ## Deployment Status
 

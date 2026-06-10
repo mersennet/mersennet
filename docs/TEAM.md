@@ -27,9 +27,9 @@
 | Parameter | Value |
 |-----------|-------|
 | **Chain ID** | `7919` (`0x1EEF` hex) |
-| **Currency** | PRIM (18 decimals) |
+| **Currency** | MRSN (18 decimals) |
 | **Block Time** | ~1 second |
-| **Max Supply** | 1,000,000,000 PRIM |
+| **Max Supply** | 1,000,000,000 MRSN |
 | **Consensus** | DPoS (HotStuff-2 BFT design) |
 | **EVM** | Shanghai spec via `revm` |
 | **Native Precompile** | PrimeOrders CLOB at `0x0100` |
@@ -94,7 +94,7 @@ mersennet/
 │   ├── network/               #   P2P networking
 │   └── node/                  #   Binaries (mersennet, faucet, genesis)
 ├── contracts/                 # Solidity smart contracts (Foundry)
-│   ├── src/foundation/        #   Multicall3, WPRIM, MockERC20
+│   ├── src/foundation/        #   Multicall3, WMRSN, MockERC20
 │   ├── src/dex/               #   PrimeSwap (UniV2 fork)
 │   ├── src/primeorders/       #   CLOB strategy examples
 │   ├── src/interfaces/        #   IPrimeOrders.sol
@@ -200,7 +200,7 @@ All services run on `46.225.30.187` unless noted.
 | Contract | Address | Purpose |
 |----------|---------|---------|
 | **Multicall3** | `0x973ee1bf0907287d1eb8a144d88b34f515c83f29` | Batch RPC calls |
-| **WPRIM** | `0x079bf1207b51acda83e2e8178344f62a883f8479` | Wrapped PRIM (ERC-20) |
+| **WMRSN** | `0x079bf1207b51acda83e2e8178344f62a883f8479` | Wrapped MRSN (ERC-20) |
 | **MockUSDC** | `0xb22f77d89122e9e3784bfd3eee9616273f38238d` | 6 decimals |
 | **MockUSDT** | `0x877feca38919acd7aaf7cb81f100e0454aa95c17` | 6 decimals |
 | **MockDAI** | `0xb88d63a65691effbf4b6808325b1588912c15cf4` | 18 decimals |
@@ -346,7 +346,7 @@ docker-compose up -d
 - **Stack:** Vanilla JS SPA, ethers.js v6 from CDN
 - **Files:** `index.html`, `style.css`, `app.js`
 - **Features:** Token swap, add/remove liquidity, pool info, pair analytics
-- **Contracts:** PrimeSwapRouter, PrimeSwapFactory, WPRIM
+- **Contracts:** PrimeSwapRouter, PrimeSwapFactory, WMRSN
 - **Config:** Contract addresses and RPC at top of `app.js`
 - **Deploy:** `scp` to `/var/www/dex/`
 
@@ -361,7 +361,7 @@ docker-compose up -d
 ### 4. Faucet (`crates/node/src/bin/faucet.html`)
 
 - **Stack:** HTML embedded in Rust binary
-- **Features:** Dispense PRIM + mock tokens (USDC/USDT/DAI), MetaMask connect, auto-add network
+- **Features:** Dispense MRSN + mock tokens (USDC/USDT/DAI), MetaMask connect, auto-add network
 - **Deploy:** Requires `cargo build --release --bin faucet` then binary deploy (see above)
 - **Rate limit:** 1 request per address per period (server-side)
 
@@ -375,7 +375,7 @@ docker-compose up -d
 ### 6. Smart Contracts (`contracts/`)
 
 - **Stack:** Foundry (forge, cast)
-- **Test:** `forge test -vv` (28 tests across WPRIM, MockERC20, PrimeSwap)
+- **Test:** `forge test -vv` (28 tests across WMRSN, MockERC20, PrimeSwap)
 - **Deploy:** `DEPLOYER_KEY=... node script/deploy.cjs`
 - **Seed liquidity:** `DEPLOYER_KEY=... node script/seed-liquidity.cjs`
 
@@ -426,7 +426,7 @@ docker-compose up -d
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-03 | Chain ID `7919` (testnet), `13370` (mainnet) | Unique, not used by any known chain |
-| 2026-03 | PRIM ticker | Not used by any tracked token |
+| 2026-03 | MRSN ticker | Not used by any tracked token |
 | 2026-03 | Monorepo structure | Explorer, DEX, validator dashboard kept in main repo for ease of development |
 | 2026-03 | Vanilla JS for frontends | No build step required, instant deploy via SCP |
 | 2026-03 | Embedded faucet HTML | Single binary deployment, no static file dependency |

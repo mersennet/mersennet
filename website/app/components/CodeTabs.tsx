@@ -43,7 +43,7 @@ const CURL: CodeLine[] = [
   [{ t: '       "method":"prime_getShieldedBalance",', c: 's' }],
   [{ t: '       "params":["vk1q8z…ke2v"]}\'', c: 's' }],
   [],
-  [{ t: '# → {"result":{"perAsset":{"PRIM":"1250…000"},"noteCount":3}}', c: 'c' }],
+  [{ t: '# → {"result":{"perAsset":{"MRSN":"1250…000"},"noteCount":3}}', c: 'c' }],
 ];
 
 const TABS = [

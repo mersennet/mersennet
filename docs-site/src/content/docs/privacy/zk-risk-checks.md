@@ -31,7 +31,7 @@ flowchart TD
 
 Liquidations are handled by **bonded liquidators** through a threshold-encrypted auction, not an open mempool race:
 
-1. A liquidator registers once with a Pedersen bond commitment (`prime_registerLiquidator`), posting at least the minimum bond (10,000 PRIM).
+1. A liquidator registers once with a Pedersen bond commitment (`prime_registerLiquidator`), posting at least the minimum bond (10,000 MRSN).
 2. When a position becomes liquidatable at the oracle price, a registered liquidator submits an encrypted claim (`prime_submitLiquidationClaim`).
 3. The auction winner submits the execution (`prime_submitLiquidationExecute`), which settles the victim's nullifier and mints the bounty and insurance commitments.
 

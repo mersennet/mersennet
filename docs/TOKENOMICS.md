@@ -1,6 +1,6 @@
-# Mersennet (PRIM) Tokenomics
+# Mersennet (MRSN) Tokenomics
 
-Complete technical documentation of PRIM token economics, emission schedule, allocations, validator incentives, and slashing mechanics.
+Complete technical documentation of MRSN token economics, emission schedule, allocations, validator incentives, and slashing mechanics.
 
 ---
 
@@ -9,9 +9,9 @@ Complete technical documentation of PRIM token economics, emission schedule, all
 | Parameter | Value |
 |-----------|-------|
 | **Token Name** | Mersennet |
-| **Ticker** | PRIM |
+| **Ticker** | MRSN |
 | **Total Supply** | 1,000,000,000 (1 Billion) |
-| **Decimal Places** | 18 (1 PRIM = 10^18 wei) |
+| **Decimal Places** | 18 (1 MRSN = 10^18 wei) |
 | **Consensus** | Proof-of-Stake (HotStuff-2 BFT) |
 | **Block Time** | ~1 second (default) |
 
@@ -55,8 +55,8 @@ Combined private and public sale allocation for fundraising. 6-month cliff follo
 
 | Parameter | Value |
 |-----------|-------|
-| **Block Rewards Pool** | 700,000,000 PRIM |
-| **Initial Reward** | 10 PRIM per block |
+| **Block Rewards Pool** | 700,000,000 MRSN |
+| **Initial Reward** | 10 MRSN per block |
 | **Halving Interval** | 35,000,000 blocks (~1.1 years at the 1 s default block time) |
 | **Block Time** | ~1 second (config default; mainnet genesis currently specifies 200 ms — see note below) |
 
@@ -67,22 +67,22 @@ Rewards follow a Bitcoin-style halving schedule:
 ```
 Era   Block Range                  Reward/Block    Minted in Era
 ───   ───────────────────────────  ────────────    ─────────────
-0     0 — 34,999,999              10 PRIM         350,000,000
-1     35,000,000 — 69,999,999      5 PRIM         175,000,000
-2     70,000,000 — 104,999,999     2.5 PRIM        87,500,000
-3     105,000,000 — 139,999,999    1.25 PRIM       43,750,000
-4     140,000,000 — 174,999,999    0.625 PRIM      21,875,000
-5     175,000,000 — 209,999,999    0.3125 PRIM     10,937,500
-6     210,000,000 — 244,999,999    0.15625 PRIM     5,468,750
+0     0 — 34,999,999              10 MRSN         350,000,000
+1     35,000,000 — 69,999,999      5 MRSN         175,000,000
+2     70,000,000 — 104,999,999     2.5 MRSN        87,500,000
+3     105,000,000 — 139,999,999    1.25 MRSN       43,750,000
+4     140,000,000 — 174,999,999    0.625 MRSN      21,875,000
+5     175,000,000 — 209,999,999    0.3125 MRSN     10,937,500
+6     210,000,000 — 244,999,999    0.15625 MRSN     5,468,750
 ...   (continues halving)
 ```
 
-The geometric series converges to exactly 700,000,000 PRIM:
+The geometric series converges to exactly 700,000,000 MRSN:
 
 ```
 total = initial_reward × halving_interval × 2
       = 10 × 35,000,000 × 2
-      = 700,000,000 PRIM ✓
+      = 700,000,000 MRSN ✓
 ```
 
 ### 3.3 Emission Timeline
@@ -143,20 +143,20 @@ validator_reward = (effective_reward × validator_stake) / total_stake
 **Example with 4 equal-stake validators:**
 
 ```
-total_stake    = 4,000,000 PRIM (1M each)
-reward/block   = 10 PRIM
-each validator = 10 × 1,000,000 / 4,000,000 = 2.5 PRIM per block
+total_stake    = 4,000,000 MRSN (1M each)
+reward/block   = 10 MRSN
+each validator = 10 × 1,000,000 / 4,000,000 = 2.5 MRSN per block
 ```
 
 ### 4.2 Unequal Stake Example
 
 ```
-Validator A: 5M stake → 5/10 = 50% of reward = 5.0 PRIM
-Validator B: 3M stake → 3/10 = 30% of reward = 3.0 PRIM
-Validator C: 1.5M stake → 1.5/10 = 15% of reward = 1.5 PRIM
-Validator D: 0.5M stake → 0.5/10 =  5% of reward = 0.5 PRIM
+Validator A: 5M stake → 5/10 = 50% of reward = 5.0 MRSN
+Validator B: 3M stake → 3/10 = 30% of reward = 3.0 MRSN
+Validator C: 1.5M stake → 1.5/10 = 15% of reward = 1.5 MRSN
+Validator D: 0.5M stake → 0.5/10 =  5% of reward = 0.5 MRSN
                                                     ─────────
-                                                    10.0 PRIM
+                                                    10.0 MRSN
 ```
 
 ### 4.3 Rounding and Burns
@@ -190,7 +190,7 @@ fn apply_rewards(&mut self, rewards: &[Reward]) -> Result<()> {
 
 ### 5.1 Becoming a Validator
 
-To become a validator, an address must stake PRIM tokens:
+To become a validator, an address must stake MRSN tokens:
 
 ```rust
 engine.add_validator(address, stake)
@@ -228,13 +228,13 @@ Weights are normalized to prevent overflow with 18-decimal stake values. Validat
 
 ### 5.4 Estimated Validator APY
 
-At genesis with 4 validators (1M PRIM staked each):
+At genesis with 4 validators (1M MRSN staked each):
 
 ```
 blocks/year       ≈ 15,768,000 (at 2s block time)
-reward/block      = 10 PRIM
-validator/block   = 2.5 PRIM (with 4 equal validators)
-annual/validator  = 2.5 × 15,768,000 = 39,420,000 PRIM
+reward/block      = 10 MRSN
+validator/block   = 2.5 MRSN (with 4 equal validators)
+annual/validator  = 2.5 × 15,768,000 = 39,420,000 MRSN
 APY               = 39,420,000 / 1,000,000 = 3,942%
 ```
 
@@ -370,7 +370,7 @@ Governance requires:
 | **Cosmos** | ~750M | 68.5% | 3.2% | 3.8% | 3.1% | Perpetual |
 | **Celestia** | 1B | (inflation) | 17.6% | 35.6% | 26.8% | Perpetual |
 | **Polkadot** | 2.1B | Halving | ~5% | ~13% | ~17% | ~12+ years |
-| **PRIM** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
+| **MRSN** | **1B** | **70%** | **5%** | **5%** | **20%** | **~7 years** |
 
 Mersennet's allocation is closest to Cosmos (high block rewards) with the halving discipline of Bitcoin/Polkadot and a conservative team allocation.
 

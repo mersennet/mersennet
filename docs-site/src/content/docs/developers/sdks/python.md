@@ -167,7 +167,7 @@ positions = orders.get_positions("0xOwnerAddress", market=1)
 
 ```python
 market_id = orders.add_market(
-    base="PRIM",
+    base="MRSN",
     quote="USDC",
     lot="1000000",
     tick="1000",

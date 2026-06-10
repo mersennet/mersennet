@@ -14,7 +14,7 @@ title: "What is Mersennet?"
 | **Account-level privacy** | Shielded accounts, ZK risk checks, and shielded orders (privacy hard fork) |
 | **Verifiable state** | State transitions proven with SP1 and verifiable via a Groth16 bridge |
 | **Consensus** | BFT proof-of-stake (prevote/precommit, stake-weighted proposer) |
-| **Token** | PRIM (18 decimals, 1B max supply) |
+| **Token** | MRSN (18 decimals, 1B max supply) |
 | **Implementation** | Rust-based node for reliability and performance |
 
 ## Key Capabilities
@@ -25,7 +25,7 @@ title: "What is Mersennet?"
 - **Account-level privacy** — Shielded accounts conceal balances, positions, and order flow, and leverage is secured by zero-knowledge risk checks instead of public liquidation auctions. See [Privacy on Mersennet](/privacy).
 - **Verifiable state** — Every block's state transition is proven with SP1 and wrapped into a Groth16 proof an Ethereum contract can verify, so the chain is checkable from a succinct proof.
 - **BFT Proof-of-Stake** — Stake-weighted proposer rotation with two-round prevote/precommit finality and escalating slashing.
-- **1 Billion PRIM** — Fixed max supply with halving block rewards and structured tokenomics.
+- **1 Billion MRSN** — Fixed max supply with halving block rewards and structured tokenomics.
 
 ## Built for Developers
 
@@ -36,7 +36,7 @@ Mersennet is designed for builders. Whether you're deploying a simple ERC-20, bu
 | Step | Link |
 |------|------|
 | 1. Add the network to your wallet | [Wallet Setup](/getting-started/wallet-setup) |
-| 2. Get testnet PRIM from the faucet | [Faucet](/getting-started/faucet) |
+| 2. Get testnet MRSN from the faucet | [Faucet](/getting-started/faucet) |
 | 3. Send your first transaction | [First Transaction](/getting-started/first-transaction) |
 | 4. Deploy a smart contract | [Hardhat Quick Start](/developers/quick-start/hardhat) |
 | 5. Explore the architecture | [Consensus](/architecture/consensus) · [Tokenomics](/architecture/tokenomics) |

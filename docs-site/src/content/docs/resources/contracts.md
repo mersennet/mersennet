@@ -9,7 +9,7 @@ Complete reference of smart contracts deployed on Mersennet testnet (Chain ID 79
 | Contract | Address | Description |
 |----------|---------|-------------|
 | **Multicall3** | `0x973ee1bf0907287d1eb8a144d88b34f515c83f29` | Batched RPC reads. Used by wagmi, viem, ethers.js for efficient multi-call queries. |
-| **WPRIM** | `0x079bf1207b51acda83e2e8178344f62a883f8479` | ERC-20 wrapped PRIM. Required for DEX pairs and DeFi protocols that need ERC-20 native token representation. |
+| **WMRSN** | `0x079bf1207b51acda83e2e8178344f62a883f8479` | ERC-20 wrapped MRSN. Required for DEX pairs and DeFi protocols that need ERC-20 native token representation. |
 
 ## DeFi — PrimeSwap V2
 
@@ -61,7 +61,7 @@ These contracts demonstrate Mersennet's unique capability: **atomic composabilit
 Chain ID: 7919
 PrimeOrders CLOB:    0x0000000000000000000000000000000000000100 (precompile)
 Multicall3:          0x973ee1bf0907287d1eb8a144d88b34f515c83f29
-WPRIM:               0x079bf1207b51acda83e2e8178344f62a883f8479
+WMRSN:               0x079bf1207b51acda83e2e8178344f62a883f8479
 MockUSDC:            0xb22f77d89122e9e3784bfd3eee9616273f38238d
 MockUSDT:            0x877feca38919acd7aaf7cb81f100e0454aa95c17
 MockDAI:             0xb88d63a65691effbf4b6808325b1588912c15cf4
@@ -98,10 +98,10 @@ const usdc = new ethers.Contract(
 await usdc.faucet();
 ```
 
-### Wrap PRIM
+### Wrap MRSN
 
 ```solidity
-// WPRIM
+// WMRSN
 function deposit() external payable;
 function withdraw(uint256 wad) external;
 ```

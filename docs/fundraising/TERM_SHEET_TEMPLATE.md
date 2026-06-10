@@ -14,7 +14,7 @@
 ║                                                                  ║
 ║   Round Size:         $25,000,000                                ║
 ║   Instrument:         SAFT (Simple Agreement for Future Tokens)  ║
-║   Token:              PRIM                                       ║
+║   Token:              MRSN                                       ║
 ║   Network:            Mersennet (EVM L1, Chain ID 13370)       ║
 ║   Stage:              Pre-Mainnet (Testnet Live, Chain ID 7919)  ║
 ║                                                                  ║
@@ -31,7 +31,7 @@
 | **Round** | Series A |
 | **Total Raise** | $25,000,000 USD |
 | **Instrument** | SAFT (Simple Agreement for Future Tokens) |
-| **Token** | PRIM |
+| **Token** | MRSN |
 | **Max Token Supply** | 1,000,000,000 (1 Billion) |
 | **Tokens Allocated to Sales** | 50,000,000 (5% of supply) |
 | **Valuation Basis** | $[●] FDV (Fully Diluted Valuation) |
@@ -45,10 +45,10 @@
 
 | Tranche | Allocation | Amount | Discount/Terms |
 |---------|-----------|--------|----------------|
-| **Strategic Partners** | Up to 30M PRIM | $11–15M | [●]% discount to TGE price |
-| **Crypto VCs** | Up to 15M PRIM | $8–12M | [●]% discount to TGE price |
-| **Strategic Reserve** | Up to 5M PRIM | $2–3M | Par (no discount) |
-| **Total** | Up to 50M PRIM | **$25M** | |
+| **Strategic Partners** | Up to 30M MRSN | $11–15M | [●]% discount to TGE price |
+| **Crypto VCs** | Up to 15M MRSN | $8–12M | [●]% discount to TGE price |
+| **Strategic Reserve** | Up to 5M MRSN | $2–3M | Par (no discount) |
+| **Total** | Up to 50M MRSN | **$25M** | |
 
 ---
 

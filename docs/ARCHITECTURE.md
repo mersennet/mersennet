@@ -957,8 +957,8 @@ All transactions with a signature are verified in `verify_tx_signature()` before
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| Max token supply | 1,000,000,000 PRIM × 10¹⁸ | Deflationary cap |
-| Block reward | 10 PRIM × 10¹⁸ (halving every 35M blocks) | Validator incentive |
+| Max token supply | 1,000,000,000 MRSN × 10¹⁸ | Deflationary cap |
+| Block reward | 10 MRSN × 10¹⁸ (halving every 35M blocks) | Validator incentive |
 | Double-sign slash | 500 bps (5%) | Equivocation deterrent |
 | Timeout slash | 100 bps (1%) | Liveness incentive |
 | Escalation step | 25 bps per repeat offense | Progressive punishment |
@@ -1047,7 +1047,7 @@ The `AppConfig` structure supports JSON configuration with sensible defaults:
 | `prime_orders` | initial_margin_bps, maintenance_margin_bps | 0, 0 |
 | `bridge` | max_queue_len | 10,000 |
 | `slashing` | double_sign_bps, timeout_bps, escalation | 500, 100, 25/1000 |
-| `token_economics` | max_supply, reward_per_block, halving | 1B PRIM, 10 PRIM, 35M blocks |
+| `token_economics` | max_supply, reward_per_block, halving | 1B MRSN, 10 MRSN, 35M blocks |
 | `rpc` | enabled, addr | false, 127.0.0.1:8545 |
 | `p2p` | listen, peers, block_time_ms, noise_enabled | 0.0.0.0:30303, [], 1000, false |
 | `ws` | enabled, addr | false, 127.0.0.1:9945 |

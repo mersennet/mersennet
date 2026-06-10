@@ -28,7 +28,7 @@ PrimeSwap uses a two-contract design:
 ```
 ┌─────────────────┐     createPair()      ┌──────────────────┐
 │ PrimeSwapFactory│ ───────────────────►  │ PrimeSwapPair    │
-│                 │                       │ (WPRIM/USDC, etc)│
+│                 │                       │ (WMRSN/USDC, etc)│
 └────────┬────────┘                       └──────────────────┘
          │
          │ getPair(tokenA, tokenB)
@@ -46,7 +46,7 @@ PrimeSwap uses a two-contract design:
 | **PrimeSwapRouter** | `0x9f337f433e71ce969b991511f1dcd3d0622116bb` |
 
 :::note
-PrimeSwap depends on **WPRIM** (wrapped PRIM) for native token pairs. WPRIM address: `0x079bf1207b51acda83e2e8178344f62a883f8479`
+PrimeSwap depends on **WMRSN** (wrapped MRSN) for native token pairs. WMRSN address: `0x079bf1207b51acda83e2e8178344f62a883f8479`
 :::
 
 ## Creating Pairs
@@ -77,9 +77,9 @@ router.addLiquidity(
 );
 ```
 
-### PRIM–Token Pair (addLiquidity)
+### MRSN–Token Pair (addLiquidity)
 
-For pairs involving native PRIM, use `addLiquidity` and send PRIM as `msg.value`:
+For pairs involving native MRSN, use `addLiquidity` and send MRSN as `msg.value`:
 
 ```solidity
 router.addLiquidity{value: amountPRIM}(
@@ -119,24 +119,24 @@ uint256[] memory amounts = router.swapTokensForExactTokens(
 );
 ```
 
-### Swapping PRIM for Tokens (swapExactPRIMForTokens)
+### Swapping MRSN for Tokens (swapExactPRIMForTokens)
 
 ```solidity
 router.swapExactPRIMForTokens{value: amountPRIM}(
     amountOutMin,
-    path,    // path[0] must be WPRIM
+    path,    // path[0] must be WMRSN
     to,
     deadline
 );
 ```
 
-### Swapping Tokens for PRIM (swapExactTokensForPRIM)
+### Swapping Tokens for MRSN (swapExactTokensForPRIM)
 
 ```solidity
 router.swapExactTokensForPRIM(
     amountIn,
     amountOutMin,
-    path,    // path[path.length - 1] must be WPRIM
+    path,    // path[path.length - 1] must be WMRSN
     to,
     deadline
 );
@@ -148,15 +148,15 @@ When you add liquidity, you receive **LP (liquidity provider) tokens**—ERC-20 
 
 - **Mint** — LP tokens are minted when you add liquidity via `pair.mint(to)`.
 - **Burn** — LP tokens are burned when you remove liquidity via `pair.burn(to)`.
-- **Redemption** — Call `router.removeLiquidity` or `removeLiquidityPRIM` to burn LP tokens and receive both tokens (or PRIM) back.
+- **Redemption** — Call `router.removeLiquidity` or `removeLiquidityPRIM` to burn LP tokens and receive both tokens (or MRSN) back.
 
-## Example: Swap USDC for PRIM
+## Example: Swap USDC for MRSN
 
 ```javascript
 import { ethers } from 'ethers';
 
 const ROUTER = '0x9f337f433e71ce969b991511f1dcd3d0622116bb';
-const WPRIM = '0x079bf1207b51acda83e2e8178344f62a883f8479';
+const WMRSN = '0x079bf1207b51acda83e2e8178344f62a883f8479';
 const USDC = '0xb22f77d89122e9e3784bfd3eee9616273f38238d';
 
 const routerAbi = [
@@ -173,7 +173,7 @@ const usdc = new ethers.Contract(USDC, ['function approve(address,uint256) retur
 await usdc.approve(ROUTER, ethers.MaxUint256);
 
 // Get expected output
-const path = [USDC, WPRIM];
+const path = [USDC, WMRSN];
 const amountIn = ethers.parseUnits('100', 6); // 100 USDC
 const amounts = await router.getAmountsOut(amountIn, path);
 const expectedOut = amounts[1];

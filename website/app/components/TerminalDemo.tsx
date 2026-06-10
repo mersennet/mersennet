@@ -8,17 +8,17 @@ type Line = { text: string; kind: 'cmd' | 'out' | 'ok' | 'dim' };
 // One full shielded session, accurate to the protocol: shield → private
 // order → SP1 block proof → owner-side scan.
 const SCRIPT: Line[] = [
-  { kind: 'cmd', text: 'prim shield --amount 250 PRIM' },
+  { kind: 'cmd', text: 'mrsn shield --amount 250 MRSN' },
   { kind: 'dim', text: '→ proving output.nr in-browser (wasm) … 388 ms' },
   { kind: 'ok', text: '✓ note committed 0x9f3a…c21e · merkle depth 32 · sender hidden' },
-  { kind: 'cmd', text: 'prim order place --market PRIM-USDC --buy --size 40 --price 1.043' },
+  { kind: 'cmd', text: 'mrsn order place --market MRSN-USDC --buy --size 40 --price 1.043' },
   { kind: 'dim', text: '→ proving order_place.nr — margin ≥ 5% shown in zero knowledge' },
   { kind: 'ok', text: '✓ matched 40 @ 1.043 · book precompile 0x0100 · identity hidden' },
-  { kind: 'cmd', text: 'prim block prove --height 18421' },
+  { kind: 'cmd', text: 'mrsn block prove --height 18421' },
   { kind: 'dim', text: '→ SP1 state-transition … replaying FBA tick … wrapping Groth16' },
   { kind: 'ok', text: '✓ state root 0x4e90…b7d1 anchored on Ethereum — no trusted RPC' },
-  { kind: 'cmd', text: 'prim scan --viewing-key vk1q8z…ke2v' },
-  { kind: 'ok', text: '✓ 3 notes · 1,250 PRIM — visible only with your key' },
+  { kind: 'cmd', text: 'mrsn scan --viewing-key vk1q8z…ke2v' },
+  { kind: 'ok', text: '✓ 3 notes · 1,250 MRSN — visible only with your key' },
 ];
 
 const CHAR_MS = 26;

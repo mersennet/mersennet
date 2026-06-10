@@ -36,7 +36,7 @@ Multi-token NFTs (multiple token IDs in one contract, with fungible and non-fung
 ### Buying & Selling
 
 - Buyers purchase listed NFTs in a single transaction.
-- Sellers receive payment (PRIM or ERC-20) upon sale.
+- Sellers receive payment (MRSN or ERC-20) upon sale.
 - Royalties can be configured per collection.
 
 ### Auctions

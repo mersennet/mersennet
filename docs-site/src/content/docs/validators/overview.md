@@ -12,7 +12,7 @@ Validators perform three critical functions:
 
 2. **Consensus Participation** — All validators participate in the BFT (Byzantine Fault Tolerant) consensus process. They vote on proposed blocks (prevote and precommit phases) to achieve finality. A block is finalized when more than 2/3 of total stake has voted for it.
 
-3. **Network Security** — By staking PRIM tokens, validators have economic skin in the game. Malicious or negligent behavior is penalized through slashing, which protects the network from attacks and downtime.
+3. **Network Security** — By staking MRSN tokens, validators have economic skin in the game. Malicious or negligent behavior is penalized through slashing, which protects the network from attacks and downtime.
 
 ## Delegated Proof-of-Stake (DPoS)
 
@@ -21,11 +21,11 @@ Mersennet uses **Delegated Proof-of-Stake** with the following characteristics:
 | Aspect | Description |
 |--------|-------------|
 | **Proposer Selection** | Round-robin with priority-based weighting. Validators with higher stake are selected more frequently to propose blocks. |
-| **Voting Power** | Proportional to staked PRIM. One validator with 2M PRIM has twice the voting power of a validator with 1M PRIM. |
+| **Voting Power** | Proportional to staked MRSN. One validator with 2M MRSN has twice the voting power of a validator with 1M MRSN. |
 | **Finality Threshold** | >2/3 of total stake must precommit for a block to be finalized. |
 | **Block Time** | ~1 second per block. |
 
-Token holders can **delegate** their PRIM to validators, increasing the validator's stake and voting power. Delegators share in the validator's rewards (minus any commission the validator charges).
+Token holders can **delegate** their MRSN to validators, increasing the validator's stake and voting power. Delegators share in the validator's rewards (minus any commission the validator charges).
 
 ## Block Production
 
@@ -40,13 +40,13 @@ Other validators then vote on the block. Once 2/3+ stake has precommitted, the b
 
 ## Earning Rewards
 
-Validators earn **block rewards** in PRIM, distributed proportionally to stake:
+Validators earn **block rewards** in MRSN, distributed proportionally to stake:
 
 ```
 validator_reward = (block_reward × validator_stake) / total_stake
 ```
 
-- **Initial reward**: 10 PRIM per block
+- **Initial reward**: 10 MRSN per block
 - **Halving**: Every 35,000,000 blocks (~1.1 years at ~1 s blocks), the reward halves
 - **Distribution**: Rewards are credited directly to validator addresses—no claiming required
 

@@ -7,7 +7,7 @@
   "deployedAt": "2026-03-07",
   "contracts": {
     "Multicall3": "0x973ee1bf0907287d1eb8a144d88b34f515c83f29",
-    "WPRIM": "0x079bf1207b51acda83e2e8178344f62a883f8479",
+    "WMRSN": "0x079bf1207b51acda83e2e8178344f62a883f8479",
     "MockUSDC": "0xb22f77d89122e9e3784bfd3eee9616273f38238d",
     "MockUSDT": "0x877feca38919acd7aaf7cb81f100e0454aa95c17",
     "MockDAI": "0xb88d63a65691effbf4b6808325b1588912c15cf4",

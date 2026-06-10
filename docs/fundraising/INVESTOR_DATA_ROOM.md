@@ -173,7 +173,7 @@ This data room contains all materials required for due diligence on Mersennet's 
 ### Quick Start (Try the Testnet)
 
 1. Add Mersennet to MetaMask: Chain ID `7919`, RPC `http://46.225.30.187:8545`
-2. Get testnet PRIM from the faucet: http://46.225.30.187:8080
+2. Get testnet MRSN from the faucet: http://46.225.30.187:8080
 3. Trade on PrimeSwap: http://46.225.30.187:4000
 4. View your transactions: http://46.225.30.187/
 

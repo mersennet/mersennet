@@ -104,7 +104,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 | RPC URL     | http://localhost:8545 |
 | Faucet URL  | http://localhost:8080 |
 | Block Time  | ~1 second |
-| Currency    | PRIM (18 decimals) |
+| Currency    | MRSN (18 decimals) |
 
 ## Connecting MetaMask
 
@@ -113,7 +113,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
    - **Network Name**: Mersennet Testnet
    - **RPC URL**: `http://localhost:8545` (or your public RPC)
    - **Chain ID**: 7919
-   - **Currency Symbol**: PRIM
+   - **Currency Symbol**: MRSN
 
 3. Import an account or create one, then use the faucet to fund it.
 
@@ -121,7 +121,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 ### Web UI
 
-Visit http://localhost:8080 and enter your wallet address (0x...). Click "Request Tokens" to receive 1,000 test PRIM.
+Visit http://localhost:8080 and enter your wallet address (0x...). Click "Request Tokens" to receive 1,000 test MRSN.
 
 ### API
 

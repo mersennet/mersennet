@@ -45,7 +45,7 @@ At block `H`:
    each EOA is set to zero in the same block.
 3. The `0x7E` tx type becomes accepted. The legacy `0x00` and `0x02`
    tx types continue to work, but only for transparent contract
-   calls — they cannot move PRIM between EOAs.
+   calls — they cannot move MRSN between EOAs.
 4. The shielded RPC methods (`prime_getShieldedBalance`,
    `prime_submitShieldedOrder`, etc.) become live. Pre-`H` they
    return `-32605` ("disabled in current chain mode").

@@ -25,11 +25,11 @@ const PHASES = [
   },
   {
     tag: 'NEXT',
-    title: 'Mainnet & PRIM',
+    title: 'Mainnet & MRSN',
     live: false,
     items: [
       'Genesis ceremony · 7+ independent validators',
-      'PRIM token generation — 1B fixed supply',
+      'MRSN token generation — 1B fixed supply',
       'Privacy hard fork activated by governance',
     ],
   },

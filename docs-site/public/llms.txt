@@ -1,13 +1,13 @@
 # Mersennet Documentation
 
-> Mersennet is a high-performance, EVM-compatible Layer 1 blockchain with a native on-chain order matching engine (PrimeOrders). Chain ID: 7919. Token: PRIM.
+> Mersennet is a high-performance, EVM-compatible Layer 1 blockchain with a native on-chain order matching engine (PrimeOrders). Chain ID: 7919. Token: MRSN.
 
 ## Getting Started
 
 - [What is Mersennet?](/getting-started/overview): Overview of the chain's capabilities and architecture.
 - [Network Information](/getting-started/network-info): RPC endpoints, Chain ID, WebSocket, deployed contracts.
 - [Wallet Setup](/getting-started/wallet-setup): How to configure MetaMask or PrimeXDC Wallet.
-- [Get Testnet PRIM](/getting-started/faucet): How to use the faucet to get test tokens.
+- [Get Testnet MRSN](/getting-started/faucet): How to use the faucet to get test tokens.
 - [First Transaction](/getting-started/first-transaction): Send your first transaction and deploy a contract.
 
 ## Developer Guides
@@ -28,7 +28,7 @@
 
 ## Ecosystem
 
-- [PrimeSwap DEX](/ecosystem/primeswap): Uniswap V2-style AMM with WPRIM pairs.
+- [PrimeSwap DEX](/ecosystem/primeswap): Uniswap V2-style AMM with WMRSN pairs.
 - [PrimeSwap V3](/ecosystem/primeswap-v3): Concentrated liquidity DEX (Uniswap V3).
 - [PrimeTrade](/ecosystem/primetrade): Order book trading terminal using PrimeOrders CLOB.
 - [PrimeFi Lending](/ecosystem/primefi): Lending and borrowing protocol.
@@ -38,7 +38,7 @@
 ## Validators
 
 - [Run a Node](/validators/run-a-node): How to run a Mersennet validator node.
-- [Staking Guide](/validators/staking): Stake PRIM and delegate to validators.
+- [Staking Guide](/validators/staking): Stake MRSN and delegate to validators.
 - [Monitoring](/validators/monitoring): Prometheus + Grafana monitoring setup.
 
 ## Resources
@@ -50,8 +50,8 @@
 ## Key Facts
 
 - Chain ID: 7919 (0x1EEF)
-- Token: PRIM (18 decimals)
-- Max Supply: 1,000,000,000 PRIM
+- Token: MRSN (18 decimals)
+- Max Supply: 1,000,000,000 MRSN
 - Block Time: ~1 second
 - Consensus: Delegated Proof-of-Stake (DPoS)
 - EVM Level: Shanghai

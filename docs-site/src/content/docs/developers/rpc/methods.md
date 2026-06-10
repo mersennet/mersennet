@@ -654,14 +654,14 @@ Register a new trading market on the CLOB.
 
 **Parameters:**
 
-1. `symbol` — Market symbol string (e.g. `"PRIM/USDC"`)
+1. `symbol` — Market symbol string (e.g. `"MRSN/USDC"`)
 2. `tickSize` — Minimum price increment (hex)
 3. `lotSize` — Minimum order size (hex)
 
 ```bash
 curl -X POST http://46.225.30.187:8545 \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"primeorders_addMarket","params":["PRIM/USDC","0x01","0xde0b6b3a7640000"],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"primeorders_addMarket","params":["MRSN/USDC","0x01","0xde0b6b3a7640000"],"id":1}'
 ```
 
 **Response:**
@@ -865,9 +865,9 @@ The following CLOB markets are registered on the testnet:
 
 | Market ID | Symbol | Description |
 |-----------|--------|-------------|
-| 2 | PRIM/USDC | PRIM priced in USDC |
-| 3 | PRIM/USDT | PRIM priced in USDT |
-| 4 | PRIM/DAI | PRIM priced in DAI |
+| 2 | MRSN/USDC | MRSN priced in USDC |
+| 3 | MRSN/USDT | MRSN priced in USDT |
+| 4 | MRSN/DAI | MRSN priced in DAI |
 | 5 | BTC/USDC | BTC priced in USDC |
 | 6 | ETH/USDC | ETH priced in USDC |
 

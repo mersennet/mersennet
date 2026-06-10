@@ -34,7 +34,7 @@ PrimeScan explorer upgraded with enhanced features:
 Automated Market Maker DEX (Uniswap V2 fork) deployed with Factory and Router contracts.
 
 - Constant product pools (x × y = k)
-- WPRIM/USDC, WPRIM/USDT, WPRIM/DAI pools seeded with initial liquidity
+- WMRSN/USDC, WMRSN/USDT, WMRSN/DAI pools seeded with initial liquidity
 - Live at [http://46.225.30.187:4000](http://46.225.30.187:4000)
 
 ### Testnet Launch
@@ -45,7 +45,7 @@ Mersennet testnet launched with BFT proof-of-stake consensus.
 - Chain ID 7919, EVM Shanghai compatibility
 - JSON-RPC and WebSocket endpoints live
 - Testnet faucet deployed at [http://46.225.30.187:4003](http://46.225.30.187:4003)
-- Foundation contracts deployed: Multicall3, WPRIM, MockUSDC, MockUSDT, MockDAI
+- Foundation contracts deployed: Multicall3, WMRSN, MockUSDC, MockUSDT, MockDAI
 
 ---
 

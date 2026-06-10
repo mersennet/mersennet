@@ -616,7 +616,7 @@ If $S_{\mathrm{total}} = 0$, rewards are burned.
 
 #### 4.8.3 Supply Cap
 
-Total supply is capped at $S_{max}$ (default: 1,000,000,000 PRIM). Block rewards pool is 700M PRIM (70%); remainder allocated to Ecosystem & Grants (10%), Foundation Reserve (10%), Team (5%), and Sales (5%).
+Total supply is capped at $S_{max}$ (default: 1,000,000,000 MRSN). Block rewards pool is 700M MRSN (70%); remainder allocated to Ecosystem & Grants (10%), Foundation Reserve (10%), Team (5%), and Sales (5%).
 
 Once $S_{minted} \geq S_{max}$, no further rewards are minted.
 
@@ -1616,21 +1616,21 @@ This creates deflationary pressure when network usage is high.
 #### 8.2.1 Supply Schedule
 
 Total supply is capped at:
-$$S_{max} = 1,000,000,000 \text{ PRIM}$$
+$$S_{max} = 1,000,000,000 \text{ MRSN}$$
 
 Allocation: Block rewards 70% (700M), Ecosystem & Grants 10% (100M), Foundation Reserve 10% (100M), Team & Core Contributors 5% (50M), Sales 5% (50M). ~99% of block rewards emitted by ~year 7 (at the 1 s default block time).
 
 #### 8.2.2 Block Rewards
 
 Initial reward per block:
-$$R_0 = 10 \text{ PRIM}$$
+$$R_0 = 10 \text{ MRSN}$$
 
 Reward halving schedule:
 $$R(h) = R_0 \cdot 2^{-\lfloor h / H \rfloor}$$
 
-Where $H = 35,000,000$ blocks (~1.1 years at the default 1s block time). Block rewards pool: 700M PRIM.
+Where $H = 35,000,000$ blocks (~1.1 years at the default 1s block time). Block rewards pool: 700M MRSN.
 
-Reward is capped by remaining block rewards pool (700M PRIM):
+Reward is capped by remaining block rewards pool (700M MRSN):
 $$R_{effective}(h) = \min(R(h), S_{max} - S_{minted}(h))$$
 
 #### 8.2.3 Supply Dynamics

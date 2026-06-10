@@ -66,7 +66,7 @@ function placeOrder(
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `marketId` | `uint64` | Numeric market identifier (e.g. 1 = PRIM/USDC) |
+| `marketId` | `uint64` | Numeric market identifier (e.g. 1 = MRSN/USDC) |
 | `isBuy` | `bool` | `true` = buy, `false` = sell |
 | `price` | `uint256` | Price in quote-asset units (18 decimals) |
 | `size` | `uint256` | Order size in base-asset units (18 decimals) |
@@ -88,7 +88,7 @@ function cancelOrder(uint256 orderId) external returns (bool success);
 
 #### depositCollateral
 
-Deposit native PRIM as trading collateral. The `amount` must match `msg.value`.
+Deposit native MRSN as trading collateral. The `amount` must match `msg.value`.
 
 ```solidity
 function depositCollateral(uint256 amount) external returns (bool success);
@@ -219,7 +219,7 @@ Price-time priority:
 - PrimeOrders supports **margin trading** with configurable initial and maintenance margin
 - **Liquidations** can be triggered when margin falls below maintenance via `isLiquidatable()`
 - Smart contracts can call liquidation logic atomically with other operations
-- Collateral is global (not per-market) and denominated in native PRIM
+- Collateral is global (not per-market) and denominated in native MRSN
 
 ## Summary
 

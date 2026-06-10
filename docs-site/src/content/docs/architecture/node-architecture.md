@@ -184,7 +184,7 @@ When the block timer fires, the following sequence executes:
                ▼
   ┌─────────────────────────┐
   │  6. REWARD DISTRIBUTION │  Calculate block reward based on token
-  │                         │  economics (10 PRIM/block, halving every
+  │                         │  economics (10 MRSN/block, halving every
   │                         │  35M blocks). Distribute proportionally
   │                         │  to validators by stake weight.
   └────────────┬────────────┘
@@ -269,7 +269,7 @@ For each transaction, the engine:
 1. Constructs a `revm::Env` with block context (number, timestamp, coinbase, base_fee, gas_limit) and transaction context (caller, callee, value, data, gas_limit, gas_price)
 2. Builds an `Evm` instance with the in-memory database and registered precompiles
 3. Executes the transaction, which may:
-   - Transfer PRIM between accounts
+   - Transfer MRSN between accounts
    - Deploy a new contract (when `to` is `None`)
    - Call an existing contract
    - Interact with the PrimeOrders precompile at `0x0100`
@@ -333,7 +333,7 @@ The signing hash is `keccak256` of the following concatenated big-endian fields:
 │  gas_limit    │ 8 bytes │ u64 big-endian  │ Max gas          │
 │  to           │ 20 bytes│ Address or 0x00 │ Recipient (0x00  │
 │               │         │                 │ for deploy)      │
-│  value        │ 32 bytes│ U256 big-endian │ PRIM to transfer │
+│  value        │ 32 bytes│ U256 big-endian │ MRSN to transfer │
 │  data         │ N bytes │ Raw bytes       │ Calldata         │
 └──────────────────────────────────────────────────────────────┘
 

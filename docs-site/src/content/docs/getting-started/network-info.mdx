@@ -14,7 +14,7 @@ Use the following configuration to connect to Mersennet testnet.
 | **WebSocket URL** | `ws://46.225.30.187:8546` |
 | **Block Explorer** | http://46.225.30.187 |
 | **Faucet** | http://46.225.30.187:4003 |
-| **Currency Symbol** | PRIM |
+| **Currency Symbol** | MRSN |
 | **Block Time** | ~1 second |
 
 :::tip
@@ -36,8 +36,8 @@ await window.ethereum.request({
     chainId: '0x1EEF', // 7919 in hex
     chainName: 'Mersennet Testnet',
     nativeCurrency: {
-      name: 'PRIM',
-      symbol: 'PRIM',
+      name: 'MRSN',
+      symbol: 'MRSN',
       decimals: 18
     },
     rpcUrls: ['http://46.225.30.187:8545'],
@@ -57,7 +57,7 @@ The following contracts are deployed on Mersennet testnet and ready for integrat
 | Contract | Address |
 |----------|---------|
 | **Multicall3** | `0x973ee1bf0907287d1eb8a144d88b34f515c83f29` |
-| **WPRIM** | `0x079bf1207b51acda83e2e8178344f62a883f8479` |
+| **WMRSN** | `0x079bf1207b51acda83e2e8178344f62a883f8479` |
 | **MockUSDC** | `0xb22f77d89122e9e3784bfd3eee9616273f38238d` |
 | **MockUSDT** | `0x877feca38919acd7aaf7cb81f100e0454aa95c17` |
 | **MockDAI** | `0xb88d63a65691effbf4b6808325b1588912c15cf4` |
@@ -67,7 +67,7 @@ The following contracts are deployed on Mersennet testnet and ready for integrat
 ### Usage Notes
 
 - **Multicall3** — Use for batched RPC reads (wagmi, viem, and ethers.js support it).
-- **WPRIM** — ERC-20 wrapped PRIM for DEX pairs and DeFi protocols.
+- **WMRSN** — ERC-20 wrapped MRSN for DEX pairs and DeFi protocols.
 - **MockUSDC, MockUSDT, MockDAI** — Test stablecoins for DeFi development.
 - **PrimeSwapFactory & Router** — Uniswap V2–style AMM for token swaps.
 
@@ -81,7 +81,7 @@ The following applications are live on Mersennet testnet:
 | **PrimeSwap DEX** | [http://46.225.30.187:4000](http://46.225.30.187:4000) | Swap tokens, add/remove liquidity |
 | **PrimeNodes Dashboard** | [http://46.225.30.187:4001](http://46.225.30.187:4001) | Validator monitoring, stake distribution |
 | **PrimeTrade** | [http://46.225.30.187:4004](http://46.225.30.187:4004) | Order book trading terminal (native CLOB) |
-| **Testnet Faucet** | [http://46.225.30.187:4003](http://46.225.30.187:4003) | Get testnet PRIM tokens |
+| **Testnet Faucet** | [http://46.225.30.187:4003](http://46.225.30.187:4003) | Get testnet MRSN tokens |
 | **Documentation** | [http://46.225.30.187:3001](http://46.225.30.187:3001) | Developer and user documentation |
 | **Grafana Monitoring** | [http://46.225.30.187:3000](http://46.225.30.187:3000) | Network metrics and dashboards |
 | **Prometheus** | [http://46.225.30.187:9090](http://46.225.30.187:9090) | Metrics collection and alerting queries |

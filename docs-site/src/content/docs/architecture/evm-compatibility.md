@@ -10,7 +10,7 @@ Mersennet implements an **EVM-compatible** execution environment, allowing devel
 |--------|-------------|
 | **EVM Version** | Shanghai |
 | **Chain ID** | 7919 |
-| **Token** | PRIM (18 decimals) |
+| **Token** | MRSN (18 decimals) |
 | **Block Time** | ~1 second |
 
 ## Shanghai EVM
@@ -68,7 +68,7 @@ Mersennet uses gas metering consistent with Ethereum:
 
 - Each opcode has a cost (e.g. ADD = 3, SSTORE = 20,000 for cold)
 - Transactions specify a `gasLimit`; execution stops if gas is exhausted
-- Gas is paid in PRIM (converted at the current gas price)
+- Gas is paid in MRSN (converted at the current gas price)
 
 Gas costs align with Ethereum's Shanghai spec for predictable behavior when porting contracts.
 
@@ -99,7 +99,7 @@ The RPC and block structure expose these for explorers and indexers.
 ### Native Token
 
 - **Ethereum**: ETH (18 decimals)
-- **Mersennet**: PRIM (18 decimals)
+- **Mersennet**: MRSN (18 decimals)
 
 Same decimal precision, so contract logic that assumes 18 decimals works unchanged.
 

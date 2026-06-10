@@ -8,8 +8,8 @@ Staking is how you participate in Mersennet consensus and earn rewards. This gui
 
 In Mersennet's Delegated Proof-of-Stake (DPoS) model:
 
-1. **Validators** stake PRIM to join the validator set and produce blocks.
-2. **Delegators** stake PRIM with validators to share in rewards without running a node.
+1. **Validators** stake MRSN to join the validator set and produce blocks.
+2. **Delegators** stake MRSN with validators to share in rewards without running a node.
 3. **Voting power** is proportional to total stake (validator + delegations).
 4. **Block rewards** are distributed to all validators proportionally to their stake.
 
@@ -19,7 +19,7 @@ The minimum stake to register as a validator is set by governance. As of the cur
 
 ## Delegation
 
-Token holders can **delegate** PRIM to validators they trust:
+Token holders can **delegate** MRSN to validators they trust:
 
 - Delegated stake counts toward the validator's voting power.
 - Delegators earn a share of block rewards (minus validator commission, if any).
@@ -35,18 +35,18 @@ Block rewards are distributed **proportionally to stake**:
 validator_reward = (block_reward × validator_stake) / total_stake
 ```
 
-- **Initial block reward**: 10 PRIM per block
+- **Initial block reward**: 10 MRSN per block
 - **Halving**: Every 35,000,000 blocks (~1.1 years at ~1 s blocks)
 - **Crediting**: Rewards are applied directly to validator/delegator balances—no claiming step required
 
-Example with 4 validators each staking 1M PRIM:
-- Total stake = 4M PRIM
-- Block reward = 10 PRIM
-- Each validator receives 10 × (1M / 4M) = **2.5 PRIM per block**
+Example with 4 validators each staking 1M MRSN:
+- Total stake = 4M MRSN
+- Block reward = 10 MRSN
+- Each validator receives 10 × (1M / 4M) = **2.5 MRSN per block**
 
 ## Unbonding Period
 
-When you **unbond** (withdraw) staked PRIM:
+When you **unbond** (withdraw) staked MRSN:
 
 1. Your stake is **immediately** removed from voting power.
 2. Tokens enter an **unbonding queue** for a fixed number of blocks.

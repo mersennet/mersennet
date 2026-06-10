@@ -2,14 +2,14 @@
 title: "Token Economics"
 ---
 
-This document provides complete tokenomics documentation for Mersennet (PRIM), including supply, allocation, emission schedule, and validator reward distribution.
+This document provides complete tokenomics documentation for Mersennet (MRSN), including supply, allocation, emission schedule, and validator reward distribution.
 
 ## Overview
 
 | Parameter | Value |
 |-----------|-------|
 | **Token Name** | Mersennet |
-| **Ticker** | PRIM |
+| **Ticker** | MRSN |
 | **Max Supply** | 1,000,000,000 (1 billion) |
 | **Decimals** | 18 |
 | **Chain ID** | 7919 |
@@ -50,8 +50,8 @@ Private and public sale allocation. 6-month cliff + 18-month linear vesting.
 
 | Parameter | Value |
 |-----------|-------|
-| **Block Rewards Pool** | 700,000,000 PRIM |
-| **Initial Reward per Block** | 10 PRIM |
+| **Block Rewards Pool** | 700,000,000 MRSN |
+| **Initial Reward per Block** | 10 MRSN |
 | **Halving Interval** | 35,000,000 blocks |
 | **Block Time** | ~1 second |
 | **Halving Period** | ~1.11 years |
@@ -62,21 +62,21 @@ Rewards follow a Bitcoin-style halving schedule:
 
 | Era | Block Range | Reward/Block | Minted in Era |
 |-----|-------------|--------------|---------------|
-| 0 | 0 — 34,999,999 | 10 PRIM | 350,000,000 |
-| 1 | 35,000,000 — 69,999,999 | 5 PRIM | 175,000,000 |
-| 2 | 70,000,000 — 104,999,999 | 2.5 PRIM | 87,500,000 |
-| 3 | 105,000,000 — 139,999,999 | 1.25 PRIM | 43,750,000 |
-| 4 | 140,000,000 — 174,999,999 | 0.625 PRIM | 21,875,000 |
-| 5 | 175,000,000 — 209,999,999 | 0.3125 PRIM | 10,937,500 |
-| 6 | 210,000,000 — 244,999,999 | 0.15625 PRIM | 5,468,750 |
+| 0 | 0 — 34,999,999 | 10 MRSN | 350,000,000 |
+| 1 | 35,000,000 — 69,999,999 | 5 MRSN | 175,000,000 |
+| 2 | 70,000,000 — 104,999,999 | 2.5 MRSN | 87,500,000 |
+| 3 | 105,000,000 — 139,999,999 | 1.25 MRSN | 43,750,000 |
+| 4 | 140,000,000 — 174,999,999 | 0.625 MRSN | 21,875,000 |
+| 5 | 175,000,000 — 209,999,999 | 0.3125 MRSN | 10,937,500 |
+| 6 | 210,000,000 — 244,999,999 | 0.15625 MRSN | 5,468,750 |
 | ... | (continues halving) | ... | ... |
 
-The geometric series converges to exactly 700,000,000 PRIM:
+The geometric series converges to exactly 700,000,000 MRSN:
 
 ```
 total = initial_reward × halving_interval × 2
       = 10 × 35,000,000 × 2
-      = 700,000,000 PRIM ✓
+      = 700,000,000 MRSN ✓
 ```
 
 ### Emission Timeline
@@ -102,21 +102,21 @@ validator_reward = (effective_reward × validator_stake) / total_stake
 
 ### Example: Equal Stake
 
-With 4 validators each staking 1,000,000 PRIM:
+With 4 validators each staking 1,000,000 MRSN:
 
-- Total stake = 4,000,000 PRIM
-- Block reward = 10 PRIM
-- Each validator = 10 × (1,000,000 / 4,000,000) = **2.5 PRIM per block**
+- Total stake = 4,000,000 MRSN
+- Block reward = 10 MRSN
+- Each validator = 10 × (1,000,000 / 4,000,000) = **2.5 MRSN per block**
 
 ### Example: Unequal Stake
 
 | Validator | Stake | Share | Reward/Block |
 |-----------|-------|-------|--------------|
-| A | 5,000,000 | 50% | 5.0 PRIM |
-| B | 3,000,000 | 30% | 3.0 PRIM |
-| C | 1,500,000 | 15% | 1.5 PRIM |
-| D | 500,000 | 5% | 0.5 PRIM |
-| **Total** | **10,000,000** | **100%** | **10.0 PRIM** |
+| A | 5,000,000 | 50% | 5.0 MRSN |
+| B | 3,000,000 | 30% | 3.0 MRSN |
+| C | 1,500,000 | 15% | 1.5 MRSN |
+| D | 500,000 | 5% | 0.5 MRSN |
+| **Total** | **10,000,000** | **100%** | **10.0 MRSN** |
 
 ### Supply Cap Enforcement
 
@@ -127,7 +127,7 @@ remaining_supply = max_supply - total_minted
 effective_reward = min(scheduled_reward, remaining_supply)
 ```
 
-Individual validator rewards are calculated from `effective_reward`. This ensures `total_minted` never exceeds 1,000,000,000 PRIM.
+Individual validator rewards are calculated from `effective_reward`. This ensures `total_minted` never exceeds 1,000,000,000 MRSN.
 
 ### Rounding and Burns
 
@@ -137,8 +137,8 @@ Due to integer division with 18-decimal precision, the sum of individual rewards
 
 | Topic | Summary |
 |-------|---------|
-| **Max supply** | 1 billion PRIM |
-| **Block rewards** | 70% of supply, 10 PRIM/block initially |
+| **Max supply** | 1 billion MRSN |
+| **Block rewards** | 70% of supply, 10 MRSN/block initially |
 | **Halving** | Every 35M blocks (~1.11 years at ~1 s blocks) |
 | **99% emission** | ~year 7 |
 | **Distribution** | Proportional to validator stake |

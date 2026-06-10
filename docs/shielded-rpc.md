@@ -96,7 +96,7 @@ victim's nullifier, mints the bounty + insurance commitments.
 ### `prime_registerLiquidator({ bondCommitment, bondAmount })`
 
 One-time registration with a Pedersen bond commitment. Requires
-`bondAmount >= MIN_LIQUIDATOR_BOND` (10,000 PRIM at 18 decimals).
+`bondAmount >= MIN_LIQUIDATOR_BOND` (10,000 MRSN at 18 decimals).
 
 ### `prime_getStateProof(blockNumberOrTag?)`
 

@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
 ///      The precompile is stateful: collateral and positions are tracked per msg.sender.
 interface IPrimeOrders {
     /// @notice Place a limit order on the on-chain order book
-    /// @param marketId Numeric market identifier (e.g. 1 = PRIM/USDC)
+    /// @param marketId Numeric market identifier (e.g. 1 = MRSN/USDC)
     /// @param isBuy    true = buy, false = sell
     /// @param price    Price in quote-asset units (18 decimals)
     /// @param size     Order size in base-asset units (18 decimals)
@@ -28,7 +28,7 @@ interface IPrimeOrders {
     /// @return success true if the order was cancelled
     function cancelOrder(uint256 orderId) external returns (bool success);
 
-    /// @notice Deposit native PRIM as trading collateral
+    /// @notice Deposit native MRSN as trading collateral
     /// @param amount Amount in wei to deposit (must match msg.value)
     /// @return success true on success
     function depositCollateral(uint256 amount) external returns (bool success);

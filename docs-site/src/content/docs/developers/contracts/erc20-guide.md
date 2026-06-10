@@ -10,7 +10,7 @@ This guide walks you through deploying and interacting with an ERC-20 token on M
 |-----------|-------|
 | Chain ID | 7919 |
 | RPC URL | `http://46.225.30.187:8545` |
-| Native Token | PRIM (18 decimals) |
+| Native Token | MRSN (18 decimals) |
 
 ## Full Solidity Contract
 
@@ -98,7 +98,7 @@ console.log("Deployed:", await token.getAddress());
 2. Create a new file, paste the contract, and compile.
 3. In the Deploy tab, select **Injected Provider - MetaMask**.
 4. Add Mersennet to MetaMask (Chain ID 7919, RPC `http://46.225.30.187:8545`).
-5. Get testnet PRIM from the [faucet](http://46.225.30.187:4003).
+5. Get testnet MRSN from the [faucet](http://46.225.30.187:4003).
 6. Deploy and enter constructor args: `"My Token"`, `"MTK"`, `1000000`.
 
 ## Interacting with the Deployed Token
@@ -150,7 +150,7 @@ cast calldata "transfer(address,uint256)" 0xRecipient 1000000000000000000
 
 To list your token on [PrimeSwap](/ecosystem/primeswap), you need:
 
-1. **WPRIM** for PRIM pairs: `0x079bf1207b51acda83e2e8178344f62a883f8479`
+1. **WMRSN** for MRSN pairs: `0x079bf1207b51acda83e2e8178344f62a883f8479`
 2. **PrimeSwapRouter** for adding liquidity: `0x9f337f433e71ce969b991511f1dcd3d0622116bb`
 
 Approve the router and add liquidity:
@@ -167,7 +167,7 @@ These are pre-deployed tokens on Mersennet testnet:
 
 | Token | Address | Use Case |
 |-------|---------|----------|
-| WPRIM | `0x079bf1207b51acda83e2e8178344f62a883f8479` | Wrapped PRIM for DEX |
+| WMRSN | `0x079bf1207b51acda83e2e8178344f62a883f8479` | Wrapped MRSN for DEX |
 | MockUSDC | `0xb22f77d89122e9e3784bfd3eee9616273f38238d` | Test stablecoin |
 | MockUSDT | `0x877feca38919acd7aaf7cb81f100e0454aa95c17` | Test stablecoin |
 | MockDAI | `0xb88d63a65691effbf4b6808325b1588912c15cf4` | Test stablecoin |

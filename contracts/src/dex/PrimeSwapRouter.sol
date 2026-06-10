@@ -30,7 +30,7 @@ interface IWPRIM {
 /// @notice Router for adding/removing liquidity and executing swaps
 contract PrimeSwapRouter {
     address public immutable factory;
-    address public immutable WPRIM;
+    address public immutable WMRSN;
 
     modifier ensure(uint256 deadline) {
         require(deadline >= block.timestamp, "PrimeSwapRouter: EXPIRED");
@@ -39,11 +39,11 @@ contract PrimeSwapRouter {
 
     constructor(address _factory, address _WPRIM) {
         factory = _factory;
-        WPRIM = _WPRIM;
+        WMRSN = _WPRIM;
     }
 
     receive() external payable {
-        assert(msg.sender == WPRIM);
+        assert(msg.sender == WMRSN);
     }
 
     // ========== ADD LIQUIDITY ==========
@@ -66,11 +66,11 @@ contract PrimeSwapRouter {
         uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountPRIMMin,
         address to, uint256 deadline
     ) external payable ensure(deadline) returns (uint256 amountToken, uint256 amountPRIM, uint256 liquidity) {
-        (amountToken, amountPRIM) = _computeLiquidityAmounts(token, WPRIM, amountTokenDesired, msg.value, amountTokenMin, amountPRIMMin);
-        address pair = _pairFor(token, WPRIM);
+        (amountToken, amountPRIM) = _computeLiquidityAmounts(token, WMRSN, amountTokenDesired, msg.value, amountTokenMin, amountPRIMMin);
+        address pair = _pairFor(token, WMRSN);
         _safeTransferFrom(token, msg.sender, pair, amountToken);
-        IWPRIM(WPRIM).deposit{value: amountPRIM}();
-        assert(IWPRIM(WPRIM).transfer(pair, amountPRIM));
+        IWPRIM(WMRSN).deposit{value: amountPRIM}();
+        assert(IWPRIM(WMRSN).transfer(pair, amountPRIM));
         liquidity = IPrimeSwapPair(pair).mint(to);
         if (msg.value > amountPRIM) {
             payable(msg.sender).transfer(msg.value - amountPRIM);
@@ -100,9 +100,9 @@ contract PrimeSwapRouter {
         uint256 amountTokenMin, uint256 amountPRIMMin,
         address to, uint256 deadline
     ) external ensure(deadline) returns (uint256 amountToken, uint256 amountPRIM) {
-        (amountToken, amountPRIM) = removeLiquidity(token, WPRIM, liquidity, amountTokenMin, amountPRIMMin, address(this), deadline);
+        (amountToken, amountPRIM) = removeLiquidity(token, WMRSN, liquidity, amountTokenMin, amountPRIMMin, address(this), deadline);
         _safeTransfer(token, to, amountToken);
-        IWPRIM(WPRIM).withdraw(amountPRIM);
+        IWPRIM(WMRSN).withdraw(amountPRIM);
         payable(to).transfer(amountPRIM);
     }
 
@@ -121,11 +121,11 @@ contract PrimeSwapRouter {
     function swapExactPRIMForTokens(
         uint256 amountOutMin, address[] calldata path, address to, uint256 deadline
     ) external payable ensure(deadline) returns (uint256[] memory amounts) {
-        require(path[0] == WPRIM, "PrimeSwapRouter: INVALID_PATH");
+        require(path[0] == WMRSN, "PrimeSwapRouter: INVALID_PATH");
         amounts = getAmountsOut(msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "PrimeSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-        IWPRIM(WPRIM).deposit{value: amounts[0]}();
-        assert(IWPRIM(WPRIM).transfer(_pairFor(path[0], path[1]), amounts[0]));
+        IWPRIM(WMRSN).deposit{value: amounts[0]}();
+        assert(IWPRIM(WMRSN).transfer(_pairFor(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
     }
 
@@ -133,12 +133,12 @@ contract PrimeSwapRouter {
         uint256 amountIn, uint256 amountOutMin,
         address[] calldata path, address to, uint256 deadline
     ) external ensure(deadline) returns (uint256[] memory amounts) {
-        require(path[path.length - 1] == WPRIM, "PrimeSwapRouter: INVALID_PATH");
+        require(path[path.length - 1] == WMRSN, "PrimeSwapRouter: INVALID_PATH");
         amounts = getAmountsOut(amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "PrimeSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         _safeTransferFrom(path[0], msg.sender, _pairFor(path[0], path[1]), amounts[0]);
         _swap(amounts, path, address(this));
-        IWPRIM(WPRIM).withdraw(amounts[amounts.length - 1]);
+        IWPRIM(WMRSN).withdraw(amounts[amounts.length - 1]);
         payable(to).transfer(amounts[amounts.length - 1]);
     }
 

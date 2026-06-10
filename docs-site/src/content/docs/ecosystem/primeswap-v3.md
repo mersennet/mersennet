@@ -38,7 +38,7 @@ Each pool is created with one of three fee tiers, allowing the market to express
 | Fee Tier | Best For | Example Pairs |
 |----------|----------|---------------|
 | **0.05%** | Stable pairs with minimal price movement | USDC/USDT, USDC/DAI |
-| **0.3%** | Standard volatile pairs | WPRIM/USDC, WPRIM/USDT |
+| **0.3%** | Standard volatile pairs | WMRSN/USDC, WMRSN/USDT |
 | **1%** | Exotic or high-volatility pairs | New tokens, low-liquidity assets |
 
 ### NFT Position Management
@@ -65,7 +65,7 @@ To provide liquidity in V3, you select a token pair, fee tier, and price range:
 ```solidity
 INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
     token0: USDC,
-    token1: WPRIM,
+    token1: WMRSN,
     fee: 3000,           // 0.3% fee tier
     tickLower: -887220,  // lower bound of price range
     tickUpper: 887220,   // upper bound of price range
@@ -88,7 +88,7 @@ Use the SwapRouter for exact-input or exact-output swaps:
 ```solidity
 ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({
     tokenIn: USDC,
-    tokenOut: WPRIM,
+    tokenOut: WMRSN,
     fee: 3000,
     recipient: msg.sender,
     deadline: block.timestamp + 1200,

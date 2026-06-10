@@ -80,7 +80,7 @@ Use `eth_sendTransaction` (requires the node to have the account unlocked):
 const txHash = await provider.sendTransaction({
   from: "0x...",
   to: "0x...",
-  value: "0xde0b6b3a7640000", // 1 PRIM in hex
+  value: "0xde0b6b3a7640000", // 1 MRSN in hex
   gas: "0x5208",
   gasPrice: "0x3b9aca00",
 });
