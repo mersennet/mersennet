@@ -10,7 +10,7 @@ This guide walks you through deploying and interacting with an NFT collection on
 |-----------|-------|
 | Chain ID | 131071 |
 | RPC URL | `http://46.225.30.187:8545` |
-| Block Explorer | http://46.225.30.187 |
+| Block Explorer | https://explorer.mersennet.com |
 
 ## Full Solidity Contract
 

@@ -19,7 +19,7 @@ Concentrated liquidity DEX built on the Uniswap V3 protocol, deployed to Mersenn
 
 ### Block Explorer Upgraded
 
-PrimeScan explorer upgraded with enhanced features:
+Mersennet Explorer explorer upgraded with enhanced features:
 
 - Token balance display for addresses
 - ABI decoding for verified contract interactions
@@ -44,7 +44,7 @@ Mersennet testnet launched with BFT proof-of-stake consensus.
 - 4-validator network on Hetzner VPS infrastructure
 - Chain ID 131071, EVM Shanghai compatibility
 - JSON-RPC and WebSocket endpoints live
-- Testnet faucet deployed at [http://46.225.30.187:4003](http://46.225.30.187:4003)
+- Testnet faucet deployed at [https://faucet.mersennet.com](https://faucet.mersennet.com)
 - Foundation contracts deployed: Multicall3, WMRSN, MockUSDC, MockUSDT, MockDAI
 
 ---
@@ -59,4 +59,4 @@ Docusaurus-based documentation portal deployed.
 - Developer documentation (Hardhat, Foundry, ERC-20, NFT, DeFi integration)
 - Validator guides (run a node, staking, monitoring)
 - Architecture deep-dives (consensus, node architecture, EVM compatibility, PrimeOrders)
-- Live at [http://46.225.30.187:3001](http://46.225.30.187:3001)
+- Live at [https://docs.mersennet.com](https://docs.mersennet.com)

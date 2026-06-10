@@ -6,6 +6,7 @@ export const SITE = {
   description:
     'Mersennet is a zero-knowledge Layer 1: account-level privacy across the EVM and a native on-chain order book, leverage secured by ZK risk checks instead of open liquidations, and state proven end to end with SP1.',
   chainId: 131071,
+  mainnetChainId: 8191,
   symbol: 'MRSN',
   blockTime: '~1s',
   consensus: 'BFT PoS',
@@ -14,8 +15,9 @@ export const SITE = {
 
 export const LINKS = {
   docs: 'https://docs.mersennet.com',
-  explorer: 'http://46.225.30.187',
-  faucet: 'http://46.225.30.187:4003',
+  explorer: 'https://explorer.mersennet.com',
+  faucet: 'https://faucet.mersennet.com',
+  trade: 'https://trade.mersennet.com',
   github: 'https://github.com/mersennet/mersennet',
   whitepaper: 'https://docs.mersennet.com/whitepaper',
   quickStart: 'https://docs.mersennet.com/developers/quick-start/hardhat',

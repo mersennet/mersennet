@@ -89,7 +89,7 @@ For production deployments, use [Hardhat](/developers/quick-start/hardhat) or [F
 ## Step 3: View on the Explorer
 
 1. Copy the transaction hash from your wallet or script output.
-2. Open the [block explorer](http://46.225.30.187).
+2. Open the [block explorer](https://explorer.mersennet.com).
 3. Paste the hash into the search bar.
 4. View the transaction details, block number, gas used, and status.
 
@@ -103,6 +103,6 @@ For contract deployments, the explorer shows the contract address. You can click
 |--------|------|
 | Send MRSN | MetaMask or `wallet.sendTransaction()` |
 | Deploy contract | ethers.js, Hardhat, Foundry, or Remix |
-| View tx | http://46.225.30.187 |
+| View tx | https://explorer.mersennet.com |
 
 Next, explore the [developer guides](/developers/quick-start/hardhat) to deploy production contracts with Hardhat or Foundry.

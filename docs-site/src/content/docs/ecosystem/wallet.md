@@ -45,7 +45,7 @@ title: "PrimeXDC Wallet"
 1. Install the PrimeXDC Wallet browser extension (Chrome/Chromium).
 2. Create a new wallet or import via seed phrase.
 3. Mersennet testnet (Chain ID 131071) is preconfigured.
-4. Use the [Faucet](http://46.225.30.187:4003) to get testnet MRSN.
+4. Use the [Faucet](https://faucet.mersennet.com) to get testnet MRSN.
 
 :::tip
 PrimeXDC Wallet uses the same provider interface as MetaMask. dApps that support MetaMask can connect to PrimeXDC Wallet when it's installed.

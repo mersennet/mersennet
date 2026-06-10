@@ -22,7 +22,7 @@ Connect to Mersennet testnet using MetaMask or the native PrimeXDC Wallet.
 | **RPC URL** | `http://46.225.30.187:8545` |
 | **Chain ID** | `131071` |
 | **Currency symbol** | MRSN |
-| **Block explorer URL** | `http://46.225.30.187` |
+| **Block explorer URL** | `https://explorer.mersennet.com` |
 
 3. Click **Save**.
 
@@ -48,7 +48,7 @@ await window.ethereum.request({
     chainName: 'Mersennet Testnet',
     nativeCurrency: { name: 'MRSN', symbol: 'MRSN', decimals: 18 },
     rpcUrls: ['http://46.225.30.187:8545'],
-    blockExplorerUrls: ['http://46.225.30.187']
+    blockExplorerUrls: ['https://explorer.mersennet.com']
   }]
 });
 ```
@@ -81,4 +81,4 @@ PrimeXDC Wallet is built with React and ethers.js, using Chrome Manifest V3. It 
 
 1. **Network** — Ensure "Mersennet Testnet" (or equivalent) is selected.
 2. **Balance** — You need MRSN for gas. Use the [faucet](/getting-started/faucet) to get testnet tokens.
-3. **Explorer** — Visit http://46.225.30.187 to view blocks and transactions.
+3. **Explorer** — Visit https://explorer.mersennet.com to view blocks and transactions.

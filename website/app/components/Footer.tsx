@@ -16,6 +16,7 @@ const COLUMNS = [
     title: 'Network',
     links: [
       { label: 'Block Explorer', href: LINKS.explorer },
+      { label: 'Trade', href: LINKS.trade },
       { label: 'Faucet', href: LINKS.faucet },
       { label: 'Network Info', href: LINKS.networkInfo },
     ],

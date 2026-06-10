@@ -8,13 +8,13 @@ Complete directory of live services, endpoints, and deployed contracts on Mersen
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **Block Explorer** | [http://46.225.30.187](http://46.225.30.187) | PrimeScan block explorer |
+| **Block Explorer** | [https://explorer.mersennet.com](https://explorer.mersennet.com) | Mersennet Explorer block explorer |
 | **PrimeSwap V2** | [http://46.225.30.187:4000](http://46.225.30.187:4000) | AMM DEX (Uniswap V2) |
 | **PrimeSwap V3** | [http://46.225.30.187:4002](http://46.225.30.187:4002) | Concentrated Liquidity DEX (Uniswap V3) |
-| **Testnet Faucet** | [http://46.225.30.187:4003](http://46.225.30.187:4003) | Get testnet MRSN tokens |
+| **Testnet Faucet** | [https://faucet.mersennet.com](https://faucet.mersennet.com) | Get testnet MRSN tokens |
 | **Validator Dashboard** | [http://46.225.30.187:4001](http://46.225.30.187:4001) | Monitor validators |
-| **PrimeTrade** | [http://46.225.30.187:4004](http://46.225.30.187:4004) | Order book trading terminal |
-| **Documentation** | [http://46.225.30.187:3001](http://46.225.30.187:3001) | This documentation site |
+| **Mersennet Trade** | [https://trade.mersennet.com](https://trade.mersennet.com) | Order book trading terminal |
+| **Documentation** | [https://docs.mersennet.com](https://docs.mersennet.com) | This documentation site |
 | **JSON-RPC** | `http://46.225.30.187:8545` | Ethereum-compatible RPC endpoint |
 | **WebSocket** | `ws://46.225.30.187:8546` | WebSocket RPC endpoint |
 
@@ -50,10 +50,10 @@ All mock tokens have a public `faucet()` function — call it to receive test to
 
 | Contract | Address |
 |----------|---------|
-| **UniswapV3Factory** | *Deployed — see [Block Explorer](http://46.225.30.187)* |
-| **SwapRouter** | *Deployed — see [Block Explorer](http://46.225.30.187)* |
-| **NonfungiblePositionManager** | *Deployed — see [Block Explorer](http://46.225.30.187)* |
-| **Quoter** | *Deployed — see [Block Explorer](http://46.225.30.187)* |
+| **UniswapV3Factory** | *Deployed — see [Block Explorer](https://explorer.mersennet.com)* |
+| **SwapRouter** | *Deployed — see [Block Explorer](https://explorer.mersennet.com)* |
+| **NonfungiblePositionManager** | *Deployed — see [Block Explorer](https://explorer.mersennet.com)* |
+| **Quoter** | *Deployed — see [Block Explorer](https://explorer.mersennet.com)* |
 
 :::note
 PrimeSwap V3 contracts are recently deployed. Verified addresses will be added to this page and the [Deployed Contracts](/resources/contracts) page as they are confirmed on-chain.
@@ -65,13 +65,13 @@ PrimeSwap V3 contracts are recently deployed. Verified addresses will be added t
 Chain ID:             131071 (0x1FFFF)
 RPC:                  http://46.225.30.187:8545
 WebSocket:            ws://46.225.30.187:8546
-Explorer:             http://46.225.30.187
-Faucet:               http://46.225.30.187:4003
+Explorer:             https://explorer.mersennet.com
+Faucet:               https://faucet.mersennet.com
 PrimeSwap V2:         http://46.225.30.187:4000
 PrimeSwap V3:         http://46.225.30.187:4002
 Validator Dashboard:  http://46.225.30.187:4001
-PrimeTrade:           http://46.225.30.187:4004
-Documentation:        http://46.225.30.187:3001
+Mersennet Trade:           https://trade.mersennet.com
+Documentation:        https://docs.mersennet.com
 ```
 
 ## Related Resources

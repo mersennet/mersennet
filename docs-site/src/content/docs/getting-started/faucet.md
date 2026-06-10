@@ -6,7 +6,7 @@ Use the Mersennet faucet to receive testnet MRSN for development and testing.
 
 ## Web Interface
 
-1. Open the faucet: **http://46.225.30.187:4003**
+1. Open the faucet: **https://faucet.mersennet.com**
 2. Enter your wallet address (the one you'll use on Mersennet).
 3. Click the request button to receive testnet MRSN.
 
@@ -19,7 +19,7 @@ Ensure your wallet is connected to Mersennet (Chain ID 131071) before requesting
 You can request tokens via HTTP for scripts or CI/CD:
 
 ```bash
-curl -X POST http://46.225.30.187:4003/faucet \
+curl -X POST https://faucet.mersennet.com/faucet \
   -H "Content-Type: application/json" \
   -d '{"address": "0xYourWalletAddress"}'
 ```
@@ -53,5 +53,5 @@ If your request is rate-limited, wait a few minutes before trying again. For aut
 | Issue | Solution |
 |-------|----------|
 | Request fails | Check that your address is a valid 0x-prefixed Ethereum address (40 hex chars). |
-| No MRSN received | Verify the transaction on the [block explorer](http://46.225.30.187). Confirm you're on Chain ID 131071. |
+| No MRSN received | Verify the transaction on the [block explorer](https://explorer.mersennet.com). Confirm you're on Chain ID 131071. |
 | Rate limited | Wait before retrying. Use a different address if needed for testing. |

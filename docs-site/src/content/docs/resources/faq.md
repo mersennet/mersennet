@@ -27,7 +27,7 @@ Yes. Mersennet is fully EVM compatible. You can deploy Solidity contracts withou
 ### How do I get testnet tokens?
 
 1. Add Mersennet to your wallet (see [Wallet Setup](/getting-started/wallet-setup)).
-2. Use the **Faucet** at [http://46.225.30.187:4003](http://46.225.30.187:4003) to receive testnet MRSN.
+2. Use the **Faucet** at [https://faucet.mersennet.com](https://faucet.mersennet.com) to receive testnet MRSN.
 3. For mock stablecoins (USDC, USDT, DAI), call the `faucet()` function on each contract—see [Deployed Contracts](/resources/contracts).
 
 ### What is the max supply of MRSN?
@@ -60,7 +60,7 @@ A cross-chain bridge is planned (Tier 3 in the roadmap). For now, testnet assets
 
 ### Where is the block explorer?
 
-[http://46.225.30.187](http://46.225.30.187) — View blocks, transactions, addresses, and contract interactions.
+[https://explorer.mersennet.com](https://explorer.mersennet.com) — View blocks, transactions, addresses, and contract interactions.
 
 ### Where is the RPC endpoint?
 

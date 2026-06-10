@@ -98,7 +98,7 @@ console.log("Deployed:", await token.getAddress());
 2. Create a new file, paste the contract, and compile.
 3. In the Deploy tab, select **Injected Provider - MetaMask**.
 4. Add Mersennet to MetaMask (Chain ID 131071, RPC `http://46.225.30.187:8545`).
-5. Get testnet MRSN from the [faucet](http://46.225.30.187:4003).
+5. Get testnet MRSN from the [faucet](https://faucet.mersennet.com).
 6. Deploy and enter constructor args: `"My Token"`, `"MTK"`, `1000000`.
 
 ## Interacting with the Deployed Token

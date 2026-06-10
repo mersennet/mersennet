@@ -38,7 +38,7 @@
 
 - [PrimeSwap DEX](/ecosystem/primeswap): Uniswap V2-style AMM with WMRSN pairs.
 - [PrimeSwap V3](/ecosystem/primeswap-v3): Concentrated liquidity DEX (Uniswap V3).
-- [PrimeTrade](/ecosystem/primetrade): Order book trading terminal using PrimeOrders CLOB.
+- [Mersennet Trade](/ecosystem/primetrade): Order book trading terminal using PrimeOrders CLOB.
 - [PrimeFi Lending](/ecosystem/primefi): Lending and borrowing protocol.
 - [Primeport NFTs](/ecosystem/primeport): NFT marketplace.
 - [Deployed Contracts](/resources/contracts): All testnet contract addresses.
@@ -76,6 +76,6 @@
 - Privacy: shielded accounts (note/nullifier model), threshold-encrypted orders, SP1-proven state
 - RPC: http://46.225.30.187:8545
 - WebSocket: ws://46.225.30.187:8546
-- Block Explorer: http://46.225.30.187
-- Faucet: http://46.225.30.187:4003
+- Block Explorer: https://explorer.mersennet.com
+- Faucet: https://faucet.mersennet.com
 - GitHub: https://github.com/mersennet/mersennet
