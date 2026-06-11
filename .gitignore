@@ -22,8 +22,6 @@ contracts/cache/
 contracts/out/
 
 # Docusaurus build output
-docs-site/build/
-docs-site/.docusaurus/
 
 # Build outputs
 **/build/

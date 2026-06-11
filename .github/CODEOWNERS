@@ -1,38 +1,30 @@
 # Default — any unmatched path requires a core review.
-*                              @PrimeNumbersLabs/core
+*                              @mersennet/core
 
 # Core chain
-/crates/core/                  @PrimeNumbersLabs/core
-/crates/network/               @PrimeNumbersLabs/core
-/crates/rpc/                   @PrimeNumbersLabs/core
-/crates/node/                  @PrimeNumbersLabs/core
+/crates/core/                  @mersennet/core
+/crates/network/               @mersennet/core
+/crates/rpc/                   @mersennet/core
+/crates/node/                  @mersennet/core
 
 # ZK / privacy — privacy redesign owners must approve any change here.
-/crates/zkp/                                @PrimeNumbersLabs/zk
-/crates/core/src/shielded_state.rs          @PrimeNumbersLabs/zk
-/crates/core/src/encrypted_mempool.rs       @PrimeNumbersLabs/zk
-/crates/core/src/zk_proofs.rs               @PrimeNumbersLabs/zk
-/crates/core/src/zk_sp1.rs                  @PrimeNumbersLabs/zk
-/crates/core/src/prime_orders.rs            @PrimeNumbersLabs/zk @PrimeNumbersLabs/core
-/crates/core/src/liquidation_auction.rs     @PrimeNumbersLabs/zk @PrimeNumbersLabs/core
+/crates/zkp/                                @mersennet/zk
+/crates/core/src/shielded_state.rs          @mersennet/zk
+/crates/core/src/encrypted_mempool.rs       @mersennet/zk
+/crates/core/src/zk_proofs.rs               @mersennet/zk
+/crates/core/src/zk_sp1.rs                  @mersennet/zk
+/crates/core/src/prime_orders.rs            @mersennet/zk @mersennet/core
+/crates/core/src/liquidation_auction.rs     @mersennet/zk @mersennet/core
 
-# Solidity contracts
-/contracts/                    @PrimeNumbersLabs/contracts
 
-# SDKs
-/sdk/                          @PrimeNumbersLabs/sdk
-/sdk-go/                       @PrimeNumbersLabs/sdk
-/sdk-python/                   @PrimeNumbersLabs/sdk
 
 # Docs
-/docs/                         @PrimeNumbersLabs/docs
-/docs-site/                    @PrimeNumbersLabs/docs
-/CONTRIBUTING.md               @PrimeNumbersLabs/core
-/README.md                     @PrimeNumbersLabs/core
+/CONTRIBUTING.md               @mersennet/core
+/README.md                     @mersennet/core
 
 # Infra
-/.github/                      @PrimeNumbersLabs/core
-/deploy/                       @PrimeNumbersLabs/core
-/docker-compose.yml            @PrimeNumbersLabs/core
-/Dockerfile                    @PrimeNumbersLabs/core
-/Dockerfile.faucet             @PrimeNumbersLabs/core
+/.github/                      @mersennet/core
+/deploy/                       @mersennet/core
+/docker-compose.yml            @mersennet/core
+/Dockerfile                    @mersennet/core
+/Dockerfile.faucet             @mersennet/core
