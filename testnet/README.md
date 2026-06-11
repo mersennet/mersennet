@@ -63,7 +63,7 @@ docker compose -f docker-compose.privacy.yml down -v
 ## B. Transparent testnet (chain 131071)
 
 This is the original public testnet — same network as
-`https://rpc.primechain.xyz` runs.
+`http://46.225.30.187:8545` runs (rpc.mersennet.com at launch).
 
 ## Quick Start
 
