@@ -11,5 +11,5 @@ resolver = "2"
 
 [workspace.package]
 version = "0.7.0"
-authors = ["Rodolfo Cova @rodaemonic"]
+authors = ["Rodolfo Cova @rodaemonic", "Arturo Cantera @xcantera"]
 edition = "2024"
