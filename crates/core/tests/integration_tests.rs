@@ -418,7 +418,8 @@ fn fba_engine_full_auction_cycle() {
     std::fs::create_dir_all(dir.path()).ok();
     let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
 
-    let market_id = engine.mersennet_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+    let market_id =
+        engine.mersennet_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
 
     let buyer = make_address(0x11);
     let seller = make_address(0x22);

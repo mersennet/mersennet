@@ -9,8 +9,8 @@ use std::sync::Mutex;
 use crate::bridge::{BridgeDomain, BridgeMessage, BridgeQueue, BridgeQueueSnapshot};
 use crate::engine::Block;
 use crate::mersennet_orders::{
-    AccountState, Market, MarketId, MarketStatus, Order, OrderBook, OrderId, Position,
-    MersennetOrdersState, Side, TimeInForce,
+    AccountState, Market, MarketId, MarketStatus, MersennetOrdersState, Order, OrderBook, OrderId,
+    Position, Side, TimeInForce,
 };
 
 pub(crate) struct MerkleTree;

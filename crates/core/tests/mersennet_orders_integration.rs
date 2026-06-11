@@ -234,8 +234,12 @@ fn mersennet_orders_deterministic_matching_across_nodes() {
         outcomes_b.push(out_b);
     }
 
-    let book_a = engine_a.mersennet_orders_order_book(market_a).expect("book A");
-    let book_b = engine_b.mersennet_orders_order_book(market_b).expect("book B");
+    let book_a = engine_a
+        .mersennet_orders_order_book(market_a)
+        .expect("book A");
+    let book_b = engine_b
+        .mersennet_orders_order_book(market_b)
+        .expect("book B");
     assert_eq!(book_a.bids.len(), book_b.bids.len());
     assert_eq!(book_a.asks.len(), book_b.asks.len());
     for (a, b) in book_a.bids.iter().zip(book_b.bids.iter()) {

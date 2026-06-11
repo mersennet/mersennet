@@ -266,7 +266,7 @@ impl DkgCoordinator {
         // `mersennet_zkp::bls_threshold::Inner::aggregate_dkg_output`
         // (Workstream D4 second pass, post-mainnet-bake).
         let mut h = Keccak256::new();
-        h.update(b"PrimeChain-DKG-AggPk-v0");
+        h.update(b"MersennetChain-DKG-AggPk-v0");
         h.update(epoch.to_le_bytes());
         for v in validators {
             h.update(v.to_bytes());

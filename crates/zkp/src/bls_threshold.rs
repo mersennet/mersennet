@@ -452,7 +452,7 @@ mod real {
 
     fn derive_key(shared: &G1Affine, epoch: u64) -> [u8; 32] {
         let mut h = Keccak256::new();
-        h.update(b"PrimeChain-BLSThreshold-v0-KDF");
+        h.update(b"MersennetChain-BLSThreshold-v0-KDF");
         h.update(shared.to_compressed());
         h.update(epoch.to_le_bytes());
         let mut out = [0u8; 32];

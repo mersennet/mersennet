@@ -177,7 +177,8 @@ impl MersennetOrdersEvent {
     pub fn is_privacy_safe_after_activation(&self) -> bool {
         matches!(
             self,
-            MersennetOrdersEvent::MarketAdded { .. } | MersennetOrdersEvent::MarginParamsUpdated { .. }
+            MersennetOrdersEvent::MarketAdded { .. }
+                | MersennetOrdersEvent::MarginParamsUpdated { .. }
         )
     }
 }
