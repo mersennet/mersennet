@@ -1,6 +1,6 @@
 # Mersennet — Architecture Decision Records
 
-**Version 1.0 — March 2026**
+**Version 2.0 — June 2026**
 **Classification: Technical Architecture Document**
 **Audience: Engineering leadership, technical due diligence, protocol contributors**
 
@@ -38,20 +38,35 @@ Mersennet is a **Layer 1 blockchain** that combines a parallel EVM execution eng
 
 **Competitive positioning:** Hyperliquid has HyperEVM (alpha) alongside its native CLOB, but EVM ↔ CLOB composability is **async** — CoreWriter actions are delayed by seconds, reads are 1 block stale. Mersennet's CLOB precompile is the key architectural differentiator: **true atomic same-transaction EVM ↔ CLOB** — unique in the industry.
 
-### Key Performance Characteristics
+- shielded state, shielded orders, threshold mempool, liquidation
+     auctions, and shielded EVM bridge are implemented in-repo;
+- local SP1 prove/verify transcript capture is complete;
+- remaining protocol close-out is a delegated network proof (E4) and
+     the external SP1→Groth16 wrapping artifact flow (E5);
+- repo-local client surfaces for wallet reconstruction, migration UX,
+     Noir prover wiring, and selective-disclosure reads are implemented.
 
-| Metric | Measured | Mechanism |
-|---|---|---|
-| EVM Throughput | 72,181 TPS | Parallel execution (Block-STM) on 8 cores |
-| CLOB Operations | 2,484,170 ops/s | Native Rust matching engine (O(log n) BTreeMap) |
-| FBA Throughput | 5,053,782 ops/s | Frequent batch auctions, clearing price |
-| HotStuff-2 Round | 0.001 ms/round | Two-phase BFT, 2-chain commit |
-| Finality | ~200 ms | HotStuff-2 consensus |
-| Block Gas Limit | 30,000,000 | EIP-1559 fee market with dynamic base fee |
+### Current Architectural Objective
 
-### Codebase Profile
+Prime Chain's current objective is to ship a **privacy-first hybrid
+chain** rather than a universal private-compute environment. Public
+market-level state remains observable; trader-specific balances,
+positions, notes, and order flow move behind shielded commitments and
+grant-gated disclosure paths.
 
-| Dimension | Value |
+Concretely, the protocol aims to provide:
+
+- true same-transaction EVM ↔ CLOB composability for public execution;
+- shielded notes + nullifier-based state for trader-specific data;
+- threshold-encrypted order admission and batch execution;
+- succinct state-transition proofs for export, auditability, and bridge
+     verification;
+- selective disclosure via scoped viewing grants instead of address-keyed
+     public reads.
+
+### Workspace Profile
+
+| Dimension | Current state |
 |---|---|
 | Language | Rust (2024 edition) |
 | Workspace | 6 crates (`crates/{core,network,rpc,node,zkp,state-proof}`) |
@@ -66,16 +81,43 @@ Mersennet is a **Layer 1 blockchain** that combines a parallel EVM execution eng
 Existing blockchains force a choice: general-purpose smart contracts (Ethereum) **or** high-performance order matching (Hyperliquid). Multi-chain approaches (dYdX v4) lose atomic composability. Mersennet resolves this by embedding both execution domains in a single state tuple:
 
 ```
-S = (S_evm, S_orders, S_bridge)
+S = (S_evm, S_orders, S_shielded, S_bridge, S_proofs)
 ```
 
-All three domains share one consensus layer, one block structure, one state root, and one finality guarantee.
+Where:
+
+- `S_evm` = public EVM accounts, storage, precompiles, code publication;
+- `S_orders` = market metadata, public aggregates, and matching context;
+- `S_shielded` = note commitments, nullifier set, encrypted note payloads,
+     shielded order/intents, liquidation state, and transparent↔shielded bridge state;
+- `S_bridge` = cross-domain message queues and Ethereum bridge-facing proof exports;
+- `S_proofs` = state-proof artifacts and the canonical `BlockProgramInput` /
+     `BlockProgramOutput` proving boundary.
+
+All domains share one consensus layer, one block structure, one finality
+path, and one state-root commitment strategy.
 
 ---
 
 ## 2. System Architecture
 
-### 2.1 High-Level Component Diagram
+### 2.1 Current Workspace Topology
+
+The current protocol is implemented as a Cargo workspace rather than the
+earlier monolithic `src/core/*` layout. The canonical execution surfaces are:
+
+| Workspace member | Responsibility |
+|---|---|
+| `crates/core` | execution engine, shielded subsystems, precompiles, bridge export, state proof collection |
+| `crates/network` | P2P / transport / sync wiring |
+| `crates/rpc` | JSON-RPC + shielded RPC + WS subscriptions |
+| `crates/node` | binaries, operator entrypoints, faucet/loadtest/genesis tooling |
+| `crates/zkp` | cryptographic primitives, Noir adapters, SP1 executor and witness types |
+| `crates/state-proof` | revm-free proof envelopes for SP1 / bridge-facing proof interchange |
+| `programs/state-transition` | zkVM guest program |
+| `programs/state-transition-host` | host-side prove/verify runner for local and network SP1 modes |
+
+### 2.2 Current High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -159,7 +201,10 @@ All three domains share one consensus layer, one block structure, one state root
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Module Dependency Graph
+### 2.3 Current State Composition
+
+The protocol has evolved from a public `(S_evm, S_orders, S_bridge)`
+tuple into a privacy-aware multi-domain state model:
 
 ```
                     ┌──────────────────────┐
@@ -197,23 +242,34 @@ All three domains share one consensus layer, one block structure, one state root
           └─────────────────────────────────┘
 ```
 
-### 2.3 State Composition
+Where:
 
-```
-State Root (B256, keccak256 Binary Merkle)
-├── S_evm
-│   ├── accounts tree (address → balance, nonce, code_hash, code)
-│   └── storage tree  (address||slot → value)
-├── S_orders
-│   ├── markets      (MarketId → Market)
-│   ├── orders       (OrderId → Order)
-│   ├── books        (MarketId → OrderBook {bids, asks})
-│   ├── accounts     (Address → collateral, positions, open_orders)
-│   └── insurance_fund, margin_params
-└── S_bridge
-    ├── orders_to_evm queue (VecDeque<BridgeMessage>)
-    └── evm_to_orders queue (VecDeque<BridgeMessage>)
-```
+- `S_evm`: public EVM accounts, contract storage, code publication state,
+     and precompile-facing execution context.
+- `S_orders`: public market metadata, batch-clearing context, and the
+     aggregate view of the order-driven markets.
+- `S_shielded`: note tree, recent roots, nullifier set, encrypted note
+     payloads, shielded order/intents, liquidation state, viewing grants,
+     and transparent↔shielded migration/bridge state.
+- `S_bridge`: cross-domain queues and Ethereum bridge export surface.
+- `S_proofs`: state-proof commitments and canonical `BlockProgramInput` /
+     `BlockProgramOutput` proving boundary.
+
+This is still one canonical block/state transition: public execution,
+shielded execution, and proof materialization all share one finality path.
+
+### 2.4 Document Scope Note
+
+The ADR bodies below were originally written against an earlier
+monolithic layout (`src/core/*`, `src/rpc/*`, `state.rs + sled`). Their
+architectural intent is still useful, but path names and some subsystem
+boundaries have moved. For the authoritative current implementation
+status, use:
+
+- `docs/STATUS.md` for live workstream state,
+- `docs/security/privacy-fork-audit-packet.md` for ZK/proof close-out,
+- `docs/shielded-rpc.md` and `docs/security/cryptography-spec.md` for the
+     privacy perimeter and cryptographic contract.
 
 ---
 
