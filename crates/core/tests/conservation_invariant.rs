@@ -28,7 +28,7 @@ fn minting_engine(dir: &std::path::Path) -> Engine {
     engine
         .add_validator(validator, U256::from(1_000_000u64))
         .expect("add validator");
-    // 10 PRIM/block, no halving — mirrors the testnet config.
+    // 10 MRSN/block, no halving — mirrors the testnet config.
     engine.set_token_economics(
         U256::from(1_000_000_000_000_000_000_000_000_000u128),
         U256::from(10_000_000_000_000_000_000u128),
