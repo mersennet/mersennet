@@ -733,9 +733,16 @@ fn map_toolchain_error_to_prove(error: NoirToolchainError) -> ProveError {
 
 #[cfg(feature = "prover")]
 fn encode_public_inputs(inputs: &[Fr]) -> Vec<String> {
+    // Barretenberg / Noir serialize field elements big-endian. `Fr`
+    // stores canonical little-endian bytes, so reverse before hex
+    // encoding; otherwise `bb verify` rejects the public inputs.
     inputs
         .iter()
-        .map(|value| hex::encode(value.to_bytes()))
+        .map(|value| {
+            let mut bytes = value.to_bytes();
+            bytes.reverse();
+            hex::encode(bytes)
+        })
         .collect()
 }
 

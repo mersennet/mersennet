@@ -13,7 +13,7 @@
 //                          (binds this claim to a specific bonded
 //                          liquidator; slashable if false)
 //   - claim_tag            Poseidon(victim_commitment, oracle_price)
-//                          — uniquely identifies the claim without
+//                          - uniquely identifies the claim without
 //                          revealing the victim's commitment
 //
 // PRIVATE WITNESS:
@@ -21,7 +21,6 @@
 //   - membership proof for that note
 //   - the maintenance-margin computation inputs
 
-use crate::lib;
 use crate::merkle;
 use crate::note::Note;
 use crate::poseidon;
@@ -57,6 +56,6 @@ pub fn verify(
     // The liquidation condition.
     assert(equity.lt(maintenance_required));
 
-    // Liquidator binding — just expose it for the outer auction logic.
+    // Liquidator binding - just expose it for the outer auction logic.
     assert(liquidator_id != 0);
 }

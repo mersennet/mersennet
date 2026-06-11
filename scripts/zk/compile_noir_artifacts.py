@@ -22,13 +22,10 @@ CIRCUITS: tuple[str, ...] = (
 
 
 WRAPPERS: dict[str, str] = {
-    "spend": """mod lib;
-mod poseidon;
+    "spend": """mod poseidon;
 mod merkle;
 mod note;
 mod spend;
-
-use crate::spend;
 
 fn main(
     root: pub Field,
@@ -54,8 +51,7 @@ fn main(
     );
 }
 """,
-    "output": """mod lib;
-mod poseidon;
+    "output": """mod poseidon;
 mod merkle;
 mod note;
 mod output;
@@ -71,8 +67,7 @@ fn main(
     output::verify(commitment, asset_id, public_amount, note);
 }
 """,
-    "join_split": """mod lib;
-mod poseidon;
+    "join_split": """mod poseidon;
 mod merkle;
 mod note;
 mod join_split;
@@ -119,8 +114,7 @@ fn main(
     );
 }
 """,
-    "order_place": """mod lib;
-mod poseidon;
+    "order_place": """mod poseidon;
 mod merkle;
 mod note;
 mod order_place;
@@ -165,8 +159,7 @@ fn main(
     );
 }
 """,
-    "liquidate_claim": """mod lib;
-mod poseidon;
+    "liquidate_claim": """mod poseidon;
 mod merkle;
 mod note;
 mod liquidate_claim;
@@ -201,8 +194,7 @@ fn main(
     );
 }
 """,
-    "liquidate_execute": """mod lib;
-mod poseidon;
+    "liquidate_execute": """mod poseidon;
 mod merkle;
 mod note;
 mod liquidate_execute;
@@ -385,6 +377,7 @@ def materialize_package(tmp_dir: Path, circuits_src_dir: Path, circuit: str) -> 
         'authors = ["MersennetNumbers Labs"]\n'
         'compiler_version = ">=0.30.0"\n\n'
         "[dependencies]\n"
+        'poseidon = { tag = "v0.3.0", git = "https://github.com/noir-lang/poseidon" }\n'
     )
     (package_dir / "Nargo.toml").write_text(nargo_toml, encoding="utf-8")
     (src_dir / "main.nr").write_text(WRAPPERS[circuit], encoding="utf-8")

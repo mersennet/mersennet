@@ -14,9 +14,7 @@
 //
 // Conservation: `note.value == public_amount`. (Shielding is 1:1.)
 
-use crate::lib;
 use crate::note::Note;
-use crate::poseidon;
 
 global MAX_VALUE: Field = 0xffffffffffffffffffffffffffffffff; // 2^128 - 1
 
@@ -30,7 +28,7 @@ pub fn verify(
     let cm = note.commit();
     assert(cm == commitment);
     assert(note.value() == public_amount);
-    // value <= MAX_VALUE — Noir's u128 type handles this in the host
+    // value <= MAX_VALUE - Noir's u128 type handles this in the host
     // witness assembly; the field-level check is a soft bound here.
     assert(note.value().lt(MAX_VALUE + 1));
 }

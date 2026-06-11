@@ -1,426 +1,284 @@
-//! Poseidon-2 style permutation over [`crate::field::Fr`].
+//! Poseidon2 permutation and sponge hash over [`crate::field::Fr`].
 //!
-//! This is the in-Rust mirror of the Poseidon hash used by Noir
-//! circuits at the boundary. The configuration target is **Aztec /
-//! Noir Poseidon-2 over BN254, width = 3** (capacity = 1, rate = 2,
-//! 8 full rounds + 56 partial rounds).
+//! This is the in-Rust mirror of the hash used by the Noir circuits at
+//! the proof boundary. The circuits call `poseidon::Poseidon2::hash`
+//! from the `noir-lang/poseidon` library, which delegates to the
+//! compiler builtin `std::hash::poseidon2_permutation`. That builtin
+//! is implemented (and executed by `nargo`/Barretenberg) by the ACVM
+//! `bn254_blackbox_solver`. We reproduce that exact algorithm and
+//! parameter set here so that values computed in Rust (note tree
+//! Merkle roots, commitments, nullifiers) are **bit-identical** to the
+//! values the circuits constrain.
 //!
-//! ## Parameter source of truth
+//! Configuration: Poseidon2 over BN254, width `t = 4`, capacity 1,
+//! rate 3, `RF = 8` full rounds, `RP = 56` partial rounds, `x^5`
+//! S-box. The round constants and internal-matrix diagonal live in
+//! [`crate::poseidon2_constants`], transcribed verbatim from the ACVM
+//! reference.
 //!
-//! The round constants and MDS matrix live in the on-disk artifact
-//! [`crates/zkp/params/poseidon-bn254.bin`]. This module embeds that
-//! artifact via [`include_bytes!`] at compile time and decodes it
-//! once per process at first hash. If the artifact is missing or
-//! empty (e.g. on a fresh checkout that hasn't run the dump test
-//! yet), we fall back to a **deterministic, locally-synthesized**
-//! parameter set so the rest of the workspace can compile and test.
-//! That fallback is *not* the audited Aztec set — the artifact is
-//! the swap point.
-//!
-//! To regenerate the artifact, run:
-//!
-//! ```text
-//! cargo test -p mersennet-zkp --lib poseidon::tests::dump_pinned_params_file -- --ignored --nocapture
-//! ```
-//!
-//! The current pinned bytes lock in the *current* synthesis, so the
-//! [`tests::hashes_match_pinned`] vectors stay stable across CI runs.
-//! When the audited Aztec parameter set lands (Workstream D1 of the
-//! ZK-privacy roadmap), replace the bytes of `poseidon-bn254.bin`
-//! with the new ones, regenerate the pinned hash vectors against
-//! `nargo`'s reference Poseidon, and check the new values in. The
-//! API and serialization format stay unchanged.
+//! Parity is locked by [`tests::permutation_matches_acvm_smoke_vector`]
+//! (the ACVM smoke-test vector) and
+//! [`tests::hash_matches_nargo_vector`] (a value produced by running
+//! `Poseidon2::hash` through `nargo execute`). Any change that
+//! perturbs the hash trips these tests.
 
 use crate::field::Fr;
+use crate::poseidon2_constants::{DIAG_HEX, RC_HEX};
 use std::sync::OnceLock;
 
-/// Embedded pinned parameter blob. Lives at
-/// `crates/zkp/params/poseidon-bn254.bin` relative to this file. An
-/// empty file triggers the synthesis fallback so the workspace stays
-/// buildable from a fresh checkout.
-const PINNED_PARAMS_BYTES: &[u8] = include_bytes!("../params/poseidon-bn254.bin");
+/// State width.
+const T: usize = 4;
+/// Sponge rate (`T - capacity`). `Poseidon2::hash` absorbs in chunks of
+/// this size.
+const RATE: usize = 3;
+/// Number of full rounds.
+const ROUNDS_F: usize = 8;
+/// Number of partial (internal) rounds.
+const ROUNDS_P: usize = 56;
+/// Total rounds; the constant table has one row per round.
+const ROUNDS: usize = ROUNDS_F + ROUNDS_P;
 
-/// Magic byte at start of the binary param file.
-const PARAMS_MAGIC: u8 = 0xAE;
-/// Param file format version. Bumped if the on-disk layout changes.
-const PARAMS_VERSION: u8 = 0x01;
-
-/// Poseidon configuration. The default
-/// ([`PoseidonConfig::AztecBn254Width3`]) targets the same parameters
-/// used by Aztec / Noir's `std::hash::poseidon2::Bn254` so that
-/// circuits using `poseidon2_permutation` on the circuit side and
-/// `Poseidon::hash_two` on the Rust side produce equal field elements.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum PoseidonConfig {
-    /// Reference: Aztec / Noir Poseidon-2 over BN254, width = 3.
-    /// Capacity = 1, rate = 2, full rounds = 8, partial rounds = 56.
-    #[default]
-    AztecBn254Width3,
+/// Decoded Poseidon2 parameters. The constant table is fully populated
+/// for the external rounds and only column 0 is non-zero for the
+/// internal rounds, matching the upstream layout.
+#[derive(Debug)]
+struct Params {
+    /// Internal-matrix diagonal, one entry per state element.
+    diag: [Fr; T],
+    /// Per-round constants `rc[round][element]`.
+    rc: [[Fr; T]; ROUNDS],
 }
 
-impl PoseidonConfig {
-    pub fn full_rounds(self) -> usize {
-        match self {
-            PoseidonConfig::AztecBn254Width3 => 8,
+static PARAMS: OnceLock<Params> = OnceLock::new();
+
+/// Decode a 64-character (32-byte) big-endian hex constant into `Fr`.
+fn decode_hex32(s: &str) -> Fr {
+    debug_assert_eq!(s.len(), 64, "constant must be 32 bytes of hex");
+    let mut bytes = [0u8; 32];
+    for (i, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            .expect("poseidon constant table contains only valid hex");
+    }
+    Fr::from_be_bytes_reduce(&bytes)
+}
+
+fn params() -> &'static Params {
+    PARAMS.get_or_init(|| {
+        debug_assert_eq!(DIAG_HEX.len(), T);
+        debug_assert_eq!(RC_HEX.len(), ROUNDS * T);
+        let mut diag = [Fr::ZERO; T];
+        for (i, hex) in DIAG_HEX.iter().enumerate() {
+            diag[i] = decode_hex32(hex);
         }
-    }
-    pub fn partial_rounds(self) -> usize {
-        match self {
-            PoseidonConfig::AztecBn254Width3 => 56,
-        }
-    }
-    pub fn width(self) -> usize {
-        match self {
-            PoseidonConfig::AztecBn254Width3 => 3,
-        }
-    }
-
-    /// How many field elements of round-constant data live in a
-    /// canonical parameter blob for this config.
-    pub fn round_constants_len(self) -> usize {
-        (self.full_rounds() + self.partial_rounds()) * self.width()
-    }
-
-    /// How many field elements of MDS-matrix data live in a canonical
-    /// parameter blob for this config.
-    pub fn mds_len(self) -> usize {
-        self.width() * self.width()
-    }
-}
-
-/// In-memory representation of the parameter blob.
-#[derive(Clone, Debug)]
-struct PinnedParams {
-    constants: Vec<Fr>,
-    mds: Vec<Vec<Fr>>,
-}
-
-/// Cache of decoded pinned parameters, keyed by config variant.
-/// `OnceLock` keeps this thread-safe and ensures we only pay the
-/// decode cost once.
-static AZTEC_BN254_W3: OnceLock<PinnedParams> = OnceLock::new();
-
-fn load_or_synthesize(cfg: PoseidonConfig) -> &'static PinnedParams {
-    match cfg {
-        PoseidonConfig::AztecBn254Width3 => AZTEC_BN254_W3.get_or_init(|| {
-            decode_pinned_params(cfg, PINNED_PARAMS_BYTES).unwrap_or_else(|_| PinnedParams {
-                constants: synthesize_round_constants(cfg),
-                mds: synthesize_mds_matrix(cfg),
-            })
-        }),
-    }
-}
-
-/// Decode the pinned parameter blob produced by
-/// [`encode_pinned_params`]. Returns `Err` when the blob is empty,
-/// truncated, or has an unexpected version / magic byte (we treat
-/// these as "no pinned set, fall back to synthesis" rather than panic
-/// so a fresh git clone still compiles before the dump test runs).
-fn decode_pinned_params(cfg: PoseidonConfig, bytes: &[u8]) -> Result<PinnedParams, &'static str> {
-    if bytes.is_empty() {
-        return Err("empty params blob");
-    }
-    if bytes.len() < 6 {
-        return Err("params blob too short for header");
-    }
-    if bytes[0] != PARAMS_MAGIC {
-        return Err("params blob: bad magic");
-    }
-    if bytes[1] != PARAMS_VERSION {
-        return Err("params blob: bad version");
-    }
-    let width = bytes[2] as usize;
-    let full_rounds = bytes[3] as usize;
-    let partial_rounds = u16::from_le_bytes([bytes[4], bytes[5]]) as usize;
-    if width != cfg.width()
-        || full_rounds != cfg.full_rounds()
-        || partial_rounds != cfg.partial_rounds()
-    {
-        return Err("params blob: header mismatch for requested config");
-    }
-
-    let const_count = (full_rounds + partial_rounds) * width;
-    let mds_count = width * width;
-    let expected_len = 6 + (const_count + mds_count) * 32;
-    if bytes.len() != expected_len {
-        return Err("params blob: length mismatch");
-    }
-
-    let mut cursor = 6;
-    let mut constants = Vec::with_capacity(const_count);
-    for _ in 0..const_count {
-        let mut buf = [0u8; 32];
-        buf.copy_from_slice(&bytes[cursor..cursor + 32]);
-        cursor += 32;
-        // We use from_bytes_reduce instead of from_bytes so the
-        // decoder is robust to round-trip from a 32-byte LE encoding
-        // even if a future param-set author forgets the < r reduction
-        // step (then a load-time assertion in tests will catch it).
-        constants.push(Fr::from_bytes_reduce(&buf));
-    }
-    let mut mds = vec![vec![Fr::ZERO; width]; width];
-    for row in mds.iter_mut().take(width) {
-        for cell in row.iter_mut().take(width) {
-            let mut buf = [0u8; 32];
-            buf.copy_from_slice(&bytes[cursor..cursor + 32]);
-            cursor += 32;
-            *cell = Fr::from_bytes_reduce(&buf);
-        }
-    }
-    Ok(PinnedParams { constants, mds })
-}
-
-/// Encode a fully-populated parameter set into the canonical
-/// `poseidon-bn254.bin` byte layout. The inverse of
-/// [`decode_pinned_params`]. Only called from the
-/// `dump_pinned_params_file` test, so non-test builds will see it as
-/// dead — that's intentional.
-#[allow(dead_code)]
-fn encode_pinned_params(cfg: PoseidonConfig, params: &PinnedParams) -> Vec<u8> {
-    let width = cfg.width();
-    let full_rounds = cfg.full_rounds();
-    let partial_rounds = cfg.partial_rounds();
-    let const_count = (full_rounds + partial_rounds) * width;
-    let mds_count = width * width;
-
-    assert_eq!(
-        params.constants.len(),
-        const_count,
-        "constants length mismatch"
-    );
-    assert_eq!(params.mds.len(), width, "mds rows mismatch");
-    for row in &params.mds {
-        assert_eq!(row.len(), width, "mds cols mismatch");
-    }
-
-    let mut out = Vec::with_capacity(6 + (const_count + mds_count) * 32);
-    out.push(PARAMS_MAGIC);
-    out.push(PARAMS_VERSION);
-    out.push(width as u8);
-    out.push(full_rounds as u8);
-    out.extend_from_slice(&(partial_rounds as u16).to_le_bytes());
-    for c in &params.constants {
-        out.extend_from_slice(&c.to_bytes());
-    }
-    for row in &params.mds {
-        for c in row {
-            out.extend_from_slice(&c.to_bytes());
-        }
-    }
-    out
-}
-
-/// Round-trip an Fr through its canonical 32-byte LE encoding to
-/// force full reduction modulo `r`. Some synthesis paths
-/// (`invert` in particular) leave the underlying limbs in [r, 2r),
-/// which the in-place [`Fr::reduce`] only partially handles. Going
-/// through [`Fr::to_bytes`] → [`Fr::from_bytes_reduce`] guarantees
-/// the limbs land in `[0, r)`. This is critical for the on-disk
-/// parameter blob to round-trip bit-identically.
-fn canonicalize(x: Fr) -> Fr {
-    Fr::from_bytes_reduce(&x.to_bytes())
-}
-
-/// Deterministic placeholder round constants. **Not the audited Aztec
-/// parameter set.** This is the fallback used when
-/// `poseidon-bn254.bin` is empty (fresh checkout, dump test not yet
-/// run) so the workspace stays buildable.
-fn synthesize_round_constants(cfg: PoseidonConfig) -> Vec<Fr> {
-    let total = (cfg.full_rounds() + cfg.partial_rounds()) * cfg.width();
-    let mut out = Vec::with_capacity(total);
-    const LABEL: &[u8] = b"MersennetChain-Poseidon-v0\0";
-    let mut state = Vec::with_capacity(LABEL.len() + 8);
-    for i in 0..total {
-        state.clear();
-        state.extend_from_slice(LABEL);
-        state.extend_from_slice(&(i as u64).to_le_bytes());
-        let hash = blake_like(&state);
-        out.push(canonicalize(Fr::from_bytes_reduce(&hash)));
-    }
-    out
-}
-
-/// Deterministic placeholder MDS matrix (Cauchy structure). **Not
-/// the audited Aztec MDS.** Same role as
-/// [`synthesize_round_constants`].
-fn synthesize_mds_matrix(cfg: PoseidonConfig) -> Vec<Vec<Fr>> {
-    let w = cfg.width();
-    let mut m = vec![vec![Fr::ZERO; w]; w];
-    for (i, row) in m.iter_mut().enumerate().take(w) {
-        for (j, cell) in row.iter_mut().enumerate().take(w) {
-            let denom =
-                Fr::from_u64((i as u64) + 1).add(&Fr::from_u64((w as u64) + (j as u64) + 1));
-            *cell = canonicalize(invert(&denom));
-        }
-    }
-    m
-}
-
-/// Field inversion via Fermat's little theorem: `a^(r-2)`. Implemented
-/// the brute-force way (loop over the 254 bits of `r-2`) because this
-/// is only called twice per `synthesize_mds_matrix()` and once is
-/// enough at startup.
-fn invert(a: &Fr) -> Fr {
-    let r_minus_two = {
-        let two = Fr::from_u64(2);
-        Fr::ZERO.sub(&two)
-    };
-    let bytes = r_minus_two.to_bytes();
-    let mut result = Fr::ONE;
-    let mut base = *a;
-    for byte in bytes.iter() {
-        for bit in 0..8 {
-            if (byte >> bit) & 1 == 1 {
-                result = result.mul(&base);
+        let mut rc = [[Fr::ZERO; T]; ROUNDS];
+        for (round, row) in rc.iter_mut().enumerate() {
+            for (i, cell) in row.iter_mut().enumerate() {
+                *cell = decode_hex32(RC_HEX[round * T + i]);
             }
-            base = base.mul(&base);
+        }
+        Params { diag, rc }
+    })
+}
+
+/// `x^5` S-box.
+fn single_box(x: Fr) -> Fr {
+    x.pow5()
+}
+
+/// External (full-round) linear layer. This is the exact `t = 4`
+/// circulant multiply from Barretenberg, expressed as additions so it
+/// avoids any field multiplication.
+fn matmul_external(state: &mut [Fr; T]) {
+    let t0 = state[0].add(&state[1]); // A + B
+    let t1 = state[2].add(&state[3]); // C + D
+    let mut t2 = state[1].add(&state[1]); // 2B
+    t2 = t2.add(&t1); // 2B + C + D
+    let mut t3 = state[3].add(&state[3]); // 2D
+    t3 = t3.add(&t0); // 2D + A + B
+    let mut t4 = t1.add(&t1);
+    t4 = t4.add(&t4);
+    t4 = t4.add(&t3); // A + B + 4C + 6D
+    let mut t5 = t0.add(&t0);
+    t5 = t5.add(&t5);
+    t5 = t5.add(&t2); // 4A + 6B + C + D
+    let t6 = t3.add(&t5); // 5A + 7B + C + 3D
+    let t7 = t2.add(&t4); // A + 3B + 5C + 7D
+    state[0] = t6;
+    state[1] = t5;
+    state[2] = t7;
+    state[3] = t4;
+}
+
+/// Internal (partial-round) linear layer: `state[i] = state[i] *
+/// diag[i] + sum(state)`.
+fn matmul_internal(state: &mut [Fr; T], diag: &[Fr; T]) {
+    let mut sum = Fr::ZERO;
+    for x in state.iter() {
+        sum = sum.add(x);
+    }
+    for (cell, d) in state.iter_mut().zip(diag.iter()) {
+        *cell = cell.mul(d).add(&sum);
+    }
+}
+
+/// Apply the Poseidon2 permutation to a width-4 state. Mirrors
+/// `Poseidon2::permutation` in the ACVM reference exactly.
+fn permutation(mut state: [Fr; T]) -> [Fr; T] {
+    let p = params();
+
+    // Initial external linear layer.
+    matmul_external(&mut state);
+
+    // First half of the full rounds.
+    let rf_first = ROUNDS_F / 2;
+    for round in p.rc.iter().take(rf_first) {
+        for (cell, rc) in state.iter_mut().zip(round.iter()) {
+            *cell = cell.add(rc);
+        }
+        for cell in state.iter_mut() {
+            *cell = single_box(*cell);
+        }
+        matmul_external(&mut state);
+    }
+
+    // Partial (internal) rounds: S-box on element 0 only.
+    let p_end = rf_first + ROUNDS_P;
+    for round in rf_first..p_end {
+        state[0] = state[0].add(&p.rc[round][0]);
+        state[0] = single_box(state[0]);
+        matmul_internal(&mut state, &p.diag);
+    }
+
+    // Second half of the full rounds.
+    for round in p.rc.iter().take(ROUNDS).skip(p_end) {
+        for (cell, rc) in state.iter_mut().zip(round.iter()) {
+            *cell = cell.add(rc);
+        }
+        for cell in state.iter_mut() {
+            *cell = single_box(*cell);
+        }
+        matmul_external(&mut state);
+    }
+
+    state
+}
+
+/// Sponge hash matching `Poseidon2::hash(input, N)` from
+/// `noir-lang/poseidon` (the `hash_internal` construction): initialize
+/// the capacity element with `len << 64`, absorb the inputs in
+/// rate-sized chunks, and squeeze one element.
+fn sponge_hash(inputs: &[Fr]) -> Fr {
+    let in_len = inputs.len();
+    // iv = (in_len as Field) * 2^64, i.e. in_len placed in limb 1.
+    let iv = Fr::from_limbs([0, in_len as u64, 0, 0]);
+
+    let mut state = [Fr::ZERO; T];
+    state[RATE] = iv;
+
+    let full_chunks = in_len / RATE;
+    for chunk in 0..full_chunks {
+        for i in 0..RATE {
+            state[i] = state[i].add(&inputs[chunk * RATE + i]);
+        }
+        state = permutation(state);
+    }
+
+    let remainder = in_len % RATE;
+    if remainder != 0 {
+        let start = full_chunks * RATE;
+        for j in 0..remainder {
+            state[j] = state[j].add(&inputs[start + j]);
         }
     }
-    result
-}
 
-/// A 32-byte cheap "hash" used only for deriving deterministic
-/// placeholder round constants. We re-use the SHA-3 256 implementation
-/// already in the workspace via `sha3`.
-fn blake_like(input: &[u8]) -> [u8; 32] {
-    use sha3::{Digest, Keccak256};
-    let mut h = Keccak256::new();
-    h.update(input);
-    let out = h.finalize();
-    let mut buf = [0u8; 32];
-    buf.copy_from_slice(&out);
-    buf
-}
-
-/// Stateful Poseidon hasher with sponge API.
-#[derive(Clone, Debug)]
-pub struct Poseidon {
-    cfg: PoseidonConfig,
-    constants: &'static [Fr],
-    mds: &'static [Vec<Fr>],
-}
-
-impl Default for Poseidon {
-    fn default() -> Self {
-        Self::new(PoseidonConfig::default())
+    // Run a final permutation unless we just completed a full chunk.
+    // (Also runs for the empty input, matching the reference.)
+    if in_len == 0 || !in_len.is_multiple_of(RATE) {
+        state = permutation(state);
     }
+
+    state[0]
 }
+
+/// Poseidon2 hasher. Stateless; cheap to construct (the parameter
+/// table is decoded once, process-wide, behind a `OnceLock`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Poseidon;
 
 impl Poseidon {
-    pub fn new(cfg: PoseidonConfig) -> Self {
-        let params = load_or_synthesize(cfg);
-        Self {
-            cfg,
-            constants: &params.constants,
-            mds: &params.mds,
-        }
+    pub fn new() -> Self {
+        Poseidon
     }
 
-    /// Apply one permutation to a fixed-size state.
-    pub fn permute(&self, state: &mut [Fr]) {
-        let w = self.cfg.width();
-        assert_eq!(state.len(), w);
-
-        let full = self.cfg.full_rounds();
-        let part = self.cfg.partial_rounds();
-        let half_full = full / 2;
-
-        let mut round_idx = 0usize;
-
-        for _ in 0..half_full {
-            self.add_round_constants(state, &mut round_idx);
-            self.sbox_full(state);
-            self.apply_mds(state);
-        }
-        for _ in 0..part {
-            self.add_round_constants(state, &mut round_idx);
-            self.sbox_partial(state);
-            self.apply_mds(state);
-        }
-        for _ in 0..half_full {
-            self.add_round_constants(state, &mut round_idx);
-            self.sbox_full(state);
-            self.apply_mds(state);
-        }
+    /// Apply one raw permutation to a width-4 state. Exposed for
+    /// cross-checking against the circuit builtin.
+    pub fn permute(&self, state: &mut [Fr; T]) {
+        *state = permutation(*state);
     }
 
-    fn add_round_constants(&self, state: &mut [Fr], round_idx: &mut usize) {
-        let w = self.cfg.width();
-        for (i, state_cell) in state.iter_mut().enumerate().take(w) {
-            *state_cell = state_cell.add(&self.constants[*round_idx + i]);
-        }
-        *round_idx += w;
-    }
-
-    fn sbox_full(&self, state: &mut [Fr]) {
-        for s in state.iter_mut() {
-            *s = s.pow5();
-        }
-    }
-
-    fn sbox_partial(&self, state: &mut [Fr]) {
-        state[0] = state[0].pow5();
-    }
-
-    fn apply_mds(&self, state: &mut [Fr]) {
-        let w = self.cfg.width();
-        let mut out = vec![Fr::ZERO; w];
-        for (i, out_cell) in out.iter_mut().enumerate().take(w) {
-            for (j, state_cell) in state.iter().enumerate().take(w) {
-                *out_cell = out_cell.add(&self.mds[i][j].mul(state_cell));
-            }
-        }
-        for (s, o) in state.iter_mut().zip(out) {
-            *s = o;
-        }
-    }
-
-    /// Hash two field elements to one (Merkle tree node compression).
+    /// Hash two field elements to one. Equivalent to the circuit's
+    /// `poseidon::hash_two(a, b)` == `Poseidon2::hash([a, b], 2)`.
+    /// Used for Merkle node compression, so this MUST match the
+    /// in-circuit hash for spend proofs to verify.
     pub fn hash_two(&self, a: &Fr, b: &Fr) -> Fr {
-        let mut state = vec![Fr::ZERO, *a, *b];
-        self.permute(&mut state);
-        state[0]
+        sponge_hash(&[*a, *b])
     }
 
-    /// Hash an arbitrary slice via the sponge construction:
-    /// absorb in chunks of `rate = width - 1`, squeeze one element.
+    /// Hash an arbitrary slice. Equivalent to the circuit's
+    /// `poseidon::hash_many(inputs)` == `Poseidon2::hash(inputs, N)`.
     pub fn hash_many(&self, inputs: &[Fr]) -> Fr {
-        let w = self.cfg.width();
-        let rate = w - 1;
-        let mut state = vec![Fr::ZERO; w];
-        for chunk in inputs.chunks(rate) {
-            for (i, x) in chunk.iter().enumerate() {
-                state[i + 1] = state[i + 1].add(x);
-            }
-            self.permute(&mut state);
-        }
-        state[0]
+        sponge_hash(inputs)
     }
-}
-
-/// True iff the embedded `poseidon-bn254.bin` decoded successfully
-/// for the given config. Used by tests to assert the pinned blob is
-/// present and well-formed in CI (post-dump).
-pub fn pinned_params_present(cfg: PoseidonConfig) -> bool {
-    decode_pinned_params(cfg, PINNED_PARAMS_BYTES).is_ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Decode the big-endian hex vectors the ACVM reference pins in its
+    /// own `smoke_test`.
+    fn be(hex: &str) -> Fr {
+        decode_hex32(hex)
+    }
+
+    /// The ACVM `poseidon2.rs::smoke_test`: permuting the all-zero
+    /// state yields a fixed vector. If our permutation matches
+    /// Barretenberg's, this passes bit-for-bit.
     #[test]
-    fn permute_changes_state() {
-        let p = Poseidon::default();
-        let mut s = vec![Fr::from_u64(1), Fr::from_u64(2), Fr::from_u64(3)];
-        let s0 = s.clone();
-        p.permute(&mut s);
-        assert_ne!(s, s0);
+    fn permutation_matches_acvm_smoke_vector() {
+        let out = permutation([Fr::ZERO; T]);
+        let expected = [
+            be("18dfb8dc9b82229cff974efefc8df78b1ce96d9d844236b496785c698bc6732e"),
+            be("095c230d1d37a246e8d2d5a63b165fe0fade040d442f61e25f0590e5fb76f839"),
+            be("0bb9545846e1afa4fa3c97414a60a20fc4949f537a68cceca34c5ce71e28aa59"),
+            be("18a4f34c9c6f99335ff7638b82aeed9018026618358873c982bbdde265b2ed6d"),
+        ];
+        assert_eq!(out, expected);
+    }
+
+    /// `Poseidon2::hash([100, 0, 0, 7, 11, 13], 6)` produced by
+    /// `nargo execute` against the same `noir-lang/poseidon` library
+    /// the circuits use. Locks the sponge construction (IV, chunking,
+    /// final-permute rule) to the circuit's.
+    #[test]
+    fn hash_matches_nargo_vector() {
+        let inputs = [
+            Fr::from_u64(100),
+            Fr::from_u64(0),
+            Fr::from_u64(0),
+            Fr::from_u64(7),
+            Fr::from_u64(11),
+            Fr::from_u64(13),
+        ];
+        let got = sponge_hash(&inputs);
+        let expected =
+            be("151e8a1d09c7d145308bedfdef746b7e09b24282053984287cf0a0adb45602e1");
+        assert_eq!(got, expected);
     }
 
     #[test]
     fn hash_two_is_deterministic() {
-        let p = Poseidon::default();
+        let p = Poseidon::new();
         let a = Fr::from_u64(11);
         let b = Fr::from_u64(22);
         assert_eq!(p.hash_two(&a, &b), p.hash_two(&a, &b));
@@ -428,102 +286,24 @@ mod tests {
 
     #[test]
     fn hash_two_is_argument_sensitive() {
-        let p = Poseidon::default();
+        let p = Poseidon::new();
         let a = Fr::from_u64(11);
         let b = Fr::from_u64(22);
         assert_ne!(p.hash_two(&a, &b), p.hash_two(&b, &a));
     }
 
     #[test]
-    fn hash_many_chunks() {
-        let p = Poseidon::default();
+    fn hash_two_equals_hash_many_of_two() {
+        let p = Poseidon::new();
+        let a = Fr::from_u64(123);
+        let b = Fr::from_u64(456);
+        assert_eq!(p.hash_two(&a, &b), p.hash_many(&[a, b]));
+    }
+
+    #[test]
+    fn hash_many_chunks_are_deterministic() {
+        let p = Poseidon::new();
         let xs: Vec<Fr> = (1u64..=7).map(Fr::from_u64).collect();
-        let h1 = p.hash_many(&xs);
-        let h2 = p.hash_many(&xs);
-        assert_eq!(h1, h2);
-    }
-
-    /// Round-trip encode → decode for the parameter blob format.
-    /// Ensures no silent corruption when we dump-then-load.
-    #[test]
-    fn params_blob_round_trip() {
-        let cfg = PoseidonConfig::AztecBn254Width3;
-        let params = PinnedParams {
-            constants: synthesize_round_constants(cfg),
-            mds: synthesize_mds_matrix(cfg),
-        };
-        let bytes = encode_pinned_params(cfg, &params);
-        let decoded = decode_pinned_params(cfg, &bytes).expect("decode");
-        assert_eq!(decoded.constants, params.constants);
-        assert_eq!(decoded.mds, params.mds);
-    }
-
-    /// If `poseidon-bn254.bin` was checked in (not empty), make sure
-    /// it actually parses with the embedded layout. CI runs the
-    /// `dump_pinned_params_file` step before this test so on main /
-    /// release branches the blob is always populated.
-    #[test]
-    fn pinned_blob_decodes_when_present() {
-        if PINNED_PARAMS_BYTES.is_empty() {
-            // Fresh checkout, dump test has not been run yet.
-            return;
-        }
-        let cfg = PoseidonConfig::AztecBn254Width3;
-        let res = decode_pinned_params(cfg, PINNED_PARAMS_BYTES);
-        assert!(res.is_ok(), "pinned blob failed to decode: {:?}", res.err());
-    }
-
-    /// Five pinned `(input, output)` vectors. These lock the
-    /// permutation+round-constants+MDS combination so that any code
-    /// change that perturbs the hash function trips this test.
-    ///
-    /// When the audited Aztec parameter set is swapped in (the bytes
-    /// of `poseidon-bn254.bin` change), recompute these expected
-    /// outputs by running this test once with the new blob and
-    /// `--nocapture --ignored regenerate_pinned_vectors` (helper
-    /// below), then paste the new hex into this constant.
-    #[test]
-    fn hashes_match_pinned() {
-        let p = Poseidon::default();
-        // We pin via the standalone hash_two over (a, b). The expected
-        // outputs are the hex-encoded 32-byte LE field elements
-        // produced by THIS module against the synthesized fallback
-        // (i.e., what a fresh-checkout-no-blob build produces). When
-        // the blob is swapped for the real Aztec params, these
-        // values WILL change — that is the entire point of the test.
-        for (a_u64, b_u64) in &[(0u64, 0u64), (1, 0), (0, 1), (1, 1), (12345, 67890)] {
-            let h = p.hash_two(&Fr::from_u64(*a_u64), &Fr::from_u64(*b_u64));
-            // Self-consistency: hashing the same pair twice must
-            // produce the same field element.
-            let h2 = p.hash_two(&Fr::from_u64(*a_u64), &Fr::from_u64(*b_u64));
-            assert_eq!(h, h2);
-            // And the hash must be a fully-reduced canonical Fr (i.e.
-            // not a degenerate placeholder).
-            assert_ne!(h.to_bytes(), [0u8; 32]);
-        }
-    }
-
-    /// Regenerate `crates/zkp/params/poseidon-bn254.bin` from the
-    /// in-source parameter synthesis. Run manually after a parameter
-    /// swap:
-    ///
-    /// ```text
-    /// cargo test -p mersennet-zkp --lib poseidon::tests::dump_pinned_params_file -- --ignored --nocapture
-    /// ```
-    #[test]
-    #[ignore]
-    fn dump_pinned_params_file() {
-        let cfg = PoseidonConfig::AztecBn254Width3;
-        let params = PinnedParams {
-            constants: synthesize_round_constants(cfg),
-            mds: synthesize_mds_matrix(cfg),
-        };
-        let bytes = encode_pinned_params(cfg, &params);
-        // Write to the canonical artifact location relative to the
-        // crate root. The path is hardcoded because we want this test
-        // to fail loudly if anyone moves the file.
-        let dst = concat!(env!("CARGO_MANIFEST_DIR"), "/params/poseidon-bn254.bin");
-        std::fs::write(dst, &bytes).expect("write params");
-        println!("wrote {} bytes to {}", bytes.len(), dst);
+        assert_eq!(p.hash_many(&xs), p.hash_many(&xs));
     }
 }
