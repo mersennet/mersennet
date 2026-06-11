@@ -339,6 +339,16 @@ impl Mempool {
         tx
     }
 
+    /// Non-consuming snapshot of every transaction in the pending pool.
+    /// Used by the network layer to relay locally-submitted transactions
+    /// to peers without disturbing block production.
+    pub fn pending_snapshot(&self) -> Vec<Transaction> {
+        self.pending
+            .values()
+            .flat_map(|q| q.values().cloned())
+            .collect()
+    }
+
     pub fn drain_ready(&mut self, max: usize) -> Vec<Transaction> {
         let mut all: Vec<Transaction> = self
             .pending

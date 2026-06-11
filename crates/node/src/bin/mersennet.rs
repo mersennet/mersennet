@@ -187,6 +187,44 @@ fn main() -> anyhow::Result<()> {
             let network = NetworkNode::new(&gossip_config)?;
             network.start_networking(engine.clone(), &gossip_config);
 
+            // Transaction relay: locally-submitted (RPC) transactions must
+            // reach the validators. Blocks are broadcast on production, but
+            // a full/observer node otherwise holds mempool txs forever —
+            // this loop gossips every pending tx exactly once per (from,
+            // nonce) so they propagate to block producers.
+            {
+                let eng_relay = engine.clone();
+                let net_relay = network.clone();
+                let shutdown_relay = Arc::clone(&shutdown);
+                std::thread::Builder::new()
+                    .name("tx-relay".into())
+                    .spawn(move || {
+                        use std::collections::HashSet;
+                        let mut seen: HashSet<(revm::primitives::Address, u64)> = HashSet::new();
+                        loop {
+                            if shutdown_relay.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            let pending = {
+                                let Ok(eng) = eng_relay.lock() else { break };
+                                eng.mempool_pending_snapshot()
+                            };
+                            if seen.len() > 16_384 {
+                                seen.clear();
+                            }
+                            for tx in pending {
+                                if seen.insert((tx.from, tx.nonce))
+                                    && let Err(err) = net_relay.broadcast_tx(&tx)
+                                {
+                                    tracing::warn!(%err, "tx relay broadcast error");
+                                }
+                            }
+                        }
+                    })
+                    .ok();
+            }
+
             let ws_manager = Arc::new(Mutex::new(ws::WsSubscriptionManager::new()));
             if let Ok(engine_guard) = engine.lock() {
                 ws::set_privacy_mode_activated(engine_guard.privacy_mode_activated());
