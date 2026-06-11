@@ -1699,6 +1699,11 @@ impl Engine {
         self.mempool.pending_count()
     }
 
+    /// Non-consuming snapshot of pending mempool transactions for P2P relay.
+    pub fn mempool_pending_snapshot(&self) -> Vec<Transaction> {
+        self.mempool.pending_snapshot()
+    }
+
     pub fn mempool_queued_count(&self) -> usize {
         self.mempool.queued_count()
     }
