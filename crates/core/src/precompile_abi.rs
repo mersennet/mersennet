@@ -1,7 +1,7 @@
 use revm::primitives::{Address, U256, keccak256};
 
 /// Precompile address: 0x0000000000000000000000000000000000000100
-pub const PRIME_ORDERS_PRECOMPILE: Address = {
+pub const MERSENNET_ORDERS_PRECOMPILE: Address = {
     let mut addr = [0u8; 20];
     addr[18] = 0x01;
     // addr[19] = 0x00 (already zero)

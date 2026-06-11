@@ -189,7 +189,7 @@ pub struct ViewingGrantToken {
 impl ViewingGrantToken {
     pub fn signing_digest(&self) -> [u8; 32] {
         let mut payload = Vec::new();
-        payload.extend_from_slice(b"PRIME_VIEW_GRANT_V1");
+        payload.extend_from_slice(b"MERSENNET_VIEW_GRANT_V1");
         payload.push(self.version);
         payload.extend_from_slice(&self.chain_id.to_le_bytes());
         payload.extend_from_slice(&self.grant_id);

@@ -11,11 +11,11 @@ from common import render_template_command, run_command
 
 
 def package_name(circuit: str) -> str:
-    return f"prime_{circuit}_circuit"
+    return f"mersennet_{circuit}_circuit"
 
 
 def find_acir_artifact(artifacts_dir: Path, circuit: str) -> Path:
-    explicit = os.environ.get("PRIME_BB_ACIR_PATH")
+    explicit = os.environ.get("MERSENNET_BB_ACIR_PATH")
     if explicit:
         path = Path(explicit).resolve()
         if path.exists():
@@ -37,7 +37,7 @@ def find_acir_artifact(artifacts_dir: Path, circuit: str) -> Path:
 
 
 def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Path:
-    explicit = os.environ.get("PRIME_BB_VK_PATH")
+    explicit = os.environ.get("MERSENNET_BB_VK_PATH")
     if explicit:
         path = Path(explicit).resolve()
         if path.exists():
@@ -54,7 +54,7 @@ def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Pat
             return candidate
 
     vk_path = artifacts_dir / f"{package_name(circuit)}.vk"
-    bb_bin = os.environ.get("PRIME_BB_BIN", "bb")
+    bb_bin = os.environ.get("MERSENNET_BB_BIN", "bb")
     values = {
         "bb": bb_bin,
         "acir": acir_path,
@@ -62,7 +62,7 @@ def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Pat
         "artifacts": artifacts_dir,
         "circuit": circuit,
     }
-    template = os.environ.get("PRIME_BB_WRITE_VK_TEMPLATE")
+    template = os.environ.get("MERSENNET_BB_WRITE_VK_TEMPLATE")
     if template:
         run_command(render_template_command(template, values))
         if vk_path.exists():
@@ -85,7 +85,7 @@ def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Pat
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reference adapter for PRIME_BB_VERIFY_ADAPTER.")
+    parser = argparse.ArgumentParser(description="Reference adapter for MERSENNET_BB_VERIFY_ADAPTER.")
     parser.add_argument("--circuit", required=True)
     parser.add_argument("--artifacts", required=True)
     parser.add_argument("--proof", required=True)
@@ -112,7 +112,7 @@ def main() -> int:
         public_inputs = [line.strip() for line in public_inputs_path.read_text(encoding="utf-8").splitlines() if line.strip()]
         public_inputs_json.write_text("[\n" + ",\n".join(f'  "{value}"' for value in public_inputs) + "\n]\n", encoding="utf-8")
 
-        bb_bin = os.environ.get("PRIME_BB_BIN", "bb")
+        bb_bin = os.environ.get("MERSENNET_BB_BIN", "bb")
         values = {
             "bb": bb_bin,
             "circuit": args.circuit,
@@ -124,7 +124,7 @@ def main() -> int:
             "public_inputs_json": public_inputs_json,
         }
 
-        template = os.environ.get("PRIME_BB_VERIFY_TEMPLATE")
+        template = os.environ.get("MERSENNET_BB_VERIFY_TEMPLATE")
         if template:
             run_command(render_template_command(template, values))
             return 0

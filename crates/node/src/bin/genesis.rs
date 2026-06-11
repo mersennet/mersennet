@@ -276,7 +276,7 @@ fn generate_docker_compose(n: u32, _chain_id: u64) -> String {
         services.push_str(&format!(
             r#"  validator-{}:
     build: ..
-    container_name: prime-validator-{}
+    container_name: mersennet-validator-{}
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
       - ./configs/validator-{}.json:/etc/mersennet/config.json:ro
@@ -286,7 +286,7 @@ fn generate_docker_compose(n: u32, _chain_id: u64) -> String {
       - "{}:8545"
       - "{}:9090"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
       interval: 10s
@@ -311,7 +311,7 @@ services:
 volumes:
 {}
 networks:
-  prime-testnet:
+  mersennet-testnet:
     driver: bridge
 "#,
         services, volumes

@@ -108,15 +108,15 @@ fn main() {
     for batch_size in [100, 500, 1000, 5000, 10000] {
         let dir = tempfile::tempdir().unwrap();
         let mut eng = Engine::new_with_state(131071, dir.path().join("fba"));
-        let market = eng.prime_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+        let market = eng.mersennet_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
 
         let start = Instant::now();
         for i in 0..batch_size {
             let owner = make_address((i % 500 + 1) as u16);
             let side = if i % 2 == 0 {
-                mersennet::prime_orders::Side::Buy
+                mersennet::mersennet_orders::Side::Buy
             } else {
-                mersennet::prime_orders::Side::Sell
+                mersennet::mersennet_orders::Side::Sell
             };
             let price = if i % 2 == 0 {
                 U256::from(100 + (i % 5) as u64)
@@ -129,7 +129,7 @@ fn main() {
                 side,
                 price,
                 size: U256::from(10u64),
-                tif: mersennet::prime_orders::TimeInForce::Gtc,
+                tif: mersennet::mersennet_orders::TimeInForce::Gtc,
                 sequence: 0,
             });
         }

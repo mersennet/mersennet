@@ -367,7 +367,7 @@ def hash_directory(path: Path) -> bytes:
 
 
 def package_name(circuit: str) -> str:
-    return f"prime_{circuit}_circuit"
+    return f"mersennet_{circuit}_circuit"
 
 
 def materialize_package(tmp_dir: Path, circuits_src_dir: Path, circuit: str) -> Path:
@@ -382,7 +382,7 @@ def materialize_package(tmp_dir: Path, circuits_src_dir: Path, circuit: str) -> 
         "[package]\n"
         f"name = \"{package_name(circuit)}\"\n"
         'type = "bin"\n'
-        'authors = ["PrimeNumbers Labs"]\n'
+        'authors = ["MersennetNumbers Labs"]\n'
         'compiler_version = ">=0.30.0"\n\n'
         "[dependencies]\n"
     )
@@ -419,12 +419,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--artifacts-dir",
-        default=os.environ.get("PRIME_NOIR_ARTIFACTS_DIR", str(root / "crates" / "zkp" / "params" / "noir")),
+        default=os.environ.get("MERSENNET_NOIR_ARTIFACTS_DIR", str(root / "crates" / "zkp" / "params" / "noir")),
         help="Destination for compiled per-circuit artifacts.",
     )
     parser.add_argument(
         "--nargo-bin",
-        default=os.environ.get("PRIME_NARGO_BIN", "nargo"),
+        default=os.environ.get("MERSENNET_NARGO_BIN", "nargo"),
         help="Path to the nargo executable.",
     )
     return parser.parse_args()

@@ -97,7 +97,7 @@ mod real {
     use super::*;
     use ark_bn254::{Fq as ArkFq, Fr as ArkFr, G1Affine, G1Projective};
     use ark_ec::{AffineRepr, CurveGroup};
-    use ark_ff::{BigInteger, Field, PrimeField, Zero};
+    use ark_ff::{BigInteger, Field, MersennetField, Zero};
     use ark_serialize::CanonicalSerialize;
     use sha3::{Digest, Keccak256};
 

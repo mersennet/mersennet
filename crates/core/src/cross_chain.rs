@@ -11,7 +11,7 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ChainId {
-    PrimeChain,
+    MersennetChain,
     Ethereum,
     Arbitrum,
     Optimism,
@@ -23,7 +23,7 @@ impl ChainId {
     #[allow(dead_code)]
     fn as_u64(&self) -> u64 {
         match self {
-            ChainId::PrimeChain => 0,
+            ChainId::MersennetChain => 0,
             ChainId::Ethereum => 1,
             ChainId::Arbitrum => 42161,
             ChainId::Optimism => 10,

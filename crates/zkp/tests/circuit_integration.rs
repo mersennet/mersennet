@@ -340,7 +340,7 @@ fn real_toolchain_spend_and_order_place_round_trip_when_configured() {
 
 #[cfg(feature = "prover")]
 fn real_noir_toolchain_configured() -> bool {
-    env::var("PRIME_BB_PROVE_ADAPTER").is_ok() && env::var("PRIME_BB_VERIFY_ADAPTER").is_ok()
+    env::var("MERSENNET_BB_PROVE_ADAPTER").is_ok() && env::var("MERSENNET_BB_VERIFY_ADAPTER").is_ok()
 }
 
 #[cfg(feature = "prover")]

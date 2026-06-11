@@ -13,9 +13,9 @@ from typing import Iterable
 
 
 LOCAL_REAL_SP1_ENV_DEFAULTS = {
-    "PRIME_SP1_PROOF_SYSTEM": "core",
-    "PRIME_SP1_INLINE_VERIFY": "0",
-    "PRIME_SP1_DEFERRED_PROOF_VERIFICATION": "0",
+    "MERSENNET_SP1_PROOF_SYSTEM": "core",
+    "MERSENNET_SP1_INLINE_VERIFY": "0",
+    "MERSENNET_SP1_DEFERRED_PROOF_VERIFICATION": "0",
     "RAYON_NUM_THREADS": "2",
     "SP1_WORKER_NUM_CORE_WORKERS": "2",
     "SP1_WORKER_NUM_SETUP_WORKERS": "2",
@@ -41,10 +41,10 @@ def render_template_command(template: str, values: dict[str, object]) -> list[st
 
 
 def host_executor() -> str:
-    executor = os.environ.get("PRIME_SP1_HOST_EXECUTOR", "native").strip().lower()
+    executor = os.environ.get("MERSENNET_SP1_HOST_EXECUTOR", "native").strip().lower()
     if executor not in {"native", "wsl"}:
         raise RuntimeError(
-            "PRIME_SP1_HOST_EXECUTOR must be one of: native, wsl"
+            "MERSENNET_SP1_HOST_EXECUTOR must be one of: native, wsl"
         )
     return executor
 
@@ -71,10 +71,10 @@ def build_wsl_command(command: Iterable[str], cwd: Path, env_overrides: dict[str
     wsl = shutil.which("wsl.exe") or shutil.which("wsl")
     if not wsl:
         raise RuntimeError(
-            "PRIME_SP1_HOST_EXECUTOR=wsl requires wsl.exe to be installed and available on PATH"
+            "MERSENNET_SP1_HOST_EXECUTOR=wsl requires wsl.exe to be installed and available on PATH"
         )
 
-    distro = os.environ.get("PRIME_SP1_WSL_DISTRO", "").strip()
+    distro = os.environ.get("MERSENNET_SP1_WSL_DISTRO", "").strip()
     exports = ""
     if env_overrides:
         exports = " ".join(
@@ -114,7 +114,7 @@ def local_real_sp1_env_defaults(command: Iterable[str]) -> dict[str, str]:
     if "--prove-request" not in command_list:
         return {}
 
-    if os.environ.get("PRIME_SP1_MODE", "local").strip().lower() != "local":
+    if os.environ.get("MERSENNET_SP1_MODE", "local").strip().lower() != "local":
         return {}
 
     return {

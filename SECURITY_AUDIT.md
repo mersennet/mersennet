@@ -13,7 +13,7 @@
    - Parallel execution safety (Block-STM)
    - Chain ID validation, nonce handling, signature verification
 
-2. **CLOB Matching Engine** (`crates/core/src/prime_orders.rs`) — 863 lines
+2. **CLOB Matching Engine** (`crates/core/src/mersennet_orders.rs`) — 863 lines
    - Price-time priority enforcement
    - Conservation of value
    - Margin calculation correctness
@@ -29,7 +29,7 @@
    - ACID compliance
    - Merkle tree correctness (`MerkleTree::compute_root`, `compute_proof`)
    - Crash recovery
-   - Multi-domain state (EVM, PrimeOrders, Bridge) snapshot/restore
+   - Multi-domain state (EVM, MersennetOrders, Bridge) snapshot/restore
 
 5. **Privacy / Shielded Modules** (privacy hard fork)
    - `crates/core/src/shielded_state.rs` (283 lines) — note commitment tree + nullifier set
@@ -49,7 +49,7 @@
 6. **CLOB Precompile** (`crates/core/src/precompiles.rs` — 684 lines, `precompile_abi.rs`)
    - ABI encoding correctness
    - Gas metering
-   - Context injection (`PRIME_ORDERS_CTX`) and lock safety
+   - Context injection (`MERSENNET_ORDERS_CTX`) and lock safety
 
 7. **FBA Auctions** (`crates/core/src/fba.rs` — 389 lines)
    - Uniform price correctness
@@ -101,7 +101,7 @@
 
 | Risk | Location | Description |
 |------|----------|-------------|
-| `unwrap()` / `expect()` usage | engine.rs (27), precompiles.rs (6), hotstuff2.rs (4), state.rs (3), prime_orders.rs (2), parallel.rs (2), state_redb.rs (2) | Potential panic on unexpected states; should be replaced with proper error handling (counts include test code) |
+| `unwrap()` / `expect()` usage | engine.rs (27), precompiles.rs (6), hotstuff2.rs (4), state.rs (3), mersennet_orders.rs (2), parallel.rs (2), state_redb.rs (2) | Potential panic on unexpected states; should be replaced with proper error handling (counts include test code) |
 | Lock poisoning | precompiles.rs, engine.rs | `Mutex` lock poisoning can propagate; consider `Mutex::get_mut` or poisoning recovery |
 | Bridge queue overflow | bridge.rs | `set_max_len` drops oldest messages when limit exceeded; no explicit value conservation check |
 | Commit-reveal window | commit_reveal.rs | Fixed 2-block window; timing-sensitive for MEV; expiry may be exploitable |
@@ -116,7 +116,7 @@
 | Component | Test Files | Test Count (approx) |
 |-----------|------------|---------------------|
 | Core integration | `integration_tests.rs`, `integration_block.rs` | 11+ |
-| Prime orders | `prime_orders_integration.rs`, `prime_orders_advanced.rs` | 13+ |
+| Mersennet orders | `mersennet_orders_integration.rs`, `mersennet_orders_advanced.rs` | 13+ |
 | Consensus | `consensus_tests.rs`, `consensus_sim.rs` | 10+ |
 | State | `state_tests.rs` | 7+ |
 | Bridge | `bridge_tests.rs` | 5+ |
@@ -135,7 +135,7 @@ Before scheduling external privacy-fork audits, attach the following artifacts t
 
 - Working packet document: `docs/security/privacy-fork-audit-packet.md`
 
-- Exact SP1 proving artifact set: program ELF provenance, pinned `PRIME_SP1_VKEY_HASH`, and one prove/verify transcript.
+- Exact SP1 proving artifact set: program ELF provenance, pinned `MERSENNET_SP1_VKEY_HASH`, and one prove/verify transcript.
 - Output-contract references: `crates/zkp/src/sp1.rs`, `crates/core/src/state_proof.rs`, `crates/core/src/zk_sp1.rs`, `programs/state-transition/src/main.rs`, `programs/state-transition-host/src/main.rs`.
 - Current limitation note: the repo now re-executes canonical witness-bearing `BlockProgramInput` and enforces the public-output boundary, but it still needs final header/public-output hardening, extraction of shared engine-parity transition logic, release-grade prove/verify transcript capture, and network prover integration before the SP1 path should be treated as release-complete.
 - CI evidence for the host/program path: node `--features prover,sp1`, standalone program check, standalone host test.

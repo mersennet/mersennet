@@ -12,7 +12,7 @@
     "max_per_sender": 1000,
     "bump_bps": 1000
   },
-  "prime_orders": {
+  "mersennet_orders": {
     "initial_margin_bps": 500,
     "maintenance_margin_bps": 250
   },

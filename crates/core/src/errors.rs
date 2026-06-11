@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Clone, Error)]
-pub enum PrimeOrdersError {
+pub enum MersennetOrdersError {
     #[error("unknown market")]
     UnknownMarket,
     #[error("size must be > 0")]
@@ -18,18 +18,18 @@ pub enum PrimeOrdersError {
     WithdrawalExceedsEquity,
 }
 
-impl PrimeOrdersError {
+impl MersennetOrdersError {
     pub fn message(&self) -> &'static str {
         match self {
-            PrimeOrdersError::UnknownMarket => "unknown market",
-            PrimeOrdersError::InvalidSize => "size must be > 0",
-            PrimeOrdersError::FokNotFillable => "fok not fillable",
-            PrimeOrdersError::InsufficientCollateral => {
+            MersennetOrdersError::UnknownMarket => "unknown market",
+            MersennetOrdersError::InvalidSize => "size must be > 0",
+            MersennetOrdersError::FokNotFillable => "fok not fillable",
+            MersennetOrdersError::InsufficientCollateral => {
                 "insufficient collateral for initial margin"
             }
-            PrimeOrdersError::InsufficientEquity => "insufficient equity",
-            PrimeOrdersError::MarketHalted => "market is halted",
-            PrimeOrdersError::WithdrawalExceedsEquity => {
+            MersennetOrdersError::InsufficientEquity => "insufficient equity",
+            MersennetOrdersError::MarketHalted => "market is halted",
+            MersennetOrdersError::WithdrawalExceedsEquity => {
                 "withdrawal would bring equity below maintenance margin"
             }
         }

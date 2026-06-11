@@ -40,7 +40,7 @@ clear error because the upstream `sp1-sdk` toolchain pulls Unix-only
 
 If you need Windows/Linux parity today, keep this crate's command line
 unchanged and invoke it from the SP1 adapters with
-`PRIME_SP1_HOST_EXECUTOR=wsl`. That runs the same `cargo run --release ... --features real-sp1`
+`MERSENNET_SP1_HOST_EXECUTOR=wsl`. That runs the same `cargo run --release ... --features real-sp1`
 command inside WSL while preserving the request/response JSON contract.
 
 That means the adapters now have a concrete default command path, even

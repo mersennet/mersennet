@@ -141,7 +141,7 @@ fn print_banner(args: &Args) {
 fn setup_phase(rpc: &str) -> Result<u64, String> {
     println!("[SETUP] Connecting to {}", rpc);
 
-    let block_num = rpc_call(rpc, "prime_blockNumber", json!([]))?;
+    let block_num = rpc_call(rpc, "mersennet_blockNumber", json!([]))?;
     let block_str = block_num.as_str().unwrap_or("0x0");
     let height = u64::from_str_radix(block_str.trim_start_matches("0x"), 16).unwrap_or(0);
     println!("[SETUP] Chain is running at block {}", height);
@@ -180,7 +180,7 @@ fn generate_accounts(n: usize) -> Vec<Arc<TestAccount>> {
 
 fn fund_accounts(rpc: &str, accounts: &[Arc<TestAccount>], chain_id: u64) -> Result<(), String> {
     println!(
-        "[SETUP] Funding {} accounts via prime_sendTransaction...",
+        "[SETUP] Funding {} accounts via mersennet_sendTransaction...",
         accounts.len()
     );
     for account in accounts {
@@ -193,7 +193,7 @@ fn fund_accounts(rpc: &str, accounts: &[Arc<TestAccount>], chain_id: u64) -> Res
             "gasPrice": "0x1",
             "chainId": format!("0x{:x}", chain_id),
         });
-        let _ = rpc_call(rpc, "prime_sendTransaction", json!([tx_obj]));
+        let _ = rpc_call(rpc, "mersennet_sendTransaction", json!([tx_obj]));
     }
     Ok(())
 }
@@ -380,7 +380,7 @@ fn send_clob_order(
         "time_in_force": "gtc"
     }]);
 
-    let result = rpc_call(rpc, "prime_submitOrder", params)?;
+    let result = rpc_call(rpc, "mersennet_submitOrder", params)?;
     Ok(result.to_string())
 }
 
@@ -505,7 +505,7 @@ fn rpc_call(rpc: &str, method: &str, params: Value) -> Result<Value, String> {
 }
 
 fn get_block_number(rpc: &str) -> u64 {
-    rpc_call(rpc, "prime_blockNumber", json!([]))
+    rpc_call(rpc, "mersennet_blockNumber", json!([]))
         .ok()
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())

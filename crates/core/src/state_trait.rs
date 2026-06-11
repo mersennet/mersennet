@@ -4,7 +4,7 @@ use revm::primitives::{Address, B256};
 
 use crate::bridge::BridgeQueue;
 use crate::engine::Block;
-use crate::prime_orders::PrimeOrdersState;
+use crate::mersennet_orders::MersennetOrdersState;
 use crate::state::{SnapshotMeta, StateProof};
 
 pub trait StateBackend: Send + std::fmt::Debug {
@@ -14,14 +14,14 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn commit_state(
         &self,
         evm_db: &InMemoryDB,
-        prime_orders: &PrimeOrdersState,
+        mersennet_orders: &MersennetOrdersState,
         bridge_orders_to_evm: &BridgeQueue,
         bridge_evm_to_orders: &BridgeQueue,
         height: u64,
     ) -> Result<B256>;
 
-    fn load_prime_orders(&self, state: &mut PrimeOrdersState) -> Result<()>;
-    fn commit_prime_orders(&self, state: &PrimeOrdersState) -> Result<()>;
+    fn load_mersennet_orders(&self, state: &mut MersennetOrdersState) -> Result<()>;
+    fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()>;
 
     fn load_bridge_queues(
         &self,

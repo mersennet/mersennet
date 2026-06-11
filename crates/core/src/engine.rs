@@ -6,9 +6,9 @@ use crate::consensus::{
     Unbonding, Validator, ValidatorChange,
 };
 use crate::crypto::{self, SignedTransaction};
-use crate::errors::PrimeOrdersError;
+use crate::errors::MersennetOrdersError;
 use crate::events::{
-    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
+    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
 };
 use crate::fba::{AuctionResult, BatchOrder, FBAEngine};
 use crate::hotstuff2::{HotStuff2, HotStuff2Result};
@@ -16,8 +16,8 @@ use crate::mempool::{Mempool, TxRejection};
 use crate::network::NetworkSim;
 use crate::parallel::ParallelExecutor;
 use crate::precompiles;
-use crate::prime_orders::{
-    MarketId, Order, OrderBookView, OrderId, OrderOutcome, PrimeOrdersState, Side, TimeInForce,
+use crate::mersennet_orders::{
+    MarketId, Order, OrderBookView, OrderId, OrderOutcome, MersennetOrdersState, Side, TimeInForce,
 };
 use crate::state::PersistentState;
 use crate::state::SnapshotMeta;
@@ -261,7 +261,7 @@ pub struct ConsensusEngine {
 
 #[derive(Debug)]
 pub struct OrdersEngine {
-    pub state: PrimeOrdersState,
+    pub state: MersennetOrdersState,
 }
 
 #[derive(Debug)]
@@ -526,10 +526,10 @@ impl Engine {
 
         let mut db = InMemoryDB::default();
         state.load_into_db(&mut db).expect("state DB load");
-        let mut prime_orders = PrimeOrdersState::new();
+        let mut mersennet_orders = MersennetOrdersState::new();
         state
-            .load_prime_orders(&mut prime_orders)
-            .expect("prime orders load");
+            .load_mersennet_orders(&mut mersennet_orders)
+            .expect("mersennet orders load");
         let mut bridge_orders_to_evm = BridgeQueue::new();
         let mut bridge_evm_to_orders = BridgeQueue::new();
         state
@@ -554,7 +554,7 @@ impl Engine {
             evm: EvmEngine { state, db },
             chain: Vec::new(),
             orders: OrdersEngine {
-                state: prime_orders,
+                state: mersennet_orders,
             },
             bridge: BridgeEngine {
                 orders_to_evm: bridge_orders_to_evm,
@@ -758,7 +758,7 @@ impl Engine {
         records
     }
 
-    pub fn prime_orders_add_market(
+    pub fn mersennet_orders_add_market(
         &mut self,
         symbol: impl Into<String>,
         tick_size: U256,
@@ -769,7 +769,7 @@ impl Engine {
             .orders
             .state
             .add_market(symbol.clone(), tick_size, lot_size);
-        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::MarketAdded {
+        self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::MarketAdded {
             market_id,
             symbol,
             tick_size,
@@ -778,7 +778,7 @@ impl Engine {
         market_id
     }
 
-    pub fn prime_orders_submit_order(
+    pub fn mersennet_orders_submit_order(
         &mut self,
         owner: Address,
         market: MarketId,
@@ -786,12 +786,12 @@ impl Engine {
         price: U256,
         size: U256,
         tif: TimeInForce,
-    ) -> Result<OrderOutcome, PrimeOrdersError> {
+    ) -> Result<OrderOutcome, MersennetOrdersError> {
         let outcome = self
             .orders
             .state
             .submit_order(owner, market, side, price, size, tif)?;
-        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderSubmitted {
+        self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::OrderSubmitted {
             order_id: outcome.order_id,
             owner,
             market_id: market,
@@ -803,7 +803,7 @@ impl Engine {
             remaining: outcome.remaining,
         }));
         for trade in &outcome.trades {
-            self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::Trade {
+            self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade {
                 taker: trade.taker,
                 maker: trade.maker,
                 market_id: trade.market,
@@ -815,10 +815,10 @@ impl Engine {
         Ok(outcome)
     }
 
-    pub fn prime_orders_cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
+    pub fn mersennet_orders_cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
         let order = self.orders.state.cancel_order(order_id);
         if let Some(order) = &order {
-            self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderCancelled {
+            self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::OrderCancelled {
                 order_id: order.id,
                 owner: order.owner,
                 market_id: order.market,
@@ -828,12 +828,12 @@ impl Engine {
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
+    pub fn mersennet_orders_set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
         self.orders
             .state
             .set_margin_params(initial_bps, maintenance_bps);
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::MarginParamsUpdated {
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::MarginParamsUpdated {
                 initial_bps,
                 maintenance_bps,
             },
@@ -841,41 +841,41 @@ impl Engine {
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_deposit_collateral(&mut self, owner: Address, amount: U256) {
+    pub fn mersennet_orders_deposit_collateral(&mut self, owner: Address, amount: U256) {
         self.orders.state.deposit_collateral(owner, amount);
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::CollateralDeposited { owner, amount },
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::CollateralDeposited { owner, amount },
         ));
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_is_liquidatable(&self, owner: Address) -> bool {
+    pub fn mersennet_orders_is_liquidatable(&self, owner: Address) -> bool {
         self.orders.state.is_liquidatable(owner)
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_liquidate(&mut self, owner: Address) -> bool {
+    pub fn mersennet_orders_liquidate(&mut self, owner: Address) -> bool {
         let liquidated = self.orders.state.liquidate(owner);
-        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::Liquidation {
+        self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::Liquidation {
             owner,
             liquidated,
         }));
         liquidated
     }
 
-    pub fn prime_orders_order_book(&self, market: MarketId) -> Option<OrderBookView> {
+    pub fn mersennet_orders_order_book(&self, market: MarketId) -> Option<OrderBookView> {
         self.orders.state.order_book(market)
     }
 
-    pub fn prime_orders_open_orders(&self, owner: Address) -> Vec<Order> {
+    pub fn mersennet_orders_open_orders(&self, owner: Address) -> Vec<Order> {
         self.orders.state.open_orders(owner)
     }
 
     #[allow(dead_code)]
     pub fn bridge_enqueue_orders_to_evm(&mut self, payload: Bytes) -> BridgeMessage {
         let msg = self.bridge.orders_to_evm.push(
-            BridgeDomain::PrimeOrders,
-            BridgeDomain::PrimeEvm,
+            BridgeDomain::MersennetOrders,
+            BridgeDomain::MersennetEvm,
             payload,
         );
         self.record_event(DomainEvent::Bridge(BridgeEvent::Enqueued {
@@ -888,8 +888,8 @@ impl Engine {
     #[allow(dead_code)]
     pub fn bridge_enqueue_evm_to_orders(&mut self, payload: Bytes) -> BridgeMessage {
         let msg = self.bridge.evm_to_orders.push(
-            BridgeDomain::PrimeEvm,
-            BridgeDomain::PrimeOrders,
+            BridgeDomain::MersennetEvm,
+            BridgeDomain::MersennetOrders,
             payload,
         );
         self.record_event(DomainEvent::Bridge(BridgeEvent::Enqueued {
@@ -1037,8 +1037,8 @@ impl Engine {
 
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
-        precompiles::set_prime_orders_context(shared_orders.clone());
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_mersennet_orders_context(shared_orders.clone());
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
         // Generate market maker quotes and submit to orders engine
         let mm_markets: Vec<u64> = {
@@ -1052,21 +1052,21 @@ impl Engine {
                 for (price, _size) in &quote.bids {
                     let _ = orders.place_order(
                         quote.owner,
-                        crate::prime_orders::MarketId(*market_id),
-                        crate::prime_orders::Side::Buy,
+                        crate::mersennet_orders::MarketId(*market_id),
+                        crate::mersennet_orders::Side::Buy,
                         U256::from(*price),
                         U256::from(1),
-                        crate::prime_orders::TimeInForce::Ioc,
+                        crate::mersennet_orders::TimeInForce::Ioc,
                     );
                 }
                 for (price, _size) in &quote.asks {
                     let _ = orders.place_order(
                         quote.owner,
-                        crate::prime_orders::MarketId(*market_id),
-                        crate::prime_orders::Side::Sell,
+                        crate::mersennet_orders::MarketId(*market_id),
+                        crate::mersennet_orders::Side::Sell,
                         U256::from(*price),
                         U256::from(1),
-                        crate::prime_orders::TimeInForce::Ioc,
+                        crate::mersennet_orders::TimeInForce::Ioc,
                     );
                 }
             }
@@ -1157,8 +1157,8 @@ impl Engine {
             }
         }
 
-        precompiles::clear_prime_orders_context();
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
@@ -1773,7 +1773,7 @@ impl Engine {
             .import_snapshot_bytes(&envelope.evm_snapshot)?;
         self.evm.db = InMemoryDB::default();
         self.evm.state.load_into_db(&mut self.evm.db)?;
-        self.evm.state.load_prime_orders(&mut self.orders.state)?;
+        self.evm.state.load_mersennet_orders(&mut self.orders.state)?;
         self.evm.state.load_bridge_queues(
             &mut self.bridge.orders_to_evm,
             &mut self.bridge.evm_to_orders,
@@ -1888,8 +1888,8 @@ impl Engine {
         };
 
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
-        precompiles::set_prime_orders_context(shared_orders);
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_mersennet_orders_context(shared_orders);
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
         // Privacy-redesign Phase 4 — install shielded EVM context.
         // Take ownership for the duration of the tx, restore after.
@@ -1901,13 +1901,13 @@ impl Engine {
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
-            .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_mersennet_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_preverified()?;
-        precompiles::clear_prime_orders_context();
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
@@ -2005,8 +2005,8 @@ impl Engine {
         env.tx.transact_to = TxKind::Call(to);
 
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
-        precompiles::set_prime_orders_context(shared_orders);
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_mersennet_orders_context(shared_orders);
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
         let shielded_evm = std::mem::take(&mut self.shielded_evm);
         let shared_shielded = Arc::new(Mutex::new(shielded_evm));
@@ -2016,13 +2016,13 @@ impl Engine {
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
-            .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_mersennet_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_preverified()?;
-        precompiles::clear_prime_orders_context();
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
@@ -2625,15 +2625,15 @@ impl Engine {
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
-            .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_mersennet_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
             .append_handler_register(precompiles::register_code_publication_precompile)
             .build();
 
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
         let result = evm.transact_commit()?;
         self.evm.db = std::mem::take(&mut evm.context.evm.db);
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         precompiles::clear_code_publication_context();
         drop(evm);
@@ -2771,7 +2771,7 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::events::{DomainEvent, ShieldedEvent};
-    use crate::prime_orders::{Market, MarketStatus};
+    use crate::mersennet_orders::{Market, MarketStatus};
     use crate::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
     use mersennet_zkp::Fr;
     use mersennet_zkp::noir::{Circuit, MockVerifier};
@@ -2972,14 +2972,14 @@ mod tests {
     fn execute_block_fails_closed_when_privacy_fork_enables_required_sp1_proofs() {
         let _env_guard = env_lock().lock().unwrap();
         let _prove_adapter = EnvVarGuard::set(
-            "PRIME_SP1_PROVE_ADAPTER",
+            "MERSENNET_SP1_PROVE_ADAPTER",
             "definitely-not-a-real-sp1-prover",
         );
         let _verify_adapter = EnvVarGuard::set(
-            "PRIME_SP1_VERIFY_ADAPTER",
+            "MERSENNET_SP1_VERIFY_ADAPTER",
             "definitely-not-a-real-sp1-verifier",
         );
-        let _mode = EnvVarGuard::set("PRIME_SP1_MODE", "local");
+        let _mode = EnvVarGuard::set("MERSENNET_SP1_MODE", "local");
 
         let mut engine = fresh_inactive_engine();
         engine.block_number = 3;
