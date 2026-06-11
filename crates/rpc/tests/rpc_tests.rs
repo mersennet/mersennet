@@ -301,7 +301,7 @@ fn rpc_mersennet_send_transaction_adds_to_mempool() {
 #[test]
 fn rpc_mersennet_orders_add_market() {
     let (mut engine, _dir) = setup_engine(1);
-    let params = json!(["PRIME-PERP", "0x1", "0x1"]);
+    let params = json!(["MRSN-PERP", "0x1", "0x1"]);
     let result = route("mersennet_orders_addMarket", params, &mut engine).expect("rpc ok");
     let market_id_str = result.as_str().expect("string result");
     assert!(market_id_str.starts_with("0x"), "market id should be hex");
@@ -310,7 +310,7 @@ fn rpc_mersennet_orders_add_market() {
 #[test]
 fn rpc_mersennet_orders_submit_and_get_order_book() {
     let (mut engine, _dir) = setup_engine(1);
-    let market_params = json!(["PRIME-PERP", "0x1", "0x1"]);
+    let market_params = json!(["MRSN-PERP", "0x1", "0x1"]);
     let market_result =
         route("mersennet_orders_addMarket", market_params, &mut engine).expect("add market");
     let market_id_str = market_result.as_str().expect("market id string");
@@ -414,7 +414,7 @@ fn rpc_domain_events_hide_sensitive_mersennet_orders_events_after_privacy_activa
     engine.activate_privacy_mode();
 
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     let trader = addr(0x55);
     engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
     let _ = engine

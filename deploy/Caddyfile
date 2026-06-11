@@ -3,7 +3,7 @@
 #
 # A single domain serves both HTTPS JSON-RPC (:8545) and secure WebSocket (:8546):
 #   https://RPC_DOMAIN   -> JSON-RPC
-#   wss://RPC_DOMAIN     -> subscriptions (newHeads, PrimeOrdersTrades, ...)
+#   wss://RPC_DOMAIN     -> subscriptions (newHeads, MersennetOrdersTrades, ...)
 #
 # The faucet frontend is served separately on the app host; its /api is proxied
 # to this node's faucet backend (:8080), so no faucet vhost is needed here.
