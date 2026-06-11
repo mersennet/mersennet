@@ -781,10 +781,18 @@ fn dispatch(
             }
         }
         _ => {
-            return Err((
-                id,
-                rpc_error_with_code(-32601, format!("method not found: {}", call.method)),
-            ));
+            // Fall through to the comprehensive router, which also
+            // dispatches shielded methods (mersennet_getShielded*,
+            // mersennet_*StateProof, mersennet_submitShield*, etc.).
+            // Genuinely unknown methods return -32601 from the router.
+            let params = call.params.unwrap_or(Value::Null);
+            let mut engine = engine
+                .lock()
+                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            match rpc_router::route(call.method.as_str(), params, &mut engine) {
+                Ok(value) => value,
+                Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
+            }
         }
     };
 
