@@ -153,12 +153,6 @@ programs/                       — SP1 RISC-V zkVM (built outside the workspace
 ├── state-transition/                 — state-transition program
 └── state-transition-host/            — host runner (mock / real-SP1 / network)
 
-contracts/                      — Solidity contracts (Foundry)
-├── src/foundation/                   — WMRSN, Multicall3, MockERC20
-├── src/dex/                          — PrimeSwap V2-style AMM
-├── src/primeorders/                  — CLOB precompile example strategies
-└── src/zk/                           — Groth16Verifier + PrimeChainBridge
-
 deploy/                         — Hetzner VPS testnet deployment (systemd + scripts)
 testnet/                        — Dockerized testnets
 ├── configs/privacy/                  — 7-validator 5-of-7 configs
@@ -167,24 +161,7 @@ testnet/                        — Dockerized testnets
 └── scripts/                          — bootstrap, load, chaos
 mainnet/                        — Mainnet genesis (8191), compose stack, launch checklist
 monitoring/                     — Prometheus + Grafana dashboards
-validator-explorer/             — Static validator staking explorer (HTML/JS)
-
-docs/
-├── DEVELOPER_GUIDE.md          — START HERE for new contributors
-├── STATUS.md                   — workstream progress tracker
-├── ARCHITECTURE.md             — high-level design (transparent chain)
-├── adr/                        — Architecture Decision Records (014–019)
-├── security/
-│   ├── cryptography-spec.md          — formal crypto spec for auditor
-│   └── privacy-invariants.md         — CI-enforced rules
-└── runbooks/
-    ├── privacy-testnet-bootstrap.md  — bring up chain 7920
-    └── zk-fork-activation.md         — mainnet hard-fork checklist
-
 scripts/ci/, scripts/zk/        — CI helpers (privacy-grep) + ZK prover adapters
-sdk/, sdk-go/, sdk-python/      — TypeScript / Go / Python clients
-docs-site/                      — Astro Starlight docs (docs.mersennet.com)
-website/                        — Mersennet landing site
 ```
 
 ## Branch policy
@@ -195,20 +172,23 @@ branches are preserved as `archive/*` tags and can be recovered any time.
 
 ## Ecosystem Repos
 
-All ecosystem applications live in their own repositories:
+This repository contains **only the blockchain**: the Rust node, the SP1
+programs, and deployment/monitoring for running networks. Everything else
+lives in its own repository under [github.com/mersennet](https://github.com/mersennet):
 
-| App | Repo | Description |
-|-----|------|-------------|
-| **PrimeTrade** | [prime-trade](https://github.com/PrimeNumbersLabs/prime-trade) | Professional CLOB trading terminal — perpetual futures with TradingView charts, 5 order types, TP/SL |
-| **PrimeScan** | [primescan-explorer](https://github.com/PrimeNumbersLabs/primescan-explorer) | Block explorer — transactions, addresses, tokens, validators |
-| **PrimeSwap V2** | [primeswap-v2](https://github.com/PrimeNumbersLabs/primeswap-v2) | Uniswap V2-style AMM DEX (React) |
-| **PrimeSwap V3** | [primeswap-v3](https://github.com/PrimeNumbersLabs/primeswap-v3) | Concentrated liquidity DEX frontend |
-| **PrimeSwap DEX** | [primeswap-dex](https://github.com/PrimeNumbersLabs/primeswap-dex) | Lightweight swap interface (vanilla JS) |
-| **Validator Explorer** | [mersennet-explorer](https://github.com/PrimeNumbersLabs/prime-chain-explorer) | Validator staking metrics and delegation UI |
-| **Node Dashboard** | [primenodes-dashboard](https://github.com/PrimeNumbersLabs/primenodes-dashboard) | Validator monitoring and analytics |
-| **Faucet** | [prime-faucet](https://github.com/PrimeNumbersLabs/prime-faucet) | Testnet MRSN token faucet |
-| **Trading Bots** | [prime-bots](https://github.com/PrimeNumbersLabs/prime-bots) | Market maker, trader, and volume bots for CLOB testing |
-| **SDK** | [mersennet-sdk](https://github.com/PrimeNumbersLabs/prime-chain-sdk) | TypeScript SDK for JSON-RPC and PrimeOrders |
+| Repo | Contents |
+|------|----------|
+| [docs](https://github.com/mersennet/docs) | docs.mersennet.com (Astro Starlight) + internal engineering docs, ADRs, runbooks, whitepaper |
+| [website](https://github.com/mersennet/website) | mersennet.com landing site (Next.js) |
+| [trade](https://github.com/mersennet/trade) | Mersennet Trade — perpetuals terminal on the native order book |
+| [explorer](https://github.com/mersennet/explorer) | Block explorer |
+| [validator-dashboard](https://github.com/mersennet/validator-dashboard) | Validator monitoring & analytics |
+| [faucet](https://github.com/mersennet/faucet) | Testnet MRSN faucet |
+| [contracts](https://github.com/mersennet/contracts) | Solidity contracts — Groth16 bridge, WMRSN, PrimeOrders examples (Foundry) |
+| [sdk-ts](https://github.com/mersennet/sdk-ts) | TypeScript SDK (`@mersennet/sdk`) |
+| [sdk-go](https://github.com/mersennet/sdk-go) | Go SDK |
+| [sdk-python](https://github.com/mersennet/sdk-python) | Python SDK (`mersennet-sdk`) |
+| [brand](https://github.com/mersennet/brand) | Logo masters, media kit, brand guidelines |
 
 ## Testnet
 
