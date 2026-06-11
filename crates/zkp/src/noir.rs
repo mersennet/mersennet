@@ -310,13 +310,13 @@ impl MockVerifier {
     pub fn vk_hash_for(circuit: Circuit) -> [u8; 32] {
         use sha3::{Digest, Keccak256};
         let label = match circuit {
-            Circuit::Spend => "PrimeChain-MockVK-Spend",
-            Circuit::Output => "PrimeChain-MockVK-Output",
-            Circuit::JoinSplit => "PrimeChain-MockVK-JoinSplit",
-            Circuit::OrderPlace => "PrimeChain-MockVK-OrderPlace",
-            Circuit::LiquidateClaim => "PrimeChain-MockVK-LiquidateClaim",
-            Circuit::LiquidateExecute => "PrimeChain-MockVK-LiquidateExecute",
-            Circuit::Test => "PrimeChain-MockVK-Test",
+            Circuit::Spend => "MersennetChain-MockVK-Spend",
+            Circuit::Output => "MersennetChain-MockVK-Output",
+            Circuit::JoinSplit => "MersennetChain-MockVK-JoinSplit",
+            Circuit::OrderPlace => "MersennetChain-MockVK-OrderPlace",
+            Circuit::LiquidateClaim => "MersennetChain-MockVK-LiquidateClaim",
+            Circuit::LiquidateExecute => "MersennetChain-MockVK-LiquidateExecute",
+            Circuit::Test => "MersennetChain-MockVK-Test",
         };
         let mut h = Keccak256::new();
         h.update(label.as_bytes());
@@ -516,7 +516,9 @@ impl BarretenbergVerifier {
     pub fn from_env() -> Result<Self, NoirToolchainError> {
         let artifacts_dir = env::var_os("MERSENNET_NOIR_ARTIFACTS_DIR")
             .map(PathBuf::from)
-            .ok_or(NoirToolchainError::MissingEnv("MERSENNET_NOIR_ARTIFACTS_DIR"))?;
+            .ok_or(NoirToolchainError::MissingEnv(
+                "MERSENNET_NOIR_ARTIFACTS_DIR",
+            ))?;
         let verify_adapter = env::var("MERSENNET_BB_VERIFY_ADAPTER")
             .map_err(|_| NoirToolchainError::MissingEnv("MERSENNET_BB_VERIFY_ADAPTER"))?;
         Ok(Self {

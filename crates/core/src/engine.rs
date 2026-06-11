@@ -13,12 +13,12 @@ use crate::events::{
 use crate::fba::{AuctionResult, BatchOrder, FBAEngine};
 use crate::hotstuff2::{HotStuff2, HotStuff2Result};
 use crate::mempool::{Mempool, TxRejection};
+use crate::mersennet_orders::{
+    MarketId, MersennetOrdersState, Order, OrderBookView, OrderId, OrderOutcome, Side, TimeInForce,
+};
 use crate::network::NetworkSim;
 use crate::parallel::ParallelExecutor;
 use crate::precompiles;
-use crate::mersennet_orders::{
-    MarketId, Order, OrderBookView, OrderId, OrderOutcome, MersennetOrdersState, Side, TimeInForce,
-};
 use crate::state::PersistentState;
 use crate::state::SnapshotMeta;
 use crate::state_redb::RedbState;
@@ -769,12 +769,14 @@ impl Engine {
             .orders
             .state
             .add_market(symbol.clone(), tick_size, lot_size);
-        self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::MarketAdded {
-            market_id,
-            symbol,
-            tick_size,
-            lot_size,
-        }));
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::MarketAdded {
+                market_id,
+                symbol,
+                tick_size,
+                lot_size,
+            },
+        ));
         market_id
     }
 
@@ -791,17 +793,19 @@ impl Engine {
             .orders
             .state
             .submit_order(owner, market, side, price, size, tif)?;
-        self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::OrderSubmitted {
-            order_id: outcome.order_id,
-            owner,
-            market_id: market,
-            side,
-            price,
-            size,
-            tif,
-            filled: outcome.filled,
-            remaining: outcome.remaining,
-        }));
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::OrderSubmitted {
+                order_id: outcome.order_id,
+                owner,
+                market_id: market,
+                side,
+                price,
+                size,
+                tif,
+                filled: outcome.filled,
+                remaining: outcome.remaining,
+            },
+        ));
         for trade in &outcome.trades {
             self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade {
                 taker: trade.taker,
@@ -818,11 +822,13 @@ impl Engine {
     pub fn mersennet_orders_cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
         let order = self.orders.state.cancel_order(order_id);
         if let Some(order) = &order {
-            self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::OrderCancelled {
-                order_id: order.id,
-                owner: order.owner,
-                market_id: order.market,
-            }));
+            self.record_event(DomainEvent::MersennetOrders(
+                MersennetOrdersEvent::OrderCancelled {
+                    order_id: order.id,
+                    owner: order.owner,
+                    market_id: order.market,
+                },
+            ));
         }
         order
     }
@@ -856,10 +862,9 @@ impl Engine {
     #[allow(dead_code)]
     pub fn mersennet_orders_liquidate(&mut self, owner: Address) -> bool {
         let liquidated = self.orders.state.liquidate(owner);
-        self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::Liquidation {
-            owner,
-            liquidated,
-        }));
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::Liquidation { owner, liquidated },
+        ));
         liquidated
     }
 
@@ -1773,7 +1778,9 @@ impl Engine {
             .import_snapshot_bytes(&envelope.evm_snapshot)?;
         self.evm.db = InMemoryDB::default();
         self.evm.state.load_into_db(&mut self.evm.db)?;
-        self.evm.state.load_mersennet_orders(&mut self.orders.state)?;
+        self.evm
+            .state
+            .load_mersennet_orders(&mut self.orders.state)?;
         self.evm.state.load_bridge_queues(
             &mut self.bridge.orders_to_evm,
             &mut self.bridge.evm_to_orders,

@@ -9,13 +9,13 @@ use std::sync::Mutex;
 use crate::bridge::BridgeQueue;
 use crate::engine::Block;
 use crate::mersennet_orders::{
-    AccountState, Market, MarketId, Order, OrderBook, OrderId, Position, MersennetOrdersState,
+    AccountState, Market, MarketId, MersennetOrdersState, Order, OrderBook, OrderId, Position,
 };
 use crate::state::{
-    AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord, MerkleTree, OrderBookRecord,
-    OrderRecord, PositionRecord, MersennetOrdersSnapshot, SnapshotMeta, SnapshotRecord, StateProof,
-    bytes_to_u256, decode_bridge_queue, decode_market_status, decode_side, decode_tif,
-    encode_bridge_queue, encode_market_status, encode_side, encode_tif,
+    AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord, MerkleTree,
+    MersennetOrdersSnapshot, OrderBookRecord, OrderRecord, PositionRecord, SnapshotMeta,
+    SnapshotRecord, StateProof, bytes_to_u256, decode_bridge_queue, decode_market_status,
+    decode_side, decode_tif, encode_bridge_queue, encode_market_status, encode_side, encode_tif,
 };
 use crate::state_trait::StateBackend;
 

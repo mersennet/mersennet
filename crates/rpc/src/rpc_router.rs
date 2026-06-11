@@ -148,7 +148,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         "mersennet_orders_getOrderBook" => {
             require_transparent_mersennet_orders_enabled(engine)?;
             let market_id = parse_market_id(params)?;
-            let book = engine.mersennet_orders_order_book(mersennet::mersennet_orders::MarketId(market_id));
+            let book = engine
+                .mersennet_orders_order_book(mersennet::mersennet_orders::MarketId(market_id));
             match book {
                 Some(book) => Ok(serde_json::to_value(order_book_to_dto(book))
                     .map_err(|err| RpcError::new(-32000, err.to_string()))?),

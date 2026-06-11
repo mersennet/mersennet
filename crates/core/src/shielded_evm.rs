@@ -509,7 +509,7 @@ fn derive_migration_rho(source_eoa: Address, height: u64) -> Fr {
     // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
-    h.update(b"PrimeChain-MigrationRho");
+    h.update(b"MersennetChain-MigrationRho");
     h.update(source_eoa.as_slice());
     h.update(height.to_le_bytes());
     let bytes: [u8; 32] = h.finalize().into();
@@ -520,7 +520,7 @@ fn derive_migration_psi(source_eoa: Address, height: u64) -> Fr {
     // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
-    h.update(b"PrimeChain-MigrationPsi");
+    h.update(b"MersennetChain-MigrationPsi");
     h.update(source_eoa.as_slice());
     h.update(height.to_le_bytes());
     let bytes: [u8; 32] = h.finalize().into();

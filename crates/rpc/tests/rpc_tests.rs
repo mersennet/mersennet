@@ -106,10 +106,14 @@ fn rpc_transparent_simulation_methods_disabled_after_privacy_activation() {
     let (mut engine, _dir) = setup_engine(1);
     engine.activate_privacy_mode();
 
-    let mersennet_call_err =
-        route("mersennet_call", Value::Null, &mut engine).expect_err("mersennet_call should be disabled");
+    let mersennet_call_err = route("mersennet_call", Value::Null, &mut engine)
+        .expect_err("mersennet_call should be disabled");
     assert_eq!(mersennet_call_err.code, -32605);
-    assert!(mersennet_call_err.message.contains("simulation RPC disabled"));
+    assert!(
+        mersennet_call_err
+            .message
+            .contains("simulation RPC disabled")
+    );
 
     let eth_call_err =
         route("eth_call", Value::Null, &mut engine).expect_err("eth_call should be disabled");

@@ -158,7 +158,8 @@ fn main() {
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
-        let market = eng.mersennet_orders_add_market("BTC/USDC", U256::from(1u64), U256::from(1u64));
+        let market =
+            eng.mersennet_orders_add_market("BTC/USDC", U256::from(1u64), U256::from(1u64));
 
         // Place maker orders (sells at price 100)
         let start = Instant::now();
@@ -222,7 +223,8 @@ fn main() {
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
-        let market = eng.mersennet_orders_add_market("ETH/USDC", U256::from(1u64), U256::from(1u64));
+        let market =
+            eng.mersennet_orders_add_market("ETH/USDC", U256::from(1u64), U256::from(1u64));
 
         // Fund accounts
         for i in 1..=255u8 {

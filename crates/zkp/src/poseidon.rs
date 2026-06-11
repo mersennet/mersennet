@@ -228,10 +228,12 @@ fn canonicalize(x: Fr) -> Fr {
 fn synthesize_round_constants(cfg: PoseidonConfig) -> Vec<Fr> {
     let total = (cfg.full_rounds() + cfg.partial_rounds()) * cfg.width();
     let mut out = Vec::with_capacity(total);
-    let mut state = [0u8; 32];
-    state[0..23].copy_from_slice(b"PrimeChain-Poseidon-v0\0");
+    const LABEL: &[u8] = b"MersennetChain-Poseidon-v0\0";
+    let mut state = Vec::with_capacity(LABEL.len() + 8);
     for i in 0..total {
-        state[24..32].copy_from_slice(&(i as u64).to_le_bytes());
+        state.clear();
+        state.extend_from_slice(LABEL);
+        state.extend_from_slice(&(i as u64).to_le_bytes());
         let hash = blake_like(&state);
         out.push(canonicalize(Fr::from_bytes_reduce(&hash)));
     }

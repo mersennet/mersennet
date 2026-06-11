@@ -13,8 +13,8 @@ use revm::primitives::{
 };
 
 use crate::code_publication::CodePublicationRegistry;
+use crate::mersennet_orders::{MarketId, MersennetOrdersState, OrderId, Side, TimeInForce};
 use crate::precompile_abi::*;
-use crate::mersennet_orders::{MarketId, OrderId, MersennetOrdersState, Side, TimeInForce};
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
 use crate::zk_proofs::StateTransitionProof;
 
