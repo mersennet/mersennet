@@ -336,7 +336,7 @@ fn trace_real_sp1_stage(stage: &str) {
         })
         .unwrap_or(false);
     if enabled {
-        eprintln!("[prime-sp1-stage] {stage}");
+        eprintln!("[mersennet-sp1-stage] {stage}");
     }
 }
 

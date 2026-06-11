@@ -9,7 +9,7 @@ fn mersennet_orders_limit_matching_and_book() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let maker = Address::from_slice(&[0x11; 20]);
     let taker = Address::from_slice(&[0x22; 20]);
@@ -96,7 +96,7 @@ fn mersennet_orders_margin_enforced_and_liquidation() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let trader = Address::from_slice(&[0x33; 20]);
 
@@ -141,7 +141,7 @@ fn mersennet_orders_domain_events_embedded_in_block() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let trader = Address::from_slice(&[0x55; 20]);
     let _ = engine
@@ -179,9 +179,9 @@ fn mersennet_orders_deterministic_matching_across_nodes() {
     let mut engine_b = Engine::new_with_state(1, temp_b.path());
 
     let market_a =
-        engine_a.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine_a.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     let market_b =
-        engine_b.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine_b.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     assert_eq!(market_a.0, market_b.0);
 
     let maker = Address::from_slice(&[0x66; 20]);
@@ -259,7 +259,7 @@ fn mersennet_orders_sensitive_domain_events_suppressed_after_privacy_activation(
     engine.activate_privacy_mode();
 
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     let trader = Address::from_slice(&[0x88; 20]);
 
     engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));

@@ -18,7 +18,7 @@ fn setup_engine() -> (Engine, TempDir) {
 fn insurance_fund_collects_fees_on_trades() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.orders.state.insurance_contribution_rate_bps = 10; // 0.1%
 
@@ -57,7 +57,7 @@ fn insurance_fund_collects_fees_on_trades() {
 fn insurance_fund_covers_liquidation_deficit() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.mersennet_orders_set_margin_params(100, 0); // 1% initial
     engine.orders.state.insurance_contribution_rate_bps = 0;
@@ -109,7 +109,7 @@ fn insurance_fund_covers_liquidation_deficit() {
 fn match_time_margin_rejects_when_insufficient() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.mersennet_orders_set_margin_params(5_000, 2_500); // 50% initial, 25% maintenance
 
@@ -147,7 +147,7 @@ fn match_time_margin_rejects_when_insufficient() {
 fn vwap_entry_price_adding_to_position() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let buyer = addr(0x77);
     let seller = addr(0x88);
@@ -212,7 +212,7 @@ fn vwap_entry_price_adding_to_position() {
 fn vwap_reducing_position_realizes_pnl() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let buyer = addr(0x99);
     let seller = addr(0xAA);
@@ -283,7 +283,7 @@ fn vwap_reducing_position_realizes_pnl() {
 fn market_halt_rejects_orders() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.orders.state.halt_market(market_id);
 
@@ -303,7 +303,7 @@ fn market_halt_rejects_orders() {
 fn collateral_withdrawal_rejected_when_equity_insufficient() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.mersennet_orders_set_margin_params(100, 500); // 1% initial, 5% maintenance
 
@@ -347,7 +347,7 @@ fn collateral_withdrawal_rejected_when_equity_insufficient() {
 fn fok_all_or_nothing() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let maker = addr(0x11);
     engine
@@ -401,7 +401,7 @@ fn fok_all_or_nothing() {
 fn ioc_partial_fill_remainder_cancelled() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
 
     let maker = addr(0x33);
     engine
