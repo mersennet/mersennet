@@ -9,10 +9,10 @@ added in `mersennet-zkp` and `mersennet`.
   per circuit, runs `nargo compile`, copies the resulting `target/`
   directory into `crates/zkp/params/noir/<circuit>/`, and writes the
   same deterministic `vk.hash` format that the Rust verifier expects.
-- `barretenberg_prove_adapter.py`: adapter for `PRIME_BB_PROVE_ADAPTER`.
-- `barretenberg_verify_adapter.py`: adapter for `PRIME_BB_VERIFY_ADAPTER`.
-- `sp1_prove_adapter.py`: adapter for `PRIME_SP1_PROVE_ADAPTER`.
-- `sp1_verify_adapter.py`: adapter for `PRIME_SP1_VERIFY_ADAPTER`.
+- `barretenberg_prove_adapter.py`: adapter for `MERSENNET_BB_PROVE_ADAPTER`.
+- `barretenberg_verify_adapter.py`: adapter for `MERSENNET_BB_VERIFY_ADAPTER`.
+- `sp1_prove_adapter.py`: adapter for `MERSENNET_SP1_PROVE_ADAPTER`.
+- `sp1_verify_adapter.py`: adapter for `MERSENNET_SP1_VERIFY_ADAPTER`.
 - `*.cmd`: Windows wrappers so the Rust runtime can invoke the Python
   adapters directly via `Command::new`.
 
@@ -26,15 +26,15 @@ py -3 scripts/zk/compile_noir_artifacts.py
 
 Useful environment variables:
 
-- `PRIME_NARGO_BIN`: override the `nargo` executable.
-- `PRIME_NOIR_ARTIFACTS_DIR`: override the compiled artifact directory.
-- `PRIME_BB_BIN`: override the `bb` executable.
-- `PRIME_BB_PROVE_ADAPTER`: executable or script that produces a proof file for one compiled circuit.
-- `PRIME_BB_ACIR_PATH`: override ACIR artifact discovery.
-- `PRIME_BB_VK_PATH`: point the adapter at an already-generated VK.
-- `PRIME_BB_PROVE_TEMPLATE`: custom proof generation command.
-- `PRIME_BB_WRITE_VK_TEMPLATE`: custom VK generation command.
-- `PRIME_BB_VERIFY_TEMPLATE`: custom proof verification command.
+- `MERSENNET_NARGO_BIN`: override the `nargo` executable.
+- `MERSENNET_NOIR_ARTIFACTS_DIR`: override the compiled artifact directory.
+- `MERSENNET_BB_BIN`: override the `bb` executable.
+- `MERSENNET_BB_PROVE_ADAPTER`: executable or script that produces a proof file for one compiled circuit.
+- `MERSENNET_BB_ACIR_PATH`: override ACIR artifact discovery.
+- `MERSENNET_BB_VK_PATH`: point the adapter at an already-generated VK.
+- `MERSENNET_BB_PROVE_TEMPLATE`: custom proof generation command.
+- `MERSENNET_BB_WRITE_VK_TEMPLATE`: custom VK generation command.
+- `MERSENNET_BB_VERIFY_TEMPLATE`: custom proof verification command.
 
 Template placeholders:
 
@@ -50,18 +50,18 @@ Template placeholders:
 Default runtime setup on Windows:
 
 ```powershell
-$env:PRIME_NOIR_ARTIFACTS_DIR = (Resolve-Path .\crates\zkp\params\noir)
-$env:PRIME_BB_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\barretenberg_prove_adapter.cmd)
-$env:PRIME_BB_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\barretenberg_verify_adapter.cmd)
+$env:MERSENNET_NOIR_ARTIFACTS_DIR = (Resolve-Path .\crates\zkp\params\noir)
+$env:MERSENNET_BB_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\barretenberg_prove_adapter.cmd)
+$env:MERSENNET_BB_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\barretenberg_verify_adapter.cmd)
 ```
 
 If your Barretenberg CLI needs nonstandard flags, set
-`PRIME_BB_PROVE_TEMPLATE`, `PRIME_BB_WRITE_VK_TEMPLATE`, and
-`PRIME_BB_VERIFY_TEMPLATE` to an exact command line. Example:
+`MERSENNET_BB_PROVE_TEMPLATE`, `MERSENNET_BB_WRITE_VK_TEMPLATE`, and
+`MERSENNET_BB_VERIFY_TEMPLATE` to an exact command line. Example:
 
 ```powershell
-$env:PRIME_BB_PROVE_TEMPLATE = 'nargo prove'
-$env:PRIME_BB_VERIFY_TEMPLATE = 'bb verify --vk {vk} --proof {proof} --public-inputs {public_inputs}'
+$env:MERSENNET_BB_PROVE_TEMPLATE = 'nargo prove'
+$env:MERSENNET_BB_VERIFY_TEMPLATE = 'bb verify --vk {vk} --proof {proof} --public-inputs {public_inputs}'
 ```
 
 ## SP1
@@ -74,13 +74,13 @@ supported targets.
 
 Useful environment variables:
 
-- `PRIME_SP1_PROVE_TEMPLATE`
-- `PRIME_SP1_VERIFY_TEMPLATE`
-- `PRIME_SP1_HOST_EXECUTOR` (`native` or `wsl`)
-- `PRIME_SP1_WSL_DISTRO` (optional WSL distro override when using `wsl`)
-- `PRIME_SP1_PROGRAM_ELF`
-- `PRIME_SP1_VKEY_HASH`
-- `PRIME_SP1_MODE`
+- `MERSENNET_SP1_PROVE_TEMPLATE`
+- `MERSENNET_SP1_VERIFY_TEMPLATE`
+- `MERSENNET_SP1_HOST_EXECUTOR` (`native` or `wsl`)
+- `MERSENNET_SP1_WSL_DISTRO` (optional WSL distro override when using `wsl`)
+- `MERSENNET_SP1_PROGRAM_ELF`
+- `MERSENNET_SP1_VKEY_HASH`
+- `MERSENNET_SP1_MODE`
 
 Template placeholders:
 
@@ -102,19 +102,19 @@ Template placeholders:
 Default runtime setup on Windows:
 
 ```powershell
-$env:PRIME_SP1_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\sp1_prove_adapter.cmd)
-$env:PRIME_SP1_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\sp1_verify_adapter.cmd)
+$env:MERSENNET_SP1_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\sp1_prove_adapter.cmd)
+$env:MERSENNET_SP1_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\sp1_verify_adapter.cmd)
 ```
 
 By default the adapters now invoke the checked-in host runner at
 `programs/state-transition-host/`:
 
 ```powershell
-$env:PRIME_SP1_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\sp1_prove_adapter.cmd)
-$env:PRIME_SP1_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\sp1_verify_adapter.cmd)
+$env:MERSENNET_SP1_PROVE_ADAPTER = (Resolve-Path .\scripts\zk\sp1_prove_adapter.cmd)
+$env:MERSENNET_SP1_VERIFY_ADAPTER = (Resolve-Path .\scripts\zk\sp1_verify_adapter.cmd)
 ```
 
-You only need `PRIME_SP1_PROVE_TEMPLATE` / `PRIME_SP1_VERIFY_TEMPLATE`
+You only need `MERSENNET_SP1_PROVE_TEMPLATE` / `MERSENNET_SP1_VERIFY_TEMPLATE`
 if you want to override that default with a different host runner or a
 real `sp1_sdk` command.
 
@@ -122,8 +122,8 @@ Example override for the checked-in host runner using the real SDK-backed
 path on supported targets:
 
 ```powershell
-$env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
-$env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
+$env:MERSENNET_SP1_PROVE_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
+$env:MERSENNET_SP1_VERIFY_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
 ```
 
 Notes:
@@ -133,28 +133,28 @@ Notes:
 - On Linux, `--features real-sp1` should be run in `--release`; the SP1
   prover client bootstrap is computationally heavy enough that debug
   binaries can look hung for minutes during `ProverClient::builder().cpu().build()`.
-- For `PRIME_SP1_MODE=local` prove commands, the adapters now default to
+- For `MERSENNET_SP1_MODE=local` prove commands, the adapters now default to
   a lower-memory lane unless you explicitly override it: they inject
-  `PRIME_SP1_PROOF_SYSTEM=core`, disable inline verify and deferred proof
+  `MERSENNET_SP1_PROOF_SYSTEM=core`, disable inline verify and deferred proof
   verification, and use a mixed worker profile tuned for WSL: bootstrap-
   critical workers stay at `2`, while the recursion/deferred/splicing
   prove-phase workers are capped at `1`. This is the current best-known
   tradeoff to avoid the compressed-path OOM on a 28 GB memory ceiling
   without pushing prover bootstrap back into multi-minute startup.
-- E3 transcript capture should use `PRIME_SP1_MODE=local` today; one
+- E3 transcript capture should use `MERSENNET_SP1_MODE=local` today; one
   successful local prove/verify transcript against the pinned ELF and
-  `PRIME_SP1_VKEY_HASH` is enough to close E3.
+  `MERSENNET_SP1_VKEY_HASH` is enough to close E3.
 - E4: the `sp1-sdk/network` vs `revm` `c-kzg` conflict is resolved — the
   SP1 host no longer depends on `revm` (proof types moved to the
   `mersennet-state-proof` crate). Build the host with `--features network` to
-  enable `PRIME_SP1_MODE=network`
+  enable `MERSENNET_SP1_MODE=network`
   (`ProverClient::builder().network().build()`, credentials from
   `NETWORK_PRIVATE_KEY` / `NETWORK_RPC_URL`). Without the `network`
   feature the host still fails loudly in that mode.
 - On Windows, native `--features real-sp1` still returns a clear runtime
   error because the upstream `sp1-sdk` dependency pulls Unix-only
   `sp1-jit` pieces.
-- For Windows/Linux parity, set `PRIME_SP1_HOST_EXECUTOR=wsl` so the
+- For Windows/Linux parity, set `MERSENNET_SP1_HOST_EXECUTOR=wsl` so the
   adapter runs the same host-runner command inside WSL and automatically
   rewrites the request/response/program ELF paths to `/mnt/...` form.
 - The adapters now auto-insert `--release` for `cargo run ... --features real-sp1`
@@ -164,9 +164,9 @@ Notes:
 If you want to force a different tradeoff, set any of these yourself and
 the adapters will preserve your explicit values:
 
-- `PRIME_SP1_PROOF_SYSTEM`
-- `PRIME_SP1_INLINE_VERIFY`
-- `PRIME_SP1_DEFERRED_PROOF_VERIFICATION`
+- `MERSENNET_SP1_PROOF_SYSTEM`
+- `MERSENNET_SP1_INLINE_VERIFY`
+- `MERSENNET_SP1_DEFERRED_PROOF_VERIFICATION`
 - `RAYON_NUM_THREADS`
 - `SP1_WORKER_NUM_CORE_WORKERS`
 - `SP1_WORKER_NUM_SETUP_WORKERS`
@@ -179,10 +179,10 @@ the adapters will preserve your explicit values:
 Example Windows parity setup via WSL:
 
 ```powershell
-$env:PRIME_SP1_HOST_EXECUTOR = 'wsl'
-$env:PRIME_SP1_MODE = 'local'
-$env:PRIME_SP1_PROVE_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
-$env:PRIME_SP1_VERIFY_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
+$env:MERSENNET_SP1_HOST_EXECUTOR = 'wsl'
+$env:MERSENNET_SP1_MODE = 'local'
+$env:MERSENNET_SP1_PROVE_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --prove-request {request} --prove-response {response}'
+$env:MERSENNET_SP1_VERIFY_TEMPLATE = 'cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features real-sp1 -- --verify-request {request} --verify-response {response}'
 ```
 
 The adapters validate the JSON shape that the Rust runtime expects:
@@ -217,7 +217,7 @@ Recommended sequence:
 ```bash
 cargo check --manifest-path programs/state-transition-host/Cargo.toml --features network
 
-PRIME_SP1_MODE=network \
+MERSENNET_SP1_MODE=network \
 cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- \
   --prove-request scripts/zk/sp1-network-prove-request.request.json \
   --prove-response scripts/zk/sp1-network-prove-response.json
@@ -227,7 +227,7 @@ cargo run --manifest-path programs/state-transition-host/Cargo.toml --example re
   scripts/zk/sp1-network-verify-request.request.json \
   programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition
 
-PRIME_SP1_MODE=network \
+MERSENNET_SP1_MODE=network \
 cargo run --release --manifest-path programs/state-transition-host/Cargo.toml --features network -- \
   --verify-request scripts/zk/sp1-network-verify-request.request.json \
   --verify-response scripts/zk/sp1-network-verify-response.json
@@ -239,14 +239,14 @@ Artifacts to retain in the audit packet:
 - `scripts/zk/sp1-network-verify-request.request.json`
 - `scripts/zk/sp1-network-verify-response.json`
 - The exact prove request used for the delegated proof
-- The ELF path / sha256 / pinned `PRIME_SP1_VKEY_HASH`
+- The ELF path / sha256 / pinned `MERSENNET_SP1_VKEY_HASH`
 - The delegated prover account metadata needed to identify which
   network lane produced the proof
 
 Exit criteria:
 
 - The network-enabled host compiles on the candidate release.
-- One delegated `PRIME_SP1_MODE=network` prove completes successfully.
+- One delegated `MERSENNET_SP1_MODE=network` prove completes successfully.
 - The rendered verify request verifies successfully.
 - The proof's `public_values` and `vkey_hash_hex` match the pinned E3
   artifact set.
@@ -322,7 +322,7 @@ single developer's absolute build path.
 Recommended setup:
 
 ```powershell
-$env:PRIME_SP1_VKEY_HASH = (Get-Content .\crates\zkp\params\sp1\state-transition.vk.hash -Raw).Trim()
+$env:MERSENNET_SP1_VKEY_HASH = (Get-Content .\crates\zkp\params\sp1\state-transition.vk.hash -Raw).Trim()
 ```
 
 This completes the real vkey capture step for E3. The checked-in SP1 path

@@ -25,12 +25,12 @@
 - [x] Persist peers + node identity keys.
 - [x] Config hot-reload + health endpoints.
 
-## PrimeOrders + PrimeEVM
-- [x] Define PrimeOrders state schema (accounts, orders, positions, markets).
+## MersennetOrders + MersennetEVM
+- [x] Define MersennetOrders state schema (accounts, orders, positions, markets).
 - [x] Implement deterministic matching engine (limit/market, price-time).
 - [x] Add risk engine (margin, liquidation, funding index).
-- [x] Add cross-domain bridge queue (PrimeOrders ⇄ PrimeEVM).
-- [x] Expose PrimeOrders RPC endpoints + docs.
+- [x] Add cross-domain bridge queue (MersennetOrders ⇄ MersennetEVM).
+- [x] Expose MersennetOrders RPC endpoints + docs.
 - [x] Add end-to-end tests for matching + settlement.
 
 ## Privacy Fork (current — see docs/delivery/privacy-fork-remaining-work.md)

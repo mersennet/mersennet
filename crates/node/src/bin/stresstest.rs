@@ -133,7 +133,7 @@ fn fund_account(rpc: &str, address: Address, chain_id: u64) {
         "gasPrice": "0x1",
         "chainId": format!("0x{:x}", chain_id),
     });
-    let _ = rpc_call(rpc, "prime_sendTransaction", json!([tx_obj]));
+    let _ = rpc_call(rpc, "mersennet_sendTransaction", json!([tx_obj]));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -277,7 +277,7 @@ fn scenario_rapid_reconnect(rpc: &str, _chain_id: u64) -> ScenarioResult {
     let mut failures = 0u64;
 
     for _ in 0..100 {
-        match rpc_call(rpc, "prime_blockNumber", json!([])) {
+        match rpc_call(rpc, "mersennet_blockNumber", json!([])) {
             Ok(_) => successes += 1,
             Err(_) => failures += 1,
         }
@@ -550,14 +550,14 @@ fn scenario_clob_stress(rpc: &str, chain_id: u64) -> ScenarioResult {
     // Ensure market 0 exists
     let _ = rpc_call(
         rpc,
-        "prime_addMarket",
+        "mersennet_addMarket",
         json!([{"symbol": "ETH-USD", "tick_size": 1, "lot_size": 1}]),
     );
 
     // Deposit collateral
     let _ = rpc_call(
         rpc,
-        "prime_depositCollateral",
+        "mersennet_depositCollateral",
         json!([{"owner": addr_hex, "amount": 1_000_000_000}]),
     );
 
@@ -575,7 +575,7 @@ fn scenario_clob_stress(rpc: &str, chain_id: u64) -> ScenarioResult {
             "quantity": 1,
             "time_in_force": "gtc"
         }]);
-        if let Ok(val) = rpc_call(rpc, "prime_submitOrder", params) {
+        if let Ok(val) = rpc_call(rpc, "mersennet_submitOrder", params) {
             placed += 1;
             if let Some(id) = val.get("order_id").and_then(|v| v.as_u64()) {
                 order_ids.push(id);
@@ -587,7 +587,7 @@ fn scenario_clob_stress(rpc: &str, chain_id: u64) -> ScenarioResult {
     // Phase 2: Cancel 500 orders
     let mut cancelled = 0u64;
     for id in order_ids.iter().take(500) {
-        if rpc_call(rpc, "prime_cancelOrder", json!([*id])).is_ok() {
+        if rpc_call(rpc, "mersennet_cancelOrder", json!([*id])).is_ok() {
             cancelled += 1
         }
     }
@@ -606,7 +606,7 @@ fn scenario_clob_stress(rpc: &str, chain_id: u64) -> ScenarioResult {
             "quantity": 1,
             "time_in_force": "gtc"
         }]);
-        if rpc_call(rpc, "prime_submitOrder", params).is_ok() {
+        if rpc_call(rpc, "mersennet_submitOrder", params).is_ok() {
             placed2 += 1;
         }
     }
@@ -669,7 +669,7 @@ fn get_chain_id(rpc: &str) -> Result<u64, String> {
 }
 
 fn get_block_number(rpc: &str) -> u64 {
-    rpc_call(rpc, "prime_blockNumber", json!([]))
+    rpc_call(rpc, "mersennet_blockNumber", json!([]))
         .ok()
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())

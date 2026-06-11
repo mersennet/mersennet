@@ -21,7 +21,7 @@ pub fn handle() -> Option<&'static PrometheusHandle> {
     PROM_HANDLE.get()
 }
 
-/// Central registry that pre-describes every Prometheus metric used by Prime
+/// Central registry that pre-describes every Prometheus metric used by Mersennet
 /// Chain.  Calling [`register_all`] is idempotent and emits `describe_*` calls
 /// so that the `/metrics` endpoint always includes HELP / TYPE lines even
 /// before the first sample is recorded.
@@ -77,7 +77,7 @@ impl MetricsRegistry {
             "Total staked amount across all validators"
         );
 
-        // -- PrimeOrders --
+        // -- MersennetOrders --
         metrics::describe_counter!(
             "mersennet_orders_submitted",
             "Total orders submitted to the order book"

@@ -3,7 +3,7 @@ use anyhow::{Result, anyhow};
 use mersennet::bridge::BridgeDomain;
 use mersennet::engine::{Block, Engine, LogEntry, Receipt, Transaction};
 use mersennet::errors::RpcInputError;
-use mersennet::events::{BridgeEvent, BridgeQueueKind, DomainEvent, PrimeOrdersEvent};
+use mersennet::events::{BridgeEvent, BridgeQueueKind, DomainEvent, MersennetOrdersEvent};
 use mersennet::prometheus;
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
@@ -359,23 +359,23 @@ fn dispatch(
     let result = match call.method.as_str() {
         "mersennetId"
         | "eth_chainId"
-        | "prime_blockNumber"
+        | "mersennet_blockNumber"
         | "eth_blockNumber"
-        | "prime_getBalance"
+        | "mersennet_getBalance"
         | "eth_getBalance"
-        | "prime_getDomainEvents"
-        | "prime_gasPrice"
+        | "mersennet_getDomainEvents"
+        | "mersennet_gasPrice"
         | "eth_gasPrice"
-        | "prime_validators"
-        | "prime_getCodeAttestation"
-        | "prime_getCodeHash"
-        | "prime_getCode"
+        | "mersennet_validators"
+        | "mersennet_getCodeAttestation"
+        | "mersennet_getCodeHash"
+        | "mersennet_getCode"
         | "eth_getCode"
-        | "prime_getStorageAt"
+        | "mersennet_getStorageAt"
         | "eth_getStorageAt"
-        | "prime_getTransactionCount"
+        | "mersennet_getTransactionCount"
         | "eth_getTransactionCount"
-        | "prime_call"
+        | "mersennet_call"
         | "eth_call"
         | "eth_estimateGas"
         | "net_version"
@@ -392,7 +392,7 @@ fn dispatch(
                 Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
             }
         }
-        "prime_getBlockByNumber" | "eth_getBlockByNumber" => {
+        "mersennet_getBlockByNumber" | "eth_getBlockByNumber" => {
             let params = call.params.unwrap_or(Value::Null);
             let (number, include_txs) = parse_block_params(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
@@ -410,7 +410,7 @@ fn dispatch(
                 None => Value::Null,
             }
         }
-        "prime_getTransactionReceipt" | "eth_getTransactionReceipt" => {
+        "mersennet_getTransactionReceipt" | "eth_getTransactionReceipt" => {
             let params = call.params.unwrap_or(Value::Null);
             let tx_hash = parse_hash_param(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
@@ -426,7 +426,7 @@ fn dispatch(
                 None => Value::Null,
             }
         }
-        "prime_getTransactionByHash" | "eth_getTransactionByHash" => {
+        "mersennet_getTransactionByHash" | "eth_getTransactionByHash" => {
             let params = call.params.unwrap_or(Value::Null);
             let tx_hash = parse_hash_param(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
@@ -469,7 +469,7 @@ fn dispatch(
             })?;
             Value::String(hex_b256(tx_hash))
         }
-        "prime_sendTransaction" | "eth_sendTransaction" => {
+        "mersennet_sendTransaction" | "eth_sendTransaction" => {
             let params = call.params.unwrap_or(Value::Null);
             let tx = parse_tx_input(params)
                 .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
@@ -488,7 +488,7 @@ fn dispatch(
             })?;
             Value::String(hex_b256(tx_hash))
         }
-        "prime_getLogs" | "eth_getLogs" => {
+        "mersennet_getLogs" | "eth_getLogs" => {
             let params = call.params.unwrap_or(Value::Null);
             {
                 let engine = engine
@@ -749,15 +749,15 @@ fn dispatch(
                 .map_err(|_| (id.clone(), rpc_error_internal("filter lock poisoned")))?;
             Value::Bool(fs.remove(filter_id))
         }
-        "primeorders_addMarket"
-        | "primeorders_submitOrder"
-        | "primeorders_cancelOrder"
-        | "primeorders_getOrderBook"
-        | "primeorders_getOpenOrders"
-        | "primeorders_setMarginParams"
-        | "primeorders_depositCollateral"
-        | "primeorders_isLiquidatable"
-        | "primeorders_liquidate" => {
+        "mersennet_orders_addMarket"
+        | "mersennet_orders_submitOrder"
+        | "mersennet_orders_cancelOrder"
+        | "mersennet_orders_getOrderBook"
+        | "mersennet_orders_getOpenOrders"
+        | "mersennet_orders_setMarginParams"
+        | "mersennet_orders_depositCollateral"
+        | "mersennet_orders_isLiquidatable"
+        | "mersennet_orders_liquidate" => {
             let params = call.params.unwrap_or(Value::Null);
             let mut engine = engine
                 .lock()
@@ -767,10 +767,10 @@ fn dispatch(
                 Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
             }
         }
-        "primebridge_enqueueOrdersToEvm"
-        | "primebridge_enqueueEvmToOrders"
-        | "primebridge_dequeueOrdersToEvm"
-        | "primebridge_dequeueEvmToOrders" => {
+        "mersennet_bridge_enqueueOrdersToEvm"
+        | "mersennet_bridge_enqueueEvmToOrders"
+        | "mersennet_bridge_dequeueOrdersToEvm"
+        | "mersennet_bridge_dequeueEvmToOrders" => {
             let params = call.params.unwrap_or(Value::Null);
             let mut engine = engine
                 .lock()
@@ -1245,10 +1245,10 @@ fn tx_to_dto_in_block(
 
 fn domain_event_to_value(event: &DomainEvent) -> Value {
     match event {
-        DomainEvent::PrimeOrders(evt) => json!({
-            "domain": "primeorders",
+        DomainEvent::MersennetOrders(evt) => json!({
+            "domain": "mersennet_orders",
             "kind": evt.kind(),
-            "data": prime_orders_event_data(evt),
+            "data": mersennet_orders_event_data(evt),
         }),
         DomainEvent::Bridge(evt) => json!({
             "domain": "bridge",
@@ -1266,7 +1266,7 @@ fn domain_event_to_value(event: &DomainEvent) -> Value {
     }
 }
 
-fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
+fn mersennet_orders_event_data(event: &MersennetOrdersEvent) -> Value {
     if !event.is_privacy_safe_after_activation() {
         return json!({
             "redacted": true,
@@ -1276,7 +1276,7 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
     }
 
     match event {
-        PrimeOrdersEvent::MarketAdded {
+        MersennetOrdersEvent::MarketAdded {
             market_id,
             symbol,
             tick_size,
@@ -1287,7 +1287,7 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "tick_size": hex_u256(*tick_size),
             "lot_size": hex_u256(*lot_size),
         }),
-        PrimeOrdersEvent::OrderSubmitted {
+        MersennetOrdersEvent::OrderSubmitted {
             order_id,
             owner,
             market_id,
@@ -1302,20 +1302,20 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "owner": hex_address(*owner),
             "market_id": hex_u64(market_id.0),
             "side": match side {
-                mersennet::prime_orders::Side::Buy => "buy",
-                mersennet::prime_orders::Side::Sell => "sell",
+                mersennet::mersennet_orders::Side::Buy => "buy",
+                mersennet::mersennet_orders::Side::Sell => "sell",
             },
             "price": hex_u256(*price),
             "size": hex_u256(*size),
             "tif": match tif {
-                mersennet::prime_orders::TimeInForce::Gtc => "gtc",
-                mersennet::prime_orders::TimeInForce::Ioc => "ioc",
-                mersennet::prime_orders::TimeInForce::Fok => "fok",
+                mersennet::mersennet_orders::TimeInForce::Gtc => "gtc",
+                mersennet::mersennet_orders::TimeInForce::Ioc => "ioc",
+                mersennet::mersennet_orders::TimeInForce::Fok => "fok",
             },
             "filled": hex_u256(*filled),
             "remaining": hex_u256(*remaining),
         }),
-        PrimeOrdersEvent::OrderCancelled {
+        MersennetOrdersEvent::OrderCancelled {
             order_id,
             owner,
             market_id,
@@ -1324,7 +1324,7 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "owner": hex_address(*owner),
             "market_id": hex_u64(market_id.0),
         }),
-        PrimeOrdersEvent::Trade {
+        MersennetOrdersEvent::Trade {
             taker,
             maker,
             market_id,
@@ -1336,13 +1336,13 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "maker": hex_address(*maker),
             "market_id": hex_u64(market_id.0),
             "side": match side {
-                mersennet::prime_orders::Side::Buy => "buy",
-                mersennet::prime_orders::Side::Sell => "sell",
+                mersennet::mersennet_orders::Side::Buy => "buy",
+                mersennet::mersennet_orders::Side::Sell => "sell",
             },
             "price": hex_u256(*price),
             "size": hex_u256(*size),
         }),
-        PrimeOrdersEvent::MarginParamsUpdated {
+        MersennetOrdersEvent::MarginParamsUpdated {
             initial_bps,
             maintenance_bps,
         } => json!({
@@ -1350,7 +1350,7 @@ fn prime_orders_event_data(event: &PrimeOrdersEvent) -> Value {
             "maintenance_bps": maintenance_bps,
         }),
         _ => {
-            unreachable!("privacy-sensitive PrimeOrders events should be redacted above")
+            unreachable!("privacy-sensitive MersennetOrders events should be redacted above")
         }
     }
 }
@@ -1383,8 +1383,8 @@ fn bridge_queue_kind_to_str(queue: &BridgeQueueKind) -> &'static str {
 
 fn bridge_domain_to_str(domain: &BridgeDomain) -> &'static str {
     match domain {
-        BridgeDomain::PrimeOrders => "primeorders",
-        BridgeDomain::PrimeEvm => "primeevm",
+        BridgeDomain::MersennetOrders => "mersennet_orders",
+        BridgeDomain::MersennetEvm => "mersennet_evm",
     }
 }
 
@@ -1494,22 +1494,22 @@ fn topics_match(log_topics: &[B256], filters: &[TopicFilter]) -> bool {
 mod tests {
     use super::*;
     use mersennet::engine::Engine;
-    use mersennet::events::{DomainEvent, PrimeOrdersEvent};
-    use mersennet::prime_orders::{Side, TimeInForce};
+    use mersennet::events::{DomainEvent, MersennetOrdersEvent};
+    use mersennet::mersennet_orders::{Side, TimeInForce};
     use tempfile::TempDir;
 
     #[test]
-    fn block_dto_hides_sensitive_primeorders_events_after_privacy_activation() {
+    fn block_dto_hides_sensitive_mersennet_orders_events_after_privacy_activation() {
         let temp_dir = TempDir::new().expect("temp dir");
         let mut engine = Engine::new_with_state(1, temp_dir.path());
         engine.activate_privacy_mode();
 
         let market_id =
-            engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+            engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
         let trader = Address::from_slice(&[0x44; 20]);
-        engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+        engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
         let _ = engine
-            .prime_orders_submit_order(
+            .mersennet_orders_submit_order(
                 trader,
                 market_id,
                 Side::Buy,
@@ -1540,12 +1540,12 @@ mod tests {
 
         assert!(block.domain_events.iter().all(|event| !matches!(
             event,
-            DomainEvent::PrimeOrders(
-                PrimeOrdersEvent::OrderSubmitted { .. }
-                    | PrimeOrdersEvent::OrderCancelled { .. }
-                    | PrimeOrdersEvent::Trade { .. }
-                    | PrimeOrdersEvent::CollateralDeposited { .. }
-                    | PrimeOrdersEvent::Liquidation { .. }
+            DomainEvent::MersennetOrders(
+                MersennetOrdersEvent::OrderSubmitted { .. }
+                    | MersennetOrdersEvent::OrderCancelled { .. }
+                    | MersennetOrdersEvent::Trade { .. }
+                    | MersennetOrdersEvent::CollateralDeposited { .. }
+                    | MersennetOrdersEvent::Liquidation { .. }
             )
         )));
     }

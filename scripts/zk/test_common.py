@@ -56,10 +56,10 @@ class CommonParityTests(unittest.TestCase):
         wrapped = common.build_wsl_command(
             ["cargo", "run", "--release"],
             Path(r"C:\repo\mersennet"),
-            {"PRIME_SP1_PROOF_SYSTEM": "core", "RAYON_NUM_THREADS": "1"},
+            {"MERSENNET_SP1_PROOF_SYSTEM": "core", "RAYON_NUM_THREADS": "1"},
         )
 
-        self.assertIn("PRIME_SP1_PROOF_SYSTEM=core", wrapped[3])
+        self.assertIn("MERSENNET_SP1_PROOF_SYSTEM=core", wrapped[3])
         self.assertIn("RAYON_NUM_THREADS=1", wrapped[3])
 
     def test_normalize_real_sp1_command_adds_release_profile(self) -> None:
@@ -98,7 +98,7 @@ class CommonParityTests(unittest.TestCase):
 
         self.assertEqual(normalized, command)
 
-    @patch.dict(os.environ, {"PRIME_SP1_MODE": "local"}, clear=True)
+    @patch.dict(os.environ, {"MERSENNET_SP1_MODE": "local"}, clear=True)
     def test_local_real_sp1_env_defaults_added_for_local_prove(self) -> None:
         command = [
             "cargo",
@@ -117,8 +117,8 @@ class CommonParityTests(unittest.TestCase):
 
         defaults = common.local_real_sp1_env_defaults(command)
 
-        self.assertEqual(defaults["PRIME_SP1_PROOF_SYSTEM"], "core")
-        self.assertEqual(defaults["PRIME_SP1_INLINE_VERIFY"], "0")
+        self.assertEqual(defaults["MERSENNET_SP1_PROOF_SYSTEM"], "core")
+        self.assertEqual(defaults["MERSENNET_SP1_INLINE_VERIFY"], "0")
         self.assertEqual(defaults["RAYON_NUM_THREADS"], "2")
         self.assertEqual(defaults["SP1_WORKER_NUM_CORE_WORKERS"], "2")
         self.assertEqual(defaults["SP1_WORKER_NUM_SETUP_WORKERS"], "2")
@@ -127,8 +127,8 @@ class CommonParityTests(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "PRIME_SP1_MODE": "local",
-            "PRIME_SP1_PROOF_SYSTEM": "compressed",
+            "MERSENNET_SP1_MODE": "local",
+            "MERSENNET_SP1_PROOF_SYSTEM": "compressed",
             "RAYON_NUM_THREADS": "4",
         },
         clear=True,
@@ -151,9 +151,9 @@ class CommonParityTests(unittest.TestCase):
 
         defaults = common.local_real_sp1_env_defaults(command)
 
-        self.assertNotIn("PRIME_SP1_PROOF_SYSTEM", defaults)
+        self.assertNotIn("MERSENNET_SP1_PROOF_SYSTEM", defaults)
         self.assertNotIn("RAYON_NUM_THREADS", defaults)
-        self.assertEqual(defaults["PRIME_SP1_INLINE_VERIFY"], "0")
+        self.assertEqual(defaults["MERSENNET_SP1_INLINE_VERIFY"], "0")
 
 
 if __name__ == "__main__":

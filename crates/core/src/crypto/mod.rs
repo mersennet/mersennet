@@ -25,7 +25,7 @@ pub struct SignedTransaction {
 /// is `chain_id || nonce || gas_price || gas_limit || to || value || data`.
 ///
 /// For shielded (tx_type 0x7E), the hash domain is:
-///   `"PRIME_SHIELDED_V1" || chain_id || nonce || from
+///   `"MERSENNET_SHIELDED_V1" || chain_id || nonce || from
 ///    || keccak256(bincode(shielded_payload))`
 /// — gas fields are intentionally omitted because shielded txs are
 /// paid by the prover's bond / sponsoring relayer, not by `tx.from`.
@@ -55,7 +55,7 @@ pub fn tx_signing_hash(tx: &Transaction) -> B256 {
 /// will then reject the signature because the zero hash never
 /// matches an honestly produced signature.
 fn shielded_signing_hash(tx: &Transaction) -> B256 {
-    const DOMAIN: &[u8] = b"PRIME_SHIELDED_V1";
+    const DOMAIN: &[u8] = b"MERSENNET_SHIELDED_V1";
     let Some(payload) = &tx.shielded_payload else {
         return B256::ZERO;
     };
@@ -162,12 +162,12 @@ pub fn decode_raw_signed_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     }
 
     // Fall back to custom Mersennet format
-    decode_prime_format_tx(bytes)
+    decode_mersennet_format_tx(bytes)
 }
 
 /// Decode raw signed transaction in Mersennet's custom binary format.
 /// Format: chain_id(8) | nonce(8) | gas_price(32) | gas_limit(8) | to(20) | value(32) | data_len(4) | data | r(32) | s(32) | v(8)
-fn decode_prime_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
+fn decode_mersennet_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     const MIN_LEN: usize = 8 + 8 + 32 + 8 + 20 + 32 + 4 + 32 + 32 + 8; // 172
     if bytes.len() < MIN_LEN {
         return Err(anyhow!("raw tx too short: {} bytes", bytes.len()));

@@ -66,14 +66,14 @@ directly into every workspace build.
 
 ### Noir / Barretenberg
 
-- `PRIME_NARGO_BIN`: optional override for the `nargo` executable.
-- `PRIME_NOIR_CIRCUITS_DIR`: optional override for the shared circuit source tree.
-- `PRIME_NOIR_ARTIFACTS_DIR`: directory where compiled per-circuit artifacts live.
-- `PRIME_BB_VERIFY_ADAPTER`: executable or script that verifies a proof against one compiled circuit.
+- `MERSENNET_NARGO_BIN`: optional override for the `nargo` executable.
+- `MERSENNET_NOIR_CIRCUITS_DIR`: optional override for the shared circuit source tree.
+- `MERSENNET_NOIR_ARTIFACTS_DIR`: directory where compiled per-circuit artifacts live.
+- `MERSENNET_BB_VERIFY_ADAPTER`: executable or script that verifies a proof against one compiled circuit.
 
 `NoirToolchain::compile_circuit` materializes a temporary per-circuit
 package from `crates/zkp/circuits/src`, runs `nargo compile`, copies the
-resulting `target/` directory into `PRIME_NOIR_ARTIFACTS_DIR/<circuit>/`,
+resulting `target/` directory into `MERSENNET_NOIR_ARTIFACTS_DIR/<circuit>/`,
 then writes a deterministic `vk.hash` file over the compiled artifacts.
 
 The verify adapter is invoked with:
@@ -87,11 +87,11 @@ line as hex.
 
 ### SP1
 
-- `PRIME_SP1_PROVE_ADAPTER`: executable or script that produces an SP1 proof response.
-- `PRIME_SP1_VERIFY_ADAPTER`: executable or script that verifies an SP1 proof response.
-- `PRIME_SP1_PROGRAM_ELF`: optional path to the program ELF used by the adapter.
-- `PRIME_SP1_VKEY_HASH`: optional pinned 32-byte hex vkey hash.
-- `PRIME_SP1_MODE`: `local` or `network`.
+- `MERSENNET_SP1_PROVE_ADAPTER`: executable or script that produces an SP1 proof response.
+- `MERSENNET_SP1_VERIFY_ADAPTER`: executable or script that verifies an SP1 proof response.
+- `MERSENNET_SP1_PROGRAM_ELF`: optional path to the program ELF used by the adapter.
+- `MERSENNET_SP1_VKEY_HASH`: optional pinned 32-byte hex vkey hash.
+- `MERSENNET_SP1_MODE`: `local` or `network`.
 
 The SP1 adapters receive `--request <json> --response <json>` and are
 responsible for filling the response file with the proof or verification

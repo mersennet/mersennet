@@ -149,8 +149,8 @@ fn main() {
         );
     }
 
-    // ─── Benchmark 3: PrimeOrders matching ───
-    println!("\n=== Benchmark: PrimeOrders Order Matching ===");
+    // ─── Benchmark 3: MersennetOrders matching ───
+    println!("\n=== Benchmark: MersennetOrders Order Matching ===");
     for batch_size in [100, 500, 1000, 5000, 10000] {
         let dir2 = tempfile::tempdir().unwrap();
         let mut eng = Engine::new_with_state(131071, dir2.path().join("state"));
@@ -158,19 +158,19 @@ fn main() {
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
-        let market = eng.prime_orders_add_market("BTC/USDC", U256::from(1u64), U256::from(1u64));
+        let market = eng.mersennet_orders_add_market("BTC/USDC", U256::from(1u64), U256::from(1u64));
 
         // Place maker orders (sells at price 100)
         let start = Instant::now();
         for i in 0..batch_size {
             let maker = make_address((i % 200 + 50) as u8);
-            let _ = eng.prime_orders_submit_order(
+            let _ = eng.mersennet_orders_submit_order(
                 maker,
                 market,
-                mersennet::prime_orders::Side::Sell,
+                mersennet::mersennet_orders::Side::Sell,
                 U256::from(100u64),
                 U256::from(1u64),
-                mersennet::prime_orders::TimeInForce::Gtc,
+                mersennet::mersennet_orders::TimeInForce::Gtc,
             );
         }
         let maker_elapsed = start.elapsed();
@@ -179,13 +179,13 @@ fn main() {
         let start = Instant::now();
         for i in 0..batch_size {
             let taker = make_address((i % 50 + 1) as u8);
-            let _ = eng.prime_orders_submit_order(
+            let _ = eng.mersennet_orders_submit_order(
                 taker,
                 market,
-                mersennet::prime_orders::Side::Buy,
+                mersennet::mersennet_orders::Side::Buy,
                 U256::from(100u64),
                 U256::from(1u64),
-                mersennet::prime_orders::TimeInForce::Ioc,
+                mersennet::mersennet_orders::TimeInForce::Ioc,
             );
         }
         let taker_elapsed = start.elapsed();
@@ -222,7 +222,7 @@ fn main() {
             .unwrap();
         eng.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
-        let market = eng.prime_orders_add_market("ETH/USDC", U256::from(1u64), U256::from(1u64));
+        let market = eng.mersennet_orders_add_market("ETH/USDC", U256::from(1u64), U256::from(1u64));
 
         // Fund accounts
         for i in 1..=255u8 {
@@ -252,24 +252,24 @@ fn main() {
         // Submit 500 maker + 500 taker orders
         for i in 0..500u64 {
             let maker = make_address((i % 200 + 50) as u8);
-            let _ = eng.prime_orders_submit_order(
+            let _ = eng.mersennet_orders_submit_order(
                 maker,
                 market,
-                mersennet::prime_orders::Side::Sell,
+                mersennet::mersennet_orders::Side::Sell,
                 U256::from(100u64),
                 U256::from(1u64),
-                mersennet::prime_orders::TimeInForce::Gtc,
+                mersennet::mersennet_orders::TimeInForce::Gtc,
             );
         }
         for i in 0..500u64 {
             let taker = make_address((i % 50 + 1) as u8);
-            let _ = eng.prime_orders_submit_order(
+            let _ = eng.mersennet_orders_submit_order(
                 taker,
                 market,
-                mersennet::prime_orders::Side::Buy,
+                mersennet::mersennet_orders::Side::Buy,
                 U256::from(100u64),
                 U256::from(1u64),
-                mersennet::prime_orders::TimeInForce::Ioc,
+                mersennet::mersennet_orders::TimeInForce::Ioc,
             );
         }
 

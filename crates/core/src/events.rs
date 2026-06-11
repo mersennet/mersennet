@@ -1,11 +1,11 @@
 use crate::bridge::BridgeMessage;
-use crate::prime_orders::{MarketId, OrderId, Side, TimeInForce};
+use crate::mersennet_orders::{MarketId, OrderId, Side, TimeInForce};
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DomainEvent {
-    PrimeOrders(PrimeOrdersEvent),
+    MersennetOrders(MersennetOrdersEvent),
     Bridge(BridgeEvent),
     /// Privacy-redesign Phase 4 events: market-level public data
     /// emitted by shielded subsystems. **No account-level fields.**
@@ -13,7 +13,7 @@ pub enum DomainEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PrimeOrdersEvent {
+pub enum MersennetOrdersEvent {
     MarketAdded {
         market_id: MarketId,
         symbol: String,
@@ -139,7 +139,7 @@ pub struct DomainEventRecord {
 impl DomainEvent {
     pub fn domain(&self) -> &'static str {
         match self {
-            DomainEvent::PrimeOrders(_) => "primeorders",
+            DomainEvent::MersennetOrders(_) => "mersennet_orders",
             DomainEvent::Bridge(_) => "bridge",
             DomainEvent::Shielded(_) => "shielded",
         }
@@ -147,7 +147,7 @@ impl DomainEvent {
 
     pub fn kind(&self) -> &'static str {
         match self {
-            DomainEvent::PrimeOrders(event) => event.kind(),
+            DomainEvent::MersennetOrders(event) => event.kind(),
             DomainEvent::Bridge(event) => event.kind(),
             DomainEvent::Shielded(event) => event.kind(),
         }
@@ -155,29 +155,29 @@ impl DomainEvent {
 
     pub fn is_privacy_safe_after_activation(&self) -> bool {
         match self {
-            DomainEvent::PrimeOrders(event) => event.is_privacy_safe_after_activation(),
+            DomainEvent::MersennetOrders(event) => event.is_privacy_safe_after_activation(),
             DomainEvent::Bridge(_) | DomainEvent::Shielded(_) => true,
         }
     }
 }
 
-impl PrimeOrdersEvent {
+impl MersennetOrdersEvent {
     pub fn kind(&self) -> &'static str {
         match self {
-            PrimeOrdersEvent::MarketAdded { .. } => "market_added",
-            PrimeOrdersEvent::OrderSubmitted { .. } => "order_submitted",
-            PrimeOrdersEvent::OrderCancelled { .. } => "order_cancelled",
-            PrimeOrdersEvent::Trade { .. } => "trade",
-            PrimeOrdersEvent::MarginParamsUpdated { .. } => "margin_params_updated",
-            PrimeOrdersEvent::CollateralDeposited { .. } => "collateral_deposited",
-            PrimeOrdersEvent::Liquidation { .. } => "liquidation",
+            MersennetOrdersEvent::MarketAdded { .. } => "market_added",
+            MersennetOrdersEvent::OrderSubmitted { .. } => "order_submitted",
+            MersennetOrdersEvent::OrderCancelled { .. } => "order_cancelled",
+            MersennetOrdersEvent::Trade { .. } => "trade",
+            MersennetOrdersEvent::MarginParamsUpdated { .. } => "margin_params_updated",
+            MersennetOrdersEvent::CollateralDeposited { .. } => "collateral_deposited",
+            MersennetOrdersEvent::Liquidation { .. } => "liquidation",
         }
     }
 
     pub fn is_privacy_safe_after_activation(&self) -> bool {
         matches!(
             self,
-            PrimeOrdersEvent::MarketAdded { .. } | PrimeOrdersEvent::MarginParamsUpdated { .. }
+            MersennetOrdersEvent::MarketAdded { .. } | MersennetOrdersEvent::MarginParamsUpdated { .. }
         )
     }
 }

@@ -1,7 +1,7 @@
 //! WebSocket subscription system for Mersennet.
 //!
 //! Provides real-time event streaming via WebSocket with support for
-//! newHeads, newPendingTransactions, logs, and Prime Orders subscriptions.
+//! newHeads, newPendingTransactions, logs, and Mersennet Orders subscriptions.
 
 #![allow(dead_code)]
 
@@ -34,18 +34,18 @@ fn is_transparent_subscription(kind: &SubscriptionKind) -> bool {
         kind,
         SubscriptionKind::NewPendingTransactions
             | SubscriptionKind::Logs { .. }
-            | SubscriptionKind::PrimeOrdersTrades { .. }
-            | SubscriptionKind::PrimeOrdersBook { .. }
+            | SubscriptionKind::MersennetOrdersTrades { .. }
+            | SubscriptionKind::MersennetOrdersBook { .. }
             | SubscriptionKind::BatchAuctionResults { .. }
     )
 }
 
 fn transparent_subscription_error(kind: &SubscriptionKind) -> SubscriptionError {
     match kind {
-        SubscriptionKind::PrimeOrdersTrades { .. }
-        | SubscriptionKind::PrimeOrdersBook { .. }
+        SubscriptionKind::MersennetOrdersTrades { .. }
+        | SubscriptionKind::MersennetOrdersBook { .. }
         | SubscriptionKind::BatchAuctionResults { .. } => {
-            SubscriptionError::TransparentPrimeOrdersDisabled
+            SubscriptionError::TransparentMersennetOrdersDisabled
         }
         SubscriptionKind::NewPendingTransactions | SubscriptionKind::Logs { .. } => {
             SubscriptionError::TransparentEthSubscriptionDisabled
@@ -56,7 +56,7 @@ fn transparent_subscription_error(kind: &SubscriptionKind) -> SubscriptionError 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubscriptionError {
-    TransparentPrimeOrdersDisabled,
+    TransparentMersennetOrdersDisabled,
     TransparentEthSubscriptionDisabled,
 }
 
@@ -73,10 +73,10 @@ pub enum SubscriptionKind {
         topics: Vec<B256>,
         address: Option<Address>,
     },
-    PrimeOrdersTrades {
+    MersennetOrdersTrades {
         market: Option<u64>,
     },
-    PrimeOrdersBook {
+    MersennetOrdersBook {
         market: u64,
     },
     BatchAuctionResults {
@@ -200,11 +200,11 @@ impl WsSubscriptionManager {
         }
     }
 
-    /// Sends a trade to PrimeOrdersTrades subscribers (optionally filtered by market).
+    /// Sends a trade to MersennetOrdersTrades subscribers (optionally filtered by market).
     pub fn notify_trade(&mut self, trade: &Value, market: u64) {
         self.send_to_matching(
             |kind| match kind {
-                SubscriptionKind::PrimeOrdersTrades { market: m } => {
+                SubscriptionKind::MersennetOrdersTrades { market: m } => {
                     m.is_none_or(|mm| mm == market)
                 }
                 _ => false,
@@ -213,11 +213,11 @@ impl WsSubscriptionManager {
         );
     }
 
-    /// Sends a book update to PrimeOrdersBook subscribers for the given market.
+    /// Sends a book update to MersennetOrdersBook subscribers for the given market.
     pub fn notify_book_update(&mut self, update: &Value, market: u64) {
         self.send_to_matching(
             |kind| match kind {
-                SubscriptionKind::PrimeOrdersBook { market: m } => *m == market,
+                SubscriptionKind::MersennetOrdersBook { market: m } => *m == market,
                 _ => false,
             },
             update,
@@ -456,14 +456,14 @@ fn handle_json_rpc(
                     );
                     result_sub = Some((id, rx));
                 }
-                Err(SubscriptionError::TransparentPrimeOrdersDisabled) => {
+                Err(SubscriptionError::TransparentMersennetOrdersDisabled) => {
                     response = Some(
                         json!({
                             "jsonrpc": "2.0",
                             "id": req.id,
                             "error": {
                                 "code": -32605,
-                                "message": "transparent PrimeOrders subscriptions disabled after privacy activation"
+                                "message": "transparent MersennetOrders subscriptions disabled after privacy activation"
                             }
                         })
                         .to_string(),
@@ -500,9 +500,9 @@ fn handle_json_rpc(
             );
             result_unsub = Some(id);
         }
-        "prime_subscribe" => {
+        "mersennet_subscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
-            let kind = parse_prime_subscription(params)?;
+            let kind = parse_mersennet_subscription(params)?;
             let mut m = manager.lock().unwrap();
             match m.subscribe(kind) {
                 Ok((id, rx)) => {
@@ -516,14 +516,14 @@ fn handle_json_rpc(
                     );
                     result_sub = Some((id, rx));
                 }
-                Err(SubscriptionError::TransparentPrimeOrdersDisabled) => {
+                Err(SubscriptionError::TransparentMersennetOrdersDisabled) => {
                     response = Some(
                         json!({
                             "jsonrpc": "2.0",
                             "id": req.id,
                             "error": {
                                 "code": -32605,
-                                "message": "transparent PrimeOrders subscriptions disabled after privacy activation"
+                                "message": "transparent MersennetOrders subscriptions disabled after privacy activation"
                             }
                         })
                         .to_string(),
@@ -544,7 +544,7 @@ fn handle_json_rpc(
                 }
             }
         }
-        "prime_unsubscribe" => {
+        "mersennet_unsubscribe" => {
             let params = req.params.as_ref().and_then(|p| p.as_array()).ok_or(())?;
             let id_val = params.first().ok_or(())?;
             let id = parse_subscription_id(id_val)?;
@@ -635,17 +635,17 @@ fn parse_b256(s: &str) -> Option<B256> {
     Some(B256::from(arr))
 }
 
-fn parse_prime_subscription(params: &[Value]) -> Result<SubscriptionKind, ()> {
+fn parse_mersennet_subscription(params: &[Value]) -> Result<SubscriptionKind, ()> {
     let sub_type = params.first().and_then(|v| v.as_str()).ok_or(())?;
     let market_from_param = |v: &Value| v.as_u64().or_else(|| v.as_str().and_then(parse_hex_u64));
     match sub_type {
-        "PrimeOrdersTrades" => {
+        "MersennetOrdersTrades" => {
             let market = params.get(1).and_then(market_from_param);
-            Ok(SubscriptionKind::PrimeOrdersTrades { market })
+            Ok(SubscriptionKind::MersennetOrdersTrades { market })
         }
-        "PrimeOrdersBook" => {
+        "MersennetOrdersBook" => {
             let market = params.get(1).and_then(market_from_param).ok_or(())?;
-            Ok(SubscriptionKind::PrimeOrdersBook { market })
+            Ok(SubscriptionKind::MersennetOrdersBook { market })
         }
         "BatchAuctionResults" => {
             let market = params.get(1).and_then(market_from_param);
@@ -688,14 +688,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn manager_rejects_transparent_prime_orders_subscriptions_after_privacy_activation() {
+    fn manager_rejects_transparent_mersennet_orders_subscriptions_after_privacy_activation() {
         set_privacy_mode_activated(true);
 
         let mut manager = WsSubscriptionManager::new();
         let err = manager
-            .subscribe(SubscriptionKind::PrimeOrdersTrades { market: None })
+            .subscribe(SubscriptionKind::MersennetOrdersTrades { market: None })
             .expect_err("transparent subscription should be rejected");
-        assert_eq!(err, SubscriptionError::TransparentPrimeOrdersDisabled);
+        assert_eq!(err, SubscriptionError::TransparentMersennetOrdersDisabled);
 
         manager
             .subscribe(SubscriptionKind::NewShieldedRoot)

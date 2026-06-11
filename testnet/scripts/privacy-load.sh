@@ -2,9 +2,9 @@
 # Synthetic privacy-testnet load (Workstream H4).
 #
 # Exercises the three shielded code paths in a loop:
-#   - prime_submitShielded{Transfer,Order}
-#   - prime_submitLiquidation{Claim,Execute}
-#   - prime_submit{Shield,Unshield}
+#   - mersennet_submitShielded{Transfer,Order}
+#   - mersennet_submitLiquidation{Claim,Execute}
+#   - mersennet_submit{Shield,Unshield}
 #
 # Targets the privacy-rpc-node by default (chain ID 7920). All
 # payloads are *opaque* (bincode-then-hex), since the chain rejects
@@ -67,28 +67,28 @@ submit_shielded_order() {
     local market=$1
     local payload_hex
     payload_hex="$(mock_payload)"
-    submit_rpc "prime_submitShieldedOrder" \
+    submit_rpc "mersennet_submitShieldedOrder" \
         "[{\"market_id\":${market},\"shieldedOrderBincodeHex\":\"0x${payload_hex}\"}]"
 }
 
 submit_shielded_transfer() {
     local payload_hex
     payload_hex="$(mock_payload)"
-    submit_rpc "prime_submitShieldedTransfer" \
+    submit_rpc "mersennet_submitShieldedTransfer" \
         "[{\"shieldedTransferBincodeHex\":\"0x${payload_hex}\"}]"
 }
 
 submit_liquidation_claim() {
     local payload_hex
     payload_hex="$(mock_payload)"
-    submit_rpc "prime_submitLiquidationClaim" \
+    submit_rpc "mersennet_submitLiquidationClaim" \
         "[{\"claimBincodeHex\":\"0x${payload_hex}\"}]"
 }
 
 submit_shield() {
     local payload_hex
     payload_hex="$(mock_payload)"
-    submit_rpc "prime_submitShield" \
+    submit_rpc "mersennet_submitShield" \
         "[{\"shieldBincodeHex\":\"0x${payload_hex}\"}]"
 }
 

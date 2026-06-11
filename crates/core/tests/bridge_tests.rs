@@ -8,18 +8,18 @@ use tempfile::TempDir;
 fn enqueue_dequeue_fifo_ordering() {
     let mut queue = BridgeQueue::new();
     let msg_a = queue.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         Bytes::from(vec![1, 2, 3]),
     );
     let msg_b = queue.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         Bytes::from(vec![4, 5, 6]),
     );
     let msg_c = queue.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         Bytes::from(vec![7, 8, 9]),
     );
 
@@ -40,18 +40,18 @@ fn enqueue_dequeue_fifo_ordering() {
 fn nonce_sequencing() {
     let mut queue = BridgeQueue::new();
     let msg1 = queue.push(
-        BridgeDomain::PrimeEvm,
-        BridgeDomain::PrimeOrders,
+        BridgeDomain::MersennetEvm,
+        BridgeDomain::MersennetOrders,
         Bytes::from(vec![1]),
     );
     let msg2 = queue.push(
-        BridgeDomain::PrimeEvm,
-        BridgeDomain::PrimeOrders,
+        BridgeDomain::MersennetEvm,
+        BridgeDomain::MersennetOrders,
         Bytes::from(vec![2]),
     );
     let msg3 = queue.push(
-        BridgeDomain::PrimeEvm,
-        BridgeDomain::PrimeOrders,
+        BridgeDomain::MersennetEvm,
+        BridgeDomain::MersennetOrders,
         Bytes::from(vec![3]),
     );
 
@@ -68,18 +68,18 @@ fn queue_limits_fifo_eviction() {
     queue.set_max_len(Some(2));
 
     let _msg1 = queue.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         Bytes::from(vec![1]),
     );
     let msg2 = queue.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         Bytes::from(vec![2]),
     );
     let msg3 = queue.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         Bytes::from(vec![3]),
     );
 

@@ -95,7 +95,7 @@ Reference request/response adapters for the real prover live under
 
 Once a Linux SP1 toolchain is available, build the ELF from this directory, for
 example with the usual SP1 build flow for your environment. The resulting ELF can
-then be passed through `PRIME_SP1_PROGRAM_ELF` to the checked-in host runner and
+then be passed through `MERSENNET_SP1_PROGRAM_ELF` to the checked-in host runner and
 adapter scripts.
 
 ## Phase 5 cut-over
@@ -109,8 +109,8 @@ The remaining cut-over from this minimal ELF to the full block prover is:
   matching.
 3. Point `SP1Prover::runtime_default()` (used by
    `crates/core/src/state_proof.rs`) at the real adapters via
-   `PRIME_SP1_PROVE_ADAPTER` / `PRIME_SP1_VERIFY_ADAPTER`, with
-   `PRIME_SP1_MODE=network` for delegated proving (or `local` for
+   `MERSENNET_SP1_PROVE_ADAPTER` / `MERSENNET_SP1_VERIFY_ADAPTER`, with
+   `MERSENNET_SP1_MODE=network` for delegated proving (or `local` for
    self-hosting); without adapters it stays on the deterministic mock.
 4. Produce a release-grade prove/verify transcript against the pinned
   ELF and vkey hash.

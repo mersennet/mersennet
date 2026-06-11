@@ -32,7 +32,7 @@ pub mod parallel;
 pub mod pipeline;
 pub mod precompile_abi;
 pub mod precompiles;
-pub mod prime_orders;
+pub mod mersennet_orders;
 pub mod prometheus;
 pub mod sharding;
 pub mod shielded_evm;

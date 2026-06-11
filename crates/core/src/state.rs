@@ -8,9 +8,9 @@ use std::sync::Mutex;
 
 use crate::bridge::{BridgeDomain, BridgeMessage, BridgeQueue, BridgeQueueSnapshot};
 use crate::engine::Block;
-use crate::prime_orders::{
+use crate::mersennet_orders::{
     AccountState, Market, MarketId, MarketStatus, Order, OrderBook, OrderId, Position,
-    PrimeOrdersState, Side, TimeInForce,
+    MersennetOrdersState, Side, TimeInForce,
 };
 
 pub(crate) struct MerkleTree;
@@ -150,7 +150,7 @@ pub struct PersistentState {
     db: sled::Db,
     accounts: sled::Tree,
     storage: sled::Tree,
-    prime_orders: sled::Tree,
+    mersennet_orders: sled::Tree,
     bridge_orders_to_evm: sled::Tree,
     bridge_evm_to_orders: sled::Tree,
     blocks: sled::Tree,
@@ -174,13 +174,13 @@ pub(crate) struct SnapshotRecord {
     pub(crate) state_root: [u8; 32],
     pub(crate) accounts: Vec<(Vec<u8>, AccountRecord)>,
     pub(crate) storage: Vec<(Vec<u8>, Vec<u8>)>,
-    pub(crate) prime_orders: Option<Vec<u8>>,
+    pub(crate) mersennet_orders: Option<Vec<u8>>,
     pub(crate) bridge_orders_to_evm: Option<Vec<u8>>,
     pub(crate) bridge_evm_to_orders: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct PrimeOrdersSnapshot {
+pub(crate) struct MersennetOrdersSnapshot {
     pub(crate) next_order_id: u64,
     pub(crate) initial_margin_bps: u64,
     pub(crate) maintenance_margin_bps: u64,
@@ -259,7 +259,7 @@ impl PersistentState {
         let db = sled::open(path)?;
         let accounts = db.open_tree("accounts")?;
         let storage = db.open_tree("storage")?;
-        let prime_orders = db.open_tree("prime_orders")?;
+        let mersennet_orders = db.open_tree("mersennet_orders")?;
         let bridge_orders_to_evm = db.open_tree("bridge_orders_to_evm")?;
         let bridge_evm_to_orders = db.open_tree("bridge_evm_to_orders")?;
         let blocks = db.open_tree("blocks")?;
@@ -269,7 +269,7 @@ impl PersistentState {
             db,
             accounts,
             storage,
-            prime_orders,
+            mersennet_orders,
             bridge_orders_to_evm,
             bridge_evm_to_orders,
             blocks,
@@ -322,13 +322,13 @@ impl PersistentState {
     pub fn commit_state(
         &self,
         evm_db: &InMemoryDB,
-        prime_orders: &PrimeOrdersState,
+        mersennet_orders: &MersennetOrdersState,
         bridge_orders_to_evm: &BridgeQueue,
         bridge_evm_to_orders: &BridgeQueue,
         height: u64,
     ) -> Result<B256> {
         self.write_evm_state(evm_db)?;
-        self.commit_prime_orders(prime_orders)?;
+        self.commit_mersennet_orders(mersennet_orders)?;
         self.commit_bridge_queues(bridge_orders_to_evm, bridge_evm_to_orders)?;
         let root = self.compute_state_root();
         self.record_height(height, root)?;
@@ -425,11 +425,11 @@ impl PersistentState {
         Ok(())
     }
 
-    pub fn load_prime_orders(&self, state: &mut PrimeOrdersState) -> Result<()> {
-        let Some(value) = self.prime_orders.get("state")? else {
+    pub fn load_mersennet_orders(&self, state: &mut MersennetOrdersState) -> Result<()> {
+        let Some(value) = self.mersennet_orders.get("state")? else {
             return Ok(());
         };
-        let snapshot: PrimeOrdersSnapshot = bincode::deserialize(&value)?;
+        let snapshot: MersennetOrdersSnapshot = bincode::deserialize(&value)?;
         state.next_order_id = snapshot.next_order_id;
         state.initial_margin_bps = snapshot.initial_margin_bps;
         state.maintenance_margin_bps = snapshot.maintenance_margin_bps;
@@ -510,8 +510,8 @@ impl PersistentState {
         Ok(())
     }
 
-    pub fn commit_prime_orders(&self, state: &PrimeOrdersState) -> Result<()> {
-        self.prime_orders.clear()?;
+    pub fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()> {
+        self.mersennet_orders.clear()?;
         let markets = state
             .markets
             .values()
@@ -593,7 +593,7 @@ impl PersistentState {
             })
             .collect();
 
-        let snapshot = PrimeOrdersSnapshot {
+        let snapshot = MersennetOrdersSnapshot {
             next_order_id: state.next_order_id,
             initial_margin_bps: state.initial_margin_bps,
             maintenance_margin_bps: state.maintenance_margin_bps,
@@ -606,7 +606,7 @@ impl PersistentState {
         };
 
         let data = bincode::serialize(&snapshot)?;
-        self.prime_orders.insert("state", data)?;
+        self.mersennet_orders.insert("state", data)?;
         self.db.flush()?;
         Ok(())
     }
@@ -685,7 +685,7 @@ impl PersistentState {
             state_root: state_root.0,
             accounts,
             storage,
-            prime_orders: self.prime_orders.get("state")?.map(|v| v.to_vec()),
+            mersennet_orders: self.mersennet_orders.get("state")?.map(|v| v.to_vec()),
             bridge_orders_to_evm: self.bridge_orders_to_evm.get("queue")?.map(|v| v.to_vec()),
             bridge_evm_to_orders: self.bridge_evm_to_orders.get("queue")?.map(|v| v.to_vec()),
         };
@@ -708,8 +708,8 @@ impl PersistentState {
             self.storage.insert(key, value)?;
         }
 
-        if let Some(data) = snapshot.prime_orders {
-            self.prime_orders.insert("state", data)?;
+        if let Some(data) = snapshot.mersennet_orders {
+            self.mersennet_orders.insert("state", data)?;
         }
         if let Some(data) = snapshot.bridge_orders_to_evm {
             self.bridge_orders_to_evm.insert("queue", data)?;
@@ -736,7 +736,7 @@ impl PersistentState {
         for tree in [
             &self.accounts,
             &self.storage,
-            &self.prime_orders,
+            &self.mersennet_orders,
             &self.bridge_orders_to_evm,
             &self.bridge_evm_to_orders,
         ] {
@@ -959,15 +959,15 @@ pub(crate) fn decode_bridge_queue(record: BridgeQueueRecord) -> Result<BridgeQue
 
 pub(crate) fn encode_domain(domain: BridgeDomain) -> u8 {
     match domain {
-        BridgeDomain::PrimeOrders => 0,
-        BridgeDomain::PrimeEvm => 1,
+        BridgeDomain::MersennetOrders => 0,
+        BridgeDomain::MersennetEvm => 1,
     }
 }
 
 pub(crate) fn decode_domain(value: u8) -> Result<BridgeDomain> {
     match value {
-        0 => Ok(BridgeDomain::PrimeOrders),
-        1 => Ok(BridgeDomain::PrimeEvm),
+        0 => Ok(BridgeDomain::MersennetOrders),
+        1 => Ok(BridgeDomain::MersennetEvm),
         _ => bail!("invalid bridge domain"),
     }
 }
@@ -984,7 +984,7 @@ impl crate::state_trait::StateBackend for PersistentState {
     fn commit_state(
         &self,
         evm_db: &InMemoryDB,
-        prime_orders: &PrimeOrdersState,
+        mersennet_orders: &MersennetOrdersState,
         bridge_orders_to_evm: &BridgeQueue,
         bridge_evm_to_orders: &BridgeQueue,
         height: u64,
@@ -992,19 +992,19 @@ impl crate::state_trait::StateBackend for PersistentState {
         PersistentState::commit_state(
             self,
             evm_db,
-            prime_orders,
+            mersennet_orders,
             bridge_orders_to_evm,
             bridge_evm_to_orders,
             height,
         )
     }
 
-    fn load_prime_orders(&self, state: &mut PrimeOrdersState) -> Result<()> {
-        PersistentState::load_prime_orders(self, state)
+    fn load_mersennet_orders(&self, state: &mut MersennetOrdersState) -> Result<()> {
+        PersistentState::load_mersennet_orders(self, state)
     }
 
-    fn commit_prime_orders(&self, state: &PrimeOrdersState) -> Result<()> {
-        PersistentState::commit_prime_orders(self, state)
+    fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()> {
+        PersistentState::commit_mersennet_orders(self, state)
     }
 
     fn load_bridge_queues(

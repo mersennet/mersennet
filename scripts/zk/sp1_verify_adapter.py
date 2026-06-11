@@ -10,7 +10,7 @@ from common import host_executor, read_json, render_template_command, repo_root,
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reference adapter for PRIME_SP1_VERIFY_ADAPTER.")
+    parser = argparse.ArgumentParser(description="Reference adapter for MERSENNET_SP1_VERIFY_ADAPTER.")
     parser.add_argument("--request", required=True)
     parser.add_argument("--response", required=True)
     return parser.parse_args()
@@ -26,18 +26,18 @@ def main() -> int:
         'cargo run --manifest-path programs/state-transition-host/Cargo.toml '
         '-- --verify-request {request} --verify-response {response}'
     )
-    template = os.environ.get("PRIME_SP1_VERIFY_TEMPLATE", default_template)
+    template = os.environ.get("MERSENNET_SP1_VERIFY_TEMPLATE", default_template)
     if not template:
         scaffold = repo_root() / "programs" / "state-transition" / "README.md"
         raise SystemExit(
-            "PRIME_SP1_VERIFY_TEMPLATE is not set. The repo still ships the SP1 program as a scaffold; "
+            "MERSENNET_SP1_VERIFY_TEMPLATE is not set. The repo still ships the SP1 program as a scaffold; "
             f"materialize/build that program and point this adapter at a real verifier command. See {scaffold}."
         )
 
     values = {
         "request": request_path,
         "response": response_path,
-        "program_elf": request.get("programElfPath") or os.environ.get("PRIME_SP1_PROGRAM_ELF", ""),
+        "program_elf": request.get("programElfPath") or os.environ.get("MERSENNET_SP1_PROGRAM_ELF", ""),
         "prev_state_root_hex": request.get("prevStateRootHex", ""),
         "new_state_root_hex": request.get("newStateRootHex", ""),
         "prev_nullifier_root_hex": request.get("prevNullifierRootHex", ""),
@@ -50,7 +50,7 @@ def main() -> int:
         "public_values_hex": request.get("publicValuesHex", ""),
         "proof_bytes_hex": request.get("proofBytesHex", ""),
         "proof_system": request.get("proofSystem", ""),
-        "mode": os.environ.get("PRIME_SP1_MODE", "local"),
+        "mode": os.environ.get("MERSENNET_SP1_MODE", "local"),
     }
     executor = host_executor()
     if executor == "wsl":

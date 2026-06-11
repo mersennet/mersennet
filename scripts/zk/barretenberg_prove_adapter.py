@@ -11,11 +11,11 @@ from common import render_template_command, run_command
 
 
 def package_name(circuit: str) -> str:
-    return f"prime_{circuit}_circuit"
+    return f"mersennet_{circuit}_circuit"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reference adapter for PRIME_BB_PROVE_ADAPTER.")
+    parser = argparse.ArgumentParser(description="Reference adapter for MERSENNET_BB_PROVE_ADAPTER.")
     parser.add_argument("--circuit", required=True)
     parser.add_argument("--package-dir", required=True)
     parser.add_argument("--artifacts", required=True)
@@ -62,7 +62,7 @@ def main() -> int:
     if witness_path != destination_witness:
         shutil.copyfile(witness_path, destination_witness)
 
-    nargo_bin = os.environ.get("PRIME_NARGO_BIN", "nargo")
+    nargo_bin = os.environ.get("MERSENNET_NARGO_BIN", "nargo")
     values = {
         "nargo": nargo_bin,
         "package": package_name(args.circuit),
@@ -73,7 +73,7 @@ def main() -> int:
         "proof": proof_path,
     }
 
-    template = os.environ.get("PRIME_BB_PROVE_TEMPLATE") or os.environ.get("PRIME_NARGO_PROVE_TEMPLATE")
+    template = os.environ.get("MERSENNET_BB_PROVE_TEMPLATE") or os.environ.get("MERSENNET_NARGO_PROVE_TEMPLATE")
     if template:
         run_command(render_template_command(template, values), cwd=package_dir)
     else:

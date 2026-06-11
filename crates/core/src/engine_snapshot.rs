@@ -9,7 +9,7 @@
 //! ## Wire format
 //!
 //! ```text
-//!   bytes 0..4   : magic 'P','Z','S','1' (Prime Zk Snapshot v1)
+//!   bytes 0..4   : magic 'P','Z','S','1' (legacy magic, 'Prime Zk Snapshot v1')
 //!   bytes 4..8   : envelope version (LE u32; current = 2)
 //!   bytes 8..end : bincode-encoded `EngineSnapshotEnvelope`
 //! ```

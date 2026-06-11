@@ -1,6 +1,6 @@
 use mersennet::engine::Engine;
-use mersennet::errors::PrimeOrdersError;
-use mersennet::prime_orders::{Side, TimeInForce};
+use mersennet::errors::MersennetOrdersError;
+use mersennet::mersennet_orders::{Side, TimeInForce};
 use revm::primitives::{Address, U256};
 use tempfile::TempDir;
 
@@ -18,7 +18,7 @@ fn setup_engine() -> (Engine, TempDir) {
 fn insurance_fund_collects_fees_on_trades() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.orders.state.insurance_contribution_rate_bps = 10; // 0.1%
 
@@ -26,7 +26,7 @@ fn insurance_fund_collects_fees_on_trades() {
     let taker = addr(0x22);
 
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -36,7 +36,7 @@ fn insurance_fund_collects_fees_on_trades() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             taker,
             market_id,
             Side::Buy,
@@ -57,18 +57,18 @@ fn insurance_fund_collects_fees_on_trades() {
 fn insurance_fund_covers_liquidation_deficit() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
-    engine.prime_orders_set_margin_params(100, 0); // 1% initial
+    engine.mersennet_orders_set_margin_params(100, 0); // 1% initial
     engine.orders.state.insurance_contribution_rate_bps = 0;
 
     let trader = addr(0x33);
     let maker = addr(0x44);
-    engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
-    engine.prime_orders_deposit_collateral(maker, U256::from(10u64));
+    engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
+    engine.mersennet_orders_deposit_collateral(maker, U256::from(10u64));
 
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -78,7 +78,7 @@ fn insurance_fund_covers_liquidation_deficit() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             trader,
             market_id,
             Side::Buy,
@@ -94,9 +94,9 @@ fn insurance_fund_covers_liquidation_deficit() {
         .contribute_to_insurance(U256::from(500u64));
     let fund_before = engine.orders.state.insurance_fund_balance();
 
-    engine.prime_orders_set_margin_params(100, 9_000);
-    assert!(engine.prime_orders_is_liquidatable(trader));
-    engine.prime_orders_liquidate(trader);
+    engine.mersennet_orders_set_margin_params(100, 9_000);
+    assert!(engine.mersennet_orders_is_liquidatable(trader));
+    engine.mersennet_orders_liquidate(trader);
 
     let fund_after = engine.orders.state.insurance_fund_balance();
     assert!(
@@ -109,17 +109,17 @@ fn insurance_fund_covers_liquidation_deficit() {
 fn match_time_margin_rejects_when_insufficient() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
-    engine.prime_orders_set_margin_params(5_000, 2_500); // 50% initial, 25% maintenance
+    engine.mersennet_orders_set_margin_params(5_000, 2_500); // 50% initial, 25% maintenance
 
     let trader = addr(0x55);
-    engine.prime_orders_deposit_collateral(trader, U256::from(1u64));
+    engine.mersennet_orders_deposit_collateral(trader, U256::from(1u64));
 
     let maker = addr(0x66);
-    engine.prime_orders_deposit_collateral(maker, U256::from(100_000u64));
+    engine.mersennet_orders_deposit_collateral(maker, U256::from(100_000u64));
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -129,7 +129,7 @@ fn match_time_margin_rejects_when_insufficient() {
         )
         .unwrap();
 
-    let result = engine.prime_orders_submit_order(
+    let result = engine.mersennet_orders_submit_order(
         trader,
         market_id,
         Side::Buy,
@@ -147,13 +147,13 @@ fn match_time_margin_rejects_when_insufficient() {
 fn vwap_entry_price_adding_to_position() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let buyer = addr(0x77);
     let seller = addr(0x88);
 
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             seller,
             market_id,
             Side::Sell,
@@ -163,7 +163,7 @@ fn vwap_entry_price_adding_to_position() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             buyer,
             market_id,
             Side::Buy,
@@ -174,7 +174,7 @@ fn vwap_entry_price_adding_to_position() {
         .unwrap();
 
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             seller,
             market_id,
             Side::Sell,
@@ -184,7 +184,7 @@ fn vwap_entry_price_adding_to_position() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             buyer,
             market_id,
             Side::Buy,
@@ -212,13 +212,13 @@ fn vwap_entry_price_adding_to_position() {
 fn vwap_reducing_position_realizes_pnl() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let buyer = addr(0x99);
     let seller = addr(0xAA);
 
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             seller,
             market_id,
             Side::Sell,
@@ -228,7 +228,7 @@ fn vwap_reducing_position_realizes_pnl() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             buyer,
             market_id,
             Side::Buy,
@@ -240,7 +240,7 @@ fn vwap_reducing_position_realizes_pnl() {
 
     let buyer2 = addr(0xBB);
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             buyer2,
             market_id,
             Side::Buy,
@@ -250,7 +250,7 @@ fn vwap_reducing_position_realizes_pnl() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             buyer,
             market_id,
             Side::Sell,
@@ -283,12 +283,12 @@ fn vwap_reducing_position_realizes_pnl() {
 fn market_halt_rejects_orders() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     engine.orders.state.halt_market(market_id);
 
     let trader = addr(0xCC);
-    let result = engine.prime_orders_submit_order(
+    let result = engine.mersennet_orders_submit_order(
         trader,
         market_id,
         Side::Buy,
@@ -296,24 +296,24 @@ fn market_halt_rejects_orders() {
         U256::from(1u64),
         TimeInForce::Gtc,
     );
-    assert!(matches!(result, Err(PrimeOrdersError::MarketHalted)));
+    assert!(matches!(result, Err(MersennetOrdersError::MarketHalted)));
 }
 
 #[test]
 fn collateral_withdrawal_rejected_when_equity_insufficient() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
-    engine.prime_orders_set_margin_params(100, 500); // 1% initial, 5% maintenance
+    engine.mersennet_orders_set_margin_params(100, 500); // 1% initial, 5% maintenance
 
     let trader = addr(0xDD);
     let maker = addr(0xEE);
-    engine.prime_orders_deposit_collateral(trader, U256::from(100u64));
-    engine.prime_orders_deposit_collateral(maker, U256::from(100u64));
+    engine.mersennet_orders_deposit_collateral(trader, U256::from(100u64));
+    engine.mersennet_orders_deposit_collateral(maker, U256::from(100u64));
 
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -323,7 +323,7 @@ fn collateral_withdrawal_rejected_when_equity_insufficient() {
         )
         .unwrap();
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             trader,
             market_id,
             Side::Buy,
@@ -347,11 +347,11 @@ fn collateral_withdrawal_rejected_when_equity_insufficient() {
 fn fok_all_or_nothing() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let maker = addr(0x11);
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -362,7 +362,7 @@ fn fok_all_or_nothing() {
         .unwrap();
 
     let taker = addr(0x22);
-    let result = engine.prime_orders_submit_order(
+    let result = engine.mersennet_orders_submit_order(
         taker,
         market_id,
         Side::Buy,
@@ -375,14 +375,14 @@ fn fok_all_or_nothing() {
         "FOK should fail when full fill not available"
     );
 
-    let book = engine.prime_orders_order_book(market_id).unwrap();
+    let book = engine.mersennet_orders_order_book(market_id).unwrap();
     assert_eq!(
         book.asks[0].size,
         U256::from(3u64),
         "maker order untouched after FOK reject"
     );
 
-    let result = engine.prime_orders_submit_order(
+    let result = engine.mersennet_orders_submit_order(
         taker,
         market_id,
         Side::Buy,
@@ -401,11 +401,11 @@ fn fok_all_or_nothing() {
 fn ioc_partial_fill_remainder_cancelled() {
     let (mut engine, _dir) = setup_engine();
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let maker = addr(0x33);
     engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -417,7 +417,7 @@ fn ioc_partial_fill_remainder_cancelled() {
 
     let taker = addr(0x44);
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             taker,
             market_id,
             Side::Buy,
@@ -434,7 +434,7 @@ fn ioc_partial_fill_remainder_cancelled() {
         "IOC remainder should not be resting on the book"
     );
 
-    let book = engine.prime_orders_order_book(market_id).unwrap();
+    let book = engine.mersennet_orders_order_book(market_id).unwrap();
     assert!(book.bids.is_empty(), "no taker orders on the book");
     assert!(book.asks.is_empty(), "maker fully consumed");
 }

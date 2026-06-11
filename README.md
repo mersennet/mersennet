@@ -1,7 +1,7 @@
 # Mersennet
 
 Privacy-first L1 blockchain with a native on-chain order matching engine
-(PrimeOrders), EVM compatibility, and an Aztec-style account-level
+(MersennetOrders), EVM compatibility, and an Aztec-style account-level
 privacy layer, built in Rust.
 
 | Chain | ID | Purpose | Status |
@@ -27,7 +27,7 @@ privacy layer, built in Rust.
 ### Transparent chain (live on testnet 131071)
 
 - EVM execution (revm) with block production and receipts
-- PrimeOrders CLOB matching engine with margin checks and liquidation hooks
+- MersennetOrders CLOB matching engine with margin checks and liquidation hooks
 - Snapshot export/import with TCP chunked sync + hash verification
 - Structured JSON-RPC + WebSocket subscriptions, metrics, health endpoint
 - Node identity + peer-store persistence
@@ -132,7 +132,7 @@ crates/                         — Rust workspace (6 crates)
 │       └── state_proof.rs            — SP1 state-transition proof glue
 ├── network/                    — P2P transport layer (`mersennet-network`)
 ├── rpc/                        — JSON-RPC + WebSocket server (`mersennet-rpc`)
-│   ├── src/rpc_shielded.rs           — prime_submit*/prime_get* shielded methods
+│   ├── src/rpc_shielded.rs           — mersennet_submit*/mersennet_get* shielded methods
 │   └── src/ws.rs                     — newShieldedRoot, newClearingPrice…
 ├── node/                       — CLI entrypoints (`mersennet-node`)
 │   └── src/bin/
@@ -184,7 +184,7 @@ lives in its own repository under [github.com/mersennet](https://github.com/mers
 | [explorer](https://github.com/mersennet/explorer) | Block explorer |
 | [validator-dashboard](https://github.com/mersennet/validator-dashboard) | Validator monitoring & analytics |
 | [faucet](https://github.com/mersennet/faucet) | Testnet MRSN faucet |
-| [contracts](https://github.com/mersennet/contracts) | Solidity contracts — Groth16 bridge, WMRSN, PrimeOrders examples (Foundry) |
+| [contracts](https://github.com/mersennet/contracts) | Solidity contracts — Groth16 bridge, WMRSN, MersennetOrders examples (Foundry) |
 | [sdk-ts](https://github.com/mersennet/sdk-ts) | TypeScript SDK (`@mersennet/sdk`) |
 | [sdk-go](https://github.com/mersennet/sdk-go) | Go SDK |
 | [sdk-python](https://github.com/mersennet/sdk-python) | Python SDK (`mersennet-sdk`) |
@@ -192,10 +192,10 @@ lives in its own repository under [github.com/mersennet](https://github.com/mers
 
 ## Testnet
 
-- **RPC:** `https://rpc.primechain.xyz` (or `http://46.225.30.187:8545`)
+- **RPC:** `http://46.225.30.187:8545` (rpc.mersennet.com at launch)
 - **Explorer:** `http://46.225.30.187:4000`
-- **PrimeTrade:** `http://46.225.30.187:4004`
-- **PrimeSwap:** `http://46.225.30.187:4002`
+- **Mersennet Trade:** `http://46.225.30.187:4004`
+- **MersennetSwap:** `http://46.225.30.187:4002`
 - **Faucet:** `http://46.225.30.187:4005`
 - **Docs:** `http://46.225.30.187:3001`
 
@@ -249,4 +249,4 @@ lives in its own repository under [github.com/mersennet](https://github.com/mers
 
 ## License
 
-Proprietary — PrimeNumbers Labs
+Proprietary — MersennetNumbers Labs

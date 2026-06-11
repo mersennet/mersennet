@@ -6,7 +6,7 @@
 use mersennet::commit_reveal::CommitRevealError;
 use mersennet::engine::{Engine, Transaction};
 use mersennet::fba::BatchOrder;
-use mersennet::prime_orders::{Side, TimeInForce};
+use mersennet::mersennet_orders::{Side, TimeInForce};
 use revm::primitives::{Address, B256, Bytes, U256, keccak256};
 use std::time::Duration;
 use tempfile::tempdir;
@@ -60,7 +60,7 @@ fn redb_full_block_lifecycle() {
 }
 
 #[test]
-fn redb_prime_orders_full_cycle() {
+fn redb_mersennet_orders_full_cycle() {
     let dir = tempdir().expect("temp dir");
     std::fs::create_dir_all(dir.path()).ok();
     let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
@@ -75,12 +75,12 @@ fn redb_prime_orders_full_cycle() {
     engine.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
-    engine.prime_orders_deposit_collateral(maker, U256::from(10_000u64));
-    engine.prime_orders_deposit_collateral(taker, U256::from(10_000u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    engine.mersennet_orders_deposit_collateral(maker, U256::from(10_000u64));
+    engine.mersennet_orders_deposit_collateral(taker, U256::from(10_000u64));
 
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -93,7 +93,7 @@ fn redb_prime_orders_full_cycle() {
     assert_eq!(outcome.remaining, U256::from(5u64));
 
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             taker,
             market_id,
             Side::Buy,
@@ -106,7 +106,7 @@ fn redb_prime_orders_full_cycle() {
     assert_eq!(outcome.trades.len(), 1);
 
     let book = engine
-        .prime_orders_order_book(market_id)
+        .mersennet_orders_order_book(market_id)
         .expect("order book");
     assert_eq!(book.asks[0].size, U256::from(2u64));
 
@@ -418,12 +418,12 @@ fn fba_engine_full_auction_cycle() {
     std::fs::create_dir_all(dir.path()).ok();
     let mut engine = Engine::new_with_backend(131071, dir.path(), "redb");
 
-    let market_id = engine.prime_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+    let market_id = engine.mersennet_orders_add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
 
     let buyer = make_address(0x11);
     let seller = make_address(0x22);
-    engine.prime_orders_deposit_collateral(buyer, U256::from(10_000u64));
-    engine.prime_orders_deposit_collateral(seller, U256::from(10_000u64));
+    engine.mersennet_orders_deposit_collateral(buyer, U256::from(10_000u64));
+    engine.mersennet_orders_deposit_collateral(seller, U256::from(10_000u64));
 
     engine.submit_batch_order(BatchOrder {
         owner: buyer,

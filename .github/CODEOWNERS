@@ -13,7 +13,7 @@
 /crates/core/src/encrypted_mempool.rs       @mersennet/zk
 /crates/core/src/zk_proofs.rs               @mersennet/zk
 /crates/core/src/zk_sp1.rs                  @mersennet/zk
-/crates/core/src/prime_orders.rs            @mersennet/zk @mersennet/core
+/crates/core/src/mersennet_orders.rs            @mersennet/zk @mersennet/core
 /crates/core/src/liquidation_auction.rs     @mersennet/zk @mersennet/core
 
 

@@ -1,10 +1,10 @@
 use mersennet::bridge::{BridgeDomain, BridgeMessage};
 use mersennet::engine::Engine;
-use mersennet::errors::PrimeOrdersError;
+use mersennet::errors::MersennetOrdersError;
 use mersennet::events::{
-    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
+    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
 };
-use mersennet::prime_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
+use mersennet::mersennet_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
 use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -27,11 +27,11 @@ impl RpcError {
     }
 }
 
-fn require_transparent_prime_orders_enabled(engine: &Engine) -> RpcResult<()> {
+fn require_transparent_mersennet_orders_enabled(engine: &Engine) -> RpcResult<()> {
     if engine.privacy_mode_activated() {
         Err(RpcError::new(
             -32605,
-            "transparent PrimeOrders RPC disabled after privacy activation",
+            "transparent MersennetOrders RPC disabled after privacy activation",
         ))
     } else {
         Ok(())
@@ -84,10 +84,10 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
     }
     match call {
         "mersennetId" | "eth_chainId" => Ok(Value::String(hex_u64(engine.chain_id))),
-        "prime_blockNumber" | "eth_blockNumber" => {
+        "mersennet_blockNumber" | "eth_blockNumber" => {
             Ok(Value::String(hex_u64(engine.latest_height())))
         }
-        "prime_getBalance" | "eth_getBalance" => {
+        "mersennet_getBalance" | "eth_getBalance" => {
             require_transparent_account_state_enabled(engine)?;
             let (address, _) = parse_balance_params(params)?;
             let balance = engine
@@ -95,7 +95,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
             Ok(Value::String(hex_u256(balance)))
         }
-        "prime_getDomainEvents" => {
+        "mersennet_getDomainEvents" => {
             let filter = parse_domain_event_filter(params, engine)?;
             let records = engine.domain_events_in_range(
                 filter.from_block,
@@ -110,93 +110,93 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .collect();
             Ok(Value::Array(events))
         }
-        "primeorders_addMarket" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_addMarket" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let (symbol, tick_size, lot_size) = parse_market_input(params)?;
-            let market_id = engine.prime_orders_add_market(symbol, tick_size, lot_size);
+            let market_id = engine.mersennet_orders_add_market(symbol, tick_size, lot_size);
             Ok(Value::String(hex_u64(market_id.0)))
         }
-        "primeorders_submitOrder" => {
-            require_transparent_prime_orders_enabled(engine)?;
-            let input = parse_prime_order_input(params)?;
+        "mersennet_orders_submitOrder" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
+            let input = parse_mersennet_order_input(params)?;
             let owner = parse_address(&input.owner)?;
             let side = parse_side(&input.side)?;
             let price = parse_hex_u256(&input.price)?;
             let size = parse_hex_u256(&input.size)?;
             let tif = parse_tif(input.tif.as_deref())?;
             let outcome = engine
-                .prime_orders_submit_order(
+                .mersennet_orders_submit_order(
                     owner,
-                    mersennet::prime_orders::MarketId(input.market_id),
+                    mersennet::mersennet_orders::MarketId(input.market_id),
                     side,
                     price,
                     size,
                     tif,
                 )
-                .map_err(map_prime_orders_error)?;
+                .map_err(map_mersennet_orders_error)?;
             Ok(serde_json::to_value(order_outcome_to_dto(outcome))
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
-        "primeorders_cancelOrder" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_cancelOrder" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let order_id = parse_order_id(params)?;
             let cancelled = engine
-                .prime_orders_cancel_order(mersennet::prime_orders::OrderId(order_id))
+                .mersennet_orders_cancel_order(mersennet::mersennet_orders::OrderId(order_id))
                 .is_some();
             Ok(Value::Bool(cancelled))
         }
-        "primeorders_getOrderBook" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_getOrderBook" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let market_id = parse_market_id(params)?;
-            let book = engine.prime_orders_order_book(mersennet::prime_orders::MarketId(market_id));
+            let book = engine.mersennet_orders_order_book(mersennet::mersennet_orders::MarketId(market_id));
             match book {
                 Some(book) => Ok(serde_json::to_value(order_book_to_dto(book))
                     .map_err(|err| RpcError::new(-32000, err.to_string()))?),
                 None => Ok(Value::Null),
             }
         }
-        "primeorders_getOpenOrders" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_getOpenOrders" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
-            let orders = engine.prime_orders_open_orders(owner);
-            let dtos: Vec<PrimeOrderDto> = orders.into_iter().map(order_to_dto).collect();
+            let orders = engine.mersennet_orders_open_orders(owner);
+            let dtos: Vec<MersennetOrderDto> = orders.into_iter().map(order_to_dto).collect();
             Ok(serde_json::to_value(dtos).map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
-        "primeorders_setMarginParams" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_setMarginParams" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let (initial_bps, maintenance_bps) = parse_margin_params(params)?;
-            engine.prime_orders_set_margin_params(initial_bps, maintenance_bps);
+            engine.mersennet_orders_set_margin_params(initial_bps, maintenance_bps);
             Ok(Value::Bool(true))
         }
-        "primeorders_depositCollateral" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_depositCollateral" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let (owner, amount) = parse_collateral_input(params)?;
-            engine.prime_orders_deposit_collateral(owner, amount);
+            engine.mersennet_orders_deposit_collateral(owner, amount);
             Ok(Value::Bool(true))
         }
-        "primeorders_isLiquidatable" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_isLiquidatable" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
-            Ok(Value::Bool(engine.prime_orders_is_liquidatable(owner)))
+            Ok(Value::Bool(engine.mersennet_orders_is_liquidatable(owner)))
         }
-        "primeorders_liquidate" => {
-            require_transparent_prime_orders_enabled(engine)?;
+        "mersennet_orders_liquidate" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
-            Ok(Value::Bool(engine.prime_orders_liquidate(owner)))
+            Ok(Value::Bool(engine.mersennet_orders_liquidate(owner)))
         }
-        "primebridge_enqueueOrdersToEvm" => {
+        "mersennet_bridge_enqueueOrdersToEvm" => {
             let payload = parse_payload(params)?;
             let msg = engine.bridge_enqueue_orders_to_evm(payload);
             Ok(serde_json::to_value(bridge_message_to_dto(msg))
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
-        "primebridge_enqueueEvmToOrders" => {
+        "mersennet_bridge_enqueueEvmToOrders" => {
             let payload = parse_payload(params)?;
             let msg = engine.bridge_enqueue_evm_to_orders(payload);
             Ok(serde_json::to_value(bridge_message_to_dto(msg))
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
-        "primebridge_dequeueOrdersToEvm" => {
+        "mersennet_bridge_dequeueOrdersToEvm" => {
             let msg = engine.bridge_dequeue_orders_to_evm();
             match msg {
                 Some(msg) => Ok(serde_json::to_value(bridge_message_to_dto(msg))
@@ -204,7 +204,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
-        "primebridge_dequeueEvmToOrders" => {
+        "mersennet_bridge_dequeueEvmToOrders" => {
             let msg = engine.bridge_dequeue_evm_to_orders();
             match msg {
                 Some(msg) => Ok(serde_json::to_value(bridge_message_to_dto(msg))
@@ -212,8 +212,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
-        "prime_gasPrice" | "eth_gasPrice" => Ok(Value::String(hex_u256(engine.base_fee))),
-        "prime_validators" => {
+        "mersennet_gasPrice" | "eth_gasPrice" => Ok(Value::String(hex_u256(engine.base_fee))),
+        "mersennet_validators" => {
             let validators: Vec<Value> = engine
                 .consensus
                 .validators()
@@ -227,7 +227,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .collect();
             Ok(Value::Array(validators))
         }
-        "prime_getCodeAttestation" => {
+        "mersennet_getCodeAttestation" => {
             let (address, _) = parse_balance_params(params)?;
             match engine.published_code_attestation(address) {
                 Some(attestation) => Ok(json!({
@@ -240,14 +240,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
-        "prime_getCodeHash" => {
+        "mersennet_getCodeHash" => {
             let (address, _) = parse_balance_params(params)?;
             match engine.published_code_attestation(address) {
                 Some(attestation) => Ok(Value::String(hex_b256(attestation.code_hash))),
                 None => Ok(Value::Null),
             }
         }
-        "prime_getCode" | "eth_getCode" => {
+        "mersennet_getCode" | "eth_getCode" => {
             require_transparent_contract_state_enabled(engine)?;
             let (address, _) = parse_balance_params(params)?;
             let code = engine
@@ -255,7 +255,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
             Ok(Value::String(format!("0x{}", hex::encode(&code))))
         }
-        "prime_getStorageAt" | "eth_getStorageAt" => {
+        "mersennet_getStorageAt" | "eth_getStorageAt" => {
             require_transparent_contract_state_enabled(engine)?;
             let array = match params {
                 Value::Array(values) => values,
@@ -274,7 +274,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
             Ok(Value::String(hex_u256(value)))
         }
-        "prime_getTransactionCount" | "eth_getTransactionCount" => {
+        "mersennet_getTransactionCount" | "eth_getTransactionCount" => {
             require_transparent_account_state_enabled(engine)?;
             let (address, _) = parse_balance_params(params)?;
             let nonce = engine
@@ -282,7 +282,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
             Ok(Value::String(hex_u64(nonce)))
         }
-        "prime_call" | "eth_call" => {
+        "mersennet_call" | "eth_call" => {
             require_transparent_simulation_enabled(engine)?;
             let input = parse_call_input(params)?;
             let to = input
@@ -331,7 +331,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
 }
 
 #[derive(Debug, Deserialize)]
-struct PrimeOrderInput {
+struct MersennetOrderInput {
     owner: String,
     market_id: u64,
     side: String,
@@ -341,7 +341,7 @@ struct PrimeOrderInput {
 }
 
 #[derive(Debug, Serialize)]
-struct PrimeOrderResultDto {
+struct MersennetOrderResultDto {
     order_id: Option<String>,
     filled: String,
     remaining: String,
@@ -371,7 +371,7 @@ struct OrderBookLevelDto {
 }
 
 #[derive(Debug, Serialize)]
-struct PrimeOrderDto {
+struct MersennetOrderDto {
     id: String,
     owner: String,
     market_id: String,
@@ -461,7 +461,7 @@ fn parse_market_input(params: Value) -> RpcResult<(String, U256, U256)> {
     Ok((symbol, tick_size, lot_size))
 }
 
-fn parse_prime_order_input(params: Value) -> RpcResult<PrimeOrderInput> {
+fn parse_mersennet_order_input(params: Value) -> RpcResult<MersennetOrderInput> {
     let array = match params {
         Value::Array(values) => values,
         _ => return Err(RpcError::new(-32602, "invalid params")),
@@ -663,8 +663,8 @@ fn hex_b256(hash: B256) -> String {
     format!("0x{}", hex::encode(hash.as_slice()))
 }
 
-fn order_outcome_to_dto(outcome: OrderOutcome) -> PrimeOrderResultDto {
-    PrimeOrderResultDto {
+fn order_outcome_to_dto(outcome: OrderOutcome) -> MersennetOrderResultDto {
+    MersennetOrderResultDto {
         order_id: outcome.order_id.map(|id| hex_u64(id.0)),
         filled: hex_u256(outcome.filled),
         remaining: hex_u256(outcome.remaining),
@@ -672,7 +672,7 @@ fn order_outcome_to_dto(outcome: OrderOutcome) -> PrimeOrderResultDto {
     }
 }
 
-fn trade_to_dto(trade: mersennet::prime_orders::Trade) -> TradeDto {
+fn trade_to_dto(trade: mersennet::mersennet_orders::Trade) -> TradeDto {
     TradeDto {
         taker: hex_address(trade.taker),
         maker: hex_address(trade.maker),
@@ -707,8 +707,8 @@ fn order_book_to_dto(book: OrderBookView) -> OrderBookDto {
     }
 }
 
-fn order_to_dto(order: Order) -> PrimeOrderDto {
-    PrimeOrderDto {
+fn order_to_dto(order: Order) -> MersennetOrderDto {
+    MersennetOrderDto {
         id: hex_u64(order.id.0),
         owner: hex_address(order.owner),
         market_id: hex_u64(order.market.0),
@@ -753,10 +753,10 @@ fn hide_post_privacy_sensitive_domain_event(record: &DomainEventRecord, engine: 
 
 fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value) {
     match event {
-        DomainEvent::PrimeOrders(event) => (
-            "primeorders",
+        DomainEvent::MersennetOrders(event) => (
+            "mersennet_orders",
             event.kind(),
-            prime_orders_event_to_value(event),
+            mersennet_orders_event_to_value(event),
         ),
         DomainEvent::Bridge(event) => ("bridge", event.kind(), bridge_event_to_value(event)),
         DomainEvent::Shielded(event) => ("shielded", event.kind(), shielded_event_to_value(event)),
@@ -807,7 +807,7 @@ fn shielded_event_to_value(event: &mersennet::events::ShieldedEvent) -> Value {
     }
 }
 
-fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
+fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent) -> Value {
     if !event.is_privacy_safe_after_activation() {
         return json!({
             "redacted": true,
@@ -817,7 +817,7 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
     }
 
     match event {
-        PrimeOrdersEvent::MarketAdded {
+        MersennetOrdersEvent::MarketAdded {
             market_id,
             symbol,
             tick_size,
@@ -828,7 +828,7 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "tick_size": hex_u256(*tick_size),
             "lot_size": hex_u256(*lot_size),
         }),
-        PrimeOrdersEvent::OrderSubmitted {
+        MersennetOrdersEvent::OrderSubmitted {
             order_id,
             owner,
             market_id,
@@ -856,7 +856,7 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "filled": hex_u256(*filled),
             "remaining": hex_u256(*remaining),
         }),
-        PrimeOrdersEvent::OrderCancelled {
+        MersennetOrdersEvent::OrderCancelled {
             order_id,
             owner,
             market_id,
@@ -865,7 +865,7 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "owner": hex_address(*owner),
             "market_id": hex_u64(market_id.0),
         }),
-        PrimeOrdersEvent::Trade {
+        MersennetOrdersEvent::Trade {
             taker,
             maker,
             market_id,
@@ -883,7 +883,7 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "price": hex_u256(*price),
             "size": hex_u256(*size),
         }),
-        PrimeOrdersEvent::MarginParamsUpdated {
+        MersennetOrdersEvent::MarginParamsUpdated {
             initial_bps,
             maintenance_bps,
         } => json!({
@@ -891,7 +891,7 @@ fn prime_orders_event_to_value(event: &PrimeOrdersEvent) -> Value {
             "maintenance_bps": maintenance_bps,
         }),
         _ => {
-            unreachable!("privacy-sensitive PrimeOrders events should be redacted above")
+            unreachable!("privacy-sensitive MersennetOrders events should be redacted above")
         }
     }
 }
@@ -922,15 +922,15 @@ fn bridge_queue_kind_to_str(queue: &BridgeQueueKind) -> &'static str {
     }
 }
 
-fn map_prime_orders_error(err: PrimeOrdersError) -> RpcError {
+fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
     let code = match err {
-        PrimeOrdersError::UnknownMarket => -32010,
-        PrimeOrdersError::InvalidSize => -32011,
-        PrimeOrdersError::FokNotFillable => -32012,
-        PrimeOrdersError::InsufficientCollateral => -32013,
-        PrimeOrdersError::InsufficientEquity => -32014,
-        PrimeOrdersError::MarketHalted => -32015,
-        PrimeOrdersError::WithdrawalExceedsEquity => -32016,
+        MersennetOrdersError::UnknownMarket => -32010,
+        MersennetOrdersError::InvalidSize => -32011,
+        MersennetOrdersError::FokNotFillable => -32012,
+        MersennetOrdersError::InsufficientCollateral => -32013,
+        MersennetOrdersError::InsufficientEquity => -32014,
+        MersennetOrdersError::MarketHalted => -32015,
+        MersennetOrdersError::WithdrawalExceedsEquity => -32016,
     };
     RpcError::new(code, err.message())
 }
@@ -946,8 +946,8 @@ fn bridge_message_to_dto(msg: BridgeMessage) -> BridgeMessageDto {
 
 fn bridge_domain_to_str(domain: &BridgeDomain) -> &'static str {
     match domain {
-        BridgeDomain::PrimeOrders => "primeorders",
-        BridgeDomain::PrimeEvm => "primeevm",
+        BridgeDomain::MersennetOrders => "mersennet_orders",
+        BridgeDomain::MersennetEvm => "mersennet_evm",
     }
 }
 
