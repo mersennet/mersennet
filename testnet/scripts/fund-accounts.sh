@@ -36,15 +36,15 @@ for account in "${TEST_ACCOUNTS[@]}"; do
 done
 
 echo ""
-echo "==> Creating test market on PrimeOrders..."
+echo "==> Creating test market on MersennetOrders..."
 
-result=$(rpc_call "prime_createMarket" "[{
+result=$(rpc_call "mersennet_createMarket" "[{
     \"base_asset\": \"PRIME\",
     \"quote_asset\": \"USDC\",
     \"tick_size\": \"1000000000000000\",
     \"min_order_size\": \"100000000000000000\"
 }]") || {
-    echo "  WARNING: Failed to create market (prime_createMarket may not be available yet)"
+    echo "  WARNING: Failed to create market (mersennet_createMarket may not be available yet)"
     exit 0
 }
 echo "  market: $result"

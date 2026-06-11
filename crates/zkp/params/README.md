@@ -54,4 +54,4 @@ buildable; the dump step populates it on demand.
 3. `hashes_match_pinned` will pass automatically — it only asserts
    self-consistency and reduced-canonical-Fr outputs.
 4. CODEOWNERS: any change to this directory requires
-   `@PrimeNumbersLabs/zk` review (see `.github/CODEOWNERS`).
+   `@mersennet/zk` review (see `.github/CODEOWNERS`).

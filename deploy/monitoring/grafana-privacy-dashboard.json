@@ -2,8 +2,8 @@
   "annotations": {
     "list": []
   },
-  "description": "Mersennet privacy testnet (chain ID 7920) — operator dashboard. All panels obey CI K2: no address labels.",
-  "editable": false,
+  "description": "Mersennet privacy testnet (chain ID 7920) \u2014 operator dashboard. All panels obey CI K2: no address labels.",
+  "editable": true,
   "graphTooltip": 1,
   "id": null,
   "panels": [
@@ -18,11 +18,25 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value_and_name"
+      },
+      "id": 1,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
       }
     },
     {
@@ -36,7 +50,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 }
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 2,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Active Validators",
@@ -48,7 +76,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 }
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 3,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Activation Height",
@@ -60,7 +102,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 }
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Pending threshold-mempool intents",
@@ -73,7 +129,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Shielded notes vs nullifiers",
@@ -91,7 +161,16 @@
           "refId": "B"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 6,
+      "fieldConfig": {
+        "defaults": {}
+      }
     },
     {
       "title": "Shielded root advancement rate",
@@ -104,7 +183,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 7,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Threshold decryption latency (p50/p95/p99)",
@@ -127,7 +220,16 @@
           "refId": "C"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 8,
+      "fieldConfig": {
+        "defaults": {}
+      }
     },
     {
       "title": "FBA clearings per market",
@@ -140,7 +242,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "id": 9,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Last FBA clearing price",
@@ -153,7 +269,21 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "id": 10,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
     },
     {
       "title": "Liquidation auctions: claims vs settlements",
@@ -171,7 +301,16 @@
           "refId": "B"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "id": 11,
+      "fieldConfig": {
+        "defaults": {}
+      }
     },
     {
       "title": "DKG ceremony rate",
@@ -194,7 +333,16 @@
           "refId": "C"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "id": 12,
+      "fieldConfig": {
+        "defaults": {}
+      }
     },
     {
       "title": "State-proof generation latency (p50/p95)",
@@ -212,7 +360,16 @@
           "refId": "B"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "id": 13,
+      "fieldConfig": {
+        "defaults": {}
+      }
     },
     {
       "title": "State proofs attached / minute",
@@ -225,14 +382,213 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "id": 14,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          }
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Liquidations & Insurance",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Insurance Fund (MRSN)",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 45
+      },
+      "datasource": null,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mersennet_insurance_fund_balance / 1e18"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Bonded Liquidators",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 45
+      },
+      "datasource": null,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#40e0b4"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mersennet_liquidator_count"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Threshold Mempool Admissions (rate)",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "datasource": null,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7dff9b"
+          },
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#7dff9b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#40e0b4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f5c66b"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mersennet_threshold_mempool_admitted_total[5m])",
+          "legendFormat": "admitted"
+        }
+      ]
     }
   ],
   "refresh": "10s",
   "schemaVersion": 39,
-  "tags": ["mersennet", "privacy", "testnet", "chain-7920"],
-  "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
-  "title": "Mersennet — Privacy Testnet",
-  "version": 1
+  "tags": [
+    "mersennet",
+    "privacy"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "Mersennet \u00b7 Privacy",
+  "version": 1,
+  "uid": "mersennet-privacy",
+  "style": "dark"
 }

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::prime_orders::{MarketId, PrimeOrdersState, Side, TimeInForce};
+use crate::mersennet_orders::{MarketId, MersennetOrdersState, Side, TimeInForce};
 use revm::primitives::{Address, U256};
 use std::collections::HashMap;
 
@@ -329,7 +329,7 @@ impl FBAEngine {
         results
     }
 
-    pub fn apply_results(&self, results: &[AuctionResult], state: &mut PrimeOrdersState) {
+    pub fn apply_results(&self, results: &[AuctionResult], state: &mut MersennetOrdersState) {
         for result in results {
             for fill in &result.fills {
                 state.deposit_collateral(fill.buyer, U256::ZERO);

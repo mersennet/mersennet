@@ -1,0 +1,30 @@
+# Default — any unmatched path requires a core review.
+*                              @mersennet/core
+
+# Core chain
+/crates/core/                  @mersennet/core
+/crates/network/               @mersennet/core
+/crates/rpc/                   @mersennet/core
+/crates/node/                  @mersennet/core
+
+# ZK / privacy — privacy redesign owners must approve any change here.
+/crates/zkp/                                @mersennet/zk
+/crates/core/src/shielded_state.rs          @mersennet/zk
+/crates/core/src/encrypted_mempool.rs       @mersennet/zk
+/crates/core/src/zk_proofs.rs               @mersennet/zk
+/crates/core/src/zk_sp1.rs                  @mersennet/zk
+/crates/core/src/mersennet_orders.rs            @mersennet/zk @mersennet/core
+/crates/core/src/liquidation_auction.rs     @mersennet/zk @mersennet/core
+
+
+
+# Docs
+/CONTRIBUTING.md               @mersennet/core
+/README.md                     @mersennet/core
+
+# Infra
+/.github/                      @mersennet/core
+/deploy/                       @mersennet/core
+/docker-compose.yml            @mersennet/core
+/Dockerfile                    @mersennet/core
+/Dockerfile.faucet             @mersennet/core

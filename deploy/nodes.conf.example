@@ -18,6 +18,6 @@ SSH_USER=root
 CHAIN_ID=131071
 BLOCK_TIME_MS=2000
 
-# Optional: domain for TLS on public RPC (e.g. rpc.primechain.io)
+# Optional: domain for TLS on public RPC (e.g. rpc.mersennet.com)
 RPC_DOMAIN=
 FAUCET_DOMAIN=

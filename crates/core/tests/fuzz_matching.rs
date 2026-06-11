@@ -4,7 +4,7 @@
 use mersennet::engine::{Engine, Transaction};
 use mersennet::fba::{BatchAuction, BatchOrder};
 use mersennet::mempool::Mempool;
-use mersennet::prime_orders::{MarketId, PrimeOrdersState, Side, TimeInForce};
+use mersennet::mersennet_orders::{MarketId, MersennetOrdersState, Side, TimeInForce};
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -25,7 +25,7 @@ fn fuzz_matching_conservation_of_value() {
     let lot = U256::from(1u64);
 
     for _ in 0..1000 {
-        let mut state = PrimeOrdersState::new();
+        let mut state = MersennetOrdersState::new();
         state.set_margin_params(0, 0);
         let market = state.add_market("F", tick, lot);
         let market_id = MarketId(market.0);
@@ -89,7 +89,7 @@ fn fuzz_price_time_priority() {
     let lot = U256::from(1u64);
 
     for _ in 0..500 {
-        let mut state = PrimeOrdersState::new();
+        let mut state = MersennetOrdersState::new();
         state.set_margin_params(0, 0);
         let market = state.add_market("P", tick, lot);
         let market_id = MarketId(market.0);

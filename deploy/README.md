@@ -91,8 +91,8 @@ That's it. The script will:
 Set `RPC_DOMAIN` and `FAUCET_DOMAIN` in `nodes.conf`:
 
 ```
-RPC_DOMAIN=rpc.primechain.io
-FAUCET_DOMAIN=faucet.primechain.io
+RPC_DOMAIN=rpc.mersennet.com
+FAUCET_DOMAIN=faucet.mersennet.com
 ```
 
 Point DNS A records to `PUBLIC_NODE` IP. Caddy auto-provisions Let's Encrypt certificates.

@@ -31,5 +31,5 @@ and [`docs/STATUS.md`](docs/STATUS.md) for live workstream status.
 ## Months 10–12 (Ecosystem)
 
 - Stable shielded SDK APIs (TypeScript / Go / Python) and indexers
-- PrimeTrade shielded order UI (external repo: prime-trade)
+- Mersennet Trade shielded order UI (external repo: mersennet/trade)
 - Operator documentation + partner onboarding

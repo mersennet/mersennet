@@ -290,7 +290,7 @@ fn resolve_vkey_hash(vkey_hash_hex: &str, program_elf_path: Option<&str>) -> Res
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
 fn configured_sp1_mode() -> String {
-    env::var("PRIME_SP1_MODE")
+    env::var("MERSENNET_SP1_MODE")
         .unwrap_or_else(|_| "env".to_string())
         .trim()
         .to_ascii_lowercase()
@@ -298,7 +298,7 @@ fn configured_sp1_mode() -> String {
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
 fn configured_sp1_proof_system() -> String {
-    env::var("PRIME_SP1_PROOF_SYSTEM")
+    env::var("MERSENNET_SP1_PROOF_SYSTEM")
         .unwrap_or_else(|_| "compressed".to_string())
         .trim()
         .to_ascii_lowercase()
@@ -306,7 +306,7 @@ fn configured_sp1_proof_system() -> String {
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
 fn configured_sp1_inline_verify() -> bool {
-    env::var("PRIME_SP1_INLINE_VERIFY")
+    env::var("MERSENNET_SP1_INLINE_VERIFY")
         .ok()
         .map(|value| {
             let value = value.trim().to_ascii_lowercase();
@@ -317,7 +317,7 @@ fn configured_sp1_inline_verify() -> bool {
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
 fn configured_sp1_deferred_proof_verification() -> bool {
-    env::var("PRIME_SP1_DEFERRED_PROOF_VERIFICATION")
+    env::var("MERSENNET_SP1_DEFERRED_PROOF_VERIFICATION")
         .ok()
         .map(|value| {
             let value = value.trim().to_ascii_lowercase();
@@ -328,7 +328,7 @@ fn configured_sp1_deferred_proof_verification() -> bool {
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
 fn trace_real_sp1_stage(stage: &str) {
-    let enabled = env::var("PRIME_SP1_STAGE_TRACE")
+    let enabled = env::var("MERSENNET_SP1_STAGE_TRACE")
         .ok()
         .map(|value| {
             let value = value.trim().to_ascii_lowercase();
@@ -380,7 +380,7 @@ where
         "groth16" => prove_request.groth16(),
         other => {
             bail!(
-                "unsupported PRIME_SP1_PROOF_SYSTEM={other}; expected one of: core, compressed, plonk, groth16"
+                "unsupported MERSENNET_SP1_PROOF_SYSTEM={other}; expected one of: core, compressed, plonk, groth16"
             );
         }
     }
@@ -503,7 +503,7 @@ fn build_real_sp1_proof(
             {
                 let _ = (elf_bytes, stdin, expected_output, vkey_hash_hex);
                 bail!(
-                    "PRIME_SP1_MODE=network requires building this host with --features network"
+                    "MERSENNET_SP1_MODE=network requires building this host with --features network"
                 )
             }
         }
@@ -551,7 +551,7 @@ fn verify_real_sp1(request: &VerifyRequest, expected_output: &BlockProgramOutput
             {
                 let _ = (elf_bytes, request, expected_output);
                 bail!(
-                    "PRIME_SP1_MODE=network requires building this host with --features network"
+                    "MERSENNET_SP1_MODE=network requires building this host with --features network"
                 )
             }
         }

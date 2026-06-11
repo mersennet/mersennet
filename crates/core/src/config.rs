@@ -9,7 +9,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub mempool: MempoolConfig,
     #[serde(default)]
-    pub prime_orders: PrimeOrdersConfig,
+    pub mersennet_orders: MersennetOrdersConfig,
     #[serde(default)]
     pub bridge: BridgeConfig,
     #[serde(default)]
@@ -39,7 +39,7 @@ pub struct PrivacyConfig {
     pub mode_activated: bool,
     /// Block height at which privacy mode auto-activates. `None`
     /// disables auto-activation; governance must call
-    /// `prime_activatePrivacy` explicitly.
+    /// `mersennet_activatePrivacy` explicitly.
     #[serde(default)]
     pub activation_height: Option<u64>,
     /// DKG epoch length in blocks.
@@ -108,10 +108,10 @@ pub struct MempoolConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrimeOrdersConfig {
-    #[serde(default = "default_prime_orders_initial_margin_bps")]
+pub struct MersennetOrdersConfig {
+    #[serde(default = "default_mersennet_orders_initial_margin_bps")]
     pub initial_margin_bps: u64,
-    #[serde(default = "default_prime_orders_maintenance_margin_bps")]
+    #[serde(default = "default_mersennet_orders_maintenance_margin_bps")]
     pub maintenance_margin_bps: u64,
 }
 
@@ -266,11 +266,11 @@ impl Default for MempoolConfig {
     }
 }
 
-impl Default for PrimeOrdersConfig {
+impl Default for MersennetOrdersConfig {
     fn default() -> Self {
         Self {
-            initial_margin_bps: default_prime_orders_initial_margin_bps(),
-            maintenance_margin_bps: default_prime_orders_maintenance_margin_bps(),
+            initial_margin_bps: default_mersennet_orders_initial_margin_bps(),
+            maintenance_margin_bps: default_mersennet_orders_maintenance_margin_bps(),
         }
     }
 }
@@ -448,11 +448,11 @@ fn default_mempool_bump() -> u64 {
     1_000
 }
 
-fn default_prime_orders_initial_margin_bps() -> u64 {
+fn default_mersennet_orders_initial_margin_bps() -> u64 {
     0
 }
 
-fn default_prime_orders_maintenance_margin_bps() -> u64 {
+fn default_mersennet_orders_maintenance_margin_bps() -> u64 {
     0
 }
 

@@ -1,7 +1,7 @@
 //! Sealed-bid liquidation auctions for the shielded CLOB.
 //!
-//! The legacy [`crate::prime_orders::PrimeOrdersState::is_liquidatable`]
-//! and [`crate::prime_orders::PrimeOrdersState::liquidate`] are
+//! The legacy [`crate::mersennet_orders::MersennetOrdersState::is_liquidatable`]
+//! and [`crate::mersennet_orders::MersennetOrdersState::liquidate`] are
 //! address-keyed: anyone can scan the chain and see when a specific
 //! account is one tick away from forced closure. That's the exact
 //! signal big traders exploit to engineer cascading liquidations.
@@ -34,7 +34,7 @@
 
 #![allow(dead_code)]
 
-use crate::prime_orders::MarketId;
+use crate::mersennet_orders::MarketId;
 use crate::shielded_state::ShieldedState;
 use mersennet_zkp::{
     Fr, NoteCommitment, Nullifier,

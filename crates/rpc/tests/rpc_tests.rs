@@ -46,9 +46,9 @@ fn rpc_mersennet_id() {
 }
 
 #[test]
-fn rpc_prime_block_number() {
+fn rpc_mersennet_block_number() {
     let (mut engine, _dir) = setup_engine(1);
-    let result = route("prime_blockNumber", Value::Null, &mut engine).expect("rpc ok");
+    let result = route("mersennet_blockNumber", Value::Null, &mut engine).expect("rpc ok");
     assert_eq!(
         result,
         Value::String("0x0".to_string()),
@@ -56,7 +56,7 @@ fn rpc_prime_block_number() {
     );
 
     engine.execute_block().expect("block 1");
-    let result = route("prime_blockNumber", Value::Null, &mut engine).expect("rpc ok");
+    let result = route("mersennet_blockNumber", Value::Null, &mut engine).expect("rpc ok");
     assert_eq!(
         result,
         Value::String("0x1".to_string()),
@@ -65,13 +65,13 @@ fn rpc_prime_block_number() {
 }
 
 #[test]
-fn rpc_prime_get_balance() {
+fn rpc_mersennet_get_balance() {
     let (mut engine, _dir) = setup_engine(1);
     let alice = addr(0x11);
     engine.fund_account(alice, U256::from(5_000u64), 0);
 
     let params = json!([hex_addr(alice), "latest"]);
-    let result = route("prime_getBalance", params, &mut engine).expect("rpc ok");
+    let result = route("mersennet_getBalance", params, &mut engine).expect("rpc ok");
     assert_eq!(result, Value::String("0x1388".to_string()), "5000 = 0x1388");
 }
 
@@ -83,7 +83,7 @@ fn rpc_transparent_account_state_methods_disabled_after_privacy_activation() {
     engine.activate_privacy_mode();
 
     let balance_err = route(
-        "prime_getBalance",
+        "mersennet_getBalance",
         json!([hex_addr(alice), "latest"]),
         &mut engine,
     )
@@ -106,10 +106,14 @@ fn rpc_transparent_simulation_methods_disabled_after_privacy_activation() {
     let (mut engine, _dir) = setup_engine(1);
     engine.activate_privacy_mode();
 
-    let prime_call_err =
-        route("prime_call", Value::Null, &mut engine).expect_err("prime_call should be disabled");
-    assert_eq!(prime_call_err.code, -32605);
-    assert!(prime_call_err.message.contains("simulation RPC disabled"));
+    let mersennet_call_err = route("mersennet_call", Value::Null, &mut engine)
+        .expect_err("mersennet_call should be disabled");
+    assert_eq!(mersennet_call_err.code, -32605);
+    assert!(
+        mersennet_call_err
+            .message
+            .contains("simulation RPC disabled")
+    );
 
     let eth_call_err =
         route("eth_call", Value::Null, &mut engine).expect_err("eth_call should be disabled");
@@ -157,7 +161,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     engine.activate_privacy_mode();
 
     let unpublished = route(
-        "prime_getCodeHash",
+        "mersennet_getCodeHash",
         json!([hex_addr(contract), "latest"]),
         &mut engine,
     )
@@ -192,7 +196,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     );
 
     let still_unpublished = route(
-        "prime_getCodeHash",
+        "mersennet_getCodeHash",
         json!([hex_addr(contract), "latest"]),
         &mut engine,
     )
@@ -227,7 +231,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     );
 
     let code_hash = route(
-        "prime_getCodeHash",
+        "mersennet_getCodeHash",
         json!([hex_addr(contract), "latest"]),
         &mut engine,
     )
@@ -235,7 +239,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     assert_eq!(code_hash, Value::String(expected_hash));
 
     let attestation = route(
-        "prime_getCodeAttestation",
+        "mersennet_getCodeAttestation",
         json!([hex_addr(contract), "latest"]),
         &mut engine,
     )
@@ -250,7 +254,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
     );
 
     let code_err = route(
-        "prime_getCode",
+        "mersennet_getCode",
         json!([hex_addr(contract), "latest"]),
         &mut engine,
     )
@@ -269,7 +273,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
 }
 
 #[test]
-fn rpc_prime_send_transaction_adds_to_mempool() {
+fn rpc_mersennet_send_transaction_adds_to_mempool() {
     let (mut engine, _dir) = setup_engine(131071);
     let alice = addr(0x11);
     let bob = addr(0x22);
@@ -295,20 +299,20 @@ fn rpc_prime_send_transaction_adds_to_mempool() {
 }
 
 #[test]
-fn rpc_primeorders_add_market() {
+fn rpc_mersennet_orders_add_market() {
     let (mut engine, _dir) = setup_engine(1);
     let params = json!(["PRIME-PERP", "0x1", "0x1"]);
-    let result = route("primeorders_addMarket", params, &mut engine).expect("rpc ok");
+    let result = route("mersennet_orders_addMarket", params, &mut engine).expect("rpc ok");
     let market_id_str = result.as_str().expect("string result");
     assert!(market_id_str.starts_with("0x"), "market id should be hex");
 }
 
 #[test]
-fn rpc_primeorders_submit_and_get_order_book() {
+fn rpc_mersennet_orders_submit_and_get_order_book() {
     let (mut engine, _dir) = setup_engine(1);
     let market_params = json!(["PRIME-PERP", "0x1", "0x1"]);
     let market_result =
-        route("primeorders_addMarket", market_params, &mut engine).expect("add market");
+        route("mersennet_orders_addMarket", market_params, &mut engine).expect("add market");
     let market_id_str = market_result.as_str().expect("market id string");
 
     let maker = addr(0x33);
@@ -320,7 +324,7 @@ fn rpc_primeorders_submit_and_get_order_book() {
         "size": "0x5"
     }]);
     let order_result =
-        route("primeorders_submitOrder", order_params, &mut engine).expect("submit order");
+        route("mersennet_orders_submitOrder", order_params, &mut engine).expect("submit order");
     let remaining = order_result
         .get("remaining")
         .and_then(|v| v.as_str())
@@ -332,7 +336,7 @@ fn rpc_primeorders_submit_and_get_order_book() {
 
     let book_params = json!([market_id_str]);
     let book_result =
-        route("primeorders_getOrderBook", book_params, &mut engine).expect("get order book");
+        route("mersennet_orders_getOrderBook", book_params, &mut engine).expect("get order book");
     let asks = book_result
         .get("asks")
         .and_then(|v| v.as_array())
@@ -358,7 +362,7 @@ fn rpc_primeorders_submit_and_get_order_book() {
         "size": "0x3"
     }]);
     let taker_result =
-        route("primeorders_submitOrder", taker_order, &mut engine).expect("taker order");
+        route("mersennet_orders_submitOrder", taker_order, &mut engine).expect("taker order");
     let filled = taker_result
         .get("filled")
         .and_then(|v| v.as_str())
@@ -376,7 +380,7 @@ fn rpc_primeorders_submit_and_get_order_book() {
 
     let book_params2 = json!([market_id_str]);
     let book_after =
-        route("primeorders_getOrderBook", book_params2, &mut engine).expect("book after");
+        route("mersennet_orders_getOrderBook", book_params2, &mut engine).expect("book after");
     let asks_after = book_after
         .get("asks")
         .and_then(|v| v.as_array())
@@ -393,11 +397,11 @@ fn rpc_primeorders_submit_and_get_order_book() {
 }
 
 #[test]
-fn rpc_transparent_primeorders_methods_disabled_after_privacy_activation() {
+fn rpc_transparent_mersennet_orders_methods_disabled_after_privacy_activation() {
     let (mut engine, _dir) = setup_engine(1);
     engine.activate_privacy_mode();
 
-    let err = route("primeorders_getOrderBook", json!(["0x1"]), &mut engine)
+    let err = route("mersennet_orders_getOrderBook", json!(["0x1"]), &mut engine)
         .expect_err("transparent RPC should be disabled");
 
     assert_eq!(err.code, -32605);
@@ -405,32 +409,32 @@ fn rpc_transparent_primeorders_methods_disabled_after_privacy_activation() {
 }
 
 #[test]
-fn rpc_domain_events_hide_sensitive_primeorders_events_after_privacy_activation() {
+fn rpc_domain_events_hide_sensitive_mersennet_orders_events_after_privacy_activation() {
     let (mut engine, _dir) = setup_engine(1);
     engine.activate_privacy_mode();
 
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     let trader = addr(0x55);
-    engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+    engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
     let _ = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             trader,
             market_id,
-            mersennet::prime_orders::Side::Buy,
+            mersennet::mersennet_orders::Side::Buy,
             U256::from(100u64),
             U256::from(1u64),
-            mersennet::prime_orders::TimeInForce::Gtc,
+            mersennet::mersennet_orders::TimeInForce::Gtc,
         )
         .expect("order accepted");
     engine.execute_block().expect("block executed");
 
     let result = route(
-        "prime_getDomainEvents",
+        "mersennet_getDomainEvents",
         json!([{
             "fromBlock": "0x0",
             "toBlock": "latest",
-            "domain": "primeorders"
+            "domain": "mersennet_orders"
         }]),
         &mut engine,
     )

@@ -11,7 +11,7 @@ docker compose up -d --build
 
 echo "==> Waiting for validators to become healthy..."
 
-VALIDATORS=("prime-validator-1" "prime-validator-2" "prime-validator-3")
+VALIDATORS=("mersennet-validator-1" "mersennet-validator-2" "mersennet-validator-3")
 MAX_RETRIES=30
 RETRY_INTERVAL=5
 

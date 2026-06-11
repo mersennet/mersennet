@@ -209,9 +209,11 @@ ssh -o StrictHostKeyChecking=no "$PUBLIC_SSH" "mkdir -p /tmp/mersennet-deploy"
 # Prepare Caddyfile with domains if set
 CADDYFILE="$SCRIPT_DIR/Caddyfile"
 if [ -n "${RPC_DOMAIN:-}" ]; then
-    CADDY_TMP=$(mktemp)
-    sed "s/{RPC_DOMAIN}/$RPC_DOMAIN/g; s/{FAUCET_DOMAIN}/${FAUCET_DOMAIN:-faucet.$RPC_DOMAIN}/g" "$CADDYFILE" > "$CADDY_TMP"
-    CADDYFILE="$CADDY_TMP"
+    # scp preserves the source basename, and setup-node.sh expects a file literally
+    # named "Caddyfile", so template into a temp dir keeping that filename.
+    CADDY_TMP_DIR=$(mktemp -d)
+    sed "s/{RPC_DOMAIN}/$RPC_DOMAIN/g; s/{FAUCET_DOMAIN}/${FAUCET_DOMAIN:-faucet.$RPC_DOMAIN}/g" "$CADDYFILE" > "$CADDY_TMP_DIR/Caddyfile"
+    CADDYFILE="$CADDY_TMP_DIR/Caddyfile"
 fi
 
 scp -o StrictHostKeyChecking=no -q \

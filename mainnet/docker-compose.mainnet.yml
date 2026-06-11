@@ -23,7 +23,7 @@ services:
       - "30303:30303"   # P2P
       - "127.0.0.1:8545:8545"   # RPC + /metrics (bind to localhost; use caddy for TLS)
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     deploy:
       resources:
         limits:
@@ -59,7 +59,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     depends_on:
       validator:
         condition: service_healthy
@@ -81,7 +81,7 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     depends_on:
       validator:
         condition: service_healthy
@@ -105,7 +105,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     depends_on:
       - prometheus
     restart: unless-stopped
@@ -125,7 +125,7 @@ services:
     ports:
       - "127.0.0.1:3100:3100"
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     restart: unless-stopped
     deploy:
       resources:
@@ -142,7 +142,7 @@ services:
       - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
     command: -config.file=/etc/promtail/config.yml
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     depends_on:
       - loki
     restart: unless-stopped
@@ -157,7 +157,7 @@ services:
     ports:
       - "127.0.0.1:9093:9093"
     networks:
-      - prime-mainnet
+      - mersennet-mainnet
     restart: unless-stopped
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
@@ -172,5 +172,5 @@ volumes:
   loki-data:
 
 networks:
-  prime-mainnet:
+  mersennet-mainnet:
     driver: bridge

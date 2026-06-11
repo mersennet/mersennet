@@ -16,10 +16,8 @@
 //                         the only entity that sees this and binds
 //                         it to a transparent ERC20 transfer.
 
-use crate::lib;
 use crate::merkle;
 use crate::note::Note;
-use crate::poseidon;
 
 pub fn verify(
     // Public

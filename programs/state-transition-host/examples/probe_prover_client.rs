@@ -5,9 +5,9 @@ use sp1_sdk::blocking::ProverClient;
 
 #[cfg(all(feature = "real-sp1", not(windows)))]
 fn main() -> Result<()> {
-    eprintln!("[prime-sp1-probe] client:build:start");
+    eprintln!("[mersennet-sp1-probe] client:build:start");
     let _client = ProverClient::builder().cpu().build();
-    eprintln!("[prime-sp1-probe] client:build:done");
+    eprintln!("[mersennet-sp1-probe] client:build:done");
     Ok(())
 }
 

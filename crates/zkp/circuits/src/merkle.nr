@@ -4,7 +4,7 @@
 
 use crate::poseidon;
 
-global MERKLE_DEPTH: u32 = 32;
+pub global MERKLE_DEPTH: u32 = 32;
 
 // Re-derive the root from `leaf` walking up the tree via `siblings`.
 // `index_bits` is the leaf's index expressed as `MERKLE_DEPTH` bits,

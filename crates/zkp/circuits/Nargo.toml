@@ -1,7 +1,8 @@
 [package]
-name = "prime_circuits"
+name = "mersennet_circuits"
 type = "lib"
-authors = ["PrimeNumbers Labs"]
+authors = ["MersennetNumbers Labs"]
 compiler_version = ">=0.30.0"
 
 [dependencies]
+poseidon = { tag = "v0.3.0", git = "https://github.com/noir-lang/poseidon" }

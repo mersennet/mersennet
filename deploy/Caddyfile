@@ -1,15 +1,24 @@
-# Replace DOMAIN placeholders with your actual domains.
+# Replace the RPC_DOMAIN placeholder with your actual domain.
 # If no domain is set, Caddy won't be used and RPC is accessed directly on :8545.
+#
+# A single domain serves both HTTPS JSON-RPC (:8545) and secure WebSocket (:8546):
+#   https://RPC_DOMAIN   -> JSON-RPC
+#   wss://RPC_DOMAIN     -> subscriptions (newHeads, PrimeOrdersTrades, ...)
+#
+# The faucet frontend is served separately on the app host; its /api is proxied
+# to this node's faucet backend (:8080), so no faucet vhost is needed here.
 
 {RPC_DOMAIN} {
+    @websockets {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websockets localhost:8546
     reverse_proxy localhost:8545
+
     header {
         Access-Control-Allow-Origin *
         Access-Control-Allow-Methods "GET, POST, OPTIONS"
         Access-Control-Allow-Headers "Content-Type"
     }
-}
-
-{FAUCET_DOMAIN} {
-    reverse_proxy localhost:8080
 }

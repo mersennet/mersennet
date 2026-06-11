@@ -22,8 +22,6 @@ contracts/cache/
 contracts/out/
 
 # Docusaurus build output
-docs-site/build/
-docs-site/.docusaurus/
 
 # Build outputs
 **/build/
@@ -66,8 +64,6 @@ logs/
 target/
 
 # Lockfiles (keep package.json, ignore locks for sub-apps)
-primeswap-v2/package-lock.json
-primeswap-v2/yarn.lock
 node-dashboard/package-lock.json
 
 # Node dashboard extras

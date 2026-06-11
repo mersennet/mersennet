@@ -6,8 +6,8 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BridgeDomain {
-    PrimeOrders,
-    PrimeEvm,
+    MersennetOrders,
+    MersennetEvm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

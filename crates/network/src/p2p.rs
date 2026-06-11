@@ -1,6 +1,6 @@
 use crate::net_transport::{GossipConfig, TcpSync, UdpGossip};
 use anyhow::Result;
-use mersennet::consensus::Finalization;
+use mersennet::consensus::{Finalization, Reward};
 use mersennet::engine::{Block, Engine, Receipt, Transaction};
 use mersennet::network::Message as VoteMessage;
 use revm::primitives::{Address, B256, Bytes, U256};
@@ -119,6 +119,20 @@ pub struct WireTx {
     pub gas_price: String,
     pub nonce: u64,
     pub chain_id: Option<u64>,
+    // Signature (r, s, v). Carried so a receiving validator can
+    // re-verify a relayed transaction — without it, gossiped txs
+    // arrive unsigned and are silently rejected, so externally
+    // submitted txs (faucet, trades) never get mined.
+    #[serde(default)]
+    pub sig_r: Option<String>,
+    #[serde(default)]
+    pub sig_s: Option<String>,
+    #[serde(default)]
+    pub sig_v: Option<String>,
+    #[serde(default)]
+    pub tx_type: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shielded_payload: Option<mersennet::shielded_evm::ShieldedEnvelope>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -128,6 +142,12 @@ pub struct WireReceipt {
     pub output: String,
     pub created_address: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct WireReward {
+    pub address: String,
+    pub amount: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -146,6 +166,12 @@ pub struct WireBlock {
     pub state_root: String,
     pub total_reward: String,
     pub burned_reward: String,
+    // Per-recipient block rewards. Carried so importing nodes credit
+    // the same proposer/validator rewards the producer applied and
+    // converge on the producer's state. Defaulted for compatibility
+    // with blocks gossiped by older nodes.
+    #[serde(default)]
+    pub rewards: Vec<WireReward>,
     pub transactions: Vec<WireTx>,
     pub receipts: Vec<WireReceipt>,
 }
@@ -191,6 +217,10 @@ fn parse_hex_bytes(s: &str) -> Option<Bytes> {
 }
 
 pub fn tx_to_wire(tx: &Transaction) -> WireTx {
+    let (sig_r, sig_s, sig_v) = match &tx.signature {
+        Some((r, s, v)) => (Some(hex_u256(r)), Some(hex_u256(s)), Some(format!("{v:x}"))),
+        None => (None, None, None),
+    };
     WireTx {
         from: hex_addr(&tx.from),
         to: tx.to.as_ref().map(hex_addr),
@@ -200,10 +230,23 @@ pub fn tx_to_wire(tx: &Transaction) -> WireTx {
         gas_price: hex_u256(&tx.gas_price),
         nonce: tx.nonce,
         chain_id: tx.chain_id,
+        sig_r,
+        sig_s,
+        sig_v,
+        tx_type: tx.tx_type,
+        shielded_payload: tx.shielded_payload.clone(),
     }
 }
 
 pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
+    let signature = match (&wire.sig_r, &wire.sig_s, &wire.sig_v) {
+        (Some(r), Some(s), Some(v)) => Some((
+            parse_hex_u256(r)?,
+            parse_hex_u256(s)?,
+            u64::from_str_radix(v.trim_start_matches("0x"), 16).ok()?,
+        )),
+        _ => None,
+    };
     Some(Transaction {
         from: parse_hex_addr(&wire.from)?,
         to: match &wire.to {
@@ -216,9 +259,9 @@ pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
         gas_price: parse_hex_u256(&wire.gas_price)?,
         nonce: wire.nonce,
         chain_id: wire.chain_id,
-        signature: None,
-        tx_type: 0,
-        shielded_payload: None,
+        signature,
+        tx_type: wire.tx_type,
+        shielded_payload: wire.shielded_payload.clone(),
     })
 }
 
@@ -261,6 +304,14 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
         state_root: hex_b256(&block.state_root),
         total_reward: hex_u256(&block.total_reward),
         burned_reward: hex_u256(&block.burned_reward),
+        rewards: block
+            .rewards
+            .iter()
+            .map(|r| WireReward {
+                address: hex_addr(&r.address),
+                amount: hex_u256(&r.amount),
+            })
+            .collect(),
         transactions: block.transactions.iter().map(tx_to_wire).collect(),
         receipts: block.receipts.iter().map(receipt_to_wire).collect(),
     }
@@ -276,6 +327,17 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
     let state_root = parse_hex_b256(&wire.state_root)?;
     let total_reward = parse_hex_u256(&wire.total_reward)?;
     let burned_reward = parse_hex_u256(&wire.burned_reward)?;
+    let rewards: Option<Vec<Reward>> = wire
+        .rewards
+        .iter()
+        .map(|r| {
+            Some(Reward {
+                address: parse_hex_addr(&r.address)?,
+                amount: parse_hex_u256(&r.amount)?,
+            })
+        })
+        .collect();
+    let rewards = rewards?;
 
     Some(Block {
         number: wire.number,
@@ -314,7 +376,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         slashes: Vec::new(),
         finality_rounds: Vec::new(),
         slashing_evidence: Vec::new(),
-        rewards: Vec::new(),
+        rewards,
         transactions: txs?,
         receipts: receipts?,
         bridge_orders_to_evm: Vec::new(),
@@ -390,8 +452,9 @@ impl NetworkNode {
                                 if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
                                     && let Some(tx) = wire_to_tx(&wire)
                                     && let Ok(mut eng) = engine.lock()
+                                    && let Err(err) = eng.submit_tx(tx)
                                 {
-                                    let _ = eng.submit_tx(tx);
+                                    tracing::debug!(reason = err.code(), "dropped relayed tx");
                                 }
                             }
                             _ => {}
@@ -418,24 +481,41 @@ impl NetworkNode {
                     };
                     info!(addr = %tcp_addr, "tcp snapshot listener started");
                     while running.load(Ordering::SeqCst) {
-                        if let Ok(Some(mut stream)) = tcp.accept_once()
-                            && let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
-                            && request.topic == "sync_request"
-                            && let Ok(eng) = engine.lock()
-                        {
-                            let height = eng.latest_height();
-                            let blocks: Vec<WireBlock> = (1..=height)
-                                .filter_map(|n| eng.block_by_number(n))
-                                .map(block_to_wire)
-                                .collect();
-                            let data = serde_json::to_vec(&blocks).unwrap_or_default();
-                            let gossip_pkt = crate::net_transport::GossipPacket {
-                                topic: "sync_response".to_string(),
-                                data,
-                                id: String::new(),
-                                ttl: 0,
-                            };
-                            let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
+                        if let Ok(Some(mut stream)) = tcp.accept_once() {
+                            // The listener is non-blocking; the accepted
+                            // stream inherits that, which would race
+                            // recv_packet against the client's send.
+                            // Switch to a bounded blocking read.
+                            let _ = stream.set_nonblocking(false);
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                            if let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
+                                && request.topic == "sync_request"
+                                && let Ok(eng) = engine.lock()
+                            {
+                                // The requester encodes the next height it
+                                // needs as 8 big-endian bytes; default to
+                                // the full chain for legacy/empty requests.
+                                let from = if request.data.len() == 8 {
+                                    let mut buf = [0u8; 8];
+                                    buf.copy_from_slice(&request.data);
+                                    u64::from_be_bytes(buf).max(1)
+                                } else {
+                                    1
+                                };
+                                let height = eng.latest_height();
+                                let blocks: Vec<WireBlock> = (from..=height)
+                                    .filter_map(|n| eng.block_by_number(n))
+                                    .map(block_to_wire)
+                                    .collect();
+                                let data = serde_json::to_vec(&blocks).unwrap_or_default();
+                                let gossip_pkt = crate::net_transport::GossipPacket {
+                                    topic: "sync_response".to_string(),
+                                    data,
+                                    id: String::new(),
+                                    ttl: 0,
+                                };
+                                let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
+                            }
                         }
                         std::thread::sleep(Duration::from_millis(100));
                     }
@@ -468,6 +548,75 @@ impl NetworkNode {
                 })
                 .ok();
         }
+
+        // Block-sync client loop. Gossip only delivers blocks going
+        // forward, so a node that starts (or falls) behind the fleet
+        // buffers future blocks and never advances. This periodically
+        // pulls the missing range from a peer over TCP so the node
+        // catches up, then gossip keeps it in sync.
+        {
+            let engine = engine.clone();
+            let running = self.running.clone();
+            let peers = config.bootstrap_peers.clone();
+            std::thread::Builder::new()
+                .name("block-sync".into())
+                .spawn(move || {
+                    info!("block-sync loop started");
+                    // Let listeners come up before the first request.
+                    std::thread::sleep(Duration::from_secs(2));
+                    while running.load(Ordering::SeqCst) {
+                        let from = match engine.lock() {
+                            Ok(eng) => eng.latest_height().saturating_add(1),
+                            Err(_) => {
+                                std::thread::sleep(Duration::from_secs(4));
+                                continue;
+                            }
+                        };
+                        for peer in &peers {
+                            let tcp_addr = derive_tcp_addr(peer);
+                            let Ok(mut stream) =
+                                TcpSync::connect(&tcp_addr, Duration::from_secs(5))
+                            else {
+                                continue;
+                            };
+                            let req = crate::net_transport::GossipPacket {
+                                topic: "sync_request".to_string(),
+                                data: from.to_be_bytes().to_vec(),
+                                id: String::new(),
+                                ttl: 0,
+                            };
+                            if TcpSync::send_packet(&mut stream, &req).is_err() {
+                                continue;
+                            }
+                            let blocks: Vec<WireBlock> = match TcpSync::recv_packet(&mut stream) {
+                                Ok(Some(resp)) if resp.topic == "sync_response" => {
+                                    serde_json::from_slice(&resp.data).unwrap_or_default()
+                                }
+                                _ => continue,
+                            };
+                            if blocks.is_empty() {
+                                continue;
+                            }
+                            let mut applied = 0u64;
+                            if let Ok(mut eng) = engine.lock() {
+                                for wire in &blocks {
+                                    if let Some(block) = wire_to_block(wire) {
+                                        eng.import_block(block);
+                                        applied += 1;
+                                    }
+                                }
+                            }
+                            if applied > 0 {
+                                info!(peer = %peer, from, count = applied, "synced blocks from peer");
+                            }
+                            // One responsive peer per round is enough.
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_secs(4));
+                    }
+                })
+                .ok();
+        }
     }
 
     pub fn broadcast_block(&self, block: &Block) -> Result<()> {
@@ -496,11 +645,10 @@ impl NetworkNode {
 }
 
 fn derive_tcp_addr(udp_addr: &str) -> String {
-    if let Some(colon) = udp_addr.rfind(':')
-        && let Ok(port) = udp_addr[colon + 1..].parse::<u16>()
-    {
-        let host = &udp_addr[..colon];
-        return format!("{host}:{}", port.wrapping_add(1000));
-    }
-    format!("{udp_addr}_tcp")
+    // TCP block-sync shares the same port as UDP gossip. TCP and UDP
+    // are independent L4 protocols, so binding both on the same port is
+    // fine, and deployment firewalls open `<port>/tcp` ("P2P sync") for
+    // exactly this. (A previous +1000 offset landed on a firewalled
+    // port, so sync connections were silently refused.)
+    udp_addr.to_string()
 }

@@ -54,6 +54,7 @@ pub mod note;
 pub mod nullifier;
 pub mod pedersen;
 pub mod poseidon;
+mod poseidon2_constants;
 pub mod sp1;
 pub mod threshold;
 

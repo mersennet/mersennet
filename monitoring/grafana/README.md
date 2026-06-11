@@ -10,7 +10,7 @@ Comprehensive overview of chain health, throughput, execution engine, CLOB, and 
 - **Chain Health**: Blocks produced, block height, node uptime, block time
 - **Transaction Throughput**: Tx per block, TPS, RPC requests, RPC latency
 - **Execution Engine**: Gas used, EVM execution time, mempool size, block throughput
-- **PrimeOrders CLOB**: Orders matched, active markets, CLOB activity
+- **MersennetOrders CLOB**: Orders matched, active markets, CLOB activity
 - **Consensus & Network**: Consensus rounds, validators, finalization, RPC messages
 
 ### Mersennet Performance (`mersennet-performance.json`)

@@ -10,7 +10,7 @@
 //   - new_commitment    new collateral note (with the order's
 //                       initial margin reserved off the value)
 //   - market_id         market identifier (e.g. MRSN-PERP)
-//   - side_hash         Poseidon(side, salt) — hides the side from
+//   - side_hash         Poseidon(side, salt) - hides the side from
 //                       any non-trader but allows the matching engine
 //                       to bucket orders consistently
 //   - price_band        the price tier this order falls into
@@ -29,7 +29,6 @@
 //   3. `imm_required` matches the public-input claim (the chain
 //      passes this in; the trader cannot lie about it).
 
-use crate::lib;
 use crate::merkle;
 use crate::note::Note;
 use crate::poseidon;
