@@ -75,7 +75,7 @@ fn redb_mersennet_orders_full_cycle() {
     engine.set_token_economics(U256::from(0u64), U256::from(0u64), 1);
 
     let market_id =
-        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     engine.mersennet_orders_deposit_collateral(maker, U256::from(10_000u64));
     engine.mersennet_orders_deposit_collateral(taker, U256::from(10_000u64));
 

@@ -103,10 +103,8 @@ jobs:
       - run: cargo fmt --all --check
 
   # ────────────────────────────────────────────────────────────────
-  # SDK TypeScript build + typecheck.
+  # cargo-audit — advisory DB scan.
   # ────────────────────────────────────────────────────────────────
-
-
   audit:
     name: cargo audit
     runs-on: ubuntu-latest

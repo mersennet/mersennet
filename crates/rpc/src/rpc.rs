@@ -1513,7 +1513,7 @@ mod tests {
         engine.activate_privacy_mode();
 
         let market_id =
-            engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+            engine.mersennet_orders_add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
         let trader = Address::from_slice(&[0x44; 20]);
         engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
         let _ = engine

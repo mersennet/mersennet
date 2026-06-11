@@ -55,7 +55,7 @@ fn mersennet_orders_and_bridge_persistence() {
 
     let mut mersennet_orders = MersennetOrdersState::new();
     mersennet_orders.set_margin_params(0, 0);
-    let market_id = mersennet_orders.add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let market_id = mersennet_orders.add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     let owner = Address::from_slice(&[0x22; 20]);
     let _order_id = mersennet_orders.place_order(
         owner,
@@ -197,7 +197,7 @@ fn redb_mersennet_orders_persistence() {
 
     let mut mersennet_orders = MersennetOrdersState::new();
     mersennet_orders.set_margin_params(0, 0);
-    let market_id = mersennet_orders.add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let market_id = mersennet_orders.add_market("MRSN-PERP", U256::from(1u64), U256::from(1u64));
     let owner = Address::from_slice(&[0x22; 20]);
     let _order_id = mersennet_orders.place_order(
         owner,

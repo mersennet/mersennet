@@ -52,7 +52,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-stresstest
+    container_name: mersennet-loadtest-stresstest
     entrypoint: ["/usr/local/bin/stresstest"]
     command: ["--rpc", "http://rpc-node:8545"]
     depends_on:
