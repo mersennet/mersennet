@@ -481,24 +481,41 @@ impl NetworkNode {
                     };
                     info!(addr = %tcp_addr, "tcp snapshot listener started");
                     while running.load(Ordering::SeqCst) {
-                        if let Ok(Some(mut stream)) = tcp.accept_once()
-                            && let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
-                            && request.topic == "sync_request"
-                            && let Ok(eng) = engine.lock()
-                        {
-                            let height = eng.latest_height();
-                            let blocks: Vec<WireBlock> = (1..=height)
-                                .filter_map(|n| eng.block_by_number(n))
-                                .map(block_to_wire)
-                                .collect();
-                            let data = serde_json::to_vec(&blocks).unwrap_or_default();
-                            let gossip_pkt = crate::net_transport::GossipPacket {
-                                topic: "sync_response".to_string(),
-                                data,
-                                id: String::new(),
-                                ttl: 0,
-                            };
-                            let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
+                        if let Ok(Some(mut stream)) = tcp.accept_once() {
+                            // The listener is non-blocking; the accepted
+                            // stream inherits that, which would race
+                            // recv_packet against the client's send.
+                            // Switch to a bounded blocking read.
+                            let _ = stream.set_nonblocking(false);
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                            if let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
+                                && request.topic == "sync_request"
+                                && let Ok(eng) = engine.lock()
+                            {
+                                // The requester encodes the next height it
+                                // needs as 8 big-endian bytes; default to
+                                // the full chain for legacy/empty requests.
+                                let from = if request.data.len() == 8 {
+                                    let mut buf = [0u8; 8];
+                                    buf.copy_from_slice(&request.data);
+                                    u64::from_be_bytes(buf).max(1)
+                                } else {
+                                    1
+                                };
+                                let height = eng.latest_height();
+                                let blocks: Vec<WireBlock> = (from..=height)
+                                    .filter_map(|n| eng.block_by_number(n))
+                                    .map(block_to_wire)
+                                    .collect();
+                                let data = serde_json::to_vec(&blocks).unwrap_or_default();
+                                let gossip_pkt = crate::net_transport::GossipPacket {
+                                    topic: "sync_response".to_string(),
+                                    data,
+                                    id: String::new(),
+                                    ttl: 0,
+                                };
+                                let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
+                            }
                         }
                         std::thread::sleep(Duration::from_millis(100));
                     }
@@ -527,6 +544,75 @@ impl NetworkNode {
                                     .store(count, std::sync::atomic::Ordering::Relaxed);
                             }
                         }
+                    }
+                })
+                .ok();
+        }
+
+        // Block-sync client loop. Gossip only delivers blocks going
+        // forward, so a node that starts (or falls) behind the fleet
+        // buffers future blocks and never advances. This periodically
+        // pulls the missing range from a peer over TCP so the node
+        // catches up, then gossip keeps it in sync.
+        {
+            let engine = engine.clone();
+            let running = self.running.clone();
+            let peers = config.bootstrap_peers.clone();
+            std::thread::Builder::new()
+                .name("block-sync".into())
+                .spawn(move || {
+                    info!("block-sync loop started");
+                    // Let listeners come up before the first request.
+                    std::thread::sleep(Duration::from_secs(2));
+                    while running.load(Ordering::SeqCst) {
+                        let from = match engine.lock() {
+                            Ok(eng) => eng.latest_height().saturating_add(1),
+                            Err(_) => {
+                                std::thread::sleep(Duration::from_secs(4));
+                                continue;
+                            }
+                        };
+                        for peer in &peers {
+                            let tcp_addr = derive_tcp_addr(peer);
+                            let Ok(mut stream) =
+                                TcpSync::connect(&tcp_addr, Duration::from_secs(5))
+                            else {
+                                continue;
+                            };
+                            let req = crate::net_transport::GossipPacket {
+                                topic: "sync_request".to_string(),
+                                data: from.to_be_bytes().to_vec(),
+                                id: String::new(),
+                                ttl: 0,
+                            };
+                            if TcpSync::send_packet(&mut stream, &req).is_err() {
+                                continue;
+                            }
+                            let blocks: Vec<WireBlock> = match TcpSync::recv_packet(&mut stream) {
+                                Ok(Some(resp)) if resp.topic == "sync_response" => {
+                                    serde_json::from_slice(&resp.data).unwrap_or_default()
+                                }
+                                _ => continue,
+                            };
+                            if blocks.is_empty() {
+                                continue;
+                            }
+                            let mut applied = 0u64;
+                            if let Ok(mut eng) = engine.lock() {
+                                for wire in &blocks {
+                                    if let Some(block) = wire_to_block(wire) {
+                                        eng.import_block(block);
+                                        applied += 1;
+                                    }
+                                }
+                            }
+                            if applied > 0 {
+                                info!(peer = %peer, from, count = applied, "synced blocks from peer");
+                            }
+                            // One responsive peer per round is enough.
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_secs(4));
                     }
                 })
                 .ok();
