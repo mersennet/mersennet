@@ -119,6 +119,20 @@ pub struct WireTx {
     pub gas_price: String,
     pub nonce: u64,
     pub chain_id: Option<u64>,
+    // Signature (r, s, v). Carried so a receiving validator can
+    // re-verify a relayed transaction — without it, gossiped txs
+    // arrive unsigned and are silently rejected, so externally
+    // submitted txs (faucet, trades) never get mined.
+    #[serde(default)]
+    pub sig_r: Option<String>,
+    #[serde(default)]
+    pub sig_s: Option<String>,
+    #[serde(default)]
+    pub sig_v: Option<String>,
+    #[serde(default)]
+    pub tx_type: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shielded_payload: Option<mersennet::shielded_evm::ShieldedEnvelope>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -191,6 +205,10 @@ fn parse_hex_bytes(s: &str) -> Option<Bytes> {
 }
 
 pub fn tx_to_wire(tx: &Transaction) -> WireTx {
+    let (sig_r, sig_s, sig_v) = match &tx.signature {
+        Some((r, s, v)) => (Some(hex_u256(r)), Some(hex_u256(s)), Some(format!("{v:x}"))),
+        None => (None, None, None),
+    };
     WireTx {
         from: hex_addr(&tx.from),
         to: tx.to.as_ref().map(hex_addr),
@@ -200,10 +218,23 @@ pub fn tx_to_wire(tx: &Transaction) -> WireTx {
         gas_price: hex_u256(&tx.gas_price),
         nonce: tx.nonce,
         chain_id: tx.chain_id,
+        sig_r,
+        sig_s,
+        sig_v,
+        tx_type: tx.tx_type,
+        shielded_payload: tx.shielded_payload.clone(),
     }
 }
 
 pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
+    let signature = match (&wire.sig_r, &wire.sig_s, &wire.sig_v) {
+        (Some(r), Some(s), Some(v)) => Some((
+            parse_hex_u256(r)?,
+            parse_hex_u256(s)?,
+            u64::from_str_radix(v.trim_start_matches("0x"), 16).ok()?,
+        )),
+        _ => None,
+    };
     Some(Transaction {
         from: parse_hex_addr(&wire.from)?,
         to: match &wire.to {
@@ -216,9 +247,9 @@ pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
         gas_price: parse_hex_u256(&wire.gas_price)?,
         nonce: wire.nonce,
         chain_id: wire.chain_id,
-        signature: None,
-        tx_type: 0,
-        shielded_payload: None,
+        signature,
+        tx_type: wire.tx_type,
+        shielded_payload: wire.shielded_payload.clone(),
     })
 }
 
@@ -390,8 +421,9 @@ impl NetworkNode {
                                 if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
                                     && let Some(tx) = wire_to_tx(&wire)
                                     && let Ok(mut eng) = engine.lock()
+                                    && let Err(err) = eng.submit_tx(tx)
                                 {
-                                    let _ = eng.submit_tx(tx);
+                                    tracing::debug!(reason = err.code(), "dropped relayed tx");
                                 }
                             }
                             _ => {}
