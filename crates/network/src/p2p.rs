@@ -645,11 +645,10 @@ impl NetworkNode {
 }
 
 fn derive_tcp_addr(udp_addr: &str) -> String {
-    if let Some(colon) = udp_addr.rfind(':')
-        && let Ok(port) = udp_addr[colon + 1..].parse::<u16>()
-    {
-        let host = &udp_addr[..colon];
-        return format!("{host}:{}", port.wrapping_add(1000));
-    }
-    format!("{udp_addr}_tcp")
+    // TCP block-sync shares the same port as UDP gossip. TCP and UDP
+    // are independent L4 protocols, so binding both on the same port is
+    // fine, and deployment firewalls open `<port>/tcp` ("P2P sync") for
+    // exactly this. (A previous +1000 offset landed on a firewalled
+    // port, so sync connections were silently refused.)
+    udp_addr.to_string()
 }
