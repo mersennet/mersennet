@@ -541,9 +541,34 @@ impl Engine {
             .load_bridge_queues(&mut bridge_orders_to_evm, &mut bridge_evm_to_orders)
             .expect("bridge queues load");
 
+        // Resume the chain at the persisted height instead of
+        // re-producing from genesis. Without this, every restart resets
+        // `block_number` to 1 while balances load from disk — an
+        // inconsistent state that corrupts the chain and strands nodes
+        // that restart after the rest of the fleet has advanced.
+        let resume_height = state.persisted_height().ok().flatten();
+        let (start_block_number, restored_chain) = match resume_height {
+            Some(h) if h >= 1 => {
+                // Keep a bounded window of recent blocks in memory so
+                // `latest_height`/`block_by_number` stay consistent and
+                // recent history is queryable; older blocks remain on
+                // disk via the state backend.
+                let from = h.saturating_sub(1023).max(1);
+                let blocks = state.load_blocks_range(from, h).unwrap_or_default();
+                tracing::info!(
+                    persisted_height = h,
+                    next_block = h.saturating_add(1),
+                    restored_blocks = blocks.len(),
+                    "resuming chain from persisted height"
+                );
+                (h.saturating_add(1), blocks)
+            }
+            _ => (1, Vec::new()),
+        };
+
         Self {
             chain_id,
-            block_number: 1,
+            block_number: start_block_number,
             base_fee: U256::from(1),
             coinbase: Address::ZERO,
             gas_limit_per_block: 30_000_000,
@@ -557,7 +582,7 @@ impl Engine {
             fee_elasticity_multiplier: 2,
             fee_target_gas: 15_000_000,
             evm: EvmEngine { state, db },
-            chain: Vec::new(),
+            chain: restored_chain,
             orders: OrdersEngine {
                 state: mersennet_orders,
             },
