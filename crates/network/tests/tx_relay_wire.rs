@@ -78,6 +78,53 @@ fn relayed_tx_recovers_original_signer() {
 }
 
 #[test]
+fn block_wire_roundtrip_preserves_rewards() {
+    use mersennet::consensus::Reward;
+    use mersennet::engine::Engine;
+    use mersennet_network::p2p::{WireBlock, block_to_wire, wire_to_block};
+    use revm::primitives::Address;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::new_with_state(131_071, dir.path());
+    let (_k, alice) = generate_keypair();
+    engine.fund_account(alice, U256::from(5_000_000u64), 0);
+    let (_k2, bob) = generate_keypair();
+    engine
+        .transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
+        .unwrap();
+    let mut block = engine.execute_block().unwrap();
+    // Inject a reward so we can assert it survives the round-trip even
+    // if the test engine produced none on its own.
+    block.rewards.push(Reward {
+        address: Address::from_slice(&[0x99; 20]),
+        amount: U256::from(7u64),
+    });
+
+    let wire = block_to_wire(&block);
+    let bytes = serde_json::to_vec(&wire).unwrap();
+    let decoded: WireBlock = serde_json::from_slice(&bytes).unwrap();
+    let relayed = wire_to_block(&decoded).expect("reconstruct block");
+
+    assert_eq!(relayed.rewards.len(), block.rewards.len());
+    let injected = relayed
+        .rewards
+        .iter()
+        .find(|r| r.address == Address::from_slice(&[0x99; 20]))
+        .expect("injected reward must survive round-trip");
+    assert_eq!(injected.amount, U256::from(7u64));
+    assert_eq!(relayed.transactions.len(), block.transactions.len());
+    assert_eq!(relayed.state_root, block.state_root);
+}
+
+#[test]
 fn legacy_wire_without_signature_is_unsigned() {
     // A WireTx serialized by an older node carries no signature fields.
     // It must still deserialize (serde defaults) and yield an unsigned tx
