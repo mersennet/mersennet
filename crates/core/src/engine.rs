@@ -1061,6 +1061,11 @@ impl Engine {
         let mut gas_used = 0u64;
         let mut receipts = Vec::new();
         let mut transactions = Vec::new();
+        // Total supply before any state mutation in this block. The
+        // full ledger is mirrored in memory, so this is exact and lets
+        // the conservation invariant compare the block's net balance
+        // delta against (minted - gas burned).
+        let supply_before = self.sum_all_balances();
         let pre_shielded_snapshot = self.shielded_evm.state.snapshot();
         let pre_transparent_balances = self.shielded_evm.transparent_balances.clone();
         let pre_tick_witness = crate::state_proof::shielded_tick_witness(
@@ -1356,15 +1361,27 @@ impl Engine {
             tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed");
         }
 
-        // Run formal verification invariant checks
+        // Run formal verification invariant checks.
+        //
+        // Conservation of value: the only source of newly minted value
+        // is the block reward (`total_reward`, credited to validators by
+        // `apply_rewards`); the only burn is the base fee, which revm
+        // removes from senders without crediting the coinbase
+        // (`base_fee * gas_used`). Transfers and priority tips conserve
+        // value. `burned_reward` is scheduled-but-undistributed dust
+        // that is never minted, so it must NOT appear here. We encode
+        // the pre/post total supply as single-entry maps because the
+        // checker compares the sums.
         {
             use crate::formal_verification::BlockReport;
+            let supply_after = self.sum_all_balances();
+            let gas_burned = self.base_fee.saturating_mul(U256::from(gas_used));
             let report = BlockReport {
                 height: block.number,
-                balances_before: HashMap::new(),
-                balances_after: HashMap::new(),
+                balances_before: HashMap::from([(Address::ZERO, supply_before)]),
+                balances_after: HashMap::from([(Address::ZERO, supply_after)]),
                 minted: block.total_reward,
-                burned: block.burned_reward,
+                burned: gas_burned,
                 fills: Vec::new(),
                 best_bid: 0,
                 best_ask: u64::MAX,
@@ -2884,13 +2901,42 @@ impl Engine {
         ))
     }
 
+    /// Sum of every account balance currently held in state. The full
+    /// ledger is mirrored in memory (`load_into_db` loads all accounts
+    /// from the backing store), so this is a complete total-supply
+    /// figure used by the per-block conservation-of-value invariant.
+    fn sum_all_balances(&self) -> U256 {
+        self.evm
+            .db
+            .accounts
+            .values()
+            .fold(U256::ZERO, |acc, account| {
+                acc.saturating_add(account.info.balance)
+            })
+    }
+
     fn apply_rewards(&mut self, rewards: &[Reward]) -> Result<()> {
         for reward in rewards {
             if reward.amount.is_zero() {
                 continue;
             }
             self.evm.state.mark_dirty(reward.address);
-            let mut info = self.evm.db.basic(reward.address)?.unwrap_or_default();
+            // Read the current account straight from the cache rather
+            // than via `basic()`. `basic()` lazily loads a missing
+            // address as `AccountState::NotExisting`; a following
+            // `insert_account_info` only overwrites `.info` and leaves
+            // that state, so `basic()`/`get_balance` would then report
+            // zero and each block would clobber (not accumulate) the
+            // credit. Genesis-funded validators already sit in a normal
+            // state, so this is behaviorally identical for them and
+            // does not change the state root.
+            let mut info = self
+                .evm
+                .db
+                .accounts
+                .get(&reward.address)
+                .map(|account| account.info.clone())
+                .unwrap_or_default();
             info.balance = info.balance.saturating_add(reward.amount);
             self.evm.db.insert_account_info(reward.address, info);
         }
