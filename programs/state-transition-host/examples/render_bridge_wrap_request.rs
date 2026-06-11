@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use prime_zkp::sp1::BlockProgramOutput;
+use mersennet_zkp::sp1::BlockProgramOutput;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 
@@ -56,10 +56,10 @@ fn main() -> Result<()> {
 
     let response: ProveResponse = serde_json::from_slice(&fs::read(&prove_response_path)?)
         .with_context(|| format!("read prove response at {}", prove_response_path.display()))?;
-    let public_values = hex::decode(response.public_values_hex.trim())
-        .context("invalid public_values_hex")?;
-    let output: BlockProgramOutput =
-        bincode::deserialize(&public_values).context("decode BlockProgramOutput from public_values_hex")?;
+    let public_values =
+        hex::decode(response.public_values_hex.trim()).context("invalid public_values_hex")?;
+    let output: BlockProgramOutput = bincode::deserialize(&public_values)
+        .context("decode BlockProgramOutput from public_values_hex")?;
 
     let wrap_request = BridgeWrapRequest {
         sp1_vkey_hash_hex: response.vkey_hash_hex,
