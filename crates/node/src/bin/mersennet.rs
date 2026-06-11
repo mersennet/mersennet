@@ -53,9 +53,9 @@ fn main() -> anyhow::Result<()> {
         app_config.mempool.max_per_sender,
         app_config.mempool.bump_bps,
     );
-    engine.prime_orders_set_margin_params(
-        app_config.prime_orders.initial_margin_bps,
-        app_config.prime_orders.maintenance_margin_bps,
+    engine.mersennet_orders_set_margin_params(
+        app_config.mersennet_orders.initial_margin_bps,
+        app_config.mersennet_orders.maintenance_margin_bps,
     );
     let bridge_limit = if app_config.bridge.max_queue_len == 0 {
         None
@@ -186,6 +186,44 @@ fn main() -> anyhow::Result<()> {
             let engine = Arc::new(Mutex::new(engine));
             let network = NetworkNode::new(&gossip_config)?;
             network.start_networking(engine.clone(), &gossip_config);
+
+            // Transaction relay: locally-submitted (RPC) transactions must
+            // reach the validators. Blocks are broadcast on production, but
+            // a full/observer node otherwise holds mempool txs forever —
+            // this loop gossips every pending tx exactly once per (from,
+            // nonce) so they propagate to block producers.
+            {
+                let eng_relay = engine.clone();
+                let net_relay = network.clone();
+                let shutdown_relay = Arc::clone(&shutdown);
+                std::thread::Builder::new()
+                    .name("tx-relay".into())
+                    .spawn(move || {
+                        use std::collections::HashSet;
+                        let mut seen: HashSet<(revm::primitives::Address, u64)> = HashSet::new();
+                        loop {
+                            if shutdown_relay.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            let pending = {
+                                let Ok(eng) = eng_relay.lock() else { break };
+                                eng.mempool_pending_snapshot()
+                            };
+                            if seen.len() > 16_384 {
+                                seen.clear();
+                            }
+                            for tx in pending {
+                                if seen.insert((tx.from, tx.nonce))
+                                    && let Err(err) = net_relay.broadcast_tx(&tx)
+                                {
+                                    tracing::warn!(%err, "tx relay broadcast error");
+                                }
+                            }
+                        }
+                    })
+                    .ok();
+            }
 
             let ws_manager = Arc::new(Mutex::new(ws::WsSubscriptionManager::new()));
             if let Ok(engine_guard) = engine.lock() {
@@ -503,9 +541,9 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
         config.slashing.escalation_step_bps,
         config.slashing.escalation_max_bps,
     );
-    engine.prime_orders_set_margin_params(
-        config.prime_orders.initial_margin_bps,
-        config.prime_orders.maintenance_margin_bps,
+    engine.mersennet_orders_set_margin_params(
+        config.mersennet_orders.initial_margin_bps,
+        config.mersennet_orders.maintenance_margin_bps,
     );
     let bridge_limit = if config.bridge.max_queue_len == 0 {
         None
@@ -561,7 +599,7 @@ fn handle_snapshot_cli(engine: &mut Engine, cli: &CliConfig) -> anyhow::Result<b
         engine
             .evm
             .state
-            .load_prime_orders(&mut engine.orders.state)?;
+            .load_mersennet_orders(&mut engine.orders.state)?;
         engine.evm.state.load_bridge_queues(
             &mut engine.bridge.orders_to_evm,
             &mut engine.bridge.evm_to_orders,

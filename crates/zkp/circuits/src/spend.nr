@@ -14,10 +14,8 @@
 // Does not reveal: owner identity, exact value, asset relationship
 // across spends.
 
-use crate::lib;
 use crate::merkle;
 use crate::note::Note;
-use crate::poseidon;
 
 pub struct SpentNote {
     note: Note,

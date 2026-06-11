@@ -6,19 +6,19 @@ use crate::consensus::{
     Unbonding, Validator, ValidatorChange,
 };
 use crate::crypto::{self, SignedTransaction};
-use crate::errors::PrimeOrdersError;
+use crate::errors::MersennetOrdersError;
 use crate::events::{
-    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, PrimeOrdersEvent,
+    BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
 };
 use crate::fba::{AuctionResult, BatchOrder, FBAEngine};
 use crate::hotstuff2::{HotStuff2, HotStuff2Result};
 use crate::mempool::{Mempool, TxRejection};
+use crate::mersennet_orders::{
+    MarketId, MersennetOrdersState, Order, OrderBookView, OrderId, OrderOutcome, Side, TimeInForce,
+};
 use crate::network::NetworkSim;
 use crate::parallel::ParallelExecutor;
 use crate::precompiles;
-use crate::prime_orders::{
-    MarketId, Order, OrderBookView, OrderId, OrderOutcome, PrimeOrdersState, Side, TimeInForce,
-};
 use crate::state::PersistentState;
 use crate::state::SnapshotMeta;
 use crate::state_redb::RedbState;
@@ -261,7 +261,7 @@ pub struct ConsensusEngine {
 
 #[derive(Debug)]
 pub struct OrdersEngine {
-    pub state: PrimeOrdersState,
+    pub state: MersennetOrdersState,
 }
 
 #[derive(Debug)]
@@ -461,6 +461,11 @@ pub struct Engine {
     pub dkg: crate::dkg::DkgCoordinator,
     /// Opt-in public contract code-hash attestations.
     pub code_publication_registry: CodePublicationRegistry,
+    /// Buffer of gossiped blocks awaiting in-order application. Blocks
+    /// can arrive out of order over UDP gossip; they are applied
+    /// strictly by ascending height so every node re-executes the same
+    /// sequence and converges on identical state (see `import_block`).
+    import_buffer: std::collections::BTreeMap<u64, Block>,
 }
 
 impl Engine {
@@ -526,19 +531,44 @@ impl Engine {
 
         let mut db = InMemoryDB::default();
         state.load_into_db(&mut db).expect("state DB load");
-        let mut prime_orders = PrimeOrdersState::new();
+        let mut mersennet_orders = MersennetOrdersState::new();
         state
-            .load_prime_orders(&mut prime_orders)
-            .expect("prime orders load");
+            .load_mersennet_orders(&mut mersennet_orders)
+            .expect("mersennet orders load");
         let mut bridge_orders_to_evm = BridgeQueue::new();
         let mut bridge_evm_to_orders = BridgeQueue::new();
         state
             .load_bridge_queues(&mut bridge_orders_to_evm, &mut bridge_evm_to_orders)
             .expect("bridge queues load");
 
+        // Resume the chain at the persisted height instead of
+        // re-producing from genesis. Without this, every restart resets
+        // `block_number` to 1 while balances load from disk — an
+        // inconsistent state that corrupts the chain and strands nodes
+        // that restart after the rest of the fleet has advanced.
+        let resume_height = state.persisted_height().ok().flatten();
+        let (start_block_number, restored_chain) = match resume_height {
+            Some(h) if h >= 1 => {
+                // Keep a bounded window of recent blocks in memory so
+                // `latest_height`/`block_by_number` stay consistent and
+                // recent history is queryable; older blocks remain on
+                // disk via the state backend.
+                let from = h.saturating_sub(1023).max(1);
+                let blocks = state.load_blocks_range(from, h).unwrap_or_default();
+                tracing::info!(
+                    persisted_height = h,
+                    next_block = h.saturating_add(1),
+                    restored_blocks = blocks.len(),
+                    "resuming chain from persisted height"
+                );
+                (h.saturating_add(1), blocks)
+            }
+            _ => (1, Vec::new()),
+        };
+
         Self {
             chain_id,
-            block_number: 1,
+            block_number: start_block_number,
             base_fee: U256::from(1),
             coinbase: Address::ZERO,
             gas_limit_per_block: 30_000_000,
@@ -552,9 +582,9 @@ impl Engine {
             fee_elasticity_multiplier: 2,
             fee_target_gas: 15_000_000,
             evm: EvmEngine { state, db },
-            chain: Vec::new(),
+            chain: restored_chain,
             orders: OrdersEngine {
-                state: prime_orders,
+                state: mersennet_orders,
             },
             bridge: BridgeEngine {
                 orders_to_evm: bridge_orders_to_evm,
@@ -594,6 +624,7 @@ impl Engine {
             // block-time × desired-rotation cadence.
             dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
             code_publication_registry: CodePublicationRegistry::default(),
+            import_buffer: std::collections::BTreeMap::new(),
         }
     }
 
@@ -758,7 +789,7 @@ impl Engine {
         records
     }
 
-    pub fn prime_orders_add_market(
+    pub fn mersennet_orders_add_market(
         &mut self,
         symbol: impl Into<String>,
         tick_size: U256,
@@ -769,16 +800,18 @@ impl Engine {
             .orders
             .state
             .add_market(symbol.clone(), tick_size, lot_size);
-        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::MarketAdded {
-            market_id,
-            symbol,
-            tick_size,
-            lot_size,
-        }));
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::MarketAdded {
+                market_id,
+                symbol,
+                tick_size,
+                lot_size,
+            },
+        ));
         market_id
     }
 
-    pub fn prime_orders_submit_order(
+    pub fn mersennet_orders_submit_order(
         &mut self,
         owner: Address,
         market: MarketId,
@@ -786,24 +819,26 @@ impl Engine {
         price: U256,
         size: U256,
         tif: TimeInForce,
-    ) -> Result<OrderOutcome, PrimeOrdersError> {
+    ) -> Result<OrderOutcome, MersennetOrdersError> {
         let outcome = self
             .orders
             .state
             .submit_order(owner, market, side, price, size, tif)?;
-        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderSubmitted {
-            order_id: outcome.order_id,
-            owner,
-            market_id: market,
-            side,
-            price,
-            size,
-            tif,
-            filled: outcome.filled,
-            remaining: outcome.remaining,
-        }));
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::OrderSubmitted {
+                order_id: outcome.order_id,
+                owner,
+                market_id: market,
+                side,
+                price,
+                size,
+                tif,
+                filled: outcome.filled,
+                remaining: outcome.remaining,
+            },
+        ));
         for trade in &outcome.trades {
-            self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::Trade {
+            self.record_event(DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade {
                 taker: trade.taker,
                 maker: trade.maker,
                 market_id: trade.market,
@@ -815,25 +850,27 @@ impl Engine {
         Ok(outcome)
     }
 
-    pub fn prime_orders_cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
+    pub fn mersennet_orders_cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
         let order = self.orders.state.cancel_order(order_id);
         if let Some(order) = &order {
-            self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderCancelled {
-                order_id: order.id,
-                owner: order.owner,
-                market_id: order.market,
-            }));
+            self.record_event(DomainEvent::MersennetOrders(
+                MersennetOrdersEvent::OrderCancelled {
+                    order_id: order.id,
+                    owner: order.owner,
+                    market_id: order.market,
+                },
+            ));
         }
         order
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
+    pub fn mersennet_orders_set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
         self.orders
             .state
             .set_margin_params(initial_bps, maintenance_bps);
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::MarginParamsUpdated {
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::MarginParamsUpdated {
                 initial_bps,
                 maintenance_bps,
             },
@@ -841,41 +878,40 @@ impl Engine {
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_deposit_collateral(&mut self, owner: Address, amount: U256) {
+    pub fn mersennet_orders_deposit_collateral(&mut self, owner: Address, amount: U256) {
         self.orders.state.deposit_collateral(owner, amount);
-        self.record_event(DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::CollateralDeposited { owner, amount },
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::CollateralDeposited { owner, amount },
         ));
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_is_liquidatable(&self, owner: Address) -> bool {
+    pub fn mersennet_orders_is_liquidatable(&self, owner: Address) -> bool {
         self.orders.state.is_liquidatable(owner)
     }
 
     #[allow(dead_code)]
-    pub fn prime_orders_liquidate(&mut self, owner: Address) -> bool {
+    pub fn mersennet_orders_liquidate(&mut self, owner: Address) -> bool {
         let liquidated = self.orders.state.liquidate(owner);
-        self.record_event(DomainEvent::PrimeOrders(PrimeOrdersEvent::Liquidation {
-            owner,
-            liquidated,
-        }));
+        self.record_event(DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::Liquidation { owner, liquidated },
+        ));
         liquidated
     }
 
-    pub fn prime_orders_order_book(&self, market: MarketId) -> Option<OrderBookView> {
+    pub fn mersennet_orders_order_book(&self, market: MarketId) -> Option<OrderBookView> {
         self.orders.state.order_book(market)
     }
 
-    pub fn prime_orders_open_orders(&self, owner: Address) -> Vec<Order> {
+    pub fn mersennet_orders_open_orders(&self, owner: Address) -> Vec<Order> {
         self.orders.state.open_orders(owner)
     }
 
     #[allow(dead_code)]
     pub fn bridge_enqueue_orders_to_evm(&mut self, payload: Bytes) -> BridgeMessage {
         let msg = self.bridge.orders_to_evm.push(
-            BridgeDomain::PrimeOrders,
-            BridgeDomain::PrimeEvm,
+            BridgeDomain::MersennetOrders,
+            BridgeDomain::MersennetEvm,
             payload,
         );
         self.record_event(DomainEvent::Bridge(BridgeEvent::Enqueued {
@@ -888,8 +924,8 @@ impl Engine {
     #[allow(dead_code)]
     pub fn bridge_enqueue_evm_to_orders(&mut self, payload: Bytes) -> BridgeMessage {
         let msg = self.bridge.evm_to_orders.push(
-            BridgeDomain::PrimeEvm,
-            BridgeDomain::PrimeOrders,
+            BridgeDomain::MersennetEvm,
+            BridgeDomain::MersennetOrders,
             payload,
         );
         self.record_event(DomainEvent::Bridge(BridgeEvent::Enqueued {
@@ -1025,6 +1061,11 @@ impl Engine {
         let mut gas_used = 0u64;
         let mut receipts = Vec::new();
         let mut transactions = Vec::new();
+        // Total supply before any state mutation in this block. The
+        // full ledger is mirrored in memory, so this is exact and lets
+        // the conservation invariant compare the block's net balance
+        // delta against (minted - gas burned).
+        let supply_before = self.sum_all_balances();
         let pre_shielded_snapshot = self.shielded_evm.state.snapshot();
         let pre_transparent_balances = self.shielded_evm.transparent_balances.clone();
         let pre_tick_witness = crate::state_proof::shielded_tick_witness(
@@ -1037,8 +1078,8 @@ impl Engine {
 
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
-        precompiles::set_prime_orders_context(shared_orders.clone());
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_mersennet_orders_context(shared_orders.clone());
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
         // Generate market maker quotes and submit to orders engine
         let mm_markets: Vec<u64> = {
@@ -1052,21 +1093,21 @@ impl Engine {
                 for (price, _size) in &quote.bids {
                     let _ = orders.place_order(
                         quote.owner,
-                        crate::prime_orders::MarketId(*market_id),
-                        crate::prime_orders::Side::Buy,
+                        crate::mersennet_orders::MarketId(*market_id),
+                        crate::mersennet_orders::Side::Buy,
                         U256::from(*price),
                         U256::from(1),
-                        crate::prime_orders::TimeInForce::Ioc,
+                        crate::mersennet_orders::TimeInForce::Ioc,
                     );
                 }
                 for (price, _size) in &quote.asks {
                     let _ = orders.place_order(
                         quote.owner,
-                        crate::prime_orders::MarketId(*market_id),
-                        crate::prime_orders::Side::Sell,
+                        crate::mersennet_orders::MarketId(*market_id),
+                        crate::mersennet_orders::Side::Sell,
                         U256::from(*price),
                         U256::from(1),
-                        crate::prime_orders::TimeInForce::Ioc,
+                        crate::mersennet_orders::TimeInForce::Ioc,
                     );
                 }
             }
@@ -1157,8 +1198,8 @@ impl Engine {
             }
         }
 
-        precompiles::clear_prime_orders_context();
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
@@ -1320,15 +1361,27 @@ impl Engine {
             tracing::warn!(error = ?e, block = block.number, "shielded persistence save failed");
         }
 
-        // Run formal verification invariant checks
+        // Run formal verification invariant checks.
+        //
+        // Conservation of value: the only source of newly minted value
+        // is the block reward (`total_reward`, credited to validators by
+        // `apply_rewards`); the only burn is the base fee, which revm
+        // removes from senders without crediting the coinbase
+        // (`base_fee * gas_used`). Transfers and priority tips conserve
+        // value. `burned_reward` is scheduled-but-undistributed dust
+        // that is never minted, so it must NOT appear here. We encode
+        // the pre/post total supply as single-entry maps because the
+        // checker compares the sums.
         {
             use crate::formal_verification::BlockReport;
+            let supply_after = self.sum_all_balances();
+            let gas_burned = self.base_fee.saturating_mul(U256::from(gas_used));
             let report = BlockReport {
                 height: block.number,
-                balances_before: HashMap::new(),
-                balances_after: HashMap::new(),
+                balances_before: HashMap::from([(Address::ZERO, supply_before)]),
+                balances_after: HashMap::from([(Address::ZERO, supply_after)]),
                 minted: block.total_reward,
-                burned: block.burned_reward,
+                burned: gas_burned,
                 fills: Vec::new(),
                 best_bid: 0,
                 best_ask: u64::MAX,
@@ -1676,14 +1729,134 @@ impl Engine {
         Ok(block)
     }
 
+    /// Ingest a gossiped block. Blocks are buffered and applied
+    /// strictly in ascending-height order via [`Engine::apply_imported_block`],
+    /// which re-executes the block's transactions so non-producing
+    /// nodes converge on the same state as the producer. Out-of-order
+    /// or duplicate deliveries are tolerated.
     pub fn import_block(&mut self, block: Block) {
-        if self.latest_height() < block.number {
-            self.chain.push(block.clone());
+        // Already applied or stale.
+        if block.number < self.block_number {
+            return;
         }
-        if self.block_number <= block.number {
-            self.block_number = block.number.saturating_add(1);
-            self.base_fee = block.base_fee;
+        // Too far ahead to buffer usefully — block sync will backfill
+        // the gap. Bounds memory against a flood of future blocks.
+        if block.number > self.block_number.saturating_add(512) {
+            return;
         }
+        self.import_buffer.insert(block.number, block);
+
+        // Drain consecutive buffered blocks starting at the next
+        // expected height.
+        while let Some(next) = self.import_buffer.remove(&self.block_number) {
+            let height = next.number;
+            if let Err(e) = self.apply_imported_block(next) {
+                tracing::warn!(height, error = %e, "failed to apply imported block");
+                // Stop draining; the block will be re-gossiped and
+                // retried. Do not loop on a persistently failing block.
+                break;
+            }
+        }
+    }
+
+    /// Re-execute an externally produced block against local state.
+    ///
+    /// `execute_block` *builds* a block by pulling transactions from
+    /// the local mempool; this instead replays the block's already
+    /// ordered transaction list. Because `coinbase` is never
+    /// reconfigured (it stays `Address::ZERO` on every node) and the
+    /// per-tx EVM environment is otherwise derived from values carried
+    /// by the block, every node executes the identical sequence and
+    /// arrives at the same EVM state. Proposer/validator rewards are
+    /// carried in the block and re-credited here.
+    ///
+    /// Note: market-maker quotes, intents and AA bundles that
+    /// `execute_block` generates locally are *not* re-run here. They
+    /// are no-ops on the current chain (no active markets / privacy not
+    /// activated); once trading or privacy is live this path must also
+    /// replicate them for full state-root parity.
+    fn apply_imported_block(&mut self, block: Block) -> Result<()> {
+        debug_assert_eq!(block.number, self.block_number);
+
+        // Match the producer's per-tx execution environment.
+        self.base_fee = block.base_fee;
+
+        let orders_state = std::mem::take(&mut self.orders.state);
+        let shared_orders = Arc::new(Mutex::new(orders_state));
+        precompiles::set_mersennet_orders_context(shared_orders.clone());
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
+
+        let mut gas_used = 0u64;
+        for tx in &block.transactions {
+            let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+                self.apply_shielded_tx(tx)
+            } else {
+                self.execute_tx(tx)?
+            };
+            gas_used = gas_used.saturating_add(execution.gas_used);
+            self.mempool.remove_mined(tx.from, tx.nonce);
+        }
+
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
+        self.orders.state = Arc::try_unwrap(shared_orders)
+            .expect("no other Arc references")
+            .into_inner()
+            .expect("mutex not poisoned");
+
+        // Re-credit the proposer/validator rewards the producer applied.
+        self.apply_rewards(&block.rewards)?;
+
+        let state_root = self.evm.state.commit_state(
+            &self.evm.db,
+            &self.orders.state,
+            &self.bridge.orders_to_evm,
+            &self.bridge.evm_to_orders,
+            block.number,
+        )?;
+
+        if block.state_root != B256::ZERO && state_root != block.state_root {
+            tracing::warn!(
+                height = block.number,
+                local = %state_root,
+                expected = %block.state_root,
+                "imported block state root mismatch — local state diverged from producer"
+            );
+        }
+
+        // Mirror the producer's flat-state update so flat reads stay
+        // consistent with the committed EVM state.
+        {
+            let mut account_changes = Vec::new();
+            for (addr, info) in self.evm.db.accounts.iter() {
+                account_changes.push((
+                    *addr,
+                    FlatAccount {
+                        balance: info.info.balance,
+                        nonce: info.info.nonce,
+                        code_hash: info.info.code_hash,
+                        storage_root: B256::ZERO,
+                    },
+                ));
+            }
+            let changeset = StateChangeset {
+                account_changes,
+                storage_changes: Vec::new(),
+                code_changes: Vec::new(),
+            };
+            let _ = self
+                .flat_state
+                .commit_block(block.number, state_root, changeset);
+        }
+
+        self.evm.state.store_block(&block)?;
+        self.chain.push(block);
+        self.block_number = self.block_number.saturating_add(1);
+        metrics::gauge!(
+            "mersennet_height",
+            self.block_number.saturating_sub(1) as f64
+        );
+        Ok(())
     }
 
     pub fn mempool_is_empty(&self) -> bool {
@@ -1692,6 +1865,11 @@ impl Engine {
 
     pub fn mempool_pending_count(&self) -> usize {
         self.mempool.pending_count()
+    }
+
+    /// Non-consuming snapshot of pending mempool transactions for P2P relay.
+    pub fn mempool_pending_snapshot(&self) -> Vec<Transaction> {
+        self.mempool.pending_snapshot()
     }
 
     pub fn mempool_queued_count(&self) -> usize {
@@ -1773,7 +1951,9 @@ impl Engine {
             .import_snapshot_bytes(&envelope.evm_snapshot)?;
         self.evm.db = InMemoryDB::default();
         self.evm.state.load_into_db(&mut self.evm.db)?;
-        self.evm.state.load_prime_orders(&mut self.orders.state)?;
+        self.evm
+            .state
+            .load_mersennet_orders(&mut self.orders.state)?;
         self.evm.state.load_bridge_queues(
             &mut self.bridge.orders_to_evm,
             &mut self.bridge.evm_to_orders,
@@ -1888,8 +2068,8 @@ impl Engine {
         };
 
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
-        precompiles::set_prime_orders_context(shared_orders);
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_mersennet_orders_context(shared_orders);
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
         // Privacy-redesign Phase 4 — install shielded EVM context.
         // Take ownership for the duration of the tx, restore after.
@@ -1901,13 +2081,13 @@ impl Engine {
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
-            .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_mersennet_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_preverified()?;
-        precompiles::clear_prime_orders_context();
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
@@ -2005,8 +2185,8 @@ impl Engine {
         env.tx.transact_to = TxKind::Call(to);
 
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
-        precompiles::set_prime_orders_context(shared_orders);
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_mersennet_orders_context(shared_orders);
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
         let shielded_evm = std::mem::take(&mut self.shielded_evm);
         let shared_shielded = Arc::new(Mutex::new(shielded_evm));
@@ -2016,13 +2196,13 @@ impl Engine {
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
-            .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_mersennet_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
         let result = evm.transact_preverified()?;
-        precompiles::clear_prime_orders_context();
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         drop(evm);
         self.shielded_evm = Arc::try_unwrap(shared_shielded)
@@ -2625,15 +2805,15 @@ impl Engine {
             .with_db(self.evm.db.clone())
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
-            .append_handler_register(precompiles::register_prime_orders_precompile)
+            .append_handler_register(precompiles::register_mersennet_orders_precompile)
             .append_handler_register(precompiles::register_shielded_precompiles)
             .append_handler_register(precompiles::register_code_publication_precompile)
             .build();
 
-        precompiles::set_transparent_prime_orders_enabled(!self.privacy_mode_activated);
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
         let result = evm.transact_commit()?;
         self.evm.db = std::mem::take(&mut evm.context.evm.db);
-        precompiles::set_transparent_prime_orders_enabled(true);
+        precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
         precompiles::clear_code_publication_context();
         drop(evm);
@@ -2721,13 +2901,42 @@ impl Engine {
         ))
     }
 
+    /// Sum of every account balance currently held in state. The full
+    /// ledger is mirrored in memory (`load_into_db` loads all accounts
+    /// from the backing store), so this is a complete total-supply
+    /// figure used by the per-block conservation-of-value invariant.
+    fn sum_all_balances(&self) -> U256 {
+        self.evm
+            .db
+            .accounts
+            .values()
+            .fold(U256::ZERO, |acc, account| {
+                acc.saturating_add(account.info.balance)
+            })
+    }
+
     fn apply_rewards(&mut self, rewards: &[Reward]) -> Result<()> {
         for reward in rewards {
             if reward.amount.is_zero() {
                 continue;
             }
             self.evm.state.mark_dirty(reward.address);
-            let mut info = self.evm.db.basic(reward.address)?.unwrap_or_default();
+            // Read the current account straight from the cache rather
+            // than via `basic()`. `basic()` lazily loads a missing
+            // address as `AccountState::NotExisting`; a following
+            // `insert_account_info` only overwrites `.info` and leaves
+            // that state, so `basic()`/`get_balance` would then report
+            // zero and each block would clobber (not accumulate) the
+            // credit. Genesis-funded validators already sit in a normal
+            // state, so this is behaviorally identical for them and
+            // does not change the state root.
+            let mut info = self
+                .evm
+                .db
+                .accounts
+                .get(&reward.address)
+                .map(|account| account.info.clone())
+                .unwrap_or_default();
             info.balance = info.balance.saturating_add(reward.amount);
             self.evm.db.insert_account_info(reward.address, info);
         }
@@ -2771,7 +2980,7 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::events::{DomainEvent, ShieldedEvent};
-    use crate::prime_orders::{Market, MarketStatus};
+    use crate::mersennet_orders::{Market, MarketStatus};
     use crate::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
     use mersennet_zkp::Fr;
     use mersennet_zkp::noir::{Circuit, MockVerifier};
@@ -2972,14 +3181,14 @@ mod tests {
     fn execute_block_fails_closed_when_privacy_fork_enables_required_sp1_proofs() {
         let _env_guard = env_lock().lock().unwrap();
         let _prove_adapter = EnvVarGuard::set(
-            "PRIME_SP1_PROVE_ADAPTER",
+            "MERSENNET_SP1_PROVE_ADAPTER",
             "definitely-not-a-real-sp1-prover",
         );
         let _verify_adapter = EnvVarGuard::set(
-            "PRIME_SP1_VERIFY_ADAPTER",
+            "MERSENNET_SP1_VERIFY_ADAPTER",
             "definitely-not-a-real-sp1-verifier",
         );
-        let _mode = EnvVarGuard::set("PRIME_SP1_MODE", "local");
+        let _mode = EnvVarGuard::set("MERSENNET_SP1_MODE", "local");
 
         let mut engine = fresh_inactive_engine();
         engine.block_number = 3;

@@ -1,5 +1,5 @@
 use mersennet::bridge::{BridgeDomain, BridgeQueue};
-use mersennet::prime_orders::PrimeOrdersState;
+use mersennet::mersennet_orders::MersennetOrdersState;
 use mersennet::state::PersistentState;
 use mersennet::state_redb::RedbState;
 use mersennet::state_trait::StateBackend;
@@ -26,7 +26,7 @@ fn persistent_state_roundtrip() {
     let root_before = state
         .commit_state(
             &db,
-            &PrimeOrdersState::new(),
+            &MersennetOrdersState::new(),
             &BridgeQueue::new(),
             &BridgeQueue::new(),
             1,
@@ -47,47 +47,47 @@ fn persistent_state_roundtrip() {
 }
 
 #[test]
-fn prime_orders_and_bridge_persistence() {
+fn mersennet_orders_and_bridge_persistence() {
     let dir = tempdir().expect("temp dir");
     let state = PersistentState::open(dir.path()).expect("open state");
 
     let db = InMemoryDB::default();
 
-    let mut prime_orders = PrimeOrdersState::new();
-    prime_orders.set_margin_params(0, 0);
-    let market_id = prime_orders.add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let mut mersennet_orders = MersennetOrdersState::new();
+    mersennet_orders.set_margin_params(0, 0);
+    let market_id = mersennet_orders.add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     let owner = Address::from_slice(&[0x22; 20]);
-    let _order_id = prime_orders.place_order(
+    let _order_id = mersennet_orders.place_order(
         owner,
         market_id,
-        mersennet::prime_orders::Side::Buy,
+        mersennet::mersennet_orders::Side::Buy,
         U256::from(100u64),
         U256::from(2u64),
-        mersennet::prime_orders::TimeInForce::Gtc,
+        mersennet::mersennet_orders::TimeInForce::Gtc,
     );
 
     let mut orders_to_evm = BridgeQueue::new();
     let mut evm_to_orders = BridgeQueue::new();
     let payload = Bytes::from(vec![1, 2, 3, 4]);
     let msg = orders_to_evm.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         payload.clone(),
     );
     let _ = evm_to_orders.push(
-        BridgeDomain::PrimeEvm,
-        BridgeDomain::PrimeOrders,
+        BridgeDomain::MersennetEvm,
+        BridgeDomain::MersennetOrders,
         Bytes::from(vec![9]),
     );
 
     let root_before = state
-        .commit_state(&db, &prime_orders, &orders_to_evm, &evm_to_orders, 1)
+        .commit_state(&db, &mersennet_orders, &orders_to_evm, &evm_to_orders, 1)
         .expect("commit");
 
-    let mut loaded_orders = PrimeOrdersState::new();
+    let mut loaded_orders = MersennetOrdersState::new();
     state
-        .load_prime_orders(&mut loaded_orders)
-        .expect("load prime orders");
+        .load_mersennet_orders(&mut loaded_orders)
+        .expect("load mersennet orders");
     let mut loaded_orders_to_evm = BridgeQueue::new();
     let mut loaded_evm_to_orders = BridgeQueue::new();
     state
@@ -113,20 +113,20 @@ fn bridge_queue_persistence_roundtrip() {
     let state = PersistentState::open(dir.path()).expect("open state");
 
     let db = InMemoryDB::default();
-    let empty_orders = PrimeOrdersState::new();
+    let empty_orders = MersennetOrdersState::new();
 
     let mut orders_to_evm = BridgeQueue::new();
     let mut evm_to_orders = BridgeQueue::new();
     let payload_a = Bytes::from(vec![10, 11, 12]);
     let payload_b = Bytes::from(vec![200, 201]);
     let msg_a = orders_to_evm.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         payload_a.clone(),
     );
     let msg_b = evm_to_orders.push(
-        BridgeDomain::PrimeEvm,
-        BridgeDomain::PrimeOrders,
+        BridgeDomain::MersennetEvm,
+        BridgeDomain::MersennetOrders,
         payload_b.clone(),
     );
 
@@ -168,7 +168,7 @@ fn redb_state_roundtrip() {
     let root_before = state
         .commit_state(
             &db,
-            &PrimeOrdersState::new(),
+            &MersennetOrdersState::new(),
             &BridgeQueue::new(),
             &BridgeQueue::new(),
             1,
@@ -189,47 +189,47 @@ fn redb_state_roundtrip() {
 }
 
 #[test]
-fn redb_prime_orders_persistence() {
+fn redb_mersennet_orders_persistence() {
     let dir = tempdir().expect("temp dir");
     let state = RedbState::open(dir.path()).expect("open redb state");
 
     let db = InMemoryDB::default();
 
-    let mut prime_orders = PrimeOrdersState::new();
-    prime_orders.set_margin_params(0, 0);
-    let market_id = prime_orders.add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+    let mut mersennet_orders = MersennetOrdersState::new();
+    mersennet_orders.set_margin_params(0, 0);
+    let market_id = mersennet_orders.add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     let owner = Address::from_slice(&[0x22; 20]);
-    let _order_id = prime_orders.place_order(
+    let _order_id = mersennet_orders.place_order(
         owner,
         market_id,
-        mersennet::prime_orders::Side::Buy,
+        mersennet::mersennet_orders::Side::Buy,
         U256::from(100u64),
         U256::from(2u64),
-        mersennet::prime_orders::TimeInForce::Gtc,
+        mersennet::mersennet_orders::TimeInForce::Gtc,
     );
 
     let mut orders_to_evm = BridgeQueue::new();
     let mut evm_to_orders = BridgeQueue::new();
     let payload = Bytes::from(vec![1, 2, 3, 4]);
     let msg = orders_to_evm.push(
-        BridgeDomain::PrimeOrders,
-        BridgeDomain::PrimeEvm,
+        BridgeDomain::MersennetOrders,
+        BridgeDomain::MersennetEvm,
         payload.clone(),
     );
     let _ = evm_to_orders.push(
-        BridgeDomain::PrimeEvm,
-        BridgeDomain::PrimeOrders,
+        BridgeDomain::MersennetEvm,
+        BridgeDomain::MersennetOrders,
         Bytes::from(vec![9]),
     );
 
     let root_before = state
-        .commit_state(&db, &prime_orders, &orders_to_evm, &evm_to_orders, 1)
+        .commit_state(&db, &mersennet_orders, &orders_to_evm, &evm_to_orders, 1)
         .expect("commit");
 
-    let mut loaded_orders = PrimeOrdersState::new();
+    let mut loaded_orders = MersennetOrdersState::new();
     state
-        .load_prime_orders(&mut loaded_orders)
-        .expect("load prime orders");
+        .load_mersennet_orders(&mut loaded_orders)
+        .expect("load mersennet orders");
     let mut loaded_orders_to_evm = BridgeQueue::new();
     let mut loaded_evm_to_orders = BridgeQueue::new();
     state

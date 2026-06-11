@@ -9,7 +9,7 @@ fn ws_subscription_manager_lifecycle() {
         .subscribe(SubscriptionKind::NewHeads)
         .expect("subscribe newHeads");
     let (id_trades, rx_trades) = manager
-        .subscribe(SubscriptionKind::PrimeOrdersTrades { market: None })
+        .subscribe(SubscriptionKind::MersennetOrdersTrades { market: None })
         .expect("subscribe trades");
 
     assert_eq!(manager.active_count(), 2);
@@ -36,7 +36,7 @@ fn ws_subscription_manager_lifecycle() {
     set_privacy_mode_activated(true);
     assert!(
         manager
-            .subscribe(SubscriptionKind::PrimeOrdersBook { market: 1 })
+            .subscribe(SubscriptionKind::MersennetOrdersBook { market: 1 })
             .is_err()
     );
     manager

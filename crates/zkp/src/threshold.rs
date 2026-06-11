@@ -150,7 +150,7 @@ impl ThresholdElGamal for DummyThreshold {
         // plaintext's hash. The "ephemeral" field carries the mask
         // commitment so the dummy decryption can verify it.
         let mut h = Keccak256::new();
-        h.update(b"PrimeChain-DummyThreshold");
+        h.update(b"MersennetChain-DummyThreshold");
         h.update(epoch.to_le_bytes());
         h.update(plaintext);
         let digest = h.finalize();
@@ -236,7 +236,7 @@ mod tests {
 
         // Compute the canonical mask that produced this ciphertext.
         let mut h = Keccak256::new();
-        h.update(b"PrimeChain-DummyThreshold");
+        h.update(b"MersennetChain-DummyThreshold");
         h.update(7u64.to_le_bytes());
         h.update(&plaintext);
         let mask: [u8; 32] = h.finalize().into();

@@ -9,10 +9,8 @@ mod poseidon;
 mod merkle;
 mod note;
 
-use dep::std;
-
 // Common utility: assert a `u128` value fits in `bits` bits.
-pub fn assert_value_in_range(value: u128, bits: u32) {
+pub fn assert_value_in_range(value: u128, bits: u8) {
     let bound: u128 = 1 << bits;
     assert(value < bound);
 }

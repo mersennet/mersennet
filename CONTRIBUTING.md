@@ -85,8 +85,6 @@ bash scripts/ci/check-privacy-invariants.sh               # CI K2 grep, 7 rules
 
 Additional jobs run in CI:
 
-- **`sdk_typecheck`** — `tsc --noEmit` over `sdk/`
-- **`contracts`** — `forge build --sizes && forge test -vvv` in `contracts/`
 - **`audit`** — `cargo audit`
 - Optional local Noir workflow via `scripts/zk/compile_noir_artifacts.py`
    plus the Barretenberg adapter smoke tests in `scripts/zk/README.md`
@@ -112,7 +110,7 @@ for the full plan.
 | 3. Liquidation auctions | **Done** |
 | 4. Shielded EVM accounts | **Done** |
 | 5. Real SP1 state proofs | In progress (E1-E3 complete; E4 network path complete + turnkey, credential-gated; E5 bridge verifier/contracts/chain-export complete + tested, wrapping circuit/VK out-of-repo) |
-| 6. SDK / RPC / wallet | Complete in-repo (Rust RPC + grant-gated reconstruction reads done; F1, F2, F4, F5 SDK done; F3 UI tracked in prime-trade) |
+| 6. SDK / RPC / wallet | Complete in-repo (Rust RPC + grant-gated reconstruction reads done; F1, F2, F4, F5 SDK done; F3 UI tracked in mersennet/trade) |
 | 7. Hard fork + testnet bake | **Testnet ready** (8-week bake gated on E completion) |
 
 ### Workstreams (granular)
@@ -127,9 +125,9 @@ for the full plan.
 | D6 | Noir circuit compilation | **Done** |
 | D7 | Cryptography spec for auditor | **Done** ([here](docs/security/cryptography-spec.md)) |
 | E1–E5 | SP1 toolchain + program body | E1-E3 complete; E4 complete + turnkey (credential-gated execution); E5 contracts/chain-export complete + tested (wrapping circuit/VK out-of-repo) |
-| F1, F2, F4, F5 | Noir prover, note scanner, migration UX, grant-gated reads | **Done** (`sdk/`, `crates/rpc/`) |
-| F3 | PrimeTrade shielded order UI | External ([prime-trade](https://github.com/PrimeNumbersLabs/prime-trade)); repo-local SDK/API support complete |
-| F6 | Go / Python SDK shielded extensions | **Done** (`sdk-go/`, `sdk-python/`) |
+| F1, F2, F4, F5 | Noir prover, note scanner, migration UX, grant-gated reads | **Done** (`crates/rpc/`; SDK now in mersennet/sdk-ts) |
+| F3 | Mersennet Trade shielded order UI | External ([mersennet/trade](https://github.com/mersennet/trade)); repo-local SDK/API support complete |
+| F6 | Go / Python SDK shielded extensions | **Done** (mersennet/sdk-go, mersennet/sdk-python) |
 | G1–G4 | Solidity bridge + Foundry tests | G1-G3 **Done** (21 tests); G4 audit-prep pending E5 VK |
 | H1–H7 | Testnet bring-up | **Done** ([runbook](docs/runbooks/privacy-testnet-bootstrap.md)) |
 | I1–I6 | Third-party audit | Awaiting E |
@@ -195,11 +193,8 @@ cargo run --bin mersennet                  # devnet demo
 cargo run --bin mersennet -- --rpc         # devnet with JSON-RPC on 8545
 ```
 
-Solidity contracts:
-
-```bash
-cd contracts && forge build && forge test
-```
+Solidity contracts, SDKs, the docs site, and the website live in their own
+repositories — see the Ecosystem Repos table in the README.
 
 TypeScript SDK:
 
@@ -224,5 +219,5 @@ vulnerabilities.
 
 ## License
 
-Proprietary — PrimeNumbers Labs. By contributing you agree your contribution
+Proprietary — MersennetNumbers Labs. By contributing you agree your contribution
 is licensed under the same terms.

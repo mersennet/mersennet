@@ -8,20 +8,20 @@ use std::sync::Mutex;
 
 use crate::bridge::BridgeQueue;
 use crate::engine::Block;
-use crate::prime_orders::{
-    AccountState, Market, MarketId, Order, OrderBook, OrderId, Position, PrimeOrdersState,
+use crate::mersennet_orders::{
+    AccountState, Market, MarketId, MersennetOrdersState, Order, OrderBook, OrderId, Position,
 };
 use crate::state::{
-    AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord, MerkleTree, OrderBookRecord,
-    OrderRecord, PositionRecord, PrimeOrdersSnapshot, SnapshotMeta, SnapshotRecord, StateProof,
-    bytes_to_u256, decode_bridge_queue, decode_market_status, decode_side, decode_tif,
-    encode_bridge_queue, encode_market_status, encode_side, encode_tif,
+    AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord, MerkleTree,
+    MersennetOrdersSnapshot, OrderBookRecord, OrderRecord, PositionRecord, SnapshotMeta,
+    SnapshotRecord, StateProof, bytes_to_u256, decode_bridge_queue, decode_market_status,
+    decode_side, decode_tif, encode_bridge_queue, encode_market_status, encode_side, encode_tif,
 };
 use crate::state_trait::StateBackend;
 
 const ACCOUNTS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("accounts");
 const STORAGE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("storage");
-const PRIME_ORDERS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("prime_orders");
+const MERSENNET_ORDERS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("mersennet_orders");
 const BRIDGE_OTE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("bridge_orders_to_evm");
 const BRIDGE_ETO: TableDefinition<&[u8], &[u8]> = TableDefinition::new("bridge_evm_to_orders");
 const BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("blocks");
@@ -50,7 +50,7 @@ impl RedbState {
             let write_txn = db.begin_write()?;
             let _ = write_txn.open_table(ACCOUNTS)?;
             let _ = write_txn.open_table(STORAGE)?;
-            let _ = write_txn.open_table(PRIME_ORDERS)?;
+            let _ = write_txn.open_table(MERSENNET_ORDERS)?;
             let _ = write_txn.open_table(BRIDGE_OTE)?;
             let _ = write_txn.open_table(BRIDGE_ETO)?;
             let _ = write_txn.open_table(BLOCKS)?;
@@ -238,7 +238,7 @@ impl RedbState {
             return items;
         };
 
-        for table_def in [ACCOUNTS, STORAGE, PRIME_ORDERS, BRIDGE_OTE, BRIDGE_ETO] {
+        for table_def in [ACCOUNTS, STORAGE, MERSENNET_ORDERS, BRIDGE_OTE, BRIDGE_ETO] {
             if let Ok(table) = read_txn.open_table(table_def)
                 && let Ok(iter) = table.iter()
             {
@@ -297,26 +297,26 @@ impl StateBackend for RedbState {
     fn commit_state(
         &self,
         evm_db: &InMemoryDB,
-        prime_orders: &PrimeOrdersState,
+        mersennet_orders: &MersennetOrdersState,
         bridge_orders_to_evm: &BridgeQueue,
         bridge_evm_to_orders: &BridgeQueue,
         height: u64,
     ) -> Result<B256> {
         self.write_evm_state(evm_db)?;
-        self.commit_prime_orders(prime_orders)?;
+        self.commit_mersennet_orders(mersennet_orders)?;
         self.commit_bridge_queues(bridge_orders_to_evm, bridge_evm_to_orders)?;
         let root = self.compute_state_root();
         self.record_height(height, root)?;
         Ok(root)
     }
 
-    fn load_prime_orders(&self, state: &mut PrimeOrdersState) -> Result<()> {
+    fn load_mersennet_orders(&self, state: &mut MersennetOrdersState) -> Result<()> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(PRIME_ORDERS)?;
+        let table = read_txn.open_table(MERSENNET_ORDERS)?;
         let Some(value) = table.get(b"state".as_slice())? else {
             return Ok(());
         };
-        let snapshot: PrimeOrdersSnapshot = bincode::deserialize(value.value())?;
+        let snapshot: MersennetOrdersSnapshot = bincode::deserialize(value.value())?;
         state.next_order_id = snapshot.next_order_id;
         state.initial_margin_bps = snapshot.initial_margin_bps;
         state.maintenance_margin_bps = snapshot.maintenance_margin_bps;
@@ -397,7 +397,7 @@ impl StateBackend for RedbState {
         Ok(())
     }
 
-    fn commit_prime_orders(&self, state: &PrimeOrdersState) -> Result<()> {
+    fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()> {
         let markets = state
             .markets
             .values()
@@ -479,7 +479,7 @@ impl StateBackend for RedbState {
             })
             .collect();
 
-        let snapshot = PrimeOrdersSnapshot {
+        let snapshot = MersennetOrdersSnapshot {
             next_order_id: state.next_order_id,
             initial_margin_bps: state.initial_margin_bps,
             maintenance_margin_bps: state.maintenance_margin_bps,
@@ -494,7 +494,7 @@ impl StateBackend for RedbState {
         let data = bincode::serialize(&snapshot)?;
         let write_txn = self.db.begin_write()?;
         {
-            let mut table = write_txn.open_table(PRIME_ORDERS)?;
+            let mut table = write_txn.open_table(MERSENNET_ORDERS)?;
             table.remove(b"state".as_slice())?;
             table.insert(b"state".as_slice(), data.as_slice())?;
         }
@@ -618,6 +618,22 @@ impl StateBackend for RedbState {
         Ok(())
     }
 
+    fn persisted_height(&self) -> Result<Option<u64>> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(HEIGHT_META) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        match table.get(b"latest_height".as_slice())? {
+            Some(value) if value.value().len() == 8 => {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(value.value());
+                Ok(Some(u64::from_be_bytes(buf)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn prune_before(&self, height: u64) -> Result<u64> {
         let mut pruned = 0u64;
 
@@ -731,8 +747,8 @@ impl StateBackend for RedbState {
             storage.push((key.value().to_vec(), value.value().to_vec()));
         }
 
-        let prime_orders = {
-            let table = read_txn.open_table(PRIME_ORDERS)?;
+        let mersennet_orders = {
+            let table = read_txn.open_table(MERSENNET_ORDERS)?;
             table.get(b"state".as_slice())?.map(|v| v.value().to_vec())
         };
 
@@ -751,7 +767,7 @@ impl StateBackend for RedbState {
             state_root: state_root.0,
             accounts,
             storage,
-            prime_orders,
+            mersennet_orders,
             bridge_orders_to_evm,
             bridge_evm_to_orders,
         };
@@ -791,8 +807,8 @@ impl StateBackend for RedbState {
                 storage_table.insert(key.as_slice(), value.as_slice())?;
             }
         }
-        if let Some(data) = snapshot.prime_orders {
-            let mut table = write_txn.open_table(PRIME_ORDERS)?;
+        if let Some(data) = snapshot.mersennet_orders {
+            let mut table = write_txn.open_table(MERSENNET_ORDERS)?;
             table.insert(b"state".as_slice(), data.as_slice())?;
         }
         if let Some(data) = snapshot.bridge_orders_to_evm {

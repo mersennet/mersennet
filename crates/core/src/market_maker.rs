@@ -3,7 +3,7 @@
 //! Enables smart contract-like market making via the CLOB precompile with
 //! configurable strategies: Grid, Avellaneda-Stoikov, Inventory-based, and TWAP.
 
-use crate::prime_orders::Side;
+use crate::mersennet_orders::Side;
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

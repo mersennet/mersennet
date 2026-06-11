@@ -1,21 +1,21 @@
 use mersennet::engine::Engine;
-use mersennet::events::{DomainEvent, PrimeOrdersEvent};
-use mersennet::prime_orders::{Side, TimeInForce};
+use mersennet::events::{DomainEvent, MersennetOrdersEvent};
+use mersennet::mersennet_orders::{Side, TimeInForce};
 use revm::primitives::{Address, U256};
 use tempfile::TempDir;
 
 #[test]
-fn prime_orders_limit_matching_and_book() {
+fn mersennet_orders_limit_matching_and_book() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let maker = Address::from_slice(&[0x11; 20]);
     let taker = Address::from_slice(&[0x22; 20]);
 
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -28,7 +28,7 @@ fn prime_orders_limit_matching_and_book() {
     assert_eq!(outcome.remaining, U256::from(5u64));
 
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             taker,
             market_id,
             Side::Buy,
@@ -41,7 +41,7 @@ fn prime_orders_limit_matching_and_book() {
     assert_eq!(outcome.trades.len(), 1);
 
     let book = engine
-        .prime_orders_order_book(market_id)
+        .mersennet_orders_order_book(market_id)
         .expect("order book exists");
     assert!(book.bids.is_empty());
     assert_eq!(book.asks.len(), 1);
@@ -50,7 +50,7 @@ fn prime_orders_limit_matching_and_book() {
 
     // IOC: partial fill, remainder discarded
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             taker,
             market_id,
             Side::Buy,
@@ -63,13 +63,13 @@ fn prime_orders_limit_matching_and_book() {
     assert_eq!(outcome.remaining, U256::from(3u64));
 
     let book = engine
-        .prime_orders_order_book(market_id)
+        .mersennet_orders_order_book(market_id)
         .expect("order book exists");
     assert!(book.asks.is_empty());
 
     // FOK: fails if not fully fillable
     let outcome = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -80,7 +80,7 @@ fn prime_orders_limit_matching_and_book() {
         .expect("maker order accepted");
     assert_eq!(outcome.remaining, U256::from(1u64));
 
-    let fok = engine.prime_orders_submit_order(
+    let fok = engine.mersennet_orders_submit_order(
         taker,
         market_id,
         Side::Buy,
@@ -92,22 +92,22 @@ fn prime_orders_limit_matching_and_book() {
 }
 
 #[test]
-fn prime_orders_margin_enforced_and_liquidation() {
+fn mersennet_orders_margin_enforced_and_liquidation() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let trader = Address::from_slice(&[0x33; 20]);
 
-    engine.prime_orders_set_margin_params(100, 0); // 1% initial, maintenance disabled
+    engine.mersennet_orders_set_margin_params(100, 0); // 1% initial, maintenance disabled
 
-    engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+    engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
     let maker = Address::from_slice(&[0x44; 20]);
-    engine.prime_orders_deposit_collateral(maker, U256::from(10u64));
+    engine.mersennet_orders_deposit_collateral(maker, U256::from(10u64));
 
     let _ = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             maker,
             market_id,
             Side::Sell,
@@ -118,7 +118,7 @@ fn prime_orders_margin_enforced_and_liquidation() {
         .expect("maker order accepted");
 
     let _ = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             trader,
             market_id,
             Side::Buy,
@@ -128,24 +128,24 @@ fn prime_orders_margin_enforced_and_liquidation() {
         )
         .expect("taker order accepted");
 
-    assert!(!engine.prime_orders_is_liquidatable(trader));
+    assert!(!engine.mersennet_orders_is_liquidatable(trader));
 
     // Tighten maintenance margin after position exists
-    engine.prime_orders_set_margin_params(100, 9_000);
-    assert!(engine.prime_orders_is_liquidatable(trader));
-    assert!(engine.prime_orders_liquidate(trader));
+    engine.mersennet_orders_set_margin_params(100, 9_000);
+    assert!(engine.mersennet_orders_is_liquidatable(trader));
+    assert!(engine.mersennet_orders_liquidate(trader));
 }
 
 #[test]
-fn prime_orders_domain_events_embedded_in_block() {
+fn mersennet_orders_domain_events_embedded_in_block() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
 
     let trader = Address::from_slice(&[0x55; 20]);
     let _ = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             trader,
             market_id,
             Side::Buy,
@@ -160,28 +160,28 @@ fn prime_orders_domain_events_embedded_in_block() {
 
     let has_market = block.domain_events.iter().any(|event| matches!(
         event,
-        DomainEvent::PrimeOrders(PrimeOrdersEvent::MarketAdded { market_id: id, .. }) if *id == market_id
+        DomainEvent::MersennetOrders(MersennetOrdersEvent::MarketAdded { market_id: id, .. }) if *id == market_id
     ));
     assert!(has_market, "market added event missing");
 
     let has_submit = block.domain_events.iter().any(|event| matches!(
         event,
-        DomainEvent::PrimeOrders(PrimeOrdersEvent::OrderSubmitted { owner, .. }) if *owner == trader
+        DomainEvent::MersennetOrders(MersennetOrdersEvent::OrderSubmitted { owner, .. }) if *owner == trader
     ));
     assert!(has_submit, "order submitted event missing");
 }
 
 #[test]
-fn prime_orders_deterministic_matching_across_nodes() {
+fn mersennet_orders_deterministic_matching_across_nodes() {
     let temp_a = TempDir::new().expect("temp dir");
     let temp_b = TempDir::new().expect("temp dir");
     let mut engine_a = Engine::new_with_state(1, temp_a.path());
     let mut engine_b = Engine::new_with_state(1, temp_b.path());
 
     let market_a =
-        engine_a.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine_a.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     let market_b =
-        engine_b.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine_b.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     assert_eq!(market_a.0, market_b.0);
 
     let maker = Address::from_slice(&[0x66; 20]);
@@ -222,10 +222,10 @@ fn prime_orders_deterministic_matching_across_nodes() {
     let mut outcomes_b = Vec::new();
     for (owner, side, price, size, tif) in orders {
         let out_a = engine_a
-            .prime_orders_submit_order(owner, market_a, side, price, size, tif)
+            .mersennet_orders_submit_order(owner, market_a, side, price, size, tif)
             .expect("order accepted");
         let out_b = engine_b
-            .prime_orders_submit_order(owner, market_b, side, price, size, tif)
+            .mersennet_orders_submit_order(owner, market_b, side, price, size, tif)
             .expect("order accepted");
         assert_eq!(out_a.filled, out_b.filled);
         assert_eq!(out_a.remaining, out_b.remaining);
@@ -234,8 +234,12 @@ fn prime_orders_deterministic_matching_across_nodes() {
         outcomes_b.push(out_b);
     }
 
-    let book_a = engine_a.prime_orders_order_book(market_a).expect("book A");
-    let book_b = engine_b.prime_orders_order_book(market_b).expect("book B");
+    let book_a = engine_a
+        .mersennet_orders_order_book(market_a)
+        .expect("book A");
+    let book_b = engine_b
+        .mersennet_orders_order_book(market_b)
+        .expect("book B");
     assert_eq!(book_a.bids.len(), book_b.bids.len());
     assert_eq!(book_a.asks.len(), book_b.asks.len());
     for (a, b) in book_a.bids.iter().zip(book_b.bids.iter()) {
@@ -249,18 +253,18 @@ fn prime_orders_deterministic_matching_across_nodes() {
 }
 
 #[test]
-fn prime_orders_sensitive_domain_events_suppressed_after_privacy_activation() {
+fn mersennet_orders_sensitive_domain_events_suppressed_after_privacy_activation() {
     let temp_dir = TempDir::new().expect("temp dir");
     let mut engine = Engine::new_with_state(1, temp_dir.path());
     engine.activate_privacy_mode();
 
     let market_id =
-        engine.prime_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
+        engine.mersennet_orders_add_market("PRIME-PERP", U256::from(1u64), U256::from(1u64));
     let trader = Address::from_slice(&[0x88; 20]);
 
-    engine.prime_orders_deposit_collateral(trader, U256::from(10u64));
+    engine.mersennet_orders_deposit_collateral(trader, U256::from(10u64));
     let _ = engine
-        .prime_orders_submit_order(
+        .mersennet_orders_submit_order(
             trader,
             market_id,
             Side::Buy,
@@ -274,17 +278,17 @@ fn prime_orders_sensitive_domain_events_suppressed_after_privacy_activation() {
 
     assert!(block.domain_events.iter().any(|event| matches!(
         event,
-        DomainEvent::PrimeOrders(PrimeOrdersEvent::MarketAdded { market_id: id, .. }) if *id == market_id
+        DomainEvent::MersennetOrders(MersennetOrdersEvent::MarketAdded { market_id: id, .. }) if *id == market_id
     )));
 
     assert!(block.domain_events.iter().all(|event| !matches!(
         event,
-        DomainEvent::PrimeOrders(
-            PrimeOrdersEvent::OrderSubmitted { .. }
-                | PrimeOrdersEvent::OrderCancelled { .. }
-                | PrimeOrdersEvent::Trade { .. }
-                | PrimeOrdersEvent::CollateralDeposited { .. }
-                | PrimeOrdersEvent::Liquidation { .. }
+        DomainEvent::MersennetOrders(
+            MersennetOrdersEvent::OrderSubmitted { .. }
+                | MersennetOrdersEvent::OrderCancelled { .. }
+                | MersennetOrdersEvent::Trade { .. }
+                | MersennetOrdersEvent::CollateralDeposited { .. }
+                | MersennetOrdersEvent::Liquidation { .. }
         )
     )));
 }

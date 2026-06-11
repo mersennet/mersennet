@@ -26,7 +26,7 @@
 
 use mersennet::engine::Engine;
 use mersennet::liquidation_auction::{LiquidationClaim, LiquidationExecute};
-use mersennet::prime_orders::{MarketId, Side, TimeInForce};
+use mersennet::mersennet_orders::{MarketId, Side, TimeInForce};
 use mersennet::shielded_evm::{ShieldTx, ShieldedEnvelope, ShieldedTransferTx, UnshieldTx};
 use mersennet::shielded_evm::{ViewingGrantScope, ViewingGrantToken};
 use mersennet::shielded_orders::{DecryptedIntent, ShieldedOrderTx, ThresholdOrderIntent};
@@ -68,74 +68,74 @@ pub fn try_dispatch(method: &str, params: Value, engine: &mut Engine) -> Shielde
     let active = engine.privacy_mode_activated();
     match method {
         // ─────────── Read-only methods (always available) ───────────
-        "prime_getShieldedRoot" => Ok(Some(read_shielded_root(engine))),
-        "prime_getShieldedBalance" => Ok(Some(read_shielded_balance(engine))),
-        "prime_getShieldedNotes" => Ok(Some(read_shielded_notes(engine))),
-        "prime_getStateProof" => Ok(Some(read_state_proof(engine, &params))),
-        "prime_getLatestStateProof" => Ok(Some(read_latest_state_proof(engine))),
-        "prime_verifyStateProof" => Ok(Some(verify_state_proof(params)?)),
-        "prime_getShieldedMarketAggregates" => Ok(Some(read_market_aggregates(engine))),
+        "mersennet_getShieldedRoot" => Ok(Some(read_shielded_root(engine))),
+        "mersennet_getShieldedBalance" => Ok(Some(read_shielded_balance(engine))),
+        "mersennet_getShieldedNotes" => Ok(Some(read_shielded_notes(engine))),
+        "mersennet_getStateProof" => Ok(Some(read_state_proof(engine, &params))),
+        "mersennet_getLatestStateProof" => Ok(Some(read_latest_state_proof(engine))),
+        "mersennet_verifyStateProof" => Ok(Some(verify_state_proof(params)?)),
+        "mersennet_getShieldedMarketAggregates" => Ok(Some(read_market_aggregates(engine))),
 
         // ─────────── Mutation methods (gated on activation) ─────────
-        "prime_submitShieldedTransfer" => {
+        "mersennet_submitShieldedTransfer" => {
             require_active(active)?;
             submit_shielded(engine, params, ShieldedEnvelope::Transfer)
         }
-        "prime_submitShield" => {
+        "mersennet_submitShield" => {
             require_active(active)?;
             submit_shield_inner(engine, params)
         }
-        "prime_submitUnshield" => {
+        "mersennet_submitUnshield" => {
             require_active(active)?;
             submit_unshield(engine, params)
         }
-        "prime_submitShieldedOrder" => {
+        "mersennet_submitShieldedOrder" => {
             require_active(active)?;
             submit_shielded_order(engine, params)
         }
-        "prime_submitLiquidationClaim" => {
+        "mersennet_submitLiquidationClaim" => {
             require_active(active)?;
             submit_liquidation_claim(engine, params)
         }
-        "prime_submitLiquidationExecute" => {
+        "mersennet_submitLiquidationExecute" => {
             require_active(active)?;
             submit_liquidation_execute(engine, params)
         }
-        "prime_registerLiquidator" => {
+        "mersennet_registerLiquidator" => {
             require_active(active)?;
             register_liquidator(engine, params)
         }
 
         // ─────────── View-key methods (post-fork only) ──────────────
-        "prime_viewGrantToken" => {
+        "mersennet_viewGrantToken" => {
             require_active(active)?;
             grant_view_token(engine, params)
         }
-        "prime_viewRevokeToken" => {
+        "mersennet_viewRevokeToken" => {
             require_active(active)?;
             revoke_view_token(engine, params)
         }
-        "prime_viewPortfolioDigest" => {
+        "mersennet_viewPortfolioDigest" => {
             require_active(active)?;
             read_view_portfolio_digest(engine, params)
         }
-        "prime_viewNotes" => {
+        "mersennet_viewNotes" => {
             require_active(active)?;
             read_view_notes(engine, params)
         }
-        "prime_viewBalances" => {
+        "mersennet_viewBalances" => {
             require_active(active)?;
             read_view_balances(engine, params)
         }
-        "prime_viewPositions" => {
+        "mersennet_viewPositions" => {
             require_active(active)?;
             read_view_positions(engine, params)
         }
-        "prime_viewOrders" => {
+        "mersennet_viewOrders" => {
             require_active(active)?;
             read_view_orders(engine, params)
         }
-        "prime_viewGrantStatus" => {
+        "mersennet_viewGrantStatus" => {
             require_active(active)?;
             read_view_grant_status(engine, params)
         }
@@ -159,28 +159,28 @@ fn require_active(active: bool) -> Result<(), ShieldedRpcError> {
 fn is_shielded_method(method: &str) -> bool {
     matches!(
         method,
-        "prime_getShieldedRoot"
-            | "prime_getShieldedBalance"
-            | "prime_getShieldedNotes"
-            | "prime_getShieldedMarketAggregates"
-            | "prime_submitShieldedTransfer"
-            | "prime_submitShield"
-            | "prime_submitUnshield"
-            | "prime_submitShieldedOrder"
-            | "prime_submitLiquidationClaim"
-            | "prime_submitLiquidationExecute"
-            | "prime_registerLiquidator"
-            | "prime_getStateProof"
-            | "prime_getLatestStateProof"
-            | "prime_verifyStateProof"
-            | "prime_viewGrantToken"
-            | "prime_viewRevokeToken"
-            | "prime_viewPortfolioDigest"
-            | "prime_viewNotes"
-            | "prime_viewBalances"
-            | "prime_viewPositions"
-            | "prime_viewOrders"
-            | "prime_viewGrantStatus"
+        "mersennet_getShieldedRoot"
+            | "mersennet_getShieldedBalance"
+            | "mersennet_getShieldedNotes"
+            | "mersennet_getShieldedMarketAggregates"
+            | "mersennet_submitShieldedTransfer"
+            | "mersennet_submitShield"
+            | "mersennet_submitUnshield"
+            | "mersennet_submitShieldedOrder"
+            | "mersennet_submitLiquidationClaim"
+            | "mersennet_submitLiquidationExecute"
+            | "mersennet_registerLiquidator"
+            | "mersennet_getStateProof"
+            | "mersennet_getLatestStateProof"
+            | "mersennet_verifyStateProof"
+            | "mersennet_viewGrantToken"
+            | "mersennet_viewRevokeToken"
+            | "mersennet_viewPortfolioDigest"
+            | "mersennet_viewNotes"
+            | "mersennet_viewBalances"
+            | "mersennet_viewPositions"
+            | "mersennet_viewOrders"
+            | "mersennet_viewGrantStatus"
     )
 }
 
@@ -223,12 +223,12 @@ fn read_latest_state_proof(engine: &Engine) -> Value {
     }
 }
 
-/// `prime_getStateProof(blockNumberOrTag)` — return the SP1
+/// `mersennet_getStateProof(blockNumberOrTag)` — return the SP1
 /// state-transition proof attached to the block at the requested
 /// height. The `blockNumber` parameter may be:
 ///
 /// - Omitted / `null` / `"latest"` → behaves like
-///   `prime_getLatestStateProof`.
+///   `mersennet_getLatestStateProof`.
 /// - A hex string `"0x..."` or a decimal u64 → looks up the block
 ///   by exact height.
 ///
@@ -394,7 +394,7 @@ fn read_view_notes(engine: &Engine, params: Value) -> ShieldedRouteResult {
 }
 
 /// Shared encrypted-note pagination used by the grant-gated reconstruction
-/// reads (`prime_viewNotes` / `prime_viewBalances`). Returns
+/// reads (`mersennet_viewNotes` / `mersennet_viewBalances`). Returns
 /// `(notes_json, total_count, next_cursor)`.
 fn paginate_encrypted_notes(
     engine: &Engine,
@@ -439,7 +439,7 @@ fn paginate_encrypted_notes(
     Ok((json_notes, notes.len(), next_cursor))
 }
 
-/// `prime_viewBalances(grantIdHex, [limit], [cursorHex])` — grant-gated
+/// `mersennet_viewBalances(grantIdHex, [limit], [cursorHex])` — grant-gated
 /// (`balances:read`) balance-reconstruction read. Returns the encrypted
 /// note set plus the spent-nullifier set so a grantee can run the SDK's
 /// `reconstructPortfolio` client-side. The node never decrypts a balance:
@@ -471,7 +471,7 @@ fn read_view_balances(engine: &Engine, params: Value) -> ShieldedRouteResult {
     })))
 }
 
-/// `prime_viewPositions(grantIdHex)` — grant-gated (`positions:read`)
+/// `mersennet_viewPositions(grantIdHex)` — grant-gated (`positions:read`)
 /// position-reconstruction read. Returns the public per-market clearing
 /// context plus the grant binding. Position attribution itself is performed
 /// client-side via the SDK's `reconstructPositions` over the wallet's local
@@ -494,7 +494,7 @@ fn read_view_positions(engine: &Engine, params: Value) -> ShieldedRouteResult {
     })))
 }
 
-/// `prime_viewOrders(grantIdHex)` — grant-gated (`orders:read`) open-order
+/// `mersennet_viewOrders(grantIdHex)` — grant-gated (`orders:read`) open-order
 /// reconstruction read. Returns the public per-market clearing context plus
 /// the grant binding. Open-order attribution is performed client-side via
 /// the SDK's `reconstructOpenOrders` over the wallet's local order records,
@@ -1147,7 +1147,7 @@ fn derive_portfolio_digest(
     nullifier_count: u64,
 ) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(b"PRIME_VIEW_PORTFOLIO_DIGEST_V1");
+    payload.extend_from_slice(b"MERSENNET_VIEW_PORTFOLIO_DIGEST_V1");
     payload.extend_from_slice(&token.grant_id);
     payload.extend_from_slice(&token.grantor_commitment);
     payload.extend_from_slice(&token.capabilities_hash);
@@ -1269,13 +1269,13 @@ mod tests {
     #[test]
     fn read_methods_work_pre_fork() {
         let mut e = fresh_engine();
-        let root = try_dispatch("prime_getShieldedRoot", json!([]), &mut e)
+        let root = try_dispatch("mersennet_getShieldedRoot", json!([]), &mut e)
             .unwrap()
             .unwrap();
         assert!(root.get("shieldedStateRoot").is_some());
         assert_eq!(root["noteCount"], 0);
 
-        let bal = try_dispatch("prime_getShieldedBalance", json!([]), &mut e)
+        let bal = try_dispatch("mersennet_getShieldedBalance", json!([]), &mut e)
             .unwrap()
             .unwrap();
         assert_eq!(bal["totalNoteCount"], 0);
@@ -1285,7 +1285,7 @@ mod tests {
     fn mutation_methods_are_disabled_pre_fork() {
         let mut e = fresh_engine();
         let err = try_dispatch(
-            "prime_submitShieldedTransfer",
+            "mersennet_submitShieldedTransfer",
             json!([{ "envelopeBincodeHex": "0x" }]),
             &mut e,
         )
@@ -1300,7 +1300,7 @@ mod tests {
         // Empty hex payload — we expect an invalid-bincode error,
         // NOT a disabled error, proving the gate is open.
         let err = try_dispatch(
-            "prime_submitShieldedTransfer",
+            "mersennet_submitShieldedTransfer",
             json!([{ "envelopeBincodeHex": "0x" }]),
             &mut e,
         )
@@ -1315,7 +1315,7 @@ mod tests {
         // bondAmount must be ≥ MIN_LIQUIDATOR_BOND (10_000 * 1e18).
         // We use 20_000 * 1e18 = 0x43c33c1937564800000 to be safe.
         let resp = try_dispatch(
-            "prime_registerLiquidator",
+            "mersennet_registerLiquidator",
             json!([{
                 "bondCommitmentHex": format!("0x{}", "00".repeat(32)),
                 "bondAmount": "0x43c33c1937564800000",
@@ -1338,13 +1338,13 @@ mod tests {
             .copied()
             .next()
             .unwrap_or_else(|| {
-                let market = mersennet::prime_orders::Market {
-                    id: mersennet::prime_orders::MarketId(1),
+                let market = mersennet::mersennet_orders::Market {
+                    id: mersennet::mersennet_orders::MarketId(1),
                     symbol: "M1".to_string(),
                     tick_size: U256::from(10u64),
                     lot_size: U256::from(1u64),
                     last_price: U256::from(1_000u64),
-                    status: mersennet::prime_orders::MarketStatus::Active,
+                    status: mersennet::mersennet_orders::MarketStatus::Active,
                 };
                 e.shielded_orders.add_market(market.clone());
                 e.shielded_orders
@@ -1360,7 +1360,7 @@ mod tests {
 
         let root = e.shielded_evm.state.current_root().to_bytes();
         let resp = try_dispatch(
-            "prime_submitShieldedOrder",
+            "mersennet_submitShieldedOrder",
             json!([{
                 "anchorRootHex": hex_bytes(&root),
                 "nullifierHex": format!("0x{}", "00".repeat(32)),
@@ -1400,7 +1400,7 @@ mod tests {
         );
 
         let resp = try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "11".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1438,7 +1438,7 @@ mod tests {
         );
 
         let grant = try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "44".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1454,7 +1454,7 @@ mod tests {
         let grant_id = grant["grantToken"]["grantId"].as_str().unwrap().to_string();
 
         let revoke = try_dispatch(
-            "prime_viewRevokeToken",
+            "mersennet_viewRevokeToken",
             json!([{
                 "grantIdHex": grant_id,
             }]),
@@ -1483,7 +1483,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "66".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1499,7 +1499,7 @@ mod tests {
         .unwrap();
 
         let digest = try_dispatch(
-            "prime_viewPortfolioDigest",
+            "mersennet_viewPortfolioDigest",
             json!([{
                 "grantIdHex": grant_id_hex,
             }]),
@@ -1535,7 +1535,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "42".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1551,7 +1551,7 @@ mod tests {
         .unwrap();
 
         let first_page = try_dispatch(
-            "prime_viewNotes",
+            "mersennet_viewNotes",
             json!([{ "grantIdHex": grant_id_hex.clone(), "limit": 2 }]),
             &mut e,
         )
@@ -1567,7 +1567,7 @@ mod tests {
         let cursor = first_page["nextCursor"].as_str().unwrap().to_string();
 
         let second_page = try_dispatch(
-            "prime_viewNotes",
+            "mersennet_viewNotes",
             json!([{ "grantIdHex": grant_id_hex, "cursorHex": cursor, "limit": 2 }]),
             &mut e,
         )
@@ -1608,7 +1608,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "63".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1624,7 +1624,7 @@ mod tests {
         .unwrap();
 
         let balances = try_dispatch(
-            "prime_viewBalances",
+            "mersennet_viewBalances",
             json!([{ "grantIdHex": grant_id_hex.clone() }]),
             &mut e,
         )
@@ -1638,7 +1638,7 @@ mod tests {
         assert_eq!(balances["notes"].as_array().unwrap().len(), 2);
 
         let positions = try_dispatch(
-            "prime_viewPositions",
+            "mersennet_viewPositions",
             json!([{ "grantIdHex": grant_id_hex.clone() }]),
             &mut e,
         )
@@ -1648,7 +1648,7 @@ mod tests {
         assert!(positions["marketAggregates"].is_object());
 
         let orders = try_dispatch(
-            "prime_viewOrders",
+            "mersennet_viewOrders",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1674,7 +1674,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "71".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1690,7 +1690,7 @@ mod tests {
         .unwrap();
 
         let err = try_dispatch(
-            "prime_viewBalances",
+            "mersennet_viewBalances",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1717,7 +1717,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "52".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1733,7 +1733,7 @@ mod tests {
         .unwrap();
 
         let err = try_dispatch(
-            "prime_viewNotes",
+            "mersennet_viewNotes",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1761,7 +1761,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "62".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1776,14 +1776,14 @@ mod tests {
         )
         .unwrap();
         try_dispatch(
-            "prime_viewRevokeToken",
+            "mersennet_viewRevokeToken",
             json!([{ "grantIdHex": grant_id_hex.clone() }]),
             &mut e,
         )
         .unwrap();
 
         let err = try_dispatch(
-            "prime_viewNotes",
+            "mersennet_viewNotes",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1810,7 +1810,7 @@ mod tests {
         signature_hex.replace_range(signature_hex.len() - 2.., "00");
 
         let err = try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "88".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1843,7 +1843,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "aa".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1859,14 +1859,14 @@ mod tests {
         .unwrap();
 
         try_dispatch(
-            "prime_viewRevokeToken",
+            "mersennet_viewRevokeToken",
             json!([{ "grantIdHex": grant_id_hex.clone() }]),
             &mut e,
         )
         .unwrap();
 
         let err = try_dispatch(
-            "prime_viewPortfolioDigest",
+            "mersennet_viewPortfolioDigest",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1893,7 +1893,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "cc".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1916,7 +1916,7 @@ mod tests {
         e.chain.push(expired_block);
 
         let err = try_dispatch(
-            "prime_viewPortfolioDigest",
+            "mersennet_viewPortfolioDigest",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1942,7 +1942,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "ee".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -1958,7 +1958,7 @@ mod tests {
         .unwrap();
 
         let err = try_dispatch(
-            "prime_viewPortfolioDigest",
+            "mersennet_viewPortfolioDigest",
             json!([{ "grantIdHex": grant_id_hex }]),
             &mut e,
         )
@@ -1987,7 +1987,7 @@ mod tests {
         );
 
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "12".repeat(32)),
                 "grantorSigPubkeyHex": grantor_sig_pubkey_hex,
@@ -2003,7 +2003,7 @@ mod tests {
         .unwrap();
 
         let status = try_dispatch(
-            "prime_viewGrantStatus",
+            "mersennet_viewGrantStatus",
             json!([{ "grantIdHex": grant_id_hex.clone() }]),
             &mut e,
         )
@@ -2016,7 +2016,7 @@ mod tests {
         assert_eq!(status["signatureVerified"], true);
 
         let unknown = try_dispatch(
-            "prime_viewGrantStatus",
+            "mersennet_viewGrantStatus",
             json!([{ "grantIdHex": format!("0x{}", "99".repeat(32)) }]),
             &mut e,
         )
@@ -2043,7 +2043,7 @@ mod tests {
             e.latest_height() + 5,
         );
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "56".repeat(32)),
                 "grantorSigPubkeyHex": revoked_pubkey_hex,
@@ -2058,14 +2058,14 @@ mod tests {
         )
         .unwrap();
         try_dispatch(
-            "prime_viewRevokeToken",
+            "mersennet_viewRevokeToken",
             json!([{ "grantIdHex": revoked_id_hex.clone() }]),
             &mut e,
         )
         .unwrap();
 
         let revoked = try_dispatch(
-            "prime_viewGrantStatus",
+            "mersennet_viewGrantStatus",
             json!([{ "grantIdHex": revoked_id_hex }]),
             &mut e,
         )
@@ -2085,7 +2085,7 @@ mod tests {
             0,
         );
         try_dispatch(
-            "prime_viewGrantToken",
+            "mersennet_viewGrantToken",
             json!([{
                 "grantorCommitmentHex": format!("0x{}", "9a".repeat(32)),
                 "grantorSigPubkeyHex": expired_pubkey_hex,
@@ -2105,7 +2105,7 @@ mod tests {
         });
 
         let expired = try_dispatch(
-            "prime_viewGrantStatus",
+            "mersennet_viewGrantStatus",
             json!([{ "grantIdHex": expired_id_hex }]),
             &mut e,
         )

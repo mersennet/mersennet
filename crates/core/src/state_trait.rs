@@ -4,7 +4,7 @@ use revm::primitives::{Address, B256};
 
 use crate::bridge::BridgeQueue;
 use crate::engine::Block;
-use crate::prime_orders::PrimeOrdersState;
+use crate::mersennet_orders::MersennetOrdersState;
 use crate::state::{SnapshotMeta, StateProof};
 
 pub trait StateBackend: Send + std::fmt::Debug {
@@ -14,14 +14,14 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn commit_state(
         &self,
         evm_db: &InMemoryDB,
-        prime_orders: &PrimeOrdersState,
+        mersennet_orders: &MersennetOrdersState,
         bridge_orders_to_evm: &BridgeQueue,
         bridge_evm_to_orders: &BridgeQueue,
         height: u64,
     ) -> Result<B256>;
 
-    fn load_prime_orders(&self, state: &mut PrimeOrdersState) -> Result<()>;
-    fn commit_prime_orders(&self, state: &PrimeOrdersState) -> Result<()>;
+    fn load_mersennet_orders(&self, state: &mut MersennetOrdersState) -> Result<()>;
+    fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()>;
 
     fn load_bridge_queues(
         &self,
@@ -42,6 +42,10 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn load_blocks_range(&self, from: u64, to: u64) -> Result<Vec<Block>>;
 
     fn record_height(&self, height: u64, state_root: B256) -> Result<()>;
+    /// The highest block height committed to this store, if any. Used
+    /// on startup to resume the chain at the persisted height instead
+    /// of re-producing from genesis.
+    fn persisted_height(&self) -> Result<Option<u64>>;
     fn prune_before(&self, height: u64) -> Result<u64>;
 
     fn generate_proof(&self, key: &[u8]) -> Result<StateProof>;

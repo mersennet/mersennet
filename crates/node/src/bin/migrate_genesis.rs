@@ -299,7 +299,7 @@ fn iter_transparent_balances(engine: &mut Engine) -> Result<Vec<(Address, U256)>
 fn derive_owner_pk(addr: Address) -> Fr {
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
-    h.update(b"PrimeChain-MigrationOwnerPk-v0");
+    h.update(b"MersennetChain-MigrationOwnerPk-v0");
     h.update(addr.as_slice()); // privacy-allow: migration derivation uses transparent EOA
     let bytes: [u8; 32] = h.finalize().into();
     Fr::from_bytes_reduce(&bytes)

@@ -5,7 +5,7 @@ networks:
 
 | Compose file | Chain ID | Purpose |
 |---|---|---|
-| `docker-compose.testnet.yml` | **131071** | Transparent public testnet — EVM + PrimeOrders CLOB |
+| `docker-compose.testnet.yml` | **131071** | Transparent public testnet — EVM + MersennetOrders CLOB |
 | `docker-compose.privacy.yml` | **7920** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
 
 Both compose files run a multi-validator stack plus an RPC observer,
@@ -41,7 +41,7 @@ Sanity check:
 ```bash
 curl -s http://localhost:8545/health
 curl -s -X POST -H 'content-type: application/json' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"prime_getChainConfig","params":[]}' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"mersennet_getChainConfig","params":[]}' \
   http://localhost:8545
 ```
 
@@ -63,7 +63,7 @@ docker compose -f docker-compose.privacy.yml down -v
 ## B. Transparent testnet (chain 131071)
 
 This is the original public testnet — same network as
-`https://rpc.primechain.xyz` runs.
+`http://46.225.30.187:8545` runs (rpc.mersennet.com at launch).
 
 ## Quick Start
 

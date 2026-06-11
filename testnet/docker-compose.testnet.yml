@@ -16,7 +16,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-testnet-validator-1
+    container_name: mersennet-testnet-validator-1
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
       - ./genesis-output/configs/validator-1.json:/etc/mersennet/config.json:ro
@@ -26,7 +26,7 @@ services:
       - "8546:8545"
       - "9090:9090"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
       interval: 10s
@@ -41,7 +41,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-testnet-validator-2
+    container_name: mersennet-testnet-validator-2
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
       - ./genesis-output/configs/validator-2.json:/etc/mersennet/config.json:ro
@@ -51,7 +51,7 @@ services:
       - "8546:8545"
       - "9091:9090"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
       interval: 10s
@@ -66,7 +66,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-testnet-validator-3
+    container_name: mersennet-testnet-validator-3
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
       - ./genesis-output/configs/validator-3.json:/etc/mersennet/config.json:ro
@@ -76,7 +76,7 @@ services:
       - "8547:8545"
       - "9092:9090"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
       interval: 10s
@@ -91,7 +91,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-testnet-validator-4
+    container_name: mersennet-testnet-validator-4
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
       - ./genesis-output/configs/validator-4.json:/etc/mersennet/config.json:ro
@@ -101,7 +101,7 @@ services:
       - "8548:8545"
       - "9093:9090"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8545/health || exit 1"]
       interval: 10s
@@ -117,7 +117,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-testnet-rpc
+    container_name: mersennet-testnet-rpc
     command: ["--config", "/etc/mersennet/config.json", "--mode", "full", "--rpc"]
     volumes:
       - ./genesis-output/configs/rpc-node.json:/etc/mersennet/config.json:ro
@@ -125,7 +125,7 @@ services:
     ports:
       - "8545:8545"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     depends_on:
       - validator-1
     healthcheck:
@@ -143,14 +143,14 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile.faucet
-    container_name: prime-testnet-faucet
+    container_name: mersennet-testnet-faucet
     command: ["--port", "8080", "--rpc-url", "http://rpc-node:8545", "--private-key", "/etc/faucet/faucet-key.json"]
     volumes:
       - ./genesis-output/keys/faucet-key.json:/etc/faucet/faucet-key.json:ro
     ports:
       - "8080:8080"
     networks:
-      - prime-testnet
+      - mersennet-testnet
     depends_on:
       - rpc-node
     healthcheck:
@@ -163,13 +163,13 @@ services:
   # Prometheus
   prometheus:
     image: prom/prometheus:v2.47.0
-    container_name: prime-testnet-prometheus
+    container_name: mersennet-testnet-prometheus
     ports:
       - "9099:9090"
     volumes:
       - ./prometheus.testnet.yml:/etc/prometheus/prometheus.yml:ro
     networks:
-      - prime-testnet
+      - mersennet-testnet
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -178,7 +178,7 @@ services:
   # Grafana
   grafana:
     image: grafana/grafana:10.2.0
-    container_name: prime-testnet-grafana
+    container_name: mersennet-testnet-grafana
     ports:
       - "3000:3000"
     environment:
@@ -187,7 +187,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
     networks:
-      - prime-testnet
+      - mersennet-testnet
     depends_on:
       - prometheus
     restart: unless-stopped
@@ -201,5 +201,5 @@ volumes:
   grafana-data:
 
 networks:
-  prime-testnet:
+  mersennet-testnet:
     driver: bridge

@@ -1,12 +1,12 @@
 //! Chain-side export path for the Ethereum bridge (Workstream E5).
 //!
 //! Turns a proven [`BlockProgramOutput`] plus a Groth16-wrapped proof into
-//! the exact calldata that `PrimeChainBridge.submitStateProof(uint256[8],
-//! uint256[])` expects (see `contracts/src/zk/PrimeChainBridge.sol` and
+//! the exact calldata that `MersennetChainBridge.submitStateProof(uint256[8],
+//! uint256[])` expects (see `contracts/src/zk/MersennetChainBridge.sol` and
 //! `contracts/src/zk/Groth16Verifier.sol`).
 //!
 //! The public-input ordering here MUST stay in lockstep with the `PI_*`
-//! constants in `PrimeChainBridge.sol` and with
+//! constants in `MersennetChainBridge.sol` and with
 //! [`mersennet_zkp::sp1::BlockProgramOutput::to_field_elements`]. The bridge
 //! compares the root inputs as raw `bytes32` (i.e. `uint256(root)`), so the
 //! 32-byte digests are exported verbatim as big-endian EVM words and the
@@ -66,7 +66,7 @@ fn word_from_u64(value: u64) -> Word {
 
 /// Build the bridge public-input vector for a proven block output.
 ///
-/// Ordering matches `PrimeChainBridge.PI_*`:
+/// Ordering matches `MersennetChainBridge.PI_*`:
 /// `[prev_state_root, new_state_root, prev_nullifier_root,
 /// new_nullifier_root, block_number, block_hash, new_market_state_hash,
 /// shielded_event_root, tx_count]`.

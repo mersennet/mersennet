@@ -10,8 +10,6 @@ but don't delete the headers — empty sections make review harder.
 ## Scope
 
 - [ ] Code (`crates/`)
-- [ ] Contracts (`contracts/`)
-- [ ] SDK (`sdk/`, `sdk-go/`, `sdk-python/`)
 - [ ] Docs (`docs/`, `docs-site/`)
 - [ ] Infra / CI (`.github/`, `deploy/`, `docker-compose.yml`)
 - [ ] ZK / privacy (anything under `crates/zkp/`, `crates/core/src/shielded_state.rs`, or touching privacy invariants)

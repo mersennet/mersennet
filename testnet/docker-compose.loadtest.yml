@@ -7,14 +7,14 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-loadtest-transfer
+    container_name: mersennet-loadtest-transfer
     entrypoint: ["/usr/local/bin/loadtest"]
     command: ["--rpc", "http://rpc-node:8545", "--rate", "500", "--duration", "120", "--mode", "transfer"]
     depends_on:
       rpc-node:
         condition: service_healthy
     networks:
-      - prime-testnet
+      - mersennet-testnet
     environment:
       - RUST_LOG=info
 
@@ -22,14 +22,14 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-loadtest-clob
+    container_name: mersennet-loadtest-clob
     entrypoint: ["/usr/local/bin/loadtest"]
     command: ["--rpc", "http://rpc-node:8545", "--rate", "200", "--duration", "120", "--mode", "clob"]
     depends_on:
       rpc-node:
         condition: service_healthy
     networks:
-      - prime-testnet
+      - mersennet-testnet
     environment:
       - RUST_LOG=info
 
@@ -37,14 +37,14 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: prime-loadtest-mixed
+    container_name: mersennet-loadtest-mixed
     entrypoint: ["/usr/local/bin/loadtest"]
     command: ["--rpc", "http://rpc-node:8545", "--rate", "300", "--duration", "120", "--mode", "mixed"]
     depends_on:
       rpc-node:
         condition: service_healthy
     networks:
-      - prime-testnet
+      - mersennet-testnet
     environment:
       - RUST_LOG=info
 
@@ -59,11 +59,11 @@ services:
       rpc-node:
         condition: service_healthy
     networks:
-      - prime-testnet
+      - mersennet-testnet
     environment:
       - RUST_LOG=info
 
 networks:
-  prime-testnet:
+  mersennet-testnet:
     external: true
     name: testnet_prime-testnet

@@ -1,6 +1,6 @@
 //! Shielded CLOB.
 //!
-//! Replaces the address-keyed [`crate::prime_orders`] CLOB with a
+//! Replaces the address-keyed [`crate::mersennet_orders`] CLOB with a
 //! commitment-keyed engine. Trader identity, exact collateral, exact
 //! position, exact order size, and PnL are never visible to anyone
 //! other than the trader (and any party they have explicitly granted
@@ -60,7 +60,7 @@
 
 #![allow(dead_code)]
 
-use crate::prime_orders::{MarketId, MarketStatus, Side, TimeInForce};
+use crate::mersennet_orders::{MarketId, MarketStatus, Side, TimeInForce};
 use crate::shielded_state::ShieldedState;
 use mersennet_zkp::{
     Fr, NoteCommitment, Nullifier,
@@ -244,7 +244,7 @@ pub struct Fill {
 /// 3. For each fill: insert a fresh note into `ShieldedState`.
 #[derive(Debug)]
 pub struct ShieldedOrdersEngine {
-    pub markets: HashMap<MarketId, crate::prime_orders::Market>,
+    pub markets: HashMap<MarketId, crate::mersennet_orders::Market>,
     pub aggregates: HashMap<MarketId, MarketAggregates>,
     pub books: HashMap<MarketId, ShieldedOrderBook>,
     pub insurance_fund: U256,
@@ -292,7 +292,7 @@ impl ShieldedOrdersEngine {
         Self::default()
     }
 
-    pub fn add_market(&mut self, m: crate::prime_orders::Market) {
+    pub fn add_market(&mut self, m: crate::mersennet_orders::Market) {
         let id = m.id;
         self.markets.insert(id, m);
         self.aggregates.entry(id).or_default();
@@ -884,7 +884,7 @@ impl From<crate::shielded_state::ShieldedStateError> for ShieldedOrderError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prime_orders::Market;
+    use crate::mersennet_orders::Market;
     use mersennet_zkp::Circuit;
     use mersennet_zkp::note::Note;
 

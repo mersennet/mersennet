@@ -26,7 +26,7 @@
 //!   [`ark-bn254`] + [`ark-ec`]. Hiding + binding under DLP on BN254
 //!   G1, which is the same security assumption used by the Aztec
 //!   side. The generator set is derived deterministically from
-//!   `"PrimeChain-Pedersen-v0"` + index using a try-and-increment
+//!   `"MersennetChain-Pedersen-v0"` + index using a try-and-increment
 //!   hash-to-curve (this is the **swap point** for the audited Aztec
 //!   generator set — file `crates/zkp/params/pedersen-bn254-gens.bin`
 //!   gets populated by the same Workstream D1-style pinning workflow).
@@ -116,9 +116,9 @@ mod real {
         pub fn new() -> Self {
             let mut gens = Vec::with_capacity(MAX_MSG_LEN);
             for i in 0..MAX_MSG_LEN {
-                gens.push(derive_generator(b"PrimeChain-Pedersen-v0-G", i as u64));
+                gens.push(derive_generator(b"MersennetChain-Pedersen-v0-G", i as u64));
             }
-            let h = derive_generator(b"PrimeChain-Pedersen-v0-H", 0);
+            let h = derive_generator(b"MersennetChain-Pedersen-v0-H", 0);
             Self { gens, h }
         }
 

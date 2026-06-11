@@ -13,50 +13,50 @@ use revm::primitives::{
 };
 
 use crate::code_publication::CodePublicationRegistry;
+use crate::mersennet_orders::{MarketId, MersennetOrdersState, OrderId, Side, TimeInForce};
 use crate::precompile_abi::*;
-use crate::prime_orders::{MarketId, OrderId, PrimeOrdersState, Side, TimeInForce};
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
 use crate::zk_proofs::StateTransitionProof;
 
 // ---------------------------------------------------------------------------
-// Global PrimeOrders context — set before block execution, cleared after.
+// Global MersennetOrders context — set before block execution, cleared after.
 // ---------------------------------------------------------------------------
 
-static PRIME_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<PrimeOrdersState>>>>> =
+static MERSENNET_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<MersennetOrdersState>>>>> =
     Lazy::new(|| Mutex::new(None));
 
-static TRANSPARENT_PRIME_ORDERS_ENABLED: AtomicBool = AtomicBool::new(true);
+static TRANSPARENT_MERSENNET_ORDERS_ENABLED: AtomicBool = AtomicBool::new(true);
 
-pub fn set_prime_orders_context(state: Arc<Mutex<PrimeOrdersState>>) {
-    *PRIME_ORDERS_CTX.lock().unwrap() = Some(state);
+pub fn set_mersennet_orders_context(state: Arc<Mutex<MersennetOrdersState>>) {
+    *MERSENNET_ORDERS_CTX.lock().unwrap() = Some(state);
 }
 
-pub fn clear_prime_orders_context() {
-    *PRIME_ORDERS_CTX.lock().unwrap() = None;
+pub fn clear_mersennet_orders_context() {
+    *MERSENNET_ORDERS_CTX.lock().unwrap() = None;
 }
 
-pub fn set_transparent_prime_orders_enabled(enabled: bool) {
-    TRANSPARENT_PRIME_ORDERS_ENABLED.store(enabled, Ordering::SeqCst);
+pub fn set_transparent_mersennet_orders_enabled(enabled: bool) {
+    TRANSPARENT_MERSENNET_ORDERS_ENABLED.store(enabled, Ordering::SeqCst);
 }
 
-pub fn transparent_prime_orders_enabled() -> bool {
-    TRANSPARENT_PRIME_ORDERS_ENABLED.load(Ordering::SeqCst)
+pub fn transparent_mersennet_orders_enabled() -> bool {
+    TRANSPARENT_MERSENNET_ORDERS_ENABLED.load(Ordering::SeqCst)
 }
 
 fn with_orders<F, R>(f: F) -> Result<R, PrecompileErrors>
 where
-    F: FnOnce(&mut PrimeOrdersState) -> R,
+    F: FnOnce(&mut MersennetOrdersState) -> R,
 {
-    let guard = PRIME_ORDERS_CTX
+    let guard = MERSENNET_ORDERS_CTX
         .lock()
         .map_err(|_| PrecompileErrors::Fatal {
-            msg: "prime orders context lock poisoned".into(),
+            msg: "mersennet orders context lock poisoned".into(),
         })?;
     let arc = guard.as_ref().ok_or_else(|| PrecompileErrors::Fatal {
-        msg: "prime orders context not set".into(),
+        msg: "mersennet orders context not set".into(),
     })?;
     let mut state = arc.lock().map_err(|_| PrecompileErrors::Fatal {
-        msg: "prime orders state lock poisoned".into(),
+        msg: "mersennet orders state lock poisoned".into(),
     })?;
     Ok(f(&mut state))
 }
@@ -66,13 +66,13 @@ where
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::arc_with_non_send_sync)]
-pub fn register_prime_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
+pub fn register_mersennet_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
     let prev_load = handler.pre_execution.load_precompiles.clone();
     handler.pre_execution.load_precompiles = Arc::new(move || {
         let mut precompiles = prev_load();
         precompiles.extend([(
-            PRIME_ORDERS_PRECOMPILE,
-            ContextPrecompile::Ordinary(Precompile::Env(prime_orders_precompile)),
+            MERSENNET_ORDERS_PRECOMPILE,
+            ContextPrecompile::Ordinary(Precompile::Env(mersennet_orders_precompile)),
         )]);
         precompiles
     });
@@ -417,10 +417,10 @@ fn abi_decode_bytes_at(input: &Bytes, slot: usize) -> Result<Vec<u8>, Precompile
 // Main precompile entry-point (dispatches on function selector).
 // ---------------------------------------------------------------------------
 
-fn prime_orders_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> PrecompileResult {
-    if !transparent_prime_orders_enabled() {
+fn mersennet_orders_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> PrecompileResult {
+    if !transparent_mersennet_orders_enabled() {
         return Err(PrecompileError::other(
-            "transparent PrimeOrders precompile disabled after privacy activation",
+            "transparent MersennetOrders precompile disabled after privacy activation",
         )
         .into());
     }
@@ -666,12 +666,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn transparent_prime_orders_precompile_rejects_when_disabled() {
-        set_transparent_prime_orders_enabled(false);
+    fn transparent_mersennet_orders_precompile_rejects_when_disabled() {
+        set_transparent_mersennet_orders_enabled(false);
 
         let input = Bytes::from(get_collateral_selector().to_vec());
         let env = Env::default();
-        let err = prime_orders_precompile(&input, GAS_GET_COLLATERAL, &env)
+        let err = mersennet_orders_precompile(&input, GAS_GET_COLLATERAL, &env)
             .expect_err("transparent precompile should be disabled");
 
         assert!(
@@ -679,6 +679,6 @@ mod tests {
             "unexpected error: {err:?}"
         );
 
-        set_transparent_prime_orders_enabled(true);
+        set_transparent_mersennet_orders_enabled(true);
     }
 }

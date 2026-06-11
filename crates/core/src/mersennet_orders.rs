@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::errors::PrimeOrdersError;
+use crate::errors::MersennetOrdersError;
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -111,7 +111,7 @@ pub struct OrderBook {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct PrimeOrdersState {
+pub struct MersennetOrdersState {
     pub next_order_id: u64,
     pub markets: HashMap<MarketId, Market>,
     pub orders: HashMap<OrderId, Order>,
@@ -123,7 +123,7 @@ pub struct PrimeOrdersState {
     pub insurance_contribution_rate_bps: u64,
 }
 
-impl PrimeOrdersState {
+impl MersennetOrdersState {
     pub fn new() -> Self {
         Self::default()
     }
@@ -204,16 +204,16 @@ impl PrimeOrdersState {
         price: U256,
         size: U256,
         tif: TimeInForce,
-    ) -> Result<OrderOutcome, PrimeOrdersError> {
+    ) -> Result<OrderOutcome, MersennetOrdersError> {
         match self.markets.get(&market) {
-            None => return Err(PrimeOrdersError::UnknownMarket),
+            None => return Err(MersennetOrdersError::UnknownMarket),
             Some(m) if m.status != MarketStatus::Active => {
-                return Err(PrimeOrdersError::MarketHalted);
+                return Err(MersennetOrdersError::MarketHalted);
             }
             _ => {}
         }
         if size.is_zero() {
-            return Err(PrimeOrdersError::InvalidSize);
+            return Err(MersennetOrdersError::InvalidSize);
         }
 
         self.ensure_initial_margin(owner, price, size)?;
@@ -221,7 +221,7 @@ impl PrimeOrdersState {
         if tif == TimeInForce::Fok {
             let available = self.available_liquidity(market, side, price);
             if available < size {
-                return Err(PrimeOrdersError::FokNotFillable);
+                return Err(MersennetOrdersError::FokNotFillable);
             }
         }
 
@@ -542,13 +542,13 @@ impl PrimeOrdersState {
         &mut self,
         owner: Address,
         amount: U256,
-    ) -> Result<(), PrimeOrdersError> {
+    ) -> Result<(), MersennetOrdersError> {
         let account = self
             .accounts
             .get(&owner)
-            .ok_or(PrimeOrdersError::InsufficientEquity)?;
+            .ok_or(MersennetOrdersError::InsufficientEquity)?;
         if account.collateral < amount {
-            return Err(PrimeOrdersError::InsufficientEquity);
+            return Err(MersennetOrdersError::InsufficientEquity);
         }
         let new_collateral = account.collateral.saturating_sub(amount);
         let equity_after = {
@@ -564,7 +564,7 @@ impl PrimeOrdersState {
         };
         let maintenance = self.maintenance_margin_required(owner);
         if equity_after < u256_to_i128(maintenance) {
-            return Err(PrimeOrdersError::WithdrawalExceedsEquity);
+            return Err(MersennetOrdersError::WithdrawalExceedsEquity);
         }
         self.accounts.get_mut(&owner).unwrap().collateral = new_collateral;
         Ok(())
@@ -773,7 +773,7 @@ impl PrimeOrdersState {
         owner: Address,
         price: U256,
         size: U256,
-    ) -> Result<(), PrimeOrdersError> {
+    ) -> Result<(), MersennetOrdersError> {
         if self.initial_margin_bps == 0 {
             return Ok(());
         }
@@ -788,7 +788,7 @@ impl PrimeOrdersState {
             .map(|acct| acct.collateral)
             .unwrap_or_default();
         if collateral < required {
-            return Err(PrimeOrdersError::InsufficientCollateral);
+            return Err(MersennetOrdersError::InsufficientCollateral);
         }
         Ok(())
     }

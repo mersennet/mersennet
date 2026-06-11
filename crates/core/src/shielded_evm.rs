@@ -189,7 +189,7 @@ pub struct ViewingGrantToken {
 impl ViewingGrantToken {
     pub fn signing_digest(&self) -> [u8; 32] {
         let mut payload = Vec::new();
-        payload.extend_from_slice(b"PRIME_VIEW_GRANT_V1");
+        payload.extend_from_slice(b"MERSENNET_VIEW_GRANT_V1");
         payload.push(self.version);
         payload.extend_from_slice(&self.chain_id.to_le_bytes());
         payload.extend_from_slice(&self.grant_id);
@@ -509,7 +509,7 @@ fn derive_migration_rho(source_eoa: Address, height: u64) -> Fr {
     // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
-    h.update(b"PrimeChain-MigrationRho");
+    h.update(b"MersennetChain-MigrationRho");
     h.update(source_eoa.as_slice());
     h.update(height.to_le_bytes());
     let bytes: [u8; 32] = h.finalize().into();
@@ -520,7 +520,7 @@ fn derive_migration_psi(source_eoa: Address, height: u64) -> Fr {
     // privacy-allow: one-time migration derives shielded params from transparent EOA
     use sha3::{Digest, Keccak256};
     let mut h = Keccak256::new();
-    h.update(b"PrimeChain-MigrationPsi");
+    h.update(b"MersennetChain-MigrationPsi");
     h.update(source_eoa.as_slice());
     h.update(height.to_le_bytes());
     let bytes: [u8; 32] = h.finalize().into();

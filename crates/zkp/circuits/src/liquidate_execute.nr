@@ -19,7 +19,6 @@
 //   - victim position note + its membership proof
 //   - liquidator's spend secret (binds bounty to liquidator)
 
-use crate::lib;
 use crate::merkle;
 use crate::note::Note;
 use crate::poseidon;

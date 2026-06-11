@@ -11,11 +11,11 @@ from common import render_template_command, run_command
 
 
 def package_name(circuit: str) -> str:
-    return f"prime_{circuit}_circuit"
+    return f"mersennet_{circuit}_circuit"
 
 
 def find_acir_artifact(artifacts_dir: Path, circuit: str) -> Path:
-    explicit = os.environ.get("PRIME_BB_ACIR_PATH")
+    explicit = os.environ.get("MERSENNET_BB_ACIR_PATH")
     if explicit:
         path = Path(explicit).resolve()
         if path.exists():
@@ -37,7 +37,7 @@ def find_acir_artifact(artifacts_dir: Path, circuit: str) -> Path:
 
 
 def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Path:
-    explicit = os.environ.get("PRIME_BB_VK_PATH")
+    explicit = os.environ.get("MERSENNET_BB_VK_PATH")
     if explicit:
         path = Path(explicit).resolve()
         if path.exists():
@@ -54,7 +54,7 @@ def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Pat
             return candidate
 
     vk_path = artifacts_dir / f"{package_name(circuit)}.vk"
-    bb_bin = os.environ.get("PRIME_BB_BIN", "bb")
+    bb_bin = os.environ.get("MERSENNET_BB_BIN", "bb")
     values = {
         "bb": bb_bin,
         "acir": acir_path,
@@ -62,7 +62,7 @@ def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Pat
         "artifacts": artifacts_dir,
         "circuit": circuit,
     }
-    template = os.environ.get("PRIME_BB_WRITE_VK_TEMPLATE")
+    template = os.environ.get("MERSENNET_BB_WRITE_VK_TEMPLATE")
     if template:
         run_command(render_template_command(template, values))
         if vk_path.exists():
@@ -85,7 +85,7 @@ def find_or_create_vk(circuit: str, artifacts_dir: Path, acir_path: Path) -> Pat
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reference adapter for PRIME_BB_VERIFY_ADAPTER.")
+    parser = argparse.ArgumentParser(description="Reference adapter for MERSENNET_BB_VERIFY_ADAPTER.")
     parser.add_argument("--circuit", required=True)
     parser.add_argument("--artifacts", required=True)
     parser.add_argument("--proof", required=True)
@@ -108,11 +108,49 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="mersennet-bb-") as tmp_name:
         tmp_dir = Path(tmp_name)
-        public_inputs_json = tmp_dir / "public_inputs.json"
-        public_inputs = [line.strip() for line in public_inputs_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        public_inputs_json.write_text("[\n" + ",\n".join(f'  "{value}"' for value in public_inputs) + "\n]\n", encoding="utf-8")
 
-        bb_bin = os.environ.get("PRIME_BB_BIN", "bb")
+        # Normalize the public inputs into Barretenberg's canonical
+        # binary layout: 32-byte big-endian field elements concatenated.
+        # The caller may hand us either that binary form already, or a
+        # text file of one big-endian hex field per line (the encoding
+        # `BarretenbergVerifier` writes). We detect which and convert.
+        raw = public_inputs_path.read_bytes()
+        public_inputs_bin = tmp_dir / "public_inputs.bin"
+        fields_hex: list[str] = []
+        try:
+            text = raw.decode("utf-8")
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            looks_hex = bool(lines) and all(
+                all(ch in "0123456789abcdefABCDEFx" for ch in line) for line in lines
+            )
+        except UnicodeDecodeError:
+            looks_hex = False
+            lines = []
+
+        if looks_hex:
+            field_bytes = bytearray()
+            for line in lines:
+                token = line[2:] if line[:2].lower() == "0x" else line
+                value = bytes.fromhex(token.rjust(64, "0"))
+                if len(value) != 32:
+                    raise SystemExit(f"public input field is not 32 bytes: {line}")
+                field_bytes.extend(value)
+                fields_hex.append(token.rjust(64, "0"))
+            public_inputs_bin.write_bytes(bytes(field_bytes))
+        else:
+            if len(raw) % 32 != 0:
+                raise SystemExit("binary public inputs length is not a multiple of 32 bytes")
+            public_inputs_bin.write_bytes(raw)
+            for offset in range(0, len(raw), 32):
+                fields_hex.append(raw[offset : offset + 32].hex())
+
+        public_inputs_json = tmp_dir / "public_inputs.json"
+        public_inputs_json.write_text(
+            "[\n" + ",\n".join(f'  "0x{value}"' for value in fields_hex) + "\n]\n",
+            encoding="utf-8",
+        )
+
+        bb_bin = os.environ.get("MERSENNET_BB_BIN", "bb")
         values = {
             "bb": bb_bin,
             "circuit": args.circuit,
@@ -120,18 +158,18 @@ def main() -> int:
             "acir": acir_path,
             "vk": vk_path,
             "proof": proof_path,
-            "public_inputs": public_inputs_path,
+            "public_inputs": public_inputs_bin,
             "public_inputs_json": public_inputs_json,
         }
 
-        template = os.environ.get("PRIME_BB_VERIFY_TEMPLATE")
+        template = os.environ.get("MERSENNET_BB_VERIFY_TEMPLATE")
         if template:
             run_command(render_template_command(template, values))
             return 0
 
         attempts = [
-            [bb_bin, "verify", "-k", str(vk_path), "-p", str(proof_path), "-i", str(public_inputs_path)],
-            [bb_bin, "verify", "--vk", str(vk_path), "--proof", str(proof_path), "--public-inputs", str(public_inputs_path)],
+            [bb_bin, "verify", "-k", str(vk_path), "-p", str(proof_path), "-i", str(public_inputs_bin)],
+            [bb_bin, "verify", "--vk", str(vk_path), "--proof", str(proof_path), "--public-inputs", str(public_inputs_bin)],
             [bb_bin, "verify", "--vk", str(vk_path), "--proof", str(proof_path), "--public-inputs", str(public_inputs_json)],
             [bb_bin, "verify", "-k", str(vk_path), "-p", str(proof_path)],
             [bb_bin, "verify", "--vk", str(vk_path), "--proof", str(proof_path)],

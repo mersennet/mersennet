@@ -91,21 +91,32 @@ impl Fr {
         }
     }
 
-    /// Convert from arbitrary 32 bytes, reducing modulo `r`.
+    /// Convert from arbitrary 32 bytes (little-endian), reducing modulo
+    /// `r`. The reduction is exact for any 256-bit input: the value is
+    /// placed in the low half of a 512-bit accumulator and reduced via
+    /// [`reduce_wide`] (binary long division). This is the same routine
+    /// the multiplier uses, so encodings round-trip correctly.
     pub fn from_bytes_reduce(bytes: &[u8; 32]) -> Self {
-        let mut limbs = [
+        let limbs = [
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
             u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
             u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
         ];
-        // Clear the top two bits so we are < 2^254, which is below `2r`.
-        // Two reductions are then sufficient.
-        limbs[3] &= 0x3FFF_FFFF_FFFF_FFFF;
-        let mut out = Fr { limbs };
-        out.reduce();
-        out.reduce();
-        out
+        let wide = [limbs[0], limbs[1], limbs[2], limbs[3], 0, 0, 0, 0];
+        Fr {
+            limbs: reduce_wide(&wide),
+        }
+    }
+
+    /// Convert from canonical 32-byte **big-endian**, reducing modulo
+    /// `r`. The Poseidon2 round constants embedded from the ACVM
+    /// reference are big-endian hex (`from_be_bytes_reduce` in noir),
+    /// so this is the decoder used to load them.
+    pub fn from_be_bytes_reduce(bytes: &[u8; 32]) -> Self {
+        let mut le = *bytes;
+        le.reverse();
+        Fr::from_bytes_reduce(&le)
     }
 
     /// Canonical 32-byte little-endian encoding.
@@ -151,31 +162,9 @@ impl Fr {
     /// and this routine is only used inside the Rust-side Poseidon.
     pub fn mul(&self, other: &Fr) -> Fr {
         let prod = mul_limbs_512(&self.limbs, &other.limbs);
-        // Reduce 512 bits to 256 bits by repeated subtraction of
-        // `MODULUS_LIMBS << k`. Loop bound is < 260 iterations.
-        let mut hi = [prod[4], prod[5], prod[6], prod[7]];
-        let mut lo = [prod[0], prod[1], prod[2], prod[3]];
-
-        // Crude but correct reduction: while hi != 0, subtract
-        // MODULUS * 2^256 from (hi || lo). That is equivalent to
-        // subtracting MODULUS from hi (which then needs full mod-r
-        // reduction). Faster: compute (hi * 2^256) mod r and add to lo.
-        //
-        // For the rare case of multiplications inside hash rounds we
-        // emit at most a few hundred reductions per block. Accept the
-        // cost.
-        let r2_mod_r = compute_r2_mod_r();
-        while hi != [0u64; 4] {
-            // out += hi * (2^256 mod r)
-            let add_term = mul_limbs_256_mod(&hi, &r2_mod_r);
-            let (sum, _) = add_limbs(&lo, &add_term);
-            lo = sum;
-            hi = [0u64; 4];
+        Fr {
+            limbs: reduce_wide(&prod),
         }
-        let mut out = Fr { limbs: lo };
-        out.reduce();
-        out.reduce();
-        out
     }
 
     /// Field exponentiation by a small constant — sufficient for the
@@ -260,26 +249,37 @@ fn mul_limbs_512(a: &[u64; 4], b: &[u64; 4]) -> [u64; 8] {
     out
 }
 
-/// Computes `(2^256) mod r`, used as the "high-half folding constant"
-/// during multiplication reduction. Computed at runtime once and
-/// cached behind a `std::sync::OnceLock` would be cleaner; for now we
-/// hardcode the value, derived offline from `r`.
-fn compute_r2_mod_r() -> [u64; 4] {
-    // 2^256 mod r = r' where r' = (1 << 256) - r, since r < 2^256.
-    // r' = 2^256 - r.
-    // Computed: r = MODULUS_LIMBS; r' = MODULUS_LIMBS bit-negated + 1 (two's complement of r in 256 bits).
-    let mut neg = [0u64; 4];
-    let (n, _) = sub_limbs(&[0u64; 4], &MODULUS_LIMBS);
-    neg.copy_from_slice(&n);
-    neg
-}
-
-/// Multiply two 256-bit values and immediately reduce the low 256 bits
-/// (drop overflow). Used inside [`Fr::mul`]'s reduction step where the
-/// caller knows the high half is bounded.
-fn mul_limbs_256_mod(a: &[u64; 4], b: &[u64; 4]) -> [u64; 4] {
-    let prod = mul_limbs_512(a, b);
-    [prod[0], prod[1], prod[2], prod[3]]
+/// Reduce a 512-bit little-endian value modulo `r` via schoolbook
+/// binary long division (process the dividend MSB-first, shifting a
+/// running remainder left one bit at a time and conditionally
+/// subtracting the modulus).
+///
+/// This is deliberately simple rather than fast: it is unambiguously
+/// correct for every 512-bit input, which is what a consensus-critical
+/// hash needs. The running remainder is always `< r < 2^254`, so after
+/// the per-bit shift it stays `< 2^255` and fits in four limbs with no
+/// overflow, and a single conditional subtraction restores `< r`.
+fn reduce_wide(prod: &[u64; 8]) -> [u64; 4] {
+    let mut rem = [0u64; 4];
+    for bit in (0..512).rev() {
+        // rem <<= 1
+        let mut carry = 0u64;
+        for limb in rem.iter_mut() {
+            let new_carry = *limb >> 63;
+            *limb = (*limb << 1) | carry;
+            carry = new_carry;
+        }
+        // Bring down the next dividend bit (MSB-first).
+        let word = bit / 64;
+        let off = bit % 64;
+        rem[0] |= (prod[word] >> off) & 1;
+        // Conditionally subtract the modulus to keep rem < r.
+        if !cmp_limbs(&rem, &MODULUS_LIMBS).is_lt() {
+            let (out, _) = sub_limbs(&rem, &MODULUS_LIMBS);
+            rem = out;
+        }
+    }
+    rem
 }
 
 #[cfg(test)]
@@ -331,6 +331,39 @@ mod tests {
         let a = Fr::from_u64(3);
         // 3^5 = 243
         assert_eq!(a.pow5(), Fr::from_u64(243));
+    }
+
+    #[test]
+    fn mul_full_width_minus_one_squared_is_one() {
+        // (r-1) == -1 (mod r), so (r-1)*(r-1) == 1. This exercises the
+        // full-width 512-bit reduction path that the previous
+        // multiplier got wrong.
+        let minus_one = Fr::ZERO.sub(&Fr::ONE);
+        assert_eq!(minus_one.mul(&minus_one), Fr::ONE);
+    }
+
+    #[test]
+    fn mul_full_width_minus_one_times_two() {
+        // (r-1)*2 == -2 == r-2 (mod r).
+        let minus_one = Fr::ZERO.sub(&Fr::ONE);
+        let two = Fr::from_u64(2);
+        let expected = Fr::ZERO.sub(&two);
+        assert_eq!(minus_one.mul(&two), expected);
+    }
+
+    #[test]
+    fn pow5_of_minus_one_is_minus_one() {
+        // (-1)^5 == -1.
+        let minus_one = Fr::ZERO.sub(&Fr::ONE);
+        assert_eq!(minus_one.pow5(), minus_one);
+    }
+
+    #[test]
+    fn be_decode_matches_le_decode() {
+        // 0x...0002 big-endian == 2.
+        let mut be = [0u8; 32];
+        be[31] = 2;
+        assert_eq!(Fr::from_be_bytes_reduce(&be), Fr::from_u64(2));
     }
 
     #[test]

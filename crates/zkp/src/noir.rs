@@ -55,7 +55,7 @@ impl Circuit {
 
     #[cfg(feature = "prover")]
     fn package_name(self) -> String {
-        format!("prime_{}_circuit", self.slug())
+        format!("mersennet_{}_circuit", self.slug())
     }
 
     #[cfg(feature = "prover")]
@@ -310,13 +310,13 @@ impl MockVerifier {
     pub fn vk_hash_for(circuit: Circuit) -> [u8; 32] {
         use sha3::{Digest, Keccak256};
         let label = match circuit {
-            Circuit::Spend => "PrimeChain-MockVK-Spend",
-            Circuit::Output => "PrimeChain-MockVK-Output",
-            Circuit::JoinSplit => "PrimeChain-MockVK-JoinSplit",
-            Circuit::OrderPlace => "PrimeChain-MockVK-OrderPlace",
-            Circuit::LiquidateClaim => "PrimeChain-MockVK-LiquidateClaim",
-            Circuit::LiquidateExecute => "PrimeChain-MockVK-LiquidateExecute",
-            Circuit::Test => "PrimeChain-MockVK-Test",
+            Circuit::Spend => "MersennetChain-MockVK-Spend",
+            Circuit::Output => "MersennetChain-MockVK-Output",
+            Circuit::JoinSplit => "MersennetChain-MockVK-JoinSplit",
+            Circuit::OrderPlace => "MersennetChain-MockVK-OrderPlace",
+            Circuit::LiquidateClaim => "MersennetChain-MockVK-LiquidateClaim",
+            Circuit::LiquidateExecute => "MersennetChain-MockVK-LiquidateExecute",
+            Circuit::Test => "MersennetChain-MockVK-Test",
         };
         let mut h = Keccak256::new();
         h.update(label.as_bytes());
@@ -410,13 +410,13 @@ pub struct NoirToolchain {
 #[cfg(feature = "prover")]
 impl NoirToolchain {
     pub fn from_env() -> Result<Self, NoirToolchainError> {
-        let circuits_dir = env::var_os("PRIME_NOIR_CIRCUITS_DIR")
+        let circuits_dir = env::var_os("MERSENNET_NOIR_CIRCUITS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(default_circuits_dir);
-        let artifacts_dir = env::var_os("PRIME_NOIR_ARTIFACTS_DIR")
+        let artifacts_dir = env::var_os("MERSENNET_NOIR_ARTIFACTS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| default_artifacts_dir(&circuits_dir));
-        let nargo_bin = env::var("PRIME_NARGO_BIN").unwrap_or_else(|_| "nargo".to_string());
+        let nargo_bin = env::var("MERSENNET_NARGO_BIN").unwrap_or_else(|_| "nargo".to_string());
         Ok(Self {
             circuits_dir,
             artifacts_dir,
@@ -488,7 +488,7 @@ impl NoirToolchain {
         fs::write(
             package_dir.join("Nargo.toml"),
             format!(
-                "[package]\nname = \"{}\"\ntype = \"bin\"\nauthors = [\"PrimeNumbers Labs\"]\ncompiler_version = \">=0.30.0\"\n\n[dependencies]\n",
+                "[package]\nname = \"{}\"\ntype = \"bin\"\nauthors = [\"MersennetNumbers Labs\"]\ncompiler_version = \">=0.30.0\"\n\n[dependencies]\n",
                 circuit.package_name()
             ),
         )?;
@@ -514,11 +514,13 @@ pub struct BarretenbergProver {
 #[cfg(feature = "prover")]
 impl BarretenbergVerifier {
     pub fn from_env() -> Result<Self, NoirToolchainError> {
-        let artifacts_dir = env::var_os("PRIME_NOIR_ARTIFACTS_DIR")
+        let artifacts_dir = env::var_os("MERSENNET_NOIR_ARTIFACTS_DIR")
             .map(PathBuf::from)
-            .ok_or(NoirToolchainError::MissingEnv("PRIME_NOIR_ARTIFACTS_DIR"))?;
-        let verify_adapter = env::var("PRIME_BB_VERIFY_ADAPTER")
-            .map_err(|_| NoirToolchainError::MissingEnv("PRIME_BB_VERIFY_ADAPTER"))?;
+            .ok_or(NoirToolchainError::MissingEnv(
+                "MERSENNET_NOIR_ARTIFACTS_DIR",
+            ))?;
+        let verify_adapter = env::var("MERSENNET_BB_VERIFY_ADAPTER")
+            .map_err(|_| NoirToolchainError::MissingEnv("MERSENNET_BB_VERIFY_ADAPTER"))?;
         Ok(Self {
             artifacts_dir,
             verify_adapter,
@@ -580,8 +582,8 @@ impl BarretenbergVerifier {
 impl BarretenbergProver {
     pub fn from_env() -> Result<Self, NoirToolchainError> {
         let toolchain = NoirToolchain::from_env()?;
-        let prove_adapter = env::var("PRIME_BB_PROVE_ADAPTER")
-            .map_err(|_| NoirToolchainError::MissingEnv("PRIME_BB_PROVE_ADAPTER"))?;
+        let prove_adapter = env::var("MERSENNET_BB_PROVE_ADAPTER")
+            .map_err(|_| NoirToolchainError::MissingEnv("MERSENNET_BB_PROVE_ADAPTER"))?;
         Ok(Self {
             toolchain,
             prove_adapter,
@@ -731,9 +733,16 @@ fn map_toolchain_error_to_prove(error: NoirToolchainError) -> ProveError {
 
 #[cfg(feature = "prover")]
 fn encode_public_inputs(inputs: &[Fr]) -> Vec<String> {
+    // Barretenberg / Noir serialize field elements big-endian. `Fr`
+    // stores canonical little-endian bytes, so reverse before hex
+    // encoding; otherwise `bb verify` rejects the public inputs.
     inputs
         .iter()
-        .map(|value| hex::encode(value.to_bytes()))
+        .map(|value| {
+            let mut bytes = value.to_bytes();
+            bytes.reverse();
+            hex::encode(bytes)
+        })
         .collect()
 }
 

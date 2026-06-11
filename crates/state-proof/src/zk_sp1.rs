@@ -347,18 +347,18 @@ struct Sp1CliVerifyResponse {
 #[cfg(feature = "sp1")]
 impl Sp1CliBackend {
     fn from_env() -> Result<Self> {
-        let prove_adapter = env::var("PRIME_SP1_PROVE_ADAPTER")?;
-        let verify_adapter = env::var("PRIME_SP1_VERIFY_ADAPTER")?;
-        let program_elf = match env::var_os("PRIME_SP1_PROGRAM_ELF") {
+        let prove_adapter = env::var("MERSENNET_SP1_PROVE_ADAPTER")?;
+        let verify_adapter = env::var("MERSENNET_SP1_VERIFY_ADAPTER")?;
+        let program_elf = match env::var_os("MERSENNET_SP1_PROGRAM_ELF") {
             Some(path) => fs::read(path)?,
             None => Vec::new(),
         };
-        let vkey_hash = match env::var("PRIME_SP1_VKEY_HASH") {
+        let vkey_hash = match env::var("MERSENNET_SP1_VKEY_HASH") {
             Ok(value) => parse_b256_hex(&value)?,
             Err(_) if !program_elf.is_empty() => keccak256(&program_elf),
             Err(_) => keccak256(b"sp1_mersennet_mock_vkey"),
         };
-        let mode = match env::var("PRIME_SP1_MODE")
+        let mode = match env::var("MERSENNET_SP1_MODE")
             .unwrap_or_else(|_| "local".to_string())
             .to_ascii_lowercase()
             .as_str()
@@ -390,7 +390,7 @@ impl Sp1CliBackend {
             "txsHex": input.txs.iter().map(hex::encode).collect::<Vec<_>>(),
             "prevMarketStateHex": hex::encode(&input.prev_market_state),
             "vkeyHashHex": hex::encode(self.vkey_hash.as_slice()),
-            "programElfPath": env::var("PRIME_SP1_PROGRAM_ELF").ok(),
+            "programElfPath": env::var("MERSENNET_SP1_PROGRAM_ELF").ok(),
         });
         fs::write(&request_path, serde_json::to_vec_pretty(&payload)?)?;
 
@@ -434,7 +434,7 @@ impl Sp1CliBackend {
             "publicValuesHex": hex::encode(&sp1_proof.public_values),
             "proofBytesHex": hex::encode(&sp1_proof.proof_bytes),
             "proofSystem": sp1_proof.proof_system,
-            "programElfPath": env::var("PRIME_SP1_PROGRAM_ELF").ok(),
+            "programElfPath": env::var("MERSENNET_SP1_PROGRAM_ELF").ok(),
         });
         fs::write(&request_path, serde_json::to_vec_pretty(&payload)?)?;
 

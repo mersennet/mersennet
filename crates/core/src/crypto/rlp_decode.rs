@@ -25,7 +25,7 @@ pub fn decode_ethereum_tx(bytes: &[u8]) -> Result<SignedTransaction> {
     }
 }
 
-/// Decode a Prime-Chain shielded transaction. Format:
+/// Decode a Mersennet shielded transaction. Format:
 ///   `0x7E || RLP([chain_id, nonce, from, payload_bytes, y_parity, r, s])`
 /// where `payload_bytes` is the bincode-serialized
 /// [`crate::shielded_evm::ShieldedEnvelope`]. Gas fields are absent:
