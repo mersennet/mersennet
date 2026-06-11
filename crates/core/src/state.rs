@@ -785,6 +785,17 @@ impl PersistentState {
         Ok(())
     }
 
+    pub fn persisted_height(&self) -> Result<Option<u64>> {
+        match self.height_meta.get("latest_height")? {
+            Some(v) if v.len() == 8 => {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&v);
+                Ok(Some(u64::from_be_bytes(buf)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub fn prune_before(&self, height: u64) -> Result<u64> {
         let mut pruned = 0u64;
 
@@ -1041,6 +1052,10 @@ impl crate::state_trait::StateBackend for PersistentState {
 
     fn record_height(&self, height: u64, state_root: B256) -> Result<()> {
         PersistentState::record_height(self, height, state_root)
+    }
+
+    fn persisted_height(&self) -> Result<Option<u64>> {
+        PersistentState::persisted_height(self)
     }
 
     fn prune_before(&self, height: u64) -> Result<u64> {

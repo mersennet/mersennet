@@ -618,6 +618,22 @@ impl StateBackend for RedbState {
         Ok(())
     }
 
+    fn persisted_height(&self) -> Result<Option<u64>> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(HEIGHT_META) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        match table.get(b"latest_height".as_slice())? {
+            Some(value) if value.value().len() == 8 => {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(value.value());
+                Ok(Some(u64::from_be_bytes(buf)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn prune_before(&self, height: u64) -> Result<u64> {
         let mut pruned = 0u64;
 

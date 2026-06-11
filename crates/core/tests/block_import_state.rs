@@ -118,6 +118,56 @@ fn out_of_order_blocks_apply_in_sequence() {
 }
 
 #[test]
+fn chain_resumes_at_persisted_height_after_restart() {
+    let alice = Address::from_slice(&[0x77; 20]);
+    let bob = Address::from_slice(&[0x88; 20]);
+    let dir = tempdir().expect("temp dir");
+
+    let last_height;
+    let bob_balance;
+    {
+        let mut engine = Engine::new_with_state(131_071, dir.path());
+        engine.fund_account(alice, U256::from(2_000_000u64), 0);
+        engine
+            .transfer(
+                alice,
+                bob,
+                U256::from(1_000u64),
+                21_000,
+                U256::from(1u64),
+                0,
+            )
+            .expect("transfer");
+        let _b1 = engine.execute_block().expect("block 1");
+        let _b2 = engine.execute_block().expect("block 2");
+        last_height = engine.latest_height();
+        bob_balance = engine.get_balance(bob).expect("bob");
+        assert!(last_height >= 2, "should have produced at least 2 blocks");
+    }
+
+    // Reopen the same datadir. Without height restoration the chain
+    // resets to genesis (block_number = 1) while balances load from
+    // disk — a corrupt resume. It must instead pick up where it left
+    // off.
+    let mut reopened = Engine::new_with_state(131_071, dir.path());
+    assert_eq!(
+        reopened.latest_height(),
+        last_height,
+        "height must persist across restart"
+    );
+    assert_eq!(
+        reopened.block_number,
+        last_height + 1,
+        "next block must follow the persisted height, not reset to genesis"
+    );
+    assert_eq!(
+        reopened.get_balance(bob).expect("bob"),
+        bob_balance,
+        "balances must persist across restart"
+    );
+}
+
+#[test]
 fn duplicate_import_is_ignored() {
     let alice = Address::from_slice(&[0x55; 20]);
     let bob = Address::from_slice(&[0x66; 20]);

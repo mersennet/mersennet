@@ -42,6 +42,10 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn load_blocks_range(&self, from: u64, to: u64) -> Result<Vec<Block>>;
 
     fn record_height(&self, height: u64, state_root: B256) -> Result<()>;
+    /// The highest block height committed to this store, if any. Used
+    /// on startup to resume the chain at the persisted height instead
+    /// of re-producing from genesis.
+    fn persisted_height(&self) -> Result<Option<u64>>;
     fn prune_before(&self, height: u64) -> Result<u64>;
 
     fn generate_proof(&self, key: &[u8]) -> Result<StateProof>;
