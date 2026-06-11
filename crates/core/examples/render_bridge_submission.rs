@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use prime_chain::bridge_export::build_bridge_submission;
-use prime_zkp::sp1::BlockProgramOutput;
+use mersennet::bridge_export::build_bridge_submission;
+use mersennet_zkp::sp1::BlockProgramOutput;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 
@@ -30,12 +30,12 @@ fn main() -> Result<()> {
 
     let response: ProveResponse = serde_json::from_slice(&fs::read(&prove_response_path)?)
         .with_context(|| format!("read prove response at {}", prove_response_path.display()))?;
-    let public_values = hex::decode(response.public_values_hex.trim())
-        .context("invalid public_values_hex")?;
-    let output: BlockProgramOutput =
-        bincode::deserialize(&public_values).context("decode BlockProgramOutput from public_values_hex")?;
-    let proof_bytes =
-        fs::read(&proof_bytes_path).with_context(|| format!("read {}", proof_bytes_path.display()))?;
+    let public_values =
+        hex::decode(response.public_values_hex.trim()).context("invalid public_values_hex")?;
+    let output: BlockProgramOutput = bincode::deserialize(&public_values)
+        .context("decode BlockProgramOutput from public_values_hex")?;
+    let proof_bytes = fs::read(&proof_bytes_path)
+        .with_context(|| format!("read {}", proof_bytes_path.display()))?;
 
     let submission = build_bridge_submission(&output, &proof_bytes)?;
     let hex = submission.to_hex();
