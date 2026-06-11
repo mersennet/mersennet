@@ -1,6 +1,6 @@
 use crate::net_transport::{GossipConfig, TcpSync, UdpGossip};
 use anyhow::Result;
-use mersennet::consensus::Finalization;
+use mersennet::consensus::{Finalization, Reward};
 use mersennet::engine::{Block, Engine, Receipt, Transaction};
 use mersennet::network::Message as VoteMessage;
 use revm::primitives::{Address, B256, Bytes, U256};
@@ -145,6 +145,12 @@ pub struct WireReceipt {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct WireReward {
+    pub address: String,
+    pub amount: String,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct WireBlock {
     pub number: u64,
     pub chain_id: u64,
@@ -160,6 +166,12 @@ pub struct WireBlock {
     pub state_root: String,
     pub total_reward: String,
     pub burned_reward: String,
+    // Per-recipient block rewards. Carried so importing nodes credit
+    // the same proposer/validator rewards the producer applied and
+    // converge on the producer's state. Defaulted for compatibility
+    // with blocks gossiped by older nodes.
+    #[serde(default)]
+    pub rewards: Vec<WireReward>,
     pub transactions: Vec<WireTx>,
     pub receipts: Vec<WireReceipt>,
 }
@@ -292,6 +304,14 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
         state_root: hex_b256(&block.state_root),
         total_reward: hex_u256(&block.total_reward),
         burned_reward: hex_u256(&block.burned_reward),
+        rewards: block
+            .rewards
+            .iter()
+            .map(|r| WireReward {
+                address: hex_addr(&r.address),
+                amount: hex_u256(&r.amount),
+            })
+            .collect(),
         transactions: block.transactions.iter().map(tx_to_wire).collect(),
         receipts: block.receipts.iter().map(receipt_to_wire).collect(),
     }
@@ -307,6 +327,17 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
     let state_root = parse_hex_b256(&wire.state_root)?;
     let total_reward = parse_hex_u256(&wire.total_reward)?;
     let burned_reward = parse_hex_u256(&wire.burned_reward)?;
+    let rewards: Option<Vec<Reward>> = wire
+        .rewards
+        .iter()
+        .map(|r| {
+            Some(Reward {
+                address: parse_hex_addr(&r.address)?,
+                amount: parse_hex_u256(&r.amount)?,
+            })
+        })
+        .collect();
+    let rewards = rewards?;
 
     Some(Block {
         number: wire.number,
@@ -345,7 +376,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         slashes: Vec::new(),
         finality_rounds: Vec::new(),
         slashing_evidence: Vec::new(),
-        rewards: Vec::new(),
+        rewards,
         transactions: txs?,
         receipts: receipts?,
         bridge_orders_to_evm: Vec::new(),

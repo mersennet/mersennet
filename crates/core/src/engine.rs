@@ -461,6 +461,11 @@ pub struct Engine {
     pub dkg: crate::dkg::DkgCoordinator,
     /// Opt-in public contract code-hash attestations.
     pub code_publication_registry: CodePublicationRegistry,
+    /// Buffer of gossiped blocks awaiting in-order application. Blocks
+    /// can arrive out of order over UDP gossip; they are applied
+    /// strictly by ascending height so every node re-executes the same
+    /// sequence and converges on identical state (see `import_block`).
+    import_buffer: std::collections::BTreeMap<u64, Block>,
 }
 
 impl Engine {
@@ -594,6 +599,7 @@ impl Engine {
             // block-time × desired-rotation cadence.
             dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
             code_publication_registry: CodePublicationRegistry::default(),
+            import_buffer: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1681,14 +1687,134 @@ impl Engine {
         Ok(block)
     }
 
+    /// Ingest a gossiped block. Blocks are buffered and applied
+    /// strictly in ascending-height order via [`Engine::apply_imported_block`],
+    /// which re-executes the block's transactions so non-producing
+    /// nodes converge on the same state as the producer. Out-of-order
+    /// or duplicate deliveries are tolerated.
     pub fn import_block(&mut self, block: Block) {
-        if self.latest_height() < block.number {
-            self.chain.push(block.clone());
+        // Already applied or stale.
+        if block.number < self.block_number {
+            return;
         }
-        if self.block_number <= block.number {
-            self.block_number = block.number.saturating_add(1);
-            self.base_fee = block.base_fee;
+        // Too far ahead to buffer usefully — block sync will backfill
+        // the gap. Bounds memory against a flood of future blocks.
+        if block.number > self.block_number.saturating_add(512) {
+            return;
         }
+        self.import_buffer.insert(block.number, block);
+
+        // Drain consecutive buffered blocks starting at the next
+        // expected height.
+        while let Some(next) = self.import_buffer.remove(&self.block_number) {
+            let height = next.number;
+            if let Err(e) = self.apply_imported_block(next) {
+                tracing::warn!(height, error = %e, "failed to apply imported block");
+                // Stop draining; the block will be re-gossiped and
+                // retried. Do not loop on a persistently failing block.
+                break;
+            }
+        }
+    }
+
+    /// Re-execute an externally produced block against local state.
+    ///
+    /// `execute_block` *builds* a block by pulling transactions from
+    /// the local mempool; this instead replays the block's already
+    /// ordered transaction list. Because `coinbase` is never
+    /// reconfigured (it stays `Address::ZERO` on every node) and the
+    /// per-tx EVM environment is otherwise derived from values carried
+    /// by the block, every node executes the identical sequence and
+    /// arrives at the same EVM state. Proposer/validator rewards are
+    /// carried in the block and re-credited here.
+    ///
+    /// Note: market-maker quotes, intents and AA bundles that
+    /// `execute_block` generates locally are *not* re-run here. They
+    /// are no-ops on the current chain (no active markets / privacy not
+    /// activated); once trading or privacy is live this path must also
+    /// replicate them for full state-root parity.
+    fn apply_imported_block(&mut self, block: Block) -> Result<()> {
+        debug_assert_eq!(block.number, self.block_number);
+
+        // Match the producer's per-tx execution environment.
+        self.base_fee = block.base_fee;
+
+        let orders_state = std::mem::take(&mut self.orders.state);
+        let shared_orders = Arc::new(Mutex::new(orders_state));
+        precompiles::set_mersennet_orders_context(shared_orders.clone());
+        precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
+
+        let mut gas_used = 0u64;
+        for tx in &block.transactions {
+            let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
+                self.apply_shielded_tx(tx)
+            } else {
+                self.execute_tx(tx)?
+            };
+            gas_used = gas_used.saturating_add(execution.gas_used);
+            self.mempool.remove_mined(tx.from, tx.nonce);
+        }
+
+        precompiles::clear_mersennet_orders_context();
+        precompiles::set_transparent_mersennet_orders_enabled(true);
+        self.orders.state = Arc::try_unwrap(shared_orders)
+            .expect("no other Arc references")
+            .into_inner()
+            .expect("mutex not poisoned");
+
+        // Re-credit the proposer/validator rewards the producer applied.
+        self.apply_rewards(&block.rewards)?;
+
+        let state_root = self.evm.state.commit_state(
+            &self.evm.db,
+            &self.orders.state,
+            &self.bridge.orders_to_evm,
+            &self.bridge.evm_to_orders,
+            block.number,
+        )?;
+
+        if block.state_root != B256::ZERO && state_root != block.state_root {
+            tracing::warn!(
+                height = block.number,
+                local = %state_root,
+                expected = %block.state_root,
+                "imported block state root mismatch — local state diverged from producer"
+            );
+        }
+
+        // Mirror the producer's flat-state update so flat reads stay
+        // consistent with the committed EVM state.
+        {
+            let mut account_changes = Vec::new();
+            for (addr, info) in self.evm.db.accounts.iter() {
+                account_changes.push((
+                    *addr,
+                    FlatAccount {
+                        balance: info.info.balance,
+                        nonce: info.info.nonce,
+                        code_hash: info.info.code_hash,
+                        storage_root: B256::ZERO,
+                    },
+                ));
+            }
+            let changeset = StateChangeset {
+                account_changes,
+                storage_changes: Vec::new(),
+                code_changes: Vec::new(),
+            };
+            let _ = self
+                .flat_state
+                .commit_block(block.number, state_root, changeset);
+        }
+
+        self.evm.state.store_block(&block)?;
+        self.chain.push(block);
+        self.block_number = self.block_number.saturating_add(1);
+        metrics::gauge!(
+            "mersennet_height",
+            self.block_number.saturating_sub(1) as f64
+        );
+        Ok(())
     }
 
     pub fn mempool_is_empty(&self) -> bool {
