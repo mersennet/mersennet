@@ -1,1 +1,0 @@
-self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/home/user/prime-chain/website/app/layout":["static/media/558ca1a6aa3cb55e-s.p.woff2","static/media/91601dd83defba07-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';
