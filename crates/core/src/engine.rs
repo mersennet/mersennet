@@ -419,6 +419,15 @@ pub struct Engine {
     /// SP1 prover hook, and the 0x7E EIP-2718 type-byte path.
     /// `false` until the hard fork activates (see ADR-018).
     pub privacy_mode_activated: bool,
+    /// Gates the state-MUTATING transparent `mersennet_orders_*` JSON-RPC
+    /// methods (addMarket / submitOrder / cancelOrder / depositCollateral /
+    /// setMarginParams / liquidate), which act for an arbitrary `owner` with
+    /// no signature. Convenient for testnet seeding (the market-maker bot),
+    /// but it lets any caller trade or credit collateral as any address, so it
+    /// MUST be `false` on mainnet — orders should arrive only as signed txs to
+    /// the CLOB precompile. Read-only `mersennet_orders_*` queries are never
+    /// gated by this flag. Defaults to `true` to preserve testnet behavior.
+    pub allow_unsigned_orders_rpc: bool,
     /// Activation height for the privacy hard fork, set by genesis
     /// or governance. When `Some(h)` and `block_number >= h`, the
     /// engine auto-flips `privacy_mode_activated` to `true` at the
@@ -607,6 +616,7 @@ impl Engine {
             // flips the master switch (ADR-018). All subsystems live
             // in-memory; persistence is wired in Workstream A7.
             privacy_mode_activated: false,
+            allow_unsigned_orders_rpc: true,
             privacy_activation_height: None,
             sp1_proof_required: false,
             shielded_tick_event_root: B256::ZERO,
@@ -644,6 +654,18 @@ impl Engine {
     /// Block-level convenience: are shielded paths live?
     pub fn privacy_mode_activated(&self) -> bool {
         self.privacy_mode_activated
+    }
+
+    /// Enable/disable the unsigned state-mutating `mersennet_orders_*` RPC
+    /// methods. Set from `mersennet_orders.allow_unsigned_orders_rpc` at
+    /// startup; should be `false` on mainnet.
+    pub fn set_allow_unsigned_orders_rpc(&mut self, allow: bool) {
+        self.allow_unsigned_orders_rpc = allow;
+    }
+
+    /// Are unsigned, owner-spoofable `mersennet_orders_*` mutations allowed?
+    pub fn allow_unsigned_orders_rpc(&self) -> bool {
+        self.allow_unsigned_orders_rpc
     }
 
     /// Set the scheduled activation height for the privacy hard

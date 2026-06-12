@@ -57,6 +57,7 @@ fn main() -> anyhow::Result<()> {
         app_config.mersennet_orders.initial_margin_bps,
         app_config.mersennet_orders.maintenance_margin_bps,
     );
+    engine.set_allow_unsigned_orders_rpc(app_config.mersennet_orders.allow_unsigned_orders_rpc);
     let bridge_limit = if app_config.bridge.max_queue_len == 0 {
         None
     } else {
@@ -545,6 +546,7 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
         config.mersennet_orders.initial_margin_bps,
         config.mersennet_orders.maintenance_margin_bps,
     );
+    engine.set_allow_unsigned_orders_rpc(config.mersennet_orders.allow_unsigned_orders_rpc);
     let bridge_limit = if config.bridge.max_queue_len == 0 {
         None
     } else {
