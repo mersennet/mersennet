@@ -38,6 +38,22 @@ fn require_transparent_mersennet_orders_enabled(engine: &Engine) -> RpcResult<()
     }
 }
 
+/// Gate for the state-MUTATING `mersennet_orders_*` methods. These act for an
+/// arbitrary `owner`/`caller` with no signature, so they're only allowed when
+/// the operator opts in (testnet seeding). Disabled on mainnet, where orders
+/// must arrive as signed txs to the CLOB precompile. Read-only queries don't
+/// call this.
+fn require_unsigned_orders_rpc_allowed(engine: &Engine) -> RpcResult<()> {
+    if engine.allow_unsigned_orders_rpc() {
+        Ok(())
+    } else {
+        Err(RpcError::new(
+            -32604,
+            "unsigned mersennet_orders_* mutations are disabled on this node; submit a signed transaction to the CLOB precompile (0x…0100)",
+        ))
+    }
+}
+
 fn require_transparent_account_state_enabled(engine: &Engine) -> RpcResult<()> {
     if engine.privacy_mode_activated() {
         Err(RpcError::new(
@@ -112,12 +128,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         }
         "mersennet_orders_addMarket" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let (symbol, tick_size, lot_size) = parse_market_input(params)?;
             let market_id = engine.mersennet_orders_add_market(symbol, tick_size, lot_size);
             Ok(Value::String(hex_u64(market_id.0)))
         }
         "mersennet_orders_submitOrder" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let input = parse_mersennet_order_input(params)?;
             let owner = parse_address(&input.owner)?;
             let side = parse_side(&input.side)?;
@@ -139,6 +157,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         }
         "mersennet_orders_cancelOrder" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let order_id = parse_order_id(params)?;
             let cancelled = engine
                 .mersennet_orders_cancel_order(mersennet::mersennet_orders::OrderId(order_id))
@@ -165,12 +184,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         }
         "mersennet_orders_setMarginParams" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let (initial_bps, maintenance_bps) = parse_margin_params(params)?;
             engine.mersennet_orders_set_margin_params(initial_bps, maintenance_bps);
             Ok(Value::Bool(true))
         }
         "mersennet_orders_depositCollateral" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let (owner, amount) = parse_collateral_input(params)?;
             engine.mersennet_orders_deposit_collateral(owner, amount);
             Ok(Value::Bool(true))
@@ -182,6 +203,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         }
         "mersennet_orders_liquidate" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let owner = parse_owner_param(params)?;
             Ok(Value::Bool(engine.mersennet_orders_liquidate(owner)))
         }

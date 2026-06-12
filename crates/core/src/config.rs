@@ -113,6 +113,10 @@ pub struct MersennetOrdersConfig {
     pub initial_margin_bps: u64,
     #[serde(default = "default_mersennet_orders_maintenance_margin_bps")]
     pub maintenance_margin_bps: u64,
+    /// Allow the unsigned, owner-spoofable state-mutating `mersennet_orders_*`
+    /// RPC methods (testnet seeding convenience). MUST be false on mainnet.
+    #[serde(default = "default_allow_unsigned_orders_rpc")]
+    pub allow_unsigned_orders_rpc: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,6 +275,7 @@ impl Default for MersennetOrdersConfig {
         Self {
             initial_margin_bps: default_mersennet_orders_initial_margin_bps(),
             maintenance_margin_bps: default_mersennet_orders_maintenance_margin_bps(),
+            allow_unsigned_orders_rpc: default_allow_unsigned_orders_rpc(),
         }
     }
 }
@@ -454,6 +459,12 @@ fn default_mersennet_orders_initial_margin_bps() -> u64 {
 
 fn default_mersennet_orders_maintenance_margin_bps() -> u64 {
     0
+}
+
+fn default_allow_unsigned_orders_rpc() -> bool {
+    // Defaults to true to preserve testnet seeding behavior; mainnet configs
+    // should set this to false (see Engine::allow_unsigned_orders_rpc).
+    true
 }
 
 fn default_bridge_max_queue_len() -> usize {
