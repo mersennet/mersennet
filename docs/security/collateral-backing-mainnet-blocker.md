@@ -1,68 +1,60 @@
-# MAINNET BLOCKER: CLOB collateral is not backed by native MRSN
+# CLOB collateral backing — RESOLVED (precompile path)
 
-**Status:** open · **Severity:** critical (mainnet) · **Filed:** 2026-06-12
+**Status:** resolved for the precompile path · **Filed:** 2026-06-12 · **Fixed:** 2026-06-12
 
-## Summary
+## What was wrong
 
-`mersennet_orders` collateral is currently **unbacked**: depositing collateral
-credits an internal balance without removing any native MRSN from the caller,
-and (until the fix in this changeset) any RPC client could credit any address.
-This is acceptable for the testnet faucet model but **must be fixed before
-mainnet**, where collateral has to be 1:1 backed by escrowed native MRSN.
+CLOB collateral was unbacked: `depositCollateral` credited an internal balance
+without removing any native MRSN, because the orders precompile was registered as
+`Precompile::Env` and only received an immutable `&Env` — it had no handle to
+account balances.
 
-## Evidence
+## Fix
 
-- `crates/core/src/mersennet_orders.rs` — `deposit_collateral(owner, amount)`
-  simply does `account.collateral += amount`. No native balance is touched.
-- `crates/core/src/precompiles.rs` — `handle_deposit_collateral(input, gas, caller)`
-  reads the **calldata** amount and calls `state.deposit_collateral(caller, amount)`.
-  It does **not** consult `env.tx.value`, and the precompile signature has **no
-  mutable access to the EVM journaled state**, so it cannot debit the caller's
-  native balance from where it currently sits.
-- `withdraw_collateral` symmetrically credits the internal balance back without
-  paying out native MRSN.
+The orders precompile is now a stateful `ContextStatefulMut` precompile
+(`crates/core/src/precompiles.rs`), so it receives `&mut InnerEvmContext` (the
+journaled state + db) and moves native MRSN:
 
-So today: deposit calldata mints collateral from nothing; the web tx correctly
-sends `value: 0x0` because msg.value is ignored.
+- **depositCollateral** transfers `amount` native MRSN from the caller into the
+  precompile's own address (the escrow) via `journaled_state.transfer`, then
+  credits orders-side collateral. The native debit happens first; collateral is
+  only credited on success, so the two ledgers never desync. If the caller can't
+  cover it, the transfer fails and the call reverts (no collateral conjured).
+- **withdrawCollateral** validates + decrements orders-side collateral (margin
+  check), then pays the native MRSN back out of the escrow, rolling the
+  decrement back if the payout somehow fails.
+- The precompile is **non-payable**: it rejects nonzero `msg.value` (the deposit
+  amount comes from calldata and is debited explicitly), so the existing
+  `value: 0x0` web/API deposit tx is unchanged.
 
-## Mitigation already shipped (this changeset)
+Native MRSN is only *relocated* (caller ↔ escrow), so the conservation-of-value
+invariant is unchanged — no mint/burn.
 
-`mersennet_orders.allow_unsigned_orders_rpc` (default **true** on testnet, set
-**false** in `mainnet/genesis.json` + `mainnet/config/config.json.example`)
-gates the unsigned, owner-spoofable state-mutating RPC methods
-(`addMarket`, `submitOrder`, `cancelOrder`, `depositCollateral`,
-`setMarginParams`, `liquidate`). With it off, those can no longer be called
-over JSON-RPC; orders must arrive as signed txs to the CLOB precompile. Read
-queries (`getOrderBook`, `getOpenOrders`, `isLiquidatable`) remain open.
+### Verification
 
-This closes the "anyone credits/trades as anyone over RPC" hole, but does **not**
-make collateral backed — the precompile deposit path still mints from calldata.
+`crates/core/tests/collateral_backing.rs` drives a real tx through the EVM
+precompile inside `execute_block` and asserts: deposit escrows the MRSN at
+`0x…0100`; withdraw drains it; the caller is made whole minus gas; an unbackable
+deposit reverts and escrows nothing; no conservation violation. `cargo test`
+passes, and the existing orders/consensus/conservation suites still pass.
 
-## Required mainnet fix (needs design + live testing — NOT done here)
+## Migration note for redeploy
 
-Make collateral 1:1 backed by native MRSN. Two viable designs:
+- The **unsigned RPC seeding path** (`mersennet_orders_depositCollateral`, gated
+  by `allow_unsigned_orders_rpc`, used by the testnet market-maker bots) still
+  credits collateral *without* native backing — it is a direct engine call, not
+  the precompile, and is testnet-only. Bots don't withdraw, so this is harmless,
+  but any collateral created that way (or by the precompile before this change)
+  has **no escrow backing** and cannot be withdrawn through the new path.
+- **On redeploy, start from a fresh orders state** (or fund `0x…0100` with native
+  MRSN equal to any outstanding collateral) so there is no pre-existing unbacked
+  collateral whose withdrawal would hit an underfunded escrow.
 
-1. **msg.value deposit.** Give the precompile call frame access so the deposit
-   tx carries `value = amount`; the EVM transfers native MRSN into the precompile
-   account and the handler credits `collateral = call value`. `withdraw` pays
-   native MRSN back out via the journaled state. Requires plumbing the call value
-   and a host/journal handle into `mersennet_orders_precompile` (today it only
-   receives `&Bytes`, `gas`, `&Env`). The web/API deposit path must then send
-   `value = amount` instead of `0x0` (`trade/api/src/routes/collateral.js`,
-   `trade/web/src/lib/vault.ts`).
-2. **Balance-debit in the handler.** Debit `amount` from the caller's native
-   balance inside the handler (also needs journaled-state access) and hold it in
-   a module-owned escrow account.
+## Residual / future
 
-Either way this is a consensus-affecting change and must be exercised on a live
-node (deposit → trade → withdraw round-trip, conservation-of-value invariant)
-before shipping. It was deliberately **not** implemented blind in this changeset
-because it cannot be verified end-to-end without a running node.
-
-## Acceptance criteria
-
-- Depositing N MRSN reduces the caller's native balance by N and increases their
-  CLOB collateral by N; withdrawing reverses it exactly.
-- Total escrowed native MRSN == sum of all accounts' collateral at every block
-  (add to the conservation-of-value invariant check).
-- `allow_unsigned_orders_rpc = false` on mainnet (already defaulted in configs).
+- `env.tx.value` is rejected, and deposits use the calldata amount debited from
+  the caller — frame-agnostic and correct for direct txs and contract-initiated
+  calls alike.
+- The orders precompile still uses a process-global context and is not registered
+  in the parallel executor; keep CLOB execution single-threaded until that's
+  addressed.
