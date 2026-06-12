@@ -14,6 +14,44 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
+/// Push a `MersennetOrdersTrades` WS notification for every fill recorded in a
+/// freshly produced block. The matching engine records `Trade` domain events
+/// (including those from `mersennet_orders_submitOrder` RPC fills, which drain
+/// into the block at production), but nothing pushed them to subscribers — so
+/// the indexer's trade subscription, and thus trades/volume/charts, stayed
+/// empty. Payload is emitted in DECIMAL (the indexer rejects hex price/size).
+fn notify_orders_trades(
+    mgr: &mut ws::WsSubscriptionManager,
+    events: &[mersennet::events::DomainEvent],
+) {
+    use mersennet::events::{DomainEvent, MersennetOrdersEvent};
+    use mersennet::mersennet_orders::Side;
+    for ev in events {
+        if let DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade {
+            taker,
+            maker,
+            market_id,
+            side,
+            price,
+            size,
+        }) = ev
+        {
+            let trade = serde_json::json!({
+                "taker": format!("{}", taker),
+                "maker": format!("{}", maker),
+                "market_id": market_id.0,
+                "side": match side {
+                    Side::Buy => "buy",
+                    Side::Sell => "sell",
+                },
+                "price": price.to_string(),
+                "size": size.to_string(),
+            });
+            mgr.notify_trade(&trade, market_id.0);
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()
@@ -306,6 +344,7 @@ fn main() -> anyhow::Result<()> {
                                     "extraData": "0x",
                                 });
                                 mgr.notify_new_block(&block_json);
+                                notify_orders_trades(&mut mgr, &block.domain_events);
 
                                 for tx in &block.transactions {
                                     let hash = mersennet::crypto::tx_signing_hash(tx);
@@ -461,6 +500,7 @@ fn main() -> anyhow::Result<()> {
                                         "difficulty": "0x0",
                                     });
                                     mgr.notify_new_block(&block_json);
+                                    notify_orders_trades(&mut mgr, &block.domain_events);
                                     for tx in &block.transactions {
                                         let hash = mersennet::crypto::tx_signing_hash(tx);
                                         mgr.notify_new_tx(&format!("{}", hash));
