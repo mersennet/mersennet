@@ -6,6 +6,7 @@
 - Remove jump lines in whitepaper math
 - Cargo workspace restructure, testnet deployment, and full feature suite
 - Redesign tokenomics — 1B PRIM supply, 70/10/10/5/5 allocation, 13-year emission (#3)
+- Finalize Mersenne-prime tokenomics — supply cap 2^89−1 wei (~618.97M MRSN), block reward 2^61−1 wei (~2.3 MRSN), halving every 33,550,336 blocks (5th perfect number)
 - Core engine, RPC, crypto, and network improvements
 - Smart contracts — MersennetOrders, Multicall3, and Foundry setup
 - Rebrand faucet, dashboard, and docs to match Mersennet design system

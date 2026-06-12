@@ -829,7 +829,7 @@ fn run_devnet_demo(
         ProposalKind::SetTokenEconomics {
             max_supply,
             initial_reward_per_block: initial_reward,
-            halving_interval: 4_200_000,
+            halving_interval: 33_550_336,
         },
         engine.block_number,
     )?;

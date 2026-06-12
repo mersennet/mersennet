@@ -485,19 +485,18 @@ fn default_unbonding_period() -> u64 {
 }
 
 fn default_max_supply() -> String {
-    let decimals = 1_000_000_000_000_000_000u128;
-    let max = 1_000_000_000u128 * decimals;
-    max.to_string()
+    // Total supply cap: 2^89 - 1 wei (a Mersenne prime), ~618.97M MRSN at 18 decimals.
+    (2u128.pow(89) - 1).to_string()
 }
 
 fn default_initial_reward() -> String {
-    let decimals = 1_000_000_000_000_000_000u128;
-    let reward = 10u128 * decimals;
-    reward.to_string()
+    // Initial block reward: 2^61 - 1 wei (a Mersenne prime), ~2.3 MRSN at 18 decimals.
+    (2u128.pow(61) - 1).to_string()
 }
 
 fn default_halving_interval() -> u64 {
-    35_000_000
+    // 5th perfect number = 2^12 * (2^13 - 1); ~1.06 years per halving at 1s blocks.
+    33_550_336
 }
 
 fn default_rpc_addr() -> String {
