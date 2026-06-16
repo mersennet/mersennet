@@ -68,11 +68,20 @@ fn collateral_is_backed_by_native_mrsn() {
         let amount = U256::from(250_000u64);
         engine.fund_account(alice, initial, 0);
 
-        assert_eq!(engine.get_balance(escrow).unwrap(), U256::ZERO, "escrow starts empty");
+        assert_eq!(
+            engine.get_balance(escrow).unwrap(),
+            U256::ZERO,
+            "escrow starts empty"
+        );
 
         // deposit: caller -> escrow
         engine
-            .submit_tx_unsigned(precompile_tx(alice, 0, 200_000, calldata(deposit_collateral_selector(), amount)))
+            .submit_tx_unsigned(precompile_tx(
+                alice,
+                0,
+                200_000,
+                calldata(deposit_collateral_selector(), amount),
+            ))
             .expect("submit deposit");
         let dblk = engine.execute_block().expect("deposit block");
         assert_eq!(dblk.transactions.len(), 1, "deposit tx must be included");
@@ -89,11 +98,19 @@ fn collateral_is_backed_by_native_mrsn() {
             initial - amount - gas0,
             "caller debited by exactly the deposit + gas burned"
         );
-        assert!(!has_conservation_violation(&engine), "deposit conserves supply");
+        assert!(
+            !has_conservation_violation(&engine),
+            "deposit conserves supply"
+        );
 
         // withdraw: escrow -> caller (no positions, so margin allows it)
         engine
-            .submit_tx_unsigned(precompile_tx(alice, 1, 200_000, calldata(withdraw_collateral_selector(), amount)))
+            .submit_tx_unsigned(precompile_tx(
+                alice,
+                1,
+                200_000,
+                calldata(withdraw_collateral_selector(), amount),
+            ))
             .expect("submit withdraw");
         let wblk = engine.execute_block().expect("withdraw block");
         assert_eq!(wblk.transactions.len(), 1, "withdraw tx must be included");
@@ -110,7 +127,10 @@ fn collateral_is_backed_by_native_mrsn() {
             initial - gas0 - gas1,
             "caller recovers the full collateral; only gas is spent over the round-trip"
         );
-        assert!(!has_conservation_violation(&engine), "withdraw conserves supply");
+        assert!(
+            !has_conservation_violation(&engine),
+            "withdraw conserves supply"
+        );
     }
 
     // ---- Scenario 2: a deposit the caller can't cover reverts (no minting) ----
@@ -123,12 +143,20 @@ fn collateral_is_backed_by_native_mrsn() {
         engine.fund_account(bob, U256::from(70_000u64), 0);
 
         engine
-            .submit_tx_unsigned(precompile_tx(bob, 0, 60_000, calldata(deposit_collateral_selector(), U256::from(500_000u64))))
+            .submit_tx_unsigned(precompile_tx(
+                bob,
+                0,
+                60_000,
+                calldata(deposit_collateral_selector(), U256::from(500_000u64)),
+            ))
             .expect("submit deposit");
         let blk = engine.execute_block().expect("block");
 
         assert_eq!(blk.transactions.len(), 1, "tx is included (it can pay gas)");
-        assert!(!blk.receipts[0].success, "an unbackable deposit must revert");
+        assert!(
+            !blk.receipts[0].success,
+            "an unbackable deposit must revert"
+        );
         assert_eq!(
             engine.get_balance(escrow).unwrap(),
             U256::ZERO,

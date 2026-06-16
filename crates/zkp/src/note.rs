@@ -102,14 +102,14 @@ mod tests {
 
     #[test]
     fn commit_is_deterministic() {
-        let p = Poseidon::default();
+        let p = Poseidon;
         let n = make_note(100, 42);
         assert_eq!(n.commit(&p), n.commit(&p));
     }
 
     #[test]
     fn commit_is_value_sensitive() {
-        let p = Poseidon::default();
+        let p = Poseidon;
         let a = make_note(100, 42);
         let b = make_note(101, 42);
         assert_ne!(a.commit(&p), b.commit(&p));
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn nullifier_changes_with_secret() {
-        let p = Poseidon::default();
+        let p = Poseidon;
         let n = make_note(100, 42);
         let n1 = n.nullifier(&p, &Fr::from_u64(1));
         let n2 = n.nullifier(&p, &Fr::from_u64(2));
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn nullifier_changes_with_rho() {
-        let p = Poseidon::default();
+        let p = Poseidon;
         let mut a = make_note(100, 42);
         a.rho = Fr::from_u64(11);
         let mut b = make_note(100, 42);

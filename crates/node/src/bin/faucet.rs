@@ -76,7 +76,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let faucet_key = faucet_key.clone();
         let rate_limit = &rate_limit;
         let nonce_state = &nonce_state;
-        let _ = handle_request(request, rpc_url, faucet_key, chain_id, rate_limit, nonce_state);
+        let _ = handle_request(
+            request,
+            rpc_url,
+            faucet_key,
+            chain_id,
+            rate_limit,
+            nonce_state,
+        );
     }
 
     Ok(())
