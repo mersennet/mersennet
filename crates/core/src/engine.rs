@@ -581,7 +581,7 @@ impl Engine {
             base_fee: U256::from(1),
             coinbase: Address::ZERO,
             gas_limit_per_block: 30_000_000,
-            spec_id: SpecId::SHANGHAI,
+            spec_id: SpecId::PRAGUE_EOF,
             consensus: ConsensusEngine {
                 inner: Consensus::default(),
                 network: NetworkSim::default(),

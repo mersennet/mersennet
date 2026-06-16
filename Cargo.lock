@@ -2453,11 +2453,13 @@ dependencies = [
  "bitvec",
  "c-kzg",
  "cfg-if",
+ "derive_more",
  "dyn-clone",
  "enumn",
  "hashbrown 0.14.5",
  "hex",
  "kzg-rs",
+ "once_cell",
  "serde",
 ]
 
