@@ -60,7 +60,14 @@ fn transfer_block_conserves_value() {
     engine.fund_account(alice, U256::from(2_000_000u64), 0);
 
     engine
-        .transfer(alice, bob, U256::from(1_000u64), 21_000, U256::from(1u64), 0)
+        .transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
         .expect("transfer");
     engine.execute_block().expect("block");
 

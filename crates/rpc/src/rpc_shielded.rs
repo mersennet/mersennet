@@ -653,7 +653,7 @@ fn parse_shielded_order_request(
         Side::Buy => Fr::ZERO,
         Side::Sell => Fr::ONE,
     };
-    let side_hash = Poseidon::default().hash_two(&side_fr, &salt);
+    let side_hash = Poseidon.hash_two(&side_fr, &salt);
 
     let public_inputs = vec![
         anchor_root,

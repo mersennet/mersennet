@@ -65,7 +65,7 @@ impl Default for Commit {
 impl Commit {
     pub fn new() -> Self {
         Self {
-            poseidon: Poseidon::default(),
+            poseidon: Poseidon,
             #[cfg(feature = "prover")]
             inner: real::RealPedersen::new(),
         }
