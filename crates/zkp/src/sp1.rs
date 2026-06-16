@@ -429,7 +429,7 @@ pub fn execute_block_program(
         .map(|entry| (entry.address, entry.balance))
         .collect::<HashMap<_, _>>();
     let verifier = default_verifier();
-    let poseidon = Poseidon::default();
+    let poseidon = Poseidon;
 
     // Prev-state continuity: bind the proof to the claimed prior state by
     // re-deriving the prev roots from the restored witness instead of
@@ -1741,7 +1741,7 @@ mod tests {
     #[test]
     fn execute_block_program_replays_fba_market_hash() {
         let anchor_root = MerkleTree::new().root().to_bytes();
-        let side_hash = Poseidon::default().hash_two(&Fr::ZERO, &Fr::ZERO);
+        let side_hash = Poseidon.hash_two(&Fr::ZERO, &Fr::ZERO);
         let pre_tick_witness = ShieldedTickWitness {
             drained_intent_count: 0,
             decrypted_intents: vec![DecryptedIntentWitness {
@@ -1839,7 +1839,7 @@ mod tests {
             recent_roots: vec![anchor_root],
         });
         let verifier = default_verifier();
-        let poseidon = Poseidon::default();
+        let poseidon = Poseidon;
         let expected_market_state_hash =
             replay_tick_market_state(&mut state, &*verifier, &poseidon, &pre_tick_witness)
                 .unwrap()
