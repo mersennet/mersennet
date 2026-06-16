@@ -100,7 +100,7 @@ impl ShieldedState {
         if !self.is_recent_root(anchor) {
             return Err(ShieldedStateError::StaleAnchor);
         }
-        let derived = proof.root(&mersennet_zkp::poseidon::Poseidon::default());
+        let derived = proof.root(&mersennet_zkp::poseidon::Poseidon);
         if &derived != anchor {
             return Err(ShieldedStateError::InvalidMembershipProof);
         }
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn insert_then_prove_membership() {
         let mut s = ShieldedState::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let note = make_note(1000, 7);
         let cm = note.commit(&p);
         let idx = s.insert_note(cm).unwrap();
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn double_spend_is_rejected() {
         let mut s = ShieldedState::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let note = make_note(1000, 7);
         let _ = s.insert_note(note.commit(&p)).unwrap();
         let nul = note.nullifier(&p, &Fr::from_u64(0xdeadbeef));
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn proof_against_stale_anchor_is_rejected() {
         let mut s = ShieldedState::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let stale_root = s.current_root();
         // Generate proof now (against the empty tree)
         let proof = s.prove(0);
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn recent_root_within_window_is_accepted() {
         let mut s = ShieldedState::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         // Insert one note, capture root, then check it is still recent.
         let note = make_note(42, 1);
         let idx = s.insert_note(note.commit(&p)).unwrap();

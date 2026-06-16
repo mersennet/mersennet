@@ -5,11 +5,11 @@ use once_cell::sync::Lazy;
 use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
 use revm::precompile::Precompile;
-use revm::{ContextPrecompile, ContextStatefulPrecompileMut, Database, InnerEvmContext};
 use revm::primitives::{
     Address, Bytes, Env, KECCAK_EMPTY, PrecompileError, PrecompileErrors, PrecompileOutput,
     PrecompileResult, U256,
 };
+use revm::{ContextPrecompile, ContextStatefulPrecompileMut, Database, InnerEvmContext};
 
 use crate::code_publication::CodePublicationRegistry;
 use crate::mersennet_orders::{MarketId, MersennetOrdersState, OrderId, Side, TimeInForce};
@@ -583,15 +583,19 @@ fn handle_deposit_collateral(
     // the orders-side collateral, so the two ledgers never desync.
     match evmctx
         .journaled_state
-        .transfer(&caller, &MERSENNET_ORDERS_PRECOMPILE, amount, &mut evmctx.db)
+        .transfer(
+            &caller,
+            &MERSENNET_ORDERS_PRECOMPILE,
+            amount,
+            &mut evmctx.db,
+        )
         .map_err(|_| PrecompileError::other("collateral deposit: state error"))?
     {
         None => {}
         Some(_) => {
-            return Err(PrecompileError::other(
-                "insufficient MRSN balance for collateral deposit",
-            )
-            .into());
+            return Err(
+                PrecompileError::other("insufficient MRSN balance for collateral deposit").into(),
+            );
         }
     }
 
@@ -634,7 +638,12 @@ fn handle_withdraw_collateral(
     // decrement back so the two ledgers stay consistent.
     match evmctx
         .journaled_state
-        .transfer(&MERSENNET_ORDERS_PRECOMPILE, &caller, amount, &mut evmctx.db)
+        .transfer(
+            &MERSENNET_ORDERS_PRECOMPILE,
+            &caller,
+            amount,
+            &mut evmctx.db,
+        )
         .map_err(|_| PrecompileError::other("collateral withdrawal: state error"))?
     {
         None => Ok(PrecompileOutput::new(
