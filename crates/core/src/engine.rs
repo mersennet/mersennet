@@ -2449,11 +2449,19 @@ impl Engine {
     /// 4-tuple `(shielded_state_root, nullifier_root,
     /// shielded_event_root, state_proof)`.
     ///
-    /// Pre-fork, every component is the canonical zero value and the
-    /// SP1 prover is not invoked. Post-fork, the digests are taken
-    /// from the live shielded subsystems and the proof is generated
-    /// via [`crate::state_proof::prove_block`] (mock prover today,
-    /// real SP1 once `mersennet-zkp/sp1` is enabled in Workstream E).
+    /// The digests are taken from the live shielded subsystems and the
+    /// proof is generated via [`crate::state_proof::prove_block`]
+    /// (mock prover today, real SP1 once `mersennet-zkp/sp1` is
+    /// enabled in Workstream E).
+    ///
+    /// **Proof-only mode (pre-fork)**: proofs are generated and
+    /// attached from genesis so the chain is verifiable before the
+    /// privacy hard fork, WITHOUT flipping any privacy gating —
+    /// transparent RPC, precompiles and subscriptions stay enabled
+    /// until `privacy_mode_activated` is true. Pre-fork blocks carry
+    /// no shielded txs and no tick, so each proof attests an empty
+    /// shielded state transition (root continuity from block to
+    /// block).
     fn shielded_block_header(
         &self,
         transactions: &[Transaction],
@@ -2468,10 +2476,6 @@ impl Engine {
         B256,
         Option<crate::zk_proofs::StateTransitionProof>,
     )> {
-        if !self.privacy_mode_activated {
-            return Ok((B256::ZERO, B256::ZERO, B256::ZERO, None));
-        }
-
         let shielded_state_root = B256::from(self.shielded_evm.state.current_root().to_bytes());
         // Cheap nullifier-root digest: a real SMT lives in
         // ShieldedState (Workstream A7 persistence) — for header
@@ -2486,7 +2490,22 @@ impl Engine {
         // Hashing `DomainEvent` bincode here instead would use a
         // different encoding and make `prove_block`'s event-root
         // equality check fail on every block with shielded activity.
-        let host_shielded_event_root = self.shielded_tick_event_root;
+        let host_shielded_event_root = if self.privacy_mode_activated {
+            self.shielded_tick_event_root
+        } else {
+            // Proof-only mode: no shielded tick ran, so re-derive the
+            // canonical event list the SP1 executor rebuilds for an
+            // empty block (a single ShieldedRootAdvanced entry) instead
+            // of using the never-pinned tick root.
+            let events = mersennet_zkp::sp1::build_shielded_tick_events(
+                self.block_number,
+                0,
+                &[],
+                &[],
+                self.shielded_evm.state.current_root().to_bytes(),
+            );
+            B256::from(mersennet_zkp::sp1::shielded_event_root(&events))
+        };
         let market_state_hash = crate::state_proof::snapshot_subsystem_digests(
             &self.shielded_orders,
             &self.liquidation_auction,
