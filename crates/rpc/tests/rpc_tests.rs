@@ -185,6 +185,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         })
         .expect("unauthorized publish tx accepted into mempool");
     let failed_publish_block = engine
@@ -220,6 +221,7 @@ fn rpc_code_hash_attests_without_exposing_bytecode() {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         })
         .expect("authorized publish tx accepted into mempool");
     let publish_block = engine
@@ -291,6 +293,7 @@ fn rpc_mersennet_send_transaction_adds_to_mempool() {
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
 
     assert!(engine.mempool_is_empty(), "mempool starts empty");

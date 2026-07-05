@@ -303,6 +303,7 @@ mod tests {
             base_fee_be: [0u8; 32],
             coinbase: [0x11; 20],
             tx_count: 0,
+            ..Default::default()
         };
         let req = BlockProofRequest {
             block_number: 42,
@@ -334,6 +335,7 @@ mod tests {
             base_fee_be: [0u8; 32],
             coinbase: [0x11; 20],
             tx_count: 0,
+            ..Default::default()
         };
         let req = BlockProofRequest {
             block_number: 1,
@@ -372,6 +374,7 @@ mod tests {
             base_fee_be: [0u8; 32],
             coinbase: [0x11; 20],
             tx_count: 0,
+            ..Default::default()
         };
         let req = BlockProofRequest {
             block_number: 9,

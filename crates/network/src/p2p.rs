@@ -133,6 +133,11 @@ pub struct WireTx {
     pub tx_type: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shielded_payload: Option<mersennet::shielded_evm::ShieldedEnvelope>,
+    /// Canonical tx hash (keccak256 of the raw RLP) carried across
+    /// gossip so every node reports the same wallet-computed hash for a
+    /// MetaMask/ethers-submitted transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -161,6 +166,8 @@ pub struct WireBlock {
     pub base_fee: String,
     pub coinbase: String,
     pub hash: String,
+    #[serde(default)]
+    pub parent_hash: String,
     pub proposer: String,
     pub finalized: bool,
     pub state_root: String,
@@ -186,6 +193,19 @@ pub struct WireBlock {
     /// bincode-encoded `StateTransitionProof`, hex string.
     #[serde(default)]
     pub state_proof: Option<String>,
+}
+
+/// A signed BFT finality vote, gossiped on the "vote" topic. The
+/// signature is over `crypto::vote_digest(height, block_hash)`; the
+/// signer address is recovered on receipt and must be a known
+/// validator for the vote to count.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WireVote {
+    pub height: u64,
+    pub block_hash: String,
+    pub r: String,
+    pub s: String,
+    pub y_parity: u64,
 }
 
 fn hex_u256(v: &U256) -> String {
@@ -247,6 +267,7 @@ pub fn tx_to_wire(tx: &Transaction) -> WireTx {
         sig_v,
         tx_type: tx.tx_type,
         shielded_payload: tx.shielded_payload.clone(),
+        hash: tx.hash.map(|h| hex_b256(&h)),
     }
 }
 
@@ -274,6 +295,7 @@ pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
         signature,
         tx_type: wire.tx_type,
         shielded_payload: wire.shielded_payload.clone(),
+        hash: wire.hash.as_deref().and_then(parse_hex_b256),
     })
 }
 
@@ -311,6 +333,7 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
         base_fee: hex_u256(&block.base_fee),
         coinbase: hex_addr(&block.coinbase),
         hash: hex_b256(&block.hash),
+        parent_hash: hex_b256(&block.parent_hash),
         proposer: hex_addr(&block.proposer),
         finalized: block.finalized,
         state_root: hex_b256(&block.state_root),
@@ -342,6 +365,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
     let receipts: Option<Vec<Receipt>> = wire.receipts.iter().map(wire_to_receipt).collect();
     let base_fee = parse_hex_u256(&wire.base_fee)?;
     let hash = parse_hex_b256(&wire.hash)?;
+    let parent_hash = parse_hex_b256(&wire.parent_hash).unwrap_or(B256::ZERO);
     let proposer = parse_hex_addr(&wire.proposer)?;
     let coinbase = parse_hex_addr(&wire.coinbase)?;
     let state_root = parse_hex_b256(&wire.state_root)?;
@@ -372,6 +396,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         base_fee,
         coinbase,
         hash,
+        parent_hash,
         proposer,
         finalized: wire.finalized,
         state_root,
@@ -493,6 +518,11 @@ impl NetworkNode {
                                     tracing::debug!(reason = err.code(), "dropped relayed tx");
                                 }
                             }
+                            "vote" => {
+                                if let Ok(wire) = serde_json::from_slice::<WireVote>(&packet.data) {
+                                    handle_vote(&engine, &wire);
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -539,9 +569,14 @@ impl NetworkNode {
                                     1
                                 };
                                 let height = eng.latest_height();
-                                let blocks: Vec<WireBlock> = (from..=height)
-                                    .filter_map(|n| eng.block_by_number(n))
-                                    .map(block_to_wire)
+                                // Serve up to a bounded batch per request.
+                                // Use get_block so heights below the
+                                // in-memory window are read from disk — a
+                                // peer far behind can still be caught up.
+                                let batch_end = height.min(from.saturating_add(255));
+                                let blocks: Vec<WireBlock> = (from..=batch_end)
+                                    .filter_map(|n| eng.get_block(n))
+                                    .map(|b| block_to_wire(&b))
                                     .collect();
                                 let data = serde_json::to_vec(&blocks).unwrap_or_default();
                                 let gossip_pkt = crate::net_transport::GossipPacket {
@@ -671,12 +706,58 @@ impl NetworkNode {
         gossip.broadcast(&packet)
     }
 
+    /// Gossip a signed BFT finality vote for `(height, block_hash)`.
+    pub fn broadcast_vote(
+        &self,
+        height: u64,
+        block_hash: B256,
+        r: U256,
+        s: U256,
+        y_parity: u64,
+    ) -> Result<()> {
+        let wire = WireVote {
+            height,
+            block_hash: hex_b256(&block_hash),
+            r: hex_u256(&r),
+            s: hex_u256(&s),
+            y_parity,
+        };
+        let data = serde_json::to_vec(&wire)?;
+        let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let packet = gossip.new_packet("vote", data, 3);
+        gossip.broadcast(&packet)
+    }
+
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+}
+
+/// Verify a gossiped finality vote and, if the signer is a known
+/// validator, record it in the engine. Recovering the signer from the
+/// signature means a forged vote (bad signature) simply fails to
+/// recover a validator address and is dropped.
+fn handle_vote(engine: &Arc<Mutex<Engine>>, wire: &WireVote) {
+    let Some(block_hash) = parse_hex_b256(&wire.block_hash) else {
+        return;
+    };
+    let Some(r) = parse_hex_u256(&wire.r) else {
+        return;
+    };
+    let Some(s) = parse_hex_u256(&wire.s) else {
+        return;
+    };
+    let signer =
+        match mersennet::crypto::recover_vote_signer(wire.height, block_hash, r, s, wire.y_parity) {
+            Ok(addr) => addr,
+            Err(_) => return,
+        };
+    if let Ok(mut eng) = engine.lock() {
+        eng.record_finality_vote(wire.height, block_hash, signer);
     }
 }
 

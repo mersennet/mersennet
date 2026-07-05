@@ -187,6 +187,7 @@ fn parallel_execution_matches_sequential() {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         };
         engine.submit_tx_unsigned(tx).expect("submit");
     }
@@ -220,6 +221,7 @@ fn parallel_execution_matches_sequential() {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         };
         engine2.submit_tx_unsigned(tx).expect("submit");
     }

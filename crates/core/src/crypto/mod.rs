@@ -218,6 +218,7 @@ fn decode_mersennet_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         signature: Some((r, s, v)),
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
     let signed_temp = SignedTransaction {
         tx: tx.clone(),
@@ -363,6 +364,56 @@ fn rlp_encode_string(s: &[u8]) -> Vec<u8> {
     out
 }
 
+// ───── BFT consensus vote signing (Workstream A) ─────
+
+/// Domain-separated digest a validator signs to vote for a block at a
+/// given height in the BFT finality protocol.
+pub fn vote_digest(height: u64, block_hash: B256) -> B256 {
+    const DOMAIN: &[u8] = b"MERSENNET_BFT_VOTE_V1";
+    let mut buf = Vec::with_capacity(DOMAIN.len() + 8 + 32);
+    buf.extend_from_slice(DOMAIN);
+    buf.extend_from_slice(&height.to_be_bytes());
+    buf.extend_from_slice(block_hash.as_slice());
+    keccak256(buf)
+}
+
+/// Sign a finality vote. Returns `(r, s, y_parity)`.
+pub fn sign_vote(height: u64, block_hash: B256, key: &SigningKey) -> (U256, U256, u64) {
+    let digest = vote_digest(height, block_hash);
+    let (sig, recovery_id): (Signature, RecoveryId) = key
+        .sign_prehash(digest.as_slice())
+        .expect("vote signing failed");
+    let sig_bytes = sig.to_bytes();
+    let r = U256::from_be_slice(&sig_bytes[..32]);
+    let s = U256::from_be_slice(&sig_bytes[32..64]);
+    (r, s, recovery_id.to_byte() as u64)
+}
+
+/// Recover the validator address that produced a finality-vote signature.
+pub fn recover_vote_signer(
+    height: u64,
+    block_hash: B256,
+    r: U256,
+    s: U256,
+    y_parity: u64,
+) -> Result<Address> {
+    if y_parity > 1 {
+        return Err(anyhow!("invalid vote y_parity: {y_parity}"));
+    }
+    let digest = vote_digest(height, block_hash);
+    let recovery_id =
+        RecoveryId::try_from(y_parity as u8).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes[..32].copy_from_slice(&r.to_be_bytes::<32>());
+    sig_bytes[32..64].copy_from_slice(&s.to_be_bytes::<32>());
+    let signature = Signature::from_bytes((&sig_bytes).into())
+        .map_err(|e| anyhow!("invalid vote signature: {e}"))?;
+    let verifying_key =
+        VerifyingKey::recover_from_prehash(digest.as_slice(), &signature, recovery_id)
+            .map_err(|e| anyhow!("vote ECDSA recovery failed: {e}"))?;
+    Ok(public_key_to_address(&verifying_key))
+}
+
 /// Generate a random signing key and its corresponding address (useful for tests).
 pub fn generate_keypair() -> (SigningKey, Address) {
     let signing_key = SigningKey::random(&mut rand::thread_rng());
@@ -388,6 +439,7 @@ mod tests {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         }
     }
 

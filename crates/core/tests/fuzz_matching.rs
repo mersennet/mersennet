@@ -188,6 +188,7 @@ fn fuzz_parallel_determinism() {
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,
+                hash: None,
             };
             txs.push(tx);
         }
@@ -282,6 +283,7 @@ fn fuzz_mempool_ordering() {
                 signature: None,
                 tx_type: 0,
                 shielded_payload: None,
+                hash: None,
             };
             let account_nonce = rng.r#gen::<u32>() % (nonce + 1);
             if mempool

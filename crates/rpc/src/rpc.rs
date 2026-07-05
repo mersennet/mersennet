@@ -999,6 +999,7 @@ fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     })
 }
 
@@ -1166,15 +1167,13 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
     BlockDto {
         number: block_number.clone(),
         hash: block_hash,
-        parent_hash: if block.number > 0 {
-            hex_b256(B256::from(U256::from(block.number - 1)))
-        } else {
-            hex_b256(B256::ZERO)
-        },
+        // Real hash-linked parent (was a placeholder derived from the
+        // block number). Genesis carries a zero parent.
+        parent_hash: hex_b256(block.parent_hash),
         nonce: "0x0000000000000000".to_string(),
         sha3_uncles: hex_b256(B256::ZERO),
         logs_bloom: format!("0x{}", "0".repeat(512)),
-        transactions_root: hex_b256(block.state_root),
+        transactions_root: hex_b256(block.hash),
         state_root: hex_b256(block.state_root),
         receipts_root: hex_b256(B256::ZERO),
         miner: hex_address(block.coinbase),
@@ -1688,6 +1687,7 @@ mod tests {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         })
         .expect("tx accepted");
         let block = eng.execute_block().expect("block executed");
@@ -1750,6 +1750,12 @@ mod tests {
 }
 
 fn tx_hash(tx: &Transaction) -> B256 {
+    // Prefer the canonical hash captured at decode time (keccak256 of the
+    // raw RLP envelope) so MetaMask/ethers-submitted txs are found by the
+    // exact hash the wallet computed.
+    if let Some(h) = tx.hash {
+        return h;
+    }
     let mut payload = Vec::new();
     payload.extend_from_slice(tx.from.as_slice());
     payload.push(if tx.to.is_some() { 1 } else { 0 });
