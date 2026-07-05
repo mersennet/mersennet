@@ -512,7 +512,15 @@ impl PersistentState {
 
     pub fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()> {
         self.mersennet_orders.clear()?;
-        let markets = state
+        // CRITICAL: markets/orders/accounts/books are HashMaps, whose
+        // iteration order is non-deterministic across processes. This
+        // snapshot is bincode-serialized and folded into the state root,
+        // so unsorted iteration made two nodes with identical logical
+        // CLOB state compute DIFFERENT state roots — the root cause of
+        // the perpetual `imported block state root mismatch`. Sort every
+        // collection by a stable key so the bytes (and root) are
+        // deterministic.
+        let mut markets: Vec<MarketRecord> = state
             .markets
             .values()
             .map(|m| MarketRecord {
@@ -524,7 +532,8 @@ impl PersistentState {
                 status: encode_market_status(m.status),
             })
             .collect();
-        let orders = state
+        markets.sort_by_key(|m| m.id);
+        let mut orders: Vec<OrderRecord> = state
             .orders
             .values()
             .map(|o| OrderRecord {
@@ -537,11 +546,12 @@ impl PersistentState {
                 tif: encode_tif(o.tif),
             })
             .collect();
-        let accounts = state
+        orders.sort_by_key(|o| o.id);
+        let mut accounts: Vec<(Vec<u8>, AccountRecordV2)> = state
             .accounts
             .iter()
             .map(|(addr, acct)| {
-                let positions = acct
+                let mut positions: Vec<(u64, PositionRecord)> = acct
                     .positions
                     .iter()
                     .map(|(market_id, pos)| {
@@ -555,17 +565,21 @@ impl PersistentState {
                         )
                     })
                     .collect();
+                positions.sort_by_key(|(mid, _)| *mid);
+                let mut open_orders: Vec<u64> = acct.open_orders.iter().map(|id| id.0).collect();
+                open_orders.sort_unstable();
                 (
                     addr.as_slice().to_vec(),
                     AccountRecordV2 {
                         collateral: acct.collateral.to_be_bytes(),
-                        open_orders: acct.open_orders.iter().map(|id| id.0).collect(),
+                        open_orders,
                         positions,
                     },
                 )
             })
             .collect();
-        let books = state
+        accounts.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut books: Vec<(u64, OrderBookRecord)> = state
             .books
             .iter()
             .map(|(market_id, book)| {
@@ -592,6 +606,7 @@ impl PersistentState {
                 (market_id.0, OrderBookRecord { bids, asks })
             })
             .collect();
+        books.sort_by_key(|(mid, _)| *mid);
 
         let snapshot = MersennetOrdersSnapshot {
             next_order_id: state.next_order_id,

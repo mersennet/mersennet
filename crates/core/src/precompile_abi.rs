@@ -251,3 +251,36 @@ pub fn encode_i128(val: i128) -> [u8; 32] {
     word[16..32].copy_from_slice(&bytes);
     word
 }
+
+// ── Calldata builders for server-routed CLOB txs ──
+// These produce the `selector || abi-words` calldata the precompile
+// handlers decode via read_word(), so the unsigned order RPC can submit
+// the operation through the mempool instead of mutating state directly.
+
+/// placeOrder(uint64 marketId, bool isBuy, uint256 price, uint256 size, uint8 tif)
+pub fn encode_place_order(market_id: u64, is_buy: bool, price: U256, size: U256, tif: u8) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 32 * 5);
+    out.extend_from_slice(&place_order_selector());
+    out.extend_from_slice(&encode_u256(U256::from(market_id)));
+    out.extend_from_slice(&encode_bool(is_buy));
+    out.extend_from_slice(&encode_u256(price));
+    out.extend_from_slice(&encode_u256(size));
+    out.extend_from_slice(&encode_u256(U256::from(tif as u64)));
+    out
+}
+
+/// cancelOrder(uint256 orderId)
+pub fn encode_cancel_order(order_id: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 32);
+    out.extend_from_slice(&cancel_order_selector());
+    out.extend_from_slice(&encode_u256(U256::from(order_id)));
+    out
+}
+
+/// depositCollateral(uint256 amount)
+pub fn encode_deposit_collateral(amount: U256) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 32);
+    out.extend_from_slice(&deposit_collateral_selector());
+    out.extend_from_slice(&encode_u256(amount));
+    out
+}
