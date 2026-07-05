@@ -131,6 +131,16 @@ pub struct GenesisConfig {
     pub accounts: Vec<GenesisAccount>,
     #[serde(default)]
     pub validators: Vec<GenesisValidator>,
+    /// CLOB markets to create deterministically at genesis on every node.
+    /// Seeding markets here (instead of via the unsigned `addMarket` RPC,
+    /// which mutates one node's local state only) is what makes the order
+    /// book consensus-deterministic under single-leader production.
+    #[serde(default)]
+    pub markets: Vec<GenesisMarket>,
+    /// Collateral to credit at genesis (e.g. the market-maker owner) so
+    /// it can quote immediately without an out-of-band deposit.
+    #[serde(default)]
+    pub collateral: Vec<GenesisCollateral>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,6 +155,30 @@ pub struct GenesisAccount {
 pub struct GenesisValidator {
     pub address: String,
     pub stake: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisMarket {
+    pub symbol: String,
+    /// Price tick size (decimal string). Defaults to 1.
+    #[serde(default = "default_market_tick")]
+    pub tick_size: String,
+    /// Lot size (decimal string). Defaults to 1.
+    #[serde(default = "default_market_lot")]
+    pub lot_size: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisCollateral {
+    pub owner: String,
+    pub amount: String,
+}
+
+fn default_market_tick() -> String {
+    "1".to_string()
+}
+fn default_market_lot() -> String {
+    "1".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

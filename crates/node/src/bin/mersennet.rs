@@ -120,6 +120,25 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
+    // Seed CLOB markets + collateral deterministically at genesis so the
+    // order book is identical on every node (consensus-deterministic
+    // under single-leader production). Only applied when starting a fresh
+    // chain (block_number == 1); a resumed chain already has them.
+    if engine.latest_height() == 0 {
+        for m in &app_config.genesis.markets {
+            let tick = parse_u256(&m.tick_size).unwrap_or(U256::from(1));
+            let lot = parse_u256(&m.lot_size).unwrap_or(U256::from(1));
+            let id = engine.mersennet_orders_add_market(m.symbol.clone(), tick, lot);
+            info!(symbol = %m.symbol, market_id = id.0, "seeded genesis market");
+        }
+        for c in &app_config.genesis.collateral {
+            if let (Ok(owner), Ok(amount)) = (parse_address(&c.owner), parse_u256(&c.amount)) {
+                engine.mersennet_orders_deposit_collateral(owner, amount);
+                info!(owner = %c.owner, amount = %c.amount, "seeded genesis collateral");
+            }
+        }
+    }
+
     engine.set_unbonding_period(app_config.slashing.unbonding_period);
     engine.set_fee_market_params(
         app_config.engine.gas_limit_per_block,
