@@ -315,6 +315,16 @@ impl Mempool {
         self.pending.keys().copied().collect()
     }
 
+    /// Highest nonce currently queued (pending or base-fee) for a sender,
+    /// across both pools. Used to assign the next nonce for
+    /// server-submitted CLOB txs so rapid-fire orders don't collide.
+    pub fn highest_queued_nonce(&self, sender: Address) -> Option<u64> {
+        [&self.pending, &self.queued, &self.base_fee_pool]
+            .iter()
+            .filter_map(|pool| pool.get(&sender).and_then(|q| q.keys().max().copied()))
+            .max()
+    }
+
     pub fn ready_gas(&self, sender: Address, nonce: u64) -> Option<u64> {
         self.pending
             .get(&sender)

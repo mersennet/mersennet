@@ -1079,6 +1079,60 @@ impl Engine {
         ));
     }
 
+    /// The next nonce to assign a server-submitted CLOB transaction for
+    /// `owner`: one past the highest of (account nonce, highest queued
+    /// mempool nonce). Keeps rapid-fire order txs from colliding.
+    pub fn next_clob_nonce(&mut self, owner: Address) -> u64 {
+        let account_nonce = self.get_account_nonce(owner).unwrap_or(0);
+        match self.mempool.highest_queued_nonce(owner) {
+            Some(h) => h.saturating_add(1).max(account_nonce),
+            None => account_nonce,
+        }
+    }
+
+    /// Route a CLOB operation through consensus: build an unsigned
+    /// precompile-call transaction (to 0x…0100) and submit it to the
+    /// mempool. It gossips to the leader, is included in a block, and
+    /// executes via the precompile deterministically on every node.
+    ///
+    /// This replaces the direct-state-mutation `mersennet_orders_*` RPC
+    /// path, which mutated only the receiving node's local state — under
+    /// single-leader BFT the leader never saw it and the CLOB diverged.
+    /// The caller must be funded for gas + collateral. `value` is always
+    /// zero (the precompile is non-payable).
+    pub fn submit_orders_call(
+        &mut self,
+        owner: Address,
+        calldata: Vec<u8>,
+        precompile_gas: u64,
+    ) -> Result<B256, TxRejection> {
+        let nonce = self.next_clob_nonce(owner);
+        // The EVM charges intrinsic gas (21k + calldata) before the
+        // precompile runs, so the tx gas limit must cover intrinsic +
+        // the precompile's internal gas requirement + headroom, or the
+        // precompile OOGs and the order silently reverts.
+        let gas_limit = 21_000 + calldata.len() as u64 * 16 + precompile_gas.saturating_mul(2) + 30_000;
+        let tx = Transaction {
+            from: owner,
+            to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            value: U256::ZERO,
+            data: revm::primitives::Bytes::from(calldata),
+            gas_limit,
+            gas_price: self.base_fee.max(U256::from(1)),
+            nonce,
+            chain_id: Some(self.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        };
+        // Use the same hash the tx index/lookup will compute, so the
+        // returned txHash resolves via eth_getTransactionByHash.
+        let hash = crate::crypto::tx_signing_hash(&tx);
+        self.submit_tx_unsigned(tx)?;
+        Ok(hash)
+    }
+
     #[allow(dead_code)]
     pub fn mersennet_orders_is_liquidatable(&self, owner: Address) -> bool {
         self.orders.state.is_liquidatable(owner)

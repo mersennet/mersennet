@@ -27,6 +27,15 @@ impl RpcError {
     }
 }
 
+/// Genesis-funded system address used as the caller for consensus-routed
+/// CLOB operations that are not owner-scoped (cancelOrder). Must be
+/// funded in the genesis config.
+fn system_clob_address() -> Address {
+    let mut a = [0u8; 20];
+    a[19] = 0x01;
+    Address::from(a)
+}
+
 fn require_transparent_mersennet_orders_enabled(engine: &Engine) -> RpcResult<()> {
     if engine.privacy_mode_activated() {
         Err(RpcError::new(
@@ -142,27 +151,47 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             let price = parse_hex_u256(&input.price)?;
             let size = parse_hex_u256(&input.size)?;
             let tif = parse_tif(input.tif.as_deref())?;
-            let outcome = engine
-                .mersennet_orders_submit_order(
-                    owner,
-                    mersennet::mersennet_orders::MarketId(input.market_id),
-                    side,
-                    price,
-                    size,
-                    tif,
-                )
-                .map_err(map_mersennet_orders_error)?;
-            Ok(serde_json::to_value(order_outcome_to_dto(outcome))
-                .map_err(|err| RpcError::new(-32000, err.to_string()))?)
+            // Route through consensus: build an unsigned placeOrder
+            // precompile tx and submit it to the mempool. It gossips to
+            // the leader and executes deterministically on every node,
+            // so the order book is consensus-consistent (the old direct
+            // state mutation only touched the receiving node).
+            let is_buy = matches!(side, Side::Buy);
+            let tif_byte = match tif {
+                TimeInForce::Gtc => 0u8,
+                TimeInForce::Ioc => 1u8,
+                TimeInForce::Fok => 2u8,
+            };
+            let calldata = mersennet::precompile_abi::encode_place_order(
+                input.market_id,
+                is_buy,
+                price,
+                size,
+                tif_byte,
+            );
+            let tx_hash = engine
+                .submit_orders_call(owner, calldata, mersennet::precompile_abi::GAS_PLACE_ORDER)
+                .map_err(|e| RpcError::new(-32005, format!("order rejected: {}", e.code())))?;
+            Ok(json!({ "accepted": true, "txHash": hex_b256(tx_hash) }))
         }
         "mersennet_orders_cancelOrder" => {
             require_transparent_mersennet_orders_enabled(engine)?;
             require_unsigned_orders_rpc_allowed(engine)?;
             let order_id = parse_order_id(params)?;
-            let cancelled = engine
-                .mersennet_orders_cancel_order(mersennet::mersennet_orders::OrderId(order_id))
-                .is_some();
-            Ok(Value::Bool(cancelled))
+            // cancelOrder(uint256) is not owner-scoped in the precompile,
+            // so route it as a tx from the genesis-funded system CLOB
+            // address (0x…01). It gossips to the leader and cancels in a
+            // block deterministically, keeping the book consensus-
+            // consistent.
+            let calldata = mersennet::precompile_abi::encode_cancel_order(order_id);
+            let tx_hash = engine
+                .submit_orders_call(
+                    system_clob_address(),
+                    calldata,
+                    mersennet::precompile_abi::GAS_CANCEL_ORDER,
+                )
+                .map_err(|e| RpcError::new(-32005, format!("cancel rejected: {}", e.code())))?;
+            Ok(json!({ "accepted": true, "txHash": hex_b256(tx_hash) }))
         }
         "mersennet_orders_getOrderBook" => {
             require_transparent_mersennet_orders_enabled(engine)?;
@@ -193,8 +222,18 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             require_transparent_mersennet_orders_enabled(engine)?;
             require_unsigned_orders_rpc_allowed(engine)?;
             let (owner, amount) = parse_collateral_input(params)?;
-            engine.mersennet_orders_deposit_collateral(owner, amount);
-            Ok(Value::Bool(true))
+            // Route through consensus as a precompile depositCollateral
+            // tx from the owner (debits their native MRSN into escrow —
+            // 1:1 backed). Deterministic across nodes.
+            let calldata = mersennet::precompile_abi::encode_deposit_collateral(amount);
+            let tx_hash = engine
+                .submit_orders_call(
+                    owner,
+                    calldata,
+                    mersennet::precompile_abi::GAS_DEPOSIT_COLLATERAL,
+                )
+                .map_err(|e| RpcError::new(-32005, format!("deposit rejected: {}", e.code())))?;
+            Ok(json!({ "accepted": true, "txHash": hex_b256(tx_hash) }))
         }
         "mersennet_orders_isLiquidatable" => {
             require_transparent_mersennet_orders_enabled(engine)?;
