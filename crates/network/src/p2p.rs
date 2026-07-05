@@ -513,9 +513,23 @@ impl NetworkNode {
                                 if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
                                     && let Some(tx) = wire_to_tx(&wire)
                                     && let Ok(mut eng) = engine.lock()
-                                    && let Err(err) = eng.submit_tx(tx)
                                 {
-                                    tracing::debug!(reason = err.code(), "dropped relayed tx");
+                                    // Signed txs go through signature
+                                    // verification; unsigned txs (e.g.
+                                    // consensus-routed CLOB order/collateral
+                                    // ops) are accepted only when the node
+                                    // permits the unsigned-orders path, so
+                                    // they reach the leader and mine.
+                                    let res = if tx.signature.is_some() {
+                                        eng.submit_tx(tx)
+                                    } else if eng.allow_unsigned_orders_rpc() {
+                                        eng.submit_tx_unsigned(tx)
+                                    } else {
+                                        Ok(())
+                                    };
+                                    if let Err(err) = res {
+                                        tracing::debug!(reason = err.code(), "dropped relayed tx");
+                                    }
                                 }
                             }
                             "vote" => {
