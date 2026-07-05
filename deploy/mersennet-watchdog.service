@@ -1,0 +1,40 @@
+# Mersennet chain-halt watchdog.
+#
+# Polls the local node RPC and alerts (via webhook) on RPC-unreachable or
+# a stalled head. Dependency-free Node.js (>= 18). Install:
+#
+#   cp deploy/chain-watchdog.js /opt/mersennet/bin/chain-watchdog.js
+#   cp deploy/mersennet-watchdog.service /etc/systemd/system/
+#   # set WEBHOOK_URL in the drop-in or edit below
+#   systemctl daemon-reload && systemctl enable --now mersennet-watchdog
+#
+# Configure the webhook without editing this unit:
+#   systemctl edit mersennet-watchdog
+#   [Service]
+#   Environment=WEBHOOK_URL=https://hooks.slack.com/services/...
+#   Environment=WEBHOOK_KIND=slack
+
+[Unit]
+Description=Mersennet chain-halt watchdog
+After=network-online.target mersennet.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Uses the bash+curl watchdog (no Node.js dependency) so it runs on
+# minimal validator hosts. A Node.js variant (chain-watchdog.js) is also
+# provided for hosts that have Node and prefer it.
+ExecStart=/opt/mersennet/bin/chain-watchdog.sh
+Environment=RPC_URL=http://127.0.0.1:8545
+Environment=POLL_SECONDS=15
+Environment=STALL_SECONDS=60
+Environment=LABEL=mersennet-testnet
+Environment=STATUS_FILE=/var/run/mersennet-watchdog.json
+Restart=always
+RestartSec=10
+# The watchdog is a lightweight poller; cap it so it can never contend
+# with the node for memory.
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

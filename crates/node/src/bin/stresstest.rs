@@ -160,6 +160,7 @@ fn send_signed_tx(
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
     let signed = sign_transaction(&tx, key);
     let raw = encode_raw_signed_tx(&signed);
@@ -389,6 +390,7 @@ fn scenario_duplicate_txs(rpc: &str, chain_id: u64) -> ScenarioResult {
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
 
     let signed = sign_transaction(&tx, &key);
@@ -454,6 +456,7 @@ fn scenario_invalid_txs(rpc: &str, chain_id: u64) -> ScenarioResult {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         };
         let signed = sign_transaction(&tx, &key);
         let mut raw = encode_raw_signed_tx(&signed);

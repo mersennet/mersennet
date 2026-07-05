@@ -26,6 +26,7 @@ fn mempool_randomized_inserts_do_not_exceed_limits() {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         };
         let _ = mempool.insert(tx, base_fee, 0);
         assert!(mempool.len() <= max_total);
@@ -48,6 +49,7 @@ fn pending_snapshot_is_non_consuming() {
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
     mempool.insert(tx.clone(), U256::from(1), 0).unwrap();
     mempool.promote(U256::from(1));

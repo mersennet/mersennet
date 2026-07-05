@@ -26,6 +26,7 @@ fn sample_signed_tx() -> Transaction {
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
     // `sign_transaction` returns a SignedTransaction whose inner `tx`
     // carries the populated `signature` field.

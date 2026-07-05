@@ -44,6 +44,7 @@ fn precompile_tx(from: Address, nonce: u64, gas_limit: u64, data: Bytes) -> Tran
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     }
 }
 

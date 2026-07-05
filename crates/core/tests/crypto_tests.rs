@@ -17,6 +17,7 @@ fn sample_tx(from: Address, chain_id: u64) -> Transaction {
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     }
 }
 

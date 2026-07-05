@@ -14,7 +14,7 @@ pub fn decode_ethereum_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         return Err(anyhow!("empty transaction"));
     }
 
-    match bytes[0] {
+    let mut signed = match bytes[0] {
         0x01 => decode_eip2930(&bytes[1..]),
         0x02 => decode_eip1559(&bytes[1..]),
         // Mersennet shielded transaction (EIP-2718 type byte 0x7E).
@@ -22,7 +22,12 @@ pub fn decode_ethereum_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         0x7E => decode_shielded(&bytes[1..]),
         b if b >= 0xc0 => decode_legacy(bytes),
         _ => Err(anyhow!("unknown transaction type: 0x{:02x}", bytes[0])),
-    }
+    }?;
+    // The canonical transaction hash is keccak256 of the raw envelope —
+    // exactly what MetaMask/ethers compute — so the wallet can track the
+    // tx and `eth_getTransactionByHash` finds it.
+    signed.tx.hash = Some(keccak256(bytes));
+    Ok(signed)
 }
 
 /// Decode a Mersennet shielded transaction. Format:
@@ -67,6 +72,7 @@ fn decode_shielded(payload: &[u8]) -> Result<SignedTransaction> {
         signature: Some((r, s, y_parity as u64)),
         tx_type: 0x7E,
         shielded_payload: Some(envelope),
+        hash: None,
     };
 
     Ok(SignedTransaction {
@@ -137,6 +143,7 @@ fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
         signature: Some((r, s, v_raw)),
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
 
     Ok(SignedTransaction {
@@ -192,6 +199,7 @@ fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
         signature: Some((r, s, v_val)),
         tx_type: 1,
         shielded_payload: None,
+        hash: None,
     };
 
     Ok(SignedTransaction {
@@ -249,6 +257,7 @@ fn decode_eip1559(payload: &[u8]) -> Result<SignedTransaction> {
         signature: Some((r, s, v_val)),
         tx_type: 2,
         shielded_payload: None,
+        hash: None,
     };
 
     Ok(SignedTransaction {

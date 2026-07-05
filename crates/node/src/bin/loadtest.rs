@@ -350,6 +350,7 @@ fn send_transfer(
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
 
     let signed = sign_transaction(&tx, &from.key);
@@ -407,6 +408,7 @@ fn send_contract_deploy(
         signature: None,
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
 
     let signed = sign_transaction(&tx, &from.key);
