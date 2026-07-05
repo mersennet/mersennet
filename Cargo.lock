@@ -1732,6 +1732,7 @@ name = "mersennet-network"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "hex",
  "mersennet",
  "metrics",

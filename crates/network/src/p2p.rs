@@ -174,6 +174,18 @@ pub struct WireBlock {
     pub rewards: Vec<WireReward>,
     pub transactions: Vec<WireTx>,
     pub receipts: Vec<WireReceipt>,
+    // Shielded header fields + SP1 state-transition proof. Optional and
+    // defaulted so blocks from older nodes (which never sent them) still
+    // decode; without these the proof only existed on the producing node.
+    #[serde(default)]
+    pub shielded_state_root: Option<String>,
+    #[serde(default)]
+    pub nullifier_root: Option<String>,
+    #[serde(default)]
+    pub shielded_event_root: Option<String>,
+    /// bincode-encoded `StateTransitionProof`, hex string.
+    #[serde(default)]
+    pub state_proof: Option<String>,
 }
 
 fn hex_u256(v: &U256) -> String {
@@ -314,6 +326,14 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
             .collect(),
         transactions: block.transactions.iter().map(tx_to_wire).collect(),
         receipts: block.receipts.iter().map(receipt_to_wire).collect(),
+        shielded_state_root: Some(hex_b256(&block.shielded_state_root)),
+        nullifier_root: Some(hex_b256(&block.nullifier_root)),
+        shielded_event_root: Some(hex_b256(&block.shielded_event_root)),
+        state_proof: block
+            .state_proof
+            .as_ref()
+            .and_then(|p| bincode::serialize(p).ok())
+            .map(hex::encode),
     }
 }
 
@@ -382,10 +402,26 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         bridge_orders_to_evm: Vec::new(),
         bridge_evm_to_orders: Vec::new(),
         domain_events: Vec::new(),
-        shielded_state_root: revm::primitives::B256::ZERO,
-        nullifier_root: revm::primitives::B256::ZERO,
-        shielded_event_root: revm::primitives::B256::ZERO,
-        state_proof: None,
+        shielded_state_root: wire
+            .shielded_state_root
+            .as_deref()
+            .and_then(parse_hex_b256)
+            .unwrap_or(revm::primitives::B256::ZERO),
+        nullifier_root: wire
+            .nullifier_root
+            .as_deref()
+            .and_then(parse_hex_b256)
+            .unwrap_or(revm::primitives::B256::ZERO),
+        shielded_event_root: wire
+            .shielded_event_root
+            .as_deref()
+            .and_then(parse_hex_b256)
+            .unwrap_or(revm::primitives::B256::ZERO),
+        state_proof: wire
+            .state_proof
+            .as_deref()
+            .and_then(|s| hex::decode(s).ok())
+            .and_then(|b| bincode::deserialize(&b).ok()),
     })
 }
 
