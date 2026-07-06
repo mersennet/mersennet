@@ -968,9 +968,14 @@ fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent, privacy_active:
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
-        _ => {
-            unreachable!("privacy-sensitive MersennetOrders events should be redacted above")
-        }
+        MersennetOrdersEvent::CollateralDeposited { owner, amount } => json!({
+            "owner": hex_address(*owner),
+            "amount": hex_u256(*amount),
+        }),
+        MersennetOrdersEvent::Liquidation { owner, liquidated } => json!({
+            "owner": hex_address(*owner),
+            "liquidated": liquidated,
+        }),
     }
 }
 
