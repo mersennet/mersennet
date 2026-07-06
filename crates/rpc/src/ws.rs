@@ -290,7 +290,15 @@ impl WsSubscriptionManager {
         self.subscribers.len()
     }
 
+    /// Drop transparent (address-revealing) subscriptions — but only once the
+    /// privacy hard fork is actually active. Pre-fork the transparent CLOB is
+    /// public by design; unconditional purging silently killed every
+    /// MersennetOrdersTrades subscriber (e.g. the trade indexer) on the next
+    /// block after it subscribed.
     pub fn purge_transparent_subscriptions(&mut self) {
+        if !privacy_mode_activated() {
+            return;
+        }
         self.subscribers
             .retain(|_, info| !is_transparent_subscription(&info.kind));
     }
