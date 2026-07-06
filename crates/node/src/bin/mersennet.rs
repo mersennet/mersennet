@@ -277,16 +277,27 @@ fn main() -> anyhow::Result<()> {
                                 break;
                             }
                             std::thread::sleep(std::time::Duration::from_millis(250));
-                            let pending = {
+                            // Snapshot pending txs AND their raw envelopes
+                            // (wallet-submitted txs must be relayed verbatim so
+                            // peers can verify the Ethereum signature).
+                            let pending: Vec<(mersennet::engine::Transaction, Option<Vec<u8>>)> = {
                                 let Ok(eng) = eng_relay.lock() else { break };
                                 eng.mempool_pending_snapshot()
+                                    .into_iter()
+                                    .map(|tx| {
+                                        let raw =
+                                            tx.hash.and_then(|h| eng.raw_tx_for(&h));
+                                        (tx, raw)
+                                    })
+                                    .collect()
                             };
                             if seen.len() > 16_384 {
                                 seen.clear();
                             }
-                            for tx in pending {
+                            for (tx, raw) in pending {
                                 if seen.insert((tx.from, tx.nonce))
-                                    && let Err(err) = net_relay.broadcast_tx(&tx)
+                                    && let Err(err) =
+                                        net_relay.broadcast_tx_with_raw(&tx, raw.as_deref())
                                 {
                                     tracing::warn!(%err, "tx relay broadcast error");
                                 }
