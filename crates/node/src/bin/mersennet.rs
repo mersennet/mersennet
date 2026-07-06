@@ -103,10 +103,17 @@ fn main() -> anyhow::Result<()> {
     };
     engine.set_bridge_limits(bridge_limit);
 
-    for account in &app_config.genesis.accounts {
-        let address = parse_address(&account.address)?;
-        let balance = parse_u256(&account.balance)?;
-        engine.fund_account(address, balance, account.nonce);
+    // Genesis accounts are seeded ONLY on a fresh chain. This used to run on
+    // every startup, overwriting each listed account's balance AND nonce with
+    // the genesis values — so any restarted node reset e.g. the system CLOB
+    // address to nonce 0, could no longer import blocks whose txs carried the
+    // advanced nonce, and stalled (and diverged its state root from peers).
+    if engine.latest_height() == 0 {
+        for account in &app_config.genesis.accounts {
+            let address = parse_address(&account.address)?;
+            let balance = parse_u256(&account.balance)?;
+            engine.fund_account(address, balance, account.nonce);
+        }
     }
 
     for validator in &app_config.genesis.validators {
