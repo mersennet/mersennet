@@ -25,7 +25,7 @@ pub fn set_privacy_mode_activated(active: bool) {
     PRIVACY_MODE_ACTIVATED.store(active, Ordering::SeqCst);
 }
 
-fn privacy_mode_activated() -> bool {
+pub fn privacy_mode_activated() -> bool {
     PRIVACY_MODE_ACTIVATED.load(Ordering::SeqCst)
 }
 

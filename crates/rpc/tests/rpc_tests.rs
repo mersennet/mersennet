@@ -303,101 +303,20 @@ fn rpc_mersennet_send_transaction_adds_to_mempool() {
 
 #[test]
 fn rpc_mersennet_orders_add_market() {
+    // addMarket is disabled over RPC: it mutated only the receiving node's
+    // state (markets are genesis-seeded consensus objects), which forked the
+    // CLOB. The RPC must now return a clear error.
     let (mut engine, _dir) = setup_engine(1);
     let params = json!(["MRSN-PERP", "0x1", "0x1"]);
-    let result = route("mersennet_orders_addMarket", params, &mut engine).expect("rpc ok");
-    let market_id_str = result.as_str().expect("string result");
-    assert!(market_id_str.starts_with("0x"), "market id should be hex");
+    let err = route("mersennet_orders_addMarket", params, &mut engine)
+        .expect_err("addMarket must be disabled");
+    assert!(err.message.contains("disabled"), "got: {}", err.message);
 }
 
-#[test]
-fn rpc_mersennet_orders_submit_and_get_order_book() {
-    let (mut engine, _dir) = setup_engine(1);
-    let market_params = json!(["MRSN-PERP", "0x1", "0x1"]);
-    let market_result =
-        route("mersennet_orders_addMarket", market_params, &mut engine).expect("add market");
-    let market_id_str = market_result.as_str().expect("market id string");
-
-    let maker = addr(0x33);
-    let order_params = json!([{
-        "owner": hex_addr(maker),
-        "market_id": 1,
-        "side": "sell",
-        "price": "0x64",
-        "size": "0x5"
-    }]);
-    let order_result =
-        route("mersennet_orders_submitOrder", order_params, &mut engine).expect("submit order");
-    let remaining = order_result
-        .get("remaining")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    assert!(
-        remaining == "0x5" || remaining == "0x05",
-        "no matching buy orders, full size resting, got {remaining}"
-    );
-
-    let book_params = json!([market_id_str]);
-    let book_result =
-        route("mersennet_orders_getOrderBook", book_params, &mut engine).expect("get order book");
-    let asks = book_result
-        .get("asks")
-        .and_then(|v| v.as_array())
-        .expect("asks array");
-    assert_eq!(asks.len(), 1, "one ask level");
-    assert_eq!(
-        asks[0].get("price").and_then(|v| v.as_str()).unwrap_or(""),
-        "0x64",
-        "ask price = 100 = 0x64"
-    );
-    let ask_size = asks[0].get("size").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(
-        ask_size == "0x5" || ask_size == "0x05",
-        "ask size = 5, got {ask_size}"
-    );
-
-    let taker = addr(0x44);
-    let taker_order = json!([{
-        "owner": hex_addr(taker),
-        "market_id": 1,
-        "side": "buy",
-        "price": "0x64",
-        "size": "0x3"
-    }]);
-    let taker_result =
-        route("mersennet_orders_submitOrder", taker_order, &mut engine).expect("taker order");
-    let filled = taker_result
-        .get("filled")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    assert!(
-        filled == "0x3" || filled == "0x03",
-        "taker filled 3, got {filled}"
-    );
-
-    let trades = taker_result
-        .get("trades")
-        .and_then(|v| v.as_array())
-        .expect("trades array");
-    assert_eq!(trades.len(), 1);
-
-    let book_params2 = json!([market_id_str]);
-    let book_after =
-        route("mersennet_orders_getOrderBook", book_params2, &mut engine).expect("book after");
-    let asks_after = book_after
-        .get("asks")
-        .and_then(|v| v.as_array())
-        .expect("asks after");
-    assert_eq!(asks_after.len(), 1, "still one ask level");
-    let remaining_size = asks_after[0]
-        .get("size")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    assert!(
-        remaining_size == "0x2" || remaining_size == "0x02",
-        "remaining ask size = 2, got {remaining_size}"
-    );
-}
+// NOTE: the consensus-routed submitOrder flow (accepted -> mined -> resting)
+// lives in tests/rpc_orders_consensus.rs — its own binary — because block
+// execution uses process-global precompile contexts that concurrent tests in
+// a shared binary would clobber.
 
 #[test]
 fn rpc_transparent_mersennet_orders_methods_disabled_after_privacy_activation() {
