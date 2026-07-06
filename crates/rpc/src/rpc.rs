@@ -467,6 +467,9 @@ fn dispatch(
                     rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
                 )
             })?;
+            // Keep the raw envelope so the p2p relay can gossip it verbatim;
+            // peers re-verify the Ethereum signature from the raw bytes.
+            engine.cache_raw_tx(tx_hash, raw_hex);
             Value::String(hex_b256(tx_hash))
         }
         "mersennet_sendTransaction" | "eth_sendTransaction" => {

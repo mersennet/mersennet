@@ -138,6 +138,12 @@ pub struct WireTx {
     /// MetaMask/ethers-submitted transaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hash: Option<String>,
+    /// Raw signed envelope (hex) for wallet-submitted txs. Ethereum
+    /// signatures verify against the RLP signing payload, which peers
+    /// cannot reconstruct from the parsed fields — receivers re-decode
+    /// this envelope so the tx stays self-authenticating end to end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -249,6 +255,10 @@ fn parse_hex_bytes(s: &str) -> Option<Bytes> {
 }
 
 pub fn tx_to_wire(tx: &Transaction) -> WireTx {
+    tx_to_wire_with_raw(tx, None)
+}
+
+pub fn tx_to_wire_with_raw(tx: &Transaction, raw: Option<&[u8]>) -> WireTx {
     let (sig_r, sig_s, sig_v) = match &tx.signature {
         Some((r, s, v)) => (Some(hex_u256(r)), Some(hex_u256(s)), Some(format!("{v:x}"))),
         None => (None, None, None),
@@ -268,6 +278,7 @@ pub fn tx_to_wire(tx: &Transaction) -> WireTx {
         tx_type: tx.tx_type,
         shielded_payload: tx.shielded_payload.clone(),
         hash: tx.hash.map(|h| hex_b256(&h)),
+        raw: raw.map(hex::encode),
     }
 }
 
@@ -511,24 +522,50 @@ impl NetworkNode {
                             }
                             "tx" => {
                                 if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
-                                    && let Some(tx) = wire_to_tx(&wire)
                                     && let Ok(mut eng) = engine.lock()
                                 {
-                                    // Signed txs go through signature
-                                    // verification; unsigned txs (e.g.
-                                    // consensus-routed CLOB order/collateral
-                                    // ops) are accepted only when the node
-                                    // permits the unsigned-orders path, so
-                                    // they reach the leader and mine.
-                                    let res = if tx.signature.is_some() {
-                                        eng.submit_tx(tx)
-                                    } else if eng.allow_unsigned_orders_rpc() {
-                                        eng.submit_tx_unsigned(tx)
-                                    } else {
-                                        Ok(())
-                                    };
-                                    if let Err(err) = res {
-                                        tracing::debug!(reason = err.code(), "dropped relayed tx");
+                                    // Wallet txs carry their raw signed
+                                    // envelope: re-decode it so the true
+                                    // Ethereum (EIP-155/typed) signature is
+                                    // verified — the parsed fields alone
+                                    // can't reproduce that signing payload.
+                                    if let Some(raw_hex) = &wire.raw {
+                                        match hex::decode(raw_hex).ok().and_then(|raw| {
+                                            mersennet::crypto::decode_raw_signed_tx(&raw).ok()
+                                        }) {
+                                            Some(signed) => {
+                                                if let Err(err) =
+                                                    eng.submit_tx_unsigned(signed.tx)
+                                                {
+                                                    tracing::debug!(
+                                                        reason = err.code(),
+                                                        "dropped relayed raw tx"
+                                                    );
+                                                }
+                                            }
+                                            None => tracing::debug!(
+                                                "dropped relayed tx: bad raw envelope"
+                                            ),
+                                        }
+                                    } else if let Some(tx) = wire_to_tx(&wire) {
+                                        // Native-format signed txs verify via
+                                        // the Mersennet signing hash; unsigned
+                                        // txs (consensus-routed CLOB ops) are
+                                        // accepted only when the node permits
+                                        // the unsigned-orders path.
+                                        let res = if tx.signature.is_some() {
+                                            eng.submit_tx(tx)
+                                        } else if eng.allow_unsigned_orders_rpc() {
+                                            eng.submit_tx_unsigned(tx)
+                                        } else {
+                                            Ok(())
+                                        };
+                                        if let Err(err) = res {
+                                            tracing::debug!(
+                                                reason = err.code(),
+                                                "dropped relayed tx"
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -713,7 +750,13 @@ impl NetworkNode {
     }
 
     pub fn broadcast_tx(&self, tx: &Transaction) -> Result<()> {
-        let wire = tx_to_wire(tx);
+        self.broadcast_tx_with_raw(tx, None)
+    }
+
+    /// Broadcast a tx, attaching its raw signed envelope when available so
+    /// receivers can re-verify wallet (Ethereum-format) signatures.
+    pub fn broadcast_tx_with_raw(&self, tx: &Transaction, raw: Option<&[u8]>) -> Result<()> {
+        let wire = tx_to_wire_with_raw(tx, raw);
         let data = serde_json::to_vec(&wire)?;
         let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
         let packet = gossip.new_packet("tx", data, 3);

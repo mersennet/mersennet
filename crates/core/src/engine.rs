@@ -489,6 +489,12 @@ pub struct Engine {
     /// strictly by ascending height so every node re-executes the same
     /// sequence and converges on identical state (see `import_block`).
     import_buffer: std::collections::BTreeMap<u64, Block>,
+    /// Raw RLP bytes of wallet-submitted (eth_sendRawTransaction) txs,
+    /// keyed by canonical hash. Ethereum-format signatures verify against
+    /// the EIP-155/typed signing hash, which peers cannot reconstruct from
+    /// the parsed fields alone — so the relay attaches the raw envelope and
+    /// receivers re-decode it (self-authenticating). In-memory only.
+    raw_tx_cache: std::collections::HashMap<B256, Vec<u8>>,
     /// This node's validator address, if it runs as a validator. Set at
     /// boot from the node identity. Used for leader election (only the
     /// elected leader for a height/round produces that block) so
@@ -662,6 +668,7 @@ impl Engine {
             dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
             code_publication_registry: CodePublicationRegistry::default(),
             import_buffer: std::collections::BTreeMap::new(),
+            raw_tx_cache: std::collections::HashMap::new(),
             local_validator: None,
             finality_votes: std::collections::HashMap::new(),
             finalized_heights: std::collections::HashMap::new(),
@@ -2258,6 +2265,21 @@ impl Engine {
     /// Non-consuming snapshot of pending mempool transactions for P2P relay.
     pub fn mempool_pending_snapshot(&self) -> Vec<Transaction> {
         self.mempool.pending_snapshot()
+    }
+
+    /// Remember the raw signed envelope of a wallet-submitted tx so the
+    /// relay can gossip it verbatim. Ethereum-format signatures only verify
+    /// against the raw RLP signing payload, which peers cannot rebuild from
+    /// parsed fields — relaying the envelope keeps the tx self-authenticating.
+    pub fn cache_raw_tx(&mut self, hash: B256, raw: Vec<u8>) {
+        if self.raw_tx_cache.len() >= 8192 {
+            self.raw_tx_cache.clear();
+        }
+        self.raw_tx_cache.insert(hash, raw);
+    }
+
+    pub fn raw_tx_for(&self, hash: &B256) -> Option<Vec<u8>> {
+        self.raw_tx_cache.get(hash).cloned()
     }
 
     pub fn mempool_queued_count(&self) -> usize {
