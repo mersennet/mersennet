@@ -20,9 +20,11 @@ const TOKEN_GAS_LIMIT: u64 = 200_000;
 const TOKEN_AMOUNT_6: U256 = U256::from_limbs([10_000_000_000u64, 0, 0, 0]); // 10,000 @ 6 decimals
 const TOKEN_AMOUNT_18: U256 = U256::from_limbs([1_864_712_049_423_024_128u64, 542u64, 0, 0]); // 10,000 @ 18 decimals (1e22)
 
-const MOCK_USDC: &str = "0x2e06b6e7479ddf54b46458b5a61f302d962957ea";
-const MOCK_USDT: &str = "0x7cfd9b3e373c3f4fd34aed80d7ae083fc0b20eb7";
-const MOCK_DAI: &str = "0x4359446ffb3e262294923ec61f35769ce62fa5ad";
+// Redeployed on the 2026-07-06 chain reset (the old addresses died with the
+// wiped chain state). Deployer 0x4f42B196A9BfcB2094fBDDFB5635A57D5421cCf7.
+const MOCK_USDC: &str = "0x8f4e0bee0fe201f10419947a7c043003f16bfd73";
+const MOCK_USDT: &str = "0x6fbe796caa747d84e3ac7611ffc2dc6d11124ed4";
+const MOCK_DAI: &str = "0x04833e1be9c451a89fc6cd1e5e698e2d4936d7f9";
 
 #[derive(Debug, Deserialize)]
 struct FaucetRequest {
