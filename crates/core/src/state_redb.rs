@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use revm::db::InMemoryDB;
-use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, U256, keccak256};
+use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256, keccak256};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
@@ -109,9 +109,11 @@ impl RedbState {
                         balance: info.balance.to_be_bytes(),
                         nonce: info.nonce,
                         code_hash: info.code_hash.into(),
+                        // original_bytes(): never persist analyzed padding
+                        // (see sled backend note on EIP-3607).
                         code: info
                             .code
-                            .map(|code| code.bytes().to_vec())
+                            .map(|code| code.original_bytes().to_vec())
                             .unwrap_or_default(),
                     };
                     let data = bincode::serialize(&record)?;
@@ -170,7 +172,9 @@ impl StateBackend for RedbState {
             let record: AccountRecord = bincode::deserialize(value_bytes)?;
             let balance = U256::from_be_bytes(record.balance);
             let code_hash = B256::from(record.code_hash);
-            let code = if record.code.is_empty() {
+            // KECCAK_EMPTY = EOA: force empty bytecode even if the record
+            // carries stray analyzed-padding bytes (see sled backend note).
+            let code = if record.code.is_empty() || code_hash == KECCAK_EMPTY {
                 Bytecode::new()
             } else {
                 Bytecode::new_raw(Bytes::from(record.code))
