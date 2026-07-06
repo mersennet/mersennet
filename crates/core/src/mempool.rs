@@ -325,6 +325,25 @@ impl Mempool {
             .max()
     }
 
+    /// The lowest nonce >= `from` that is NOT already occupied by any of
+    /// this sender's queued txs. Assigning CLOB tx nonces this way fills
+    /// gaps instead of always incrementing past them — a single dropped
+    /// tx would otherwise leave a permanent hole at `account_nonce` that
+    /// stalls every later tx (they can never become "ready"). `from`
+    /// should be the account's on-chain nonce.
+    pub fn next_free_nonce(&self, sender: Address, from: u64) -> u64 {
+        let occupied = |n: u64| {
+            [&self.pending, &self.queued, &self.base_fee_pool]
+                .iter()
+                .any(|pool| pool.get(&sender).is_some_and(|q| q.contains_key(&n)))
+        };
+        let mut n = from;
+        while occupied(n) {
+            n = n.saturating_add(1);
+        }
+        n
+    }
+
     pub fn ready_gas(&self, sender: Address, nonce: u64) -> Option<u64> {
         self.pending
             .get(&sender)

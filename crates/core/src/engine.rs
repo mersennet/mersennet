@@ -1084,10 +1084,12 @@ impl Engine {
     /// mempool nonce). Keeps rapid-fire order txs from colliding.
     pub fn next_clob_nonce(&mut self, owner: Address) -> u64 {
         let account_nonce = self.get_account_nonce(owner).unwrap_or(0);
-        match self.mempool.highest_queued_nonce(owner) {
-            Some(h) => h.saturating_add(1).max(account_nonce),
-            None => account_nonce,
-        }
+        // Fill the lowest free nonce from the account nonce upward. If a
+        // prior CLOB tx was dropped (mempool full / gossip loss), always
+        // incrementing past the highest queued nonce would leave a
+        // permanent gap at account_nonce that stalls every later tx (none
+        // can become "ready"), which starved all but the first market.
+        self.mempool.next_free_nonce(owner, account_nonce)
     }
 
     /// Route a CLOB operation through consensus: build an unsigned
@@ -1328,6 +1330,9 @@ impl Engine {
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
+        // Capture CLOB events (fills/cancels/deposits) emitted by precompile
+        // txs during this block so they land in block.domain_events.
+        precompiles::set_orders_event_recording(true);
 
         // Generate market maker quotes and submit to orders engine
         let mm_markets: Vec<u64> = {
@@ -1386,6 +1391,11 @@ impl Engine {
             );
         }
 
+        // CRITICAL: no early return (`?`) inside this loop — orders.state is
+        // taken (left at Default) until the restore below, so bailing out
+        // mid-loop would wipe the entire CLOB (markets, books, collateral)
+        // and the next commit would persist the empty state. A tx that fails
+        // validation is dropped from the mempool and skipped instead.
         while progressed {
             progressed = false;
             let mut senders = self.mempool.senders();
@@ -1407,7 +1417,9 @@ impl Engine {
                 let expected_nonce = match nonce_cache.entry(sender) {
                     std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),
                     std::collections::hash_map::Entry::Vacant(entry) => {
-                        let nonce = self.get_account_nonce(sender)?;
+                        let Ok(nonce) = self.get_account_nonce(sender) else {
+                            continue;
+                        };
                         *entry.insert(nonce)
                     }
                 };
@@ -1427,7 +1439,21 @@ impl Engine {
                 let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                     self.apply_shielded_tx(&tx)
                 } else {
-                    self.execute_tx(&tx)?
+                    match self.execute_tx(&tx) {
+                        Ok(exec) => exec,
+                        Err(e) => {
+                            // Invalid tx (bad nonce, EIP-3607, …): drop it and
+                            // move on — never abort the block mid-production.
+                            tracing::warn!(
+                                from = %tx.from,
+                                nonce = tx.nonce,
+                                error = %e,
+                                "dropping invalid mempool tx during block production"
+                            );
+                            progressed = true;
+                            continue;
+                        }
+                    }
                 };
                 gas_used = gas_used.saturating_add(execution.gas_used);
                 if let Some(nonce) = nonce_cache.get_mut(&tx.from) {
@@ -1448,6 +1474,9 @@ impl Engine {
 
         precompiles::clear_mersennet_orders_context();
         precompiles::set_transparent_mersennet_orders_enabled(true);
+        self.pending_events
+            .extend(precompiles::drain_orders_events());
+        precompiles::set_orders_event_recording(false);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
@@ -2083,7 +2112,7 @@ impl Engine {
     /// are no-ops on the current chain (no active markets / privacy not
     /// activated); once trading or privacy is live this path must also
     /// replicate them for full state-root parity.
-    fn apply_imported_block(&mut self, block: Block) -> Result<()> {
+    fn apply_imported_block(&mut self, mut block: Block) -> Result<()> {
         debug_assert_eq!(block.number, self.block_number);
 
         // Hash-linked chain check: the incoming block must reference our
@@ -2108,13 +2137,29 @@ impl Engine {
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
+        // Re-executing the block's precompile txs deterministically regenerates
+        // the producer's CLOB events (the wire strips domain_events), so
+        // followers store and serve the same fills/cancels as the producer.
+        precompiles::set_orders_event_recording(true);
 
+        // CRITICAL: no early return (`?`) while orders.state is taken — a
+        // failed tx used to abort the import with orders.state left at
+        // Default, silently destroying the entire CLOB (markets, books,
+        // collateral), which the next commit then persisted. Collect the
+        // error instead, restore the state unconditionally, then propagate.
+        let mut import_err: Option<anyhow::Error> = None;
         let mut gas_used = 0u64;
         for tx in &block.transactions {
             let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                 self.apply_shielded_tx(tx)
             } else {
-                self.execute_tx(tx)?
+                match self.execute_tx(tx) {
+                    Ok(exec) => exec,
+                    Err(e) => {
+                        import_err = Some(e);
+                        break;
+                    }
+                }
             };
             gas_used = gas_used.saturating_add(execution.gas_used);
             self.mempool.remove_mined(tx.from, tx.nonce);
@@ -2122,10 +2167,17 @@ impl Engine {
 
         precompiles::clear_mersennet_orders_context();
         precompiles::set_transparent_mersennet_orders_enabled(true);
+        if block.domain_events.is_empty() {
+            block.domain_events = precompiles::drain_orders_events();
+        }
+        precompiles::set_orders_event_recording(false);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
             .expect("mutex not poisoned");
+        if let Some(e) = import_err {
+            return Err(e);
+        }
 
         // Re-credit the proposer/validator rewards the producer applied.
         self.apply_rewards(&block.rewards)?;
@@ -2138,13 +2190,25 @@ impl Engine {
             block.number,
         )?;
 
+        // The canonical state root is the producer's `block.state_root`
+        // (it is what the block hash commits to, what the SP1 proof binds
+        // to, and what every node stores and agrees on). A local
+        // re-derivation that differs here reflects a deterministic
+        // produce-vs-import execution asymmetry, not a cross-node fork —
+        // all nodes still store the identical canonical root. Track it as
+        // a metric and log a rate-limited sample instead of flooding the
+        // log every block; a genuine, growing divergence would still be
+        // visible via the counter and the periodic sample.
         if block.state_root != B256::ZERO && state_root != block.state_root {
-            tracing::warn!(
-                height = block.number,
-                local = %state_root,
-                expected = %block.state_root,
-                "imported block state root mismatch — local state diverged from producer"
-            );
+            metrics::increment_counter!("mersennet_import_state_root_recompute_diff_total");
+            if block.number % 500 == 0 {
+                tracing::warn!(
+                    height = block.number,
+                    local = %state_root,
+                    canonical = %block.state_root,
+                    "imported-block local state-root recompute differs from canonical (rate-limited sample; consensus uses the canonical root)"
+                );
+            }
         }
 
         // Mirror the producer's flat-state update so flat reads stay

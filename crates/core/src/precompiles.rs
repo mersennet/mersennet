@@ -12,6 +12,7 @@ use revm::primitives::{
 use revm::{ContextPrecompile, ContextStatefulPrecompileMut, Database, InnerEvmContext};
 
 use crate::code_publication::CodePublicationRegistry;
+use crate::events::{DomainEvent, MersennetOrdersEvent};
 use crate::mersennet_orders::{MarketId, MersennetOrdersState, OrderId, Side, TimeInForce};
 use crate::precompile_abi::*;
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
@@ -25,6 +26,36 @@ static MERSENNET_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<MersennetOrdersState>>>
     Lazy::new(|| Mutex::new(None));
 
 static TRANSPARENT_MERSENNET_ORDERS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+// Domain-event sink for CLOB mutations executed inside the precompile.
+// The precompile has no access to the engine, so fills/cancels/deposits are
+// buffered here and drained into `block.domain_events` after tx execution —
+// on BOTH the produce and import paths (imports re-execute the same txs, so
+// followers regenerate identical events deterministically). Recording is
+// gated so read-only paths (eth_call / estimateGas, which run against a
+// cloned state) never leak phantom events.
+static MERSENNET_ORDERS_EVENTS: Lazy<Mutex<Vec<DomainEvent>>> = Lazy::new(|| Mutex::new(Vec::new()));
+static MERSENNET_ORDERS_EVENTS_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_orders_event_recording(enabled: bool) {
+    MERSENNET_ORDERS_EVENTS_ENABLED.store(enabled, Ordering::SeqCst);
+    if !enabled {
+        MERSENNET_ORDERS_EVENTS.lock().unwrap().clear();
+    }
+}
+
+pub fn drain_orders_events() -> Vec<DomainEvent> {
+    std::mem::take(&mut *MERSENNET_ORDERS_EVENTS.lock().unwrap())
+}
+
+fn record_orders_event(event: MersennetOrdersEvent) {
+    if MERSENNET_ORDERS_EVENTS_ENABLED.load(Ordering::SeqCst) {
+        MERSENNET_ORDERS_EVENTS
+            .lock()
+            .unwrap()
+            .push(DomainEvent::MersennetOrders(event));
+    }
+}
 
 pub fn set_mersennet_orders_context(state: Arc<Mutex<MersennetOrdersState>>) {
     *MERSENNET_ORDERS_CTX.lock().unwrap() = Some(state);
@@ -532,6 +563,28 @@ fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precomp
 
     let outcome = outcome.map_err(|e| PrecompileError::other(e.to_string()))?;
 
+    record_orders_event(MersennetOrdersEvent::OrderSubmitted {
+        order_id: outcome.order_id,
+        owner: caller,
+        market_id,
+        side,
+        price,
+        size,
+        tif,
+        filled: outcome.filled,
+        remaining: outcome.remaining,
+    });
+    for trade in &outcome.trades {
+        record_orders_event(MersennetOrdersEvent::Trade {
+            taker: trade.taker,
+            maker: trade.maker,
+            market_id: trade.market,
+            side: trade.side,
+            price: trade.price,
+            size: trade.size,
+        });
+    }
+
     let order_id_val = outcome
         .order_id
         .map(|id| U256::from(id.0))
@@ -555,7 +608,15 @@ fn handle_cancel_order(input: &Bytes, gas_limit: u64) -> PrecompileResult {
     let id_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing orderId"))?;
     let order_id = OrderId(decode_u256(id_w).as_limbs()[0]);
 
-    let success = with_orders(|state| state.cancel_order(order_id).is_some())?;
+    let cancelled = with_orders(|state| state.cancel_order(order_id))?;
+    let success = cancelled.is_some();
+    if let Some(order) = cancelled {
+        record_orders_event(MersennetOrdersEvent::OrderCancelled {
+            order_id: order.id,
+            owner: order.owner,
+            market_id: order.market,
+        });
+    }
 
     Ok(PrecompileOutput::new(
         GAS_CANCEL_ORDER,
@@ -600,6 +661,10 @@ fn handle_deposit_collateral(
     }
 
     with_orders(|state| state.deposit_collateral(caller, amount))?;
+    record_orders_event(MersennetOrdersEvent::CollateralDeposited {
+        owner: caller,
+        amount,
+    });
 
     Ok(PrecompileOutput::new(
         GAS_DEPOSIT_COLLATERAL,

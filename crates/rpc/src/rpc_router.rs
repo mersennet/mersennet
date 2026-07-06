@@ -136,11 +136,17 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::Array(events))
         }
         "mersennet_orders_addMarket" => {
-            require_transparent_mersennet_orders_enabled(engine)?;
-            require_unsigned_orders_rpc_allowed(engine)?;
-            let (symbol, tick_size, lot_size) = parse_market_input(params)?;
-            let market_id = engine.mersennet_orders_add_market(symbol, tick_size, lot_size);
-            Ok(Value::String(hex_u64(market_id.0)))
+            // Disabled: this mutated only the receiving node's state (markets
+            // are not consensus objects via RPC), so a market added here
+            // existed on one node and nowhere else — every order for it then
+            // reverted on the rest of the network. Markets are seeded
+            // deterministically from genesis config on every node instead.
+            Err(RpcError::new(
+                -32601,
+                "mersennet_orders_addMarket is disabled: markets are seeded from genesis config \
+                 (adding one via RPC would only mutate this node and fork CLOB state)"
+                    .to_string(),
+            ))
         }
         "mersennet_orders_submitOrder" => {
             require_transparent_mersennet_orders_enabled(engine)?;
@@ -212,11 +218,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(serde_json::to_value(dtos).map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
         "mersennet_orders_setMarginParams" => {
-            require_transparent_mersennet_orders_enabled(engine)?;
-            require_unsigned_orders_rpc_allowed(engine)?;
-            let (initial_bps, maintenance_bps) = parse_margin_params(params)?;
-            engine.mersennet_orders_set_margin_params(initial_bps, maintenance_bps);
-            Ok(Value::Bool(true))
+            // Disabled: direct local mutation — would fork CLOB margin state
+            // across nodes (same class of bug as addMarket).
+            Err(RpcError::new(
+                -32601,
+                "mersennet_orders_setMarginParams is disabled: margin params are consensus state \
+                 and cannot be mutated via RPC on a single node"
+                    .to_string(),
+            ))
         }
         "mersennet_orders_depositCollateral" => {
             require_transparent_mersennet_orders_enabled(engine)?;
@@ -241,10 +250,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::Bool(engine.mersennet_orders_is_liquidatable(owner)))
         }
         "mersennet_orders_liquidate" => {
-            require_transparent_mersennet_orders_enabled(engine)?;
-            require_unsigned_orders_rpc_allowed(engine)?;
-            let owner = parse_owner_param(params)?;
-            Ok(Value::Bool(engine.mersennet_orders_liquidate(owner)))
+            // Disabled: direct local mutation — liquidation must happen
+            // deterministically in consensus, not on one node via RPC.
+            Err(RpcError::new(
+                -32601,
+                "mersennet_orders_liquidate is disabled: liquidations are consensus state \
+                 transitions and cannot be triggered via RPC on a single node"
+                    .to_string(),
+            ))
         }
         "mersennet_bridge_enqueueOrdersToEvm" => {
             let payload = parse_payload(params)?;
