@@ -66,164 +66,66 @@ impl RedbState {
     }
 
     fn write_evm_state(&self, evm_db: &InMemoryDB) -> Result<()> {
-        let dirty = {
+        // Always persist a full, deterministic image of `evm_db`. The old
+        // incremental (dirty-set) path could leave stale values when a
+        // balance change wasn't marked dirty, causing producer/importer
+        // state roots to diverge. See the sled backend for the full
+        // rationale.
+        {
             let mut guard = self.dirty_accounts.lock().unwrap();
-            std::mem::take(&mut *guard)
-        };
+            guard.clear();
+        }
 
         let write_txn = self.db.begin_write()?;
-
-        if dirty.is_empty() {
-            {
-                let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
-                let keys: Vec<Vec<u8>> = {
-                    let iter = accounts_table.iter()?;
-                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                        .collect()
-                };
-                for key in keys {
-                    accounts_table.remove(key.as_slice())?;
-                }
+        {
+            let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
+            let keys: Vec<Vec<u8>> = {
+                let iter = accounts_table.iter()?;
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
+            };
+            for key in keys {
+                accounts_table.remove(key.as_slice())?;
             }
-            {
-                let mut storage_table = write_txn.open_table(STORAGE)?;
-                let keys: Vec<Vec<u8>> = {
-                    let iter = storage_table.iter()?;
-                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                        .collect()
-                };
-                for key in keys {
-                    storage_table.remove(key.as_slice())?;
-                }
+        }
+        {
+            let mut storage_table = write_txn.open_table(STORAGE)?;
+            let keys: Vec<Vec<u8>> = {
+                let iter = storage_table.iter()?;
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
+            };
+            for key in keys {
+                storage_table.remove(key.as_slice())?;
             }
-
-            {
-                let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
-                let mut storage_table = write_txn.open_table(STORAGE)?;
-
-                for (address, db_account) in &evm_db.accounts {
-                    if let Some(info) = db_account.info() {
-                        let record = AccountRecord {
-                            balance: info.balance.to_be_bytes(),
-                            nonce: info.nonce,
-                            code_hash: info.code_hash.into(),
-                            code: info
-                                .code
-                                .map(|code| code.bytes().to_vec())
-                                .unwrap_or_default(),
-                        };
-                        let data = bincode::serialize(&record)?;
-                        accounts_table.insert(address.as_slice(), data.as_slice())?;
-                    }
-
-                    for (slot, value) in &db_account.storage {
-                        if value.is_zero() {
-                            continue;
-                        }
-                        let mut key = [0u8; 52];
-                        key[..20].copy_from_slice(address.as_slice());
-                        key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                        storage_table
-                            .insert(key.as_slice(), value.to_be_bytes::<32>().as_slice())?;
-                    }
-                }
-            }
-        } else {
+        }
+        {
             let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
             let mut storage_table = write_txn.open_table(STORAGE)?;
 
-            for address in &dirty {
-                if let Some(db_account) = evm_db.accounts.get(address) {
-                    if let Some(info) = db_account.info() {
-                        let record = AccountRecord {
-                            balance: info.balance.to_be_bytes(),
-                            nonce: info.nonce,
-                            code_hash: info.code_hash.into(),
-                            code: info
-                                .code
-                                .map(|code| code.bytes().to_vec())
-                                .unwrap_or_default(),
-                        };
-                        let data = bincode::serialize(&record)?;
-                        accounts_table.insert(address.as_slice(), data.as_slice())?;
+            for (address, db_account) in &evm_db.accounts {
+                if let Some(info) = db_account.info() {
+                    let record = AccountRecord {
+                        balance: info.balance.to_be_bytes(),
+                        nonce: info.nonce,
+                        code_hash: info.code_hash.into(),
+                        code: info
+                            .code
+                            .map(|code| code.bytes().to_vec())
+                            .unwrap_or_default(),
+                    };
+                    let data = bincode::serialize(&record)?;
+                    accounts_table.insert(address.as_slice(), data.as_slice())?;
+                }
+
+                for (slot, value) in &db_account.storage {
+                    if value.is_zero() {
+                        continue;
                     }
-
-                    let prefix = address.as_slice();
-                    let range_start = {
-                        let mut start = [0u8; 52];
-                        start[..20].copy_from_slice(prefix);
-                        start
-                    };
-                    let range_end = {
-                        let mut end = [0u8; 52];
-                        end[..20].copy_from_slice(prefix);
-                        end[19] = end[19].wrapping_add(1);
-                        if end[19] == 0 {
-                            for i in (0..19).rev() {
-                                end[i] = end[i].wrapping_add(1);
-                                if end[i] != 0 {
-                                    break;
-                                }
-                            }
-                        }
-                        end
-                    };
-
-                    let old_keys: Vec<Vec<u8>> = {
-                        let range =
-                            storage_table.range(range_start.as_slice()..range_end.as_slice())?;
-                        range
-                            .filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                            .collect()
-                    };
-                    for key in old_keys {
-                        storage_table.remove(key.as_slice())?;
-                    }
-
-                    for (slot, value) in &db_account.storage {
-                        if value.is_zero() {
-                            continue;
-                        }
-                        let mut key = [0u8; 52];
-                        key[..20].copy_from_slice(address.as_slice());
-                        key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                        storage_table
-                            .insert(key.as_slice(), value.to_be_bytes::<32>().as_slice())?;
-                    }
-                } else {
-                    accounts_table.remove(address.as_slice())?;
-
-                    let prefix = address.as_slice();
-                    let range_start = {
-                        let mut start = [0u8; 52];
-                        start[..20].copy_from_slice(prefix);
-                        start
-                    };
-                    let range_end = {
-                        let mut end = [0u8; 52];
-                        end[..20].copy_from_slice(prefix);
-                        end[19] = end[19].wrapping_add(1);
-                        if end[19] == 0 {
-                            for i in (0..19).rev() {
-                                end[i] = end[i].wrapping_add(1);
-                                if end[i] != 0 {
-                                    break;
-                                }
-                            }
-                        }
-                        end
-                    };
-
-                    let old_keys: Vec<Vec<u8>> = {
-                        let range =
-                            storage_table.range(range_start.as_slice()..range_end.as_slice())?;
-                        range
-                            .filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                            .collect()
-                    };
-                    for key in old_keys {
-                        storage_table.remove(key.as_slice())?;
-                    }
+                    let mut key = [0u8; 52];
+                    key[..20].copy_from_slice(address.as_slice());
+                    key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
+                    storage_table.insert(key.as_slice(), value.to_be_bytes::<32>().as_slice())?;
                 }
             }
         }

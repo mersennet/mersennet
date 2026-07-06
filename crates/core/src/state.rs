@@ -336,88 +336,51 @@ impl PersistentState {
     }
 
     fn write_evm_state(&self, evm_db: &InMemoryDB) -> Result<()> {
-        let dirty = {
+        // Always persist a full, deterministic image of `evm_db`.
+        //
+        // The previous incremental path only wrote accounts explicitly
+        // marked dirty. Any balance change a code path forgot to mark
+        // (or that a producing vs importing node marked differently) left
+        // a STALE value in the store, so two nodes with identical
+        // in-memory EVM state committed different persisted state — and
+        // thus different state roots. That was the root cause of the
+        // persistent per-block "imported state root mismatch" warning.
+        // A full rewrite makes the committed state a faithful image of
+        // `evm_db` on every node, so re-executing a block yields the same
+        // root as producing it. The account set is small on this chain,
+        // so the cost is negligible.
+        {
             let mut guard = self.dirty_accounts.lock().unwrap();
-            std::mem::take(&mut *guard)
-        };
+            guard.clear();
+        }
 
-        if dirty.is_empty() {
-            self.accounts.clear()?;
-            self.storage.clear()?;
+        self.accounts.clear()?;
+        self.storage.clear()?;
 
-            for (address, db_account) in &evm_db.accounts {
-                if let Some(info) = db_account.info() {
-                    let record = AccountRecord {
-                        balance: info.balance.to_be_bytes(),
-                        nonce: info.nonce,
-                        code_hash: info.code_hash.into(),
-                        code: info
-                            .code
-                            .map(|code| code.bytes().to_vec())
-                            .unwrap_or_default(),
-                    };
-                    let data = bincode::serialize(&record)?;
-                    self.accounts.insert(address.as_slice(), data)?;
-                }
-
-                for (slot, value) in &db_account.storage {
-                    if value.is_zero() {
-                        continue;
-                    }
-                    let mut key = [0u8; 52];
-                    key[..20].copy_from_slice(address.as_slice());
-                    key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                    self.storage
-                        .insert(key.as_slice(), value.to_be_bytes::<32>().to_vec())?;
-                }
+        for (address, db_account) in &evm_db.accounts {
+            if let Some(info) = db_account.info() {
+                let record = AccountRecord {
+                    balance: info.balance.to_be_bytes(),
+                    nonce: info.nonce,
+                    code_hash: info.code_hash.into(),
+                    code: info
+                        .code
+                        .map(|code| code.bytes().to_vec())
+                        .unwrap_or_default(),
+                };
+                let data = bincode::serialize(&record)?;
+                self.accounts.insert(address.as_slice(), data)?;
             }
-        } else {
-            for address in &dirty {
-                if let Some(db_account) = evm_db.accounts.get(address) {
-                    if let Some(info) = db_account.info() {
-                        let record = AccountRecord {
-                            balance: info.balance.to_be_bytes(),
-                            nonce: info.nonce,
-                            code_hash: info.code_hash.into(),
-                            code: info
-                                .code
-                                .map(|code| code.bytes().to_vec())
-                                .unwrap_or_default(),
-                        };
-                        let data = bincode::serialize(&record)?;
-                        self.accounts.insert(address.as_slice(), data)?;
-                    }
 
-                    let old_keys: Vec<_> = self
-                        .storage
-                        .scan_prefix(address.as_slice())
-                        .filter_map(|entry| entry.ok().map(|(k, _)| k))
-                        .collect();
-                    for key in old_keys {
-                        self.storage.remove(&key)?;
-                    }
-
-                    for (slot, value) in &db_account.storage {
-                        if value.is_zero() {
-                            continue;
-                        }
-                        let mut key = [0u8; 52];
-                        key[..20].copy_from_slice(address.as_slice());
-                        key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                        self.storage
-                            .insert(key.as_slice(), value.to_be_bytes::<32>().to_vec())?;
-                    }
-                } else {
-                    self.accounts.remove(address.as_slice())?;
-                    let old_keys: Vec<_> = self
-                        .storage
-                        .scan_prefix(address.as_slice())
-                        .filter_map(|entry| entry.ok().map(|(k, _)| k))
-                        .collect();
-                    for key in old_keys {
-                        self.storage.remove(&key)?;
-                    }
+            for (slot, value) in &db_account.storage {
+                if value.is_zero() {
+                    continue;
                 }
+                let mut key = [0u8; 52];
+                key[..20].copy_from_slice(address.as_slice());
+                key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
+                self.storage
+                    .insert(key.as_slice(), value.to_be_bytes::<32>().to_vec())?;
             }
         }
 
