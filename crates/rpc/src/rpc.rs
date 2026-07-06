@@ -1136,6 +1136,10 @@ fn find_transaction(engine: &Engine, hash: B256) -> Option<(&Transaction, &Block
 }
 
 fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
+    block_to_dto_with_privacy(block, include_txs, crate::ws::privacy_mode_activated())
+}
+
+fn block_to_dto_with_privacy(block: &Block, include_txs: bool, privacy_active: bool) -> BlockDto {
     let block_hash = hex_b256(block.hash);
     let block_number = hex_u64(block.number);
 
@@ -1192,14 +1196,17 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
         domain_events: block
             .domain_events
             .iter()
-            .filter(|event| block_domain_event_is_visible(block, event))
-            .map(domain_event_to_value)
+            .filter(|event| block_domain_event_is_visible(event, privacy_active))
+            .map(|event| domain_event_to_value(event, privacy_active))
             .collect(),
     }
 }
 
-fn block_domain_event_is_visible(block: &Block, event: &DomainEvent) -> bool {
-    if block.shielded_state_root == B256::ZERO {
+// Pre-fork, all CLOB events are public. A non-zero shielded_state_root is NOT
+// a privacy signal any more — proof-only mode gives every block one — so
+// visibility keys on the actual privacy activation flag.
+fn block_domain_event_is_visible(event: &DomainEvent, privacy_active: bool) -> bool {
+    if !privacy_active {
         return true;
     }
 
@@ -1250,12 +1257,12 @@ fn tx_to_dto_in_block(
     }
 }
 
-fn domain_event_to_value(event: &DomainEvent) -> Value {
+fn domain_event_to_value(event: &DomainEvent, privacy_active: bool) -> Value {
     match event {
         DomainEvent::MersennetOrders(evt) => json!({
             "domain": "mersennet_orders",
             "kind": evt.kind(),
-            "data": mersennet_orders_event_data(evt),
+            "data": mersennet_orders_event_data(evt, privacy_active),
         }),
         DomainEvent::Bridge(evt) => json!({
             "domain": "bridge",
@@ -1273,8 +1280,10 @@ fn domain_event_to_value(event: &DomainEvent) -> Value {
     }
 }
 
-fn mersennet_orders_event_data(event: &MersennetOrdersEvent) -> Value {
-    if !event.is_privacy_safe_after_activation() {
+fn mersennet_orders_event_data(event: &MersennetOrdersEvent, privacy_active: bool) -> Value {
+    // Pre-fork the transparent CLOB is public by design — only redact once
+    // the privacy hard fork has actually activated.
+    if privacy_active && !event.is_privacy_safe_after_activation() {
         return json!({
             "redacted": true,
             "reason": "privacy_mode_sensitive_event",

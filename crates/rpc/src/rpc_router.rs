@@ -128,10 +128,11 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 filter.domain.as_deref(),
                 filter.kind.as_deref(),
             );
+            let privacy_active = engine.privacy_mode_activated();
             let events: Vec<Value> = records
                 .into_iter()
                 .filter(|record| !hide_post_privacy_sensitive_domain_event(record, engine))
-                .map(domain_event_record_to_value)
+                .map(|record| domain_event_record_to_value(record, privacy_active))
                 .collect();
             Ok(Value::Array(events))
         }
@@ -801,8 +802,8 @@ fn order_to_dto(order: Order) -> MersennetOrderDto {
     }
 }
 
-fn domain_event_record_to_value(record: DomainEventRecord) -> Value {
-    let (domain, kind, data) = domain_event_parts(&record.event);
+fn domain_event_record_to_value(record: DomainEventRecord, privacy_active: bool) -> Value {
+    let (domain, kind, data) = domain_event_parts(&record.event, privacy_active);
     let dto = DomainEventDto {
         block_number: hex_u64(record.block_number),
         event_index: hex_u64(record.event_index),
@@ -826,12 +827,12 @@ fn hide_post_privacy_sensitive_domain_event(record: &DomainEventRecord, engine: 
     record.block_number >= activation_height
 }
 
-fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value) {
+fn domain_event_parts(event: &DomainEvent, privacy_active: bool) -> (&'static str, &'static str, Value) {
     match event {
         DomainEvent::MersennetOrders(event) => (
             "mersennet_orders",
             event.kind(),
-            mersennet_orders_event_to_value(event),
+            mersennet_orders_event_to_value(event, privacy_active),
         ),
         DomainEvent::Bridge(event) => ("bridge", event.kind(), bridge_event_to_value(event)),
         DomainEvent::Shielded(event) => ("shielded", event.kind(), shielded_event_to_value(event)),
@@ -882,8 +883,10 @@ fn shielded_event_to_value(event: &mersennet::events::ShieldedEvent) -> Value {
     }
 }
 
-fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent) -> Value {
-    if !event.is_privacy_safe_after_activation() {
+fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent, privacy_active: bool) -> Value {
+    // Pre-fork the transparent CLOB is public by design — only redact once
+    // the privacy hard fork has actually activated.
+    if privacy_active && !event.is_privacy_safe_after_activation() {
         return json!({
             "redacted": true,
             "reason": "privacy_mode_sensitive_event",
