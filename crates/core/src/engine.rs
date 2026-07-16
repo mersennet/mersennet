@@ -2156,6 +2156,15 @@ impl Engine {
         // error instead, restore the state unconditionally, then propagate.
         let mut import_err: Option<anyhow::Error> = None;
         let mut gas_used = 0u64;
+        // Rebuild receipts from local re-execution. The wire form (`WireReceipt`)
+        // drops EVM logs to save bandwidth, so a block imported over gossip would
+        // otherwise carry empty `logs`/`logsBloom` — breaking eth_getLogs,
+        // eth_getTransactionReceipt logs, and any token-transfer indexing on
+        // every follower and the public RPC node. Re-execution is deterministic
+        // and the logs are not part of `receipts_root` (success+gas+output only),
+        // so this reconstructs the producer's receipts without changing the block
+        // hash. This mirrors the domain-events reconstruction just below.
+        let mut rebuilt_receipts: Vec<Receipt> = Vec::with_capacity(block.transactions.len());
         for tx in &block.transactions {
             let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                 self.apply_shielded_tx(tx)
@@ -2169,6 +2178,14 @@ impl Engine {
                 }
             };
             gas_used = gas_used.saturating_add(execution.gas_used);
+            rebuilt_receipts.push(Receipt {
+                success: execution.success,
+                gas_used: execution.gas_used,
+                output: execution.output.clone(),
+                created_address: execution.created_address,
+                error: None,
+                logs: execution.logs.clone(),
+            });
             self.mempool.remove_mined(tx.from, tx.nonce);
         }
 
@@ -2185,6 +2202,11 @@ impl Engine {
         if let Some(e) = import_err {
             return Err(e);
         }
+
+        // Replace the log-stripped wire receipts with the locally reconstructed
+        // ones (see the rebuild note above). Only reached when every tx applied,
+        // so the receipt list is complete and index-aligned with the tx list.
+        block.receipts = rebuilt_receipts;
 
         // Re-credit the proposer/validator rewards the producer applied.
         self.apply_rewards(&block.rewards)?;

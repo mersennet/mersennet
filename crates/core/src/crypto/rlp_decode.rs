@@ -123,10 +123,10 @@ fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
         sign_items.push(u64_to_rlp_bytes(cid));
         sign_items.push(vec![]); // 0
         sign_items.push(vec![]); // 0
-        keccak256(rlp_encode_list(&sign_items))
+        keccak256(rlp_encode_signing_list(&sign_items, None))
     } else {
         // Pre-EIP-155: hash just the 6 fields
-        keccak256(rlp_encode_list(&items[..6]))
+        keccak256(rlp_encode_signing_list(&items[..6], None))
     };
 
     let from = recover_from_hash(signing_hash, r, s, recovery_byte)?;
@@ -179,7 +179,8 @@ fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
     let s = rlp_to_u256(&items[10]);
 
     // Signing hash: keccak256(0x01 || RLP([chainId, nonce, gasPrice, gasLimit, to, value, data, accessList]))
-    let inner_rlp = rlp_encode_list(&items[..8]);
+    // items[0..7] are scalar strings; items[7] is the accessList (raw nested list).
+    let inner_rlp = rlp_encode_signing_list(&items[..7], Some(&items[7]));
     let mut sign_payload = vec![0x01u8];
     sign_payload.extend_from_slice(&inner_rlp);
     let signing_hash = keccak256(sign_payload);
@@ -236,7 +237,8 @@ fn decode_eip1559(payload: &[u8]) -> Result<SignedTransaction> {
     let s = rlp_to_u256(&items[11]);
 
     // Signing hash: keccak256(0x02 || RLP([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList]))
-    let inner_rlp = rlp_encode_list(&items[..9]);
+    // items[0..8] are scalar strings; items[8] is the accessList (raw nested list).
+    let inner_rlp = rlp_encode_signing_list(&items[..8], Some(&items[8]));
     let mut sign_payload = vec![0x02u8];
     sign_payload.extend_from_slice(&inner_rlp);
     let signing_hash = keccak256(sign_payload);
@@ -416,17 +418,26 @@ fn decode_rlp_item(input: &[u8]) -> Result<(Vec<u8>, usize)> {
     }
 }
 
-/// Encode a list of raw-bytes items into an RLP list.
-fn rlp_encode_list(items: &[Vec<u8>]) -> Vec<u8> {
+/// RLP-encode a signing preimage list.
+///
+/// `string_items` are scalar byte-strings (nonce, gasPrice, to, value, …),
+/// each encoded as an RLP string. `raw_list_tail`, if present, is an
+/// already-RLP-encoded nested list (an EIP-2930/1559 `accessList`) appended
+/// verbatim.
+///
+/// This must NOT infer "is this a nested list?" from an item's leading byte:
+/// a scalar field such as a `to` address or `value` can legitimately begin
+/// with a byte >= 0xc0, and treating it as a raw list drops its string prefix
+/// and corrupts the signing hash (so signer recovery returns the wrong
+/// address). The item roles are known from the transaction layout, so we pass
+/// the access-list separately instead of guessing.
+fn rlp_encode_signing_list(string_items: &[Vec<u8>], raw_list_tail: Option<&[u8]>) -> Vec<u8> {
     let mut payload = Vec::new();
-    for item in items {
-        // Check if item is already a raw RLP list (starts with 0xc0+)
-        if !item.is_empty() && item[0] >= 0xc0 {
-            // Already RLP-encoded list, include as-is
-            payload.extend_from_slice(item);
-        } else {
-            payload.extend_from_slice(&rlp_encode_bytes(item));
-        }
+    for item in string_items {
+        payload.extend_from_slice(&rlp_encode_bytes(item));
+    }
+    if let Some(tail) = raw_list_tail {
+        payload.extend_from_slice(tail);
     }
     let mut out = Vec::new();
     encode_length(payload.len(), 0xc0, &mut out);
@@ -530,11 +541,47 @@ mod tests {
             vec![],           // 0
             vec![],           // 0
         ];
-        let encoded = rlp_encode_list(&items);
+        let encoded = rlp_encode_signing_list(&items, None);
         let decoded = rlp_decode_list(&encoded).unwrap();
         assert_eq!(decoded.len(), 9);
         assert_eq!(decoded[0], vec![] as Vec<u8>);
         assert_eq!(decoded[3], vec![0xBB; 20]);
+    }
+
+    // Regression vectors signed by anvil key #1
+    // (0x59c6995e...690d → 0x70997970C51812dc3A010C7d01b50e0d17dc79C8),
+    // chainId 131071, produced with `cast mktx`. These pin the fix for the
+    // signing-hash reconstruction bug where a scalar field whose leading byte
+    // was >= 0xc0 (e.g. a `to` address starting with 0xff) was mis-encoded as
+    // a nested RLP list, corrupting the recovered sender.
+    const EXPECTED_FROM: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+
+    fn assert_recovers(raw_hex: &str) {
+        let bytes = hex::decode(raw_hex.trim_start_matches("0x")).unwrap();
+        let signed = decode_ethereum_tx(&bytes).expect("decode");
+        let got = format!("{:?}", signed.tx.from);
+        assert_eq!(
+            got.to_lowercase(),
+            EXPECTED_FROM.to_lowercase(),
+            "recovered sender mismatch for {raw_hex}"
+        );
+    }
+
+    #[test]
+    fn recovers_legacy_high_byte_to_address() {
+        // to = 0xff00…0011 (leading byte 0xff >= 0xc0): the bug's trigger.
+        assert_recovers("0xf86a800782520894ff00000000000000000000000000000000000011880de0b6b3a76400008083040021a05a8f77cbd0fb7385cea97ed9f82de09668b517ded2335cf680f1a2040bfd7fa3a065725917039e057b4d6c094f851263e17f3780bf77c007f4d103bf29d37ec7f6");
+    }
+
+    #[test]
+    fn recovers_legacy_low_byte_to_address() {
+        // to = 0x1100…0022 (leading byte 0x11 < 0xc0): the control case.
+        assert_recovers("0xf86a8007825208941100000000000000000000000000000000000022880de0b6b3a76400008083040021a0035b00579537051e2d29f80a52bcc4802403bce83120c8f5f9aadbf62ad2b926a03604f6e734905d958947dd5bc8ce3680729c6de2b7d6032d0ee447133363941d");
+    }
+
+    #[test]
+    fn recovers_eip1559_high_byte_to_address() {
+        assert_recovers("0x02f86d8301ffff80010782520894ff00000000000000000000000000000000000011880de0b6b3a764000080c080a0622575814887e044fea9579b9cfd6884ace1d4f2e10e2e9fab58a4df0a3c0e03a060d1356f86b663b4887ed464262d3f84548036147f4d71e8c772806bb7058fae");
     }
 
     #[test]
