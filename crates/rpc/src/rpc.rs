@@ -9,6 +9,7 @@ use revm::primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::io::Read;
 use std::sync::{Arc, Mutex};
 use tiny_http::{Header, Method, Response, Server};
 use tracing::info;
@@ -299,39 +300,13 @@ fn handle_request(
         return Ok(());
     }
 
+    // Cap the body read — this endpoint is on the public internet.
     let mut content = String::new();
-    request.as_reader().read_to_string(&mut content)?;
-    let parsed: Result<RpcRequest, _> = serde_json::from_str(&content);
-    let response = match parsed {
-        Ok(call) => {
-            let method = call.method.clone();
-            match dispatch(call, engine, filters) {
-                Ok(payload) => payload,
-                Err((id, error)) => {
-                    metrics::increment_counter!(
-                        "mersennet_rpc_errors",
-                        "code" => error.code.to_string(),
-                        "method" => method.clone()
-                    );
-                    tracing::warn!(method = %method, code = error.code, message = %error.message, "rpc request failed");
-                    serde_json::to_string(&RpcErrorResponse {
-                        jsonrpc: "2.0",
-                        id,
-                        error,
-                    })?
-                }
-            }
-        }
-        Err(err) => serde_json::to_string(&RpcErrorResponse {
-            jsonrpc: "2.0",
-            id: Value::Null,
-            error: RpcError {
-                code: -32700,
-                message: format!("invalid json: {err}"),
-                data: None,
-            },
-        })?,
-    };
+    request
+        .as_reader()
+        .take(MAX_BODY_BYTES + 1)
+        .read_to_string(&mut content)?;
+    let response = handle_body(&content, engine, filters)?;
 
     let response = Response::from_string(response)
         .with_header(
@@ -344,6 +319,90 @@ fn handle_request(
         );
     request.respond(response)?;
     Ok(())
+}
+
+/// Public-endpoint limits: request bodies and batch fan-out are attacker-controlled.
+const MAX_BODY_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_BATCH_CALLS: usize = 100;
+
+/// Turn a raw request body into a response body: a single JSON-RPC call, or a
+/// JSON-RPC 2.0 batch (an array of calls answered by an array of responses in
+/// the same order — ethers.js batches by default).
+fn handle_body(
+    content: &str,
+    engine: &Arc<Mutex<Engine>>,
+    filters: &FilterStore,
+) -> Result<String> {
+    if content.len() as u64 > MAX_BODY_BYTES {
+        return error_body(
+            Value::Null,
+            -32600,
+            format!("request body exceeds {MAX_BODY_BYTES} bytes"),
+        );
+    }
+    match serde_json::from_str::<Value>(content) {
+        Ok(Value::Array(calls)) => {
+            if calls.is_empty() {
+                error_body(Value::Null, -32600, "empty batch".to_string())
+            } else if calls.len() > MAX_BATCH_CALLS {
+                error_body(
+                    Value::Null,
+                    -32600,
+                    format!("batch exceeds {MAX_BATCH_CALLS} calls"),
+                )
+            } else {
+                let payloads = calls
+                    .into_iter()
+                    .map(|call| run_one_call(call, engine, filters))
+                    .collect::<Result<Vec<String>>>()?;
+                Ok(format!("[{}]", payloads.join(",")))
+            }
+        }
+        Ok(single) => run_one_call(single, engine, filters),
+        Err(err) => error_body(Value::Null, -32700, format!("invalid json: {err}")),
+    }
+}
+
+fn error_body(id: Value, code: i64, message: String) -> Result<String> {
+    Ok(serde_json::to_string(&RpcErrorResponse {
+        jsonrpc: "2.0",
+        id,
+        error: RpcError {
+            code,
+            message,
+            data: None,
+        },
+    })?)
+}
+
+/// Run a single already-JSON-parsed call and serialize its success or error
+/// payload. Shared by the single-request path and each element of a batch.
+fn run_one_call(
+    raw: Value,
+    engine: &Arc<Mutex<Engine>>,
+    filters: &FilterStore,
+) -> Result<String> {
+    let call: RpcRequest = match serde_json::from_value(raw) {
+        Ok(call) => call,
+        Err(err) => return error_body(Value::Null, -32600, format!("invalid request: {err}")),
+    };
+    let method = call.method.clone();
+    match dispatch(call, engine, filters) {
+        Ok(payload) => Ok(payload),
+        Err((id, error)) => {
+            metrics::increment_counter!(
+                "mersennet_rpc_errors",
+                "code" => error.code.to_string(),
+                "method" => method.clone()
+            );
+            tracing::warn!(method = %method, code = error.code, message = %error.message, "rpc request failed");
+            Ok(serde_json::to_string(&RpcErrorResponse {
+                jsonrpc: "2.0",
+                id,
+                error,
+            })?)
+        }
+    }
 }
 
 fn dispatch(
@@ -1606,6 +1665,91 @@ mod tests {
             method: method.to_string(),
             params: Some(params),
         }
+    }
+
+    fn test_engine() -> (TempDir, Arc<Mutex<Engine>>, FilterStore) {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let engine = Arc::new(Mutex::new(Engine::new_with_state(1, temp_dir.path())));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+        (temp_dir, engine, filters)
+    }
+
+    #[test]
+    fn handle_body_single_call_returns_object() {
+        let (_dir, engine, filters) = test_engine();
+        let body = r#"{"jsonrpc":"2.0","id":7,"method":"eth_chainId","params":[]}"#;
+        let out = handle_body(body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["id"], Value::from(7));
+        assert_eq!(v["result"], Value::from("0x1"));
+    }
+
+    #[test]
+    fn handle_body_batch_returns_array_in_order() {
+        let (_dir, engine, filters) = test_engine();
+        let body = r#"[
+            {"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]},
+            {"jsonrpc":"2.0","id":2,"method":"eth_blockNumber","params":[]},
+            {"jsonrpc":"2.0","id":3,"method":"no_such_method","params":[]}
+        ]"#;
+        let out = handle_body(body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json array");
+        let arr = v.as_array().expect("array response");
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0]["id"], Value::from(1));
+        assert_eq!(arr[0]["result"], Value::from("0x1"));
+        assert_eq!(arr[1]["id"], Value::from(2));
+        assert!(arr[1]["result"].is_string());
+        // Per-call failures answer in place without failing the batch.
+        assert_eq!(arr[2]["id"], Value::from(3));
+        assert_eq!(arr[2]["error"]["code"], Value::from(-32601));
+    }
+
+    #[test]
+    fn handle_body_empty_batch_is_invalid_request() {
+        let (_dir, engine, filters) = test_engine();
+        let out = handle_body("[]", &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32600));
+    }
+
+    #[test]
+    fn handle_body_oversized_batch_rejected() {
+        let (_dir, engine, filters) = test_engine();
+        let call = r#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#;
+        let body = format!("[{}]", vec![call; MAX_BATCH_CALLS + 1].join(","));
+        let out = handle_body(&body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32600));
+    }
+
+    #[test]
+    fn handle_body_malformed_batch_element_answers_in_place() {
+        let (_dir, engine, filters) = test_engine();
+        let body = r#"[{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}, 42]"#;
+        let out = handle_body(body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        let arr = v.as_array().expect("array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["result"], Value::from("0x1"));
+        assert_eq!(arr[1]["error"]["code"], Value::from(-32600));
+    }
+
+    #[test]
+    fn handle_body_garbage_is_parse_error() {
+        let (_dir, engine, filters) = test_engine();
+        let out = handle_body("not json at all", &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32700));
+    }
+
+    #[test]
+    fn handle_body_oversized_body_rejected() {
+        let (_dir, engine, filters) = test_engine();
+        let body = "x".repeat((MAX_BODY_BYTES + 1) as usize);
+        let out = handle_body(&body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32600));
     }
 
     #[test]
