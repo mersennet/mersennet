@@ -8,7 +8,8 @@ use revm::primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::io::Read;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server};
 
@@ -17,6 +18,20 @@ const RATE_LIMIT_HOURS: u64 = 1;
 const FAUCET_AMOUNT: &str = "1000000000000000000000"; // 1000 tokens (18 decimals)
 const GAS_LIMIT: u64 = 21_000;
 const TOKEN_GAS_LIMIT: u64 = 200_000;
+/// Requests are tiny JSON bodies; cap the read so the public endpoint can't be
+/// fed an unbounded stream.
+const MAX_BODY_BYTES: u64 = 16 * 1024;
+/// Worker threads pulling from the shared server — a single-threaded loop
+/// serialized every drip behind sequential RPC round-trips.
+const WORKER_THREADS: usize = 8;
+/// Shared, purgeable rate-limit ledger: composite key -> last grant time.
+type RateLedger = Mutex<HashMap<String, Instant>>;
+
+/// `/health` reports "low" below this so an operator gets warned before the
+/// faucet drains (≈50 native drips of 1000 MRSN).
+fn low_balance_threshold() -> U256 {
+    U256::from(50_000u64) * U256::from(10u64).pow(U256::from(18))
+}
 const TOKEN_AMOUNT_6: U256 = U256::from_limbs([10_000_000_000u64, 0, 0, 0]); // 10,000 @ 6 decimals
 const TOKEN_AMOUNT_18: U256 = U256::from_limbs([1_864_712_049_423_024_128u64, 542u64, 0, 0]); // 10,000 @ 18 decimals (1e22)
 
@@ -46,8 +61,73 @@ struct FaucetResponse {
     error: Option<String>,
 }
 
-struct RateLimit {
-    last_request: Instant,
+impl FaucetResponse {
+    fn ok(tx_hash: String) -> Self {
+        Self {
+            success: true,
+            tx_hash: Some(tx_hash),
+            error: None,
+        }
+    }
+    fn err(message: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            tx_hash: None,
+            error: Some(message.into()),
+        }
+    }
+}
+
+/// Client IP for per-IP limiting. Behind Caddy the real client is the first
+/// entry of `X-Forwarded-For`; fall back to the socket peer for direct hits.
+fn client_ip(request: &Request) -> String {
+    for h in request.headers() {
+        if h.field.equiv("X-Forwarded-For")
+            && let Some(first) = h.value.as_str().split(',').next()
+            && !first.trim().is_empty()
+        {
+            return first.trim().to_string();
+        }
+    }
+    request
+        .remote_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Grant if every key is outside the window, then stamp all keys with now.
+/// Returns Err(()) if any key is still rate-limited. Opportunistically purges
+/// entries older than 2× the window so the map can't grow without bound.
+fn rate_limit_grant(ledger: &RateLedger, keys: &[String], window: Duration) -> Result<(), ()> {
+    let mut map = ledger.lock().map_err(|_| ())?;
+    let now = Instant::now();
+    map.retain(|_, t| now.duration_since(*t) < window * 2);
+    if keys
+        .iter()
+        .any(|k| map.get(k).is_some_and(|t| now.duration_since(*t) < window))
+    {
+        return Err(());
+    }
+    for k in keys {
+        map.insert(k.clone(), now);
+    }
+    Ok(())
+}
+
+fn json_response(status: u16, resp: &FaucetResponse) -> Response<std::io::Cursor<Vec<u8>>> {
+    let body = serde_json::to_string(resp).unwrap_or_else(|_| "{}".to_string());
+    Response::from_string(body)
+        .with_status_code(status)
+        .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+}
+
+fn read_body_capped(request: &mut Request) -> String {
+    let mut body = String::new();
+    let _ = request
+        .as_reader()
+        .take(MAX_BODY_BYTES)
+        .read_to_string(&mut body);
+    body
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -58,34 +138,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let faucet_key = load_faucet_key(&args.private_key)?;
     let faucet_address = mersennet::crypto::address_from_signing_key(&faucet_key);
     let chain_id = fetch_chain_id(&rpc_url)?;
-    let rate_limit: Mutex<HashMap<String, RateLimit>> = Mutex::new(HashMap::new());
+    let rate_limit: Arc<RateLedger> = Arc::new(Mutex::new(HashMap::new()));
     // Locally tracked next nonce for the faucet account. Re-reading "latest"
     // alone races when multiple txs (drip + token claims) are still unmined, so
     // we hand out strictly increasing nonces via reserve_nonces().
-    let nonce_state: Mutex<u64> = Mutex::new(0);
+    let nonce_state: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
 
-    let server =
-        Server::http(format!("0.0.0.0:{}", port)).map_err(|e| format!("failed to bind: {}", e))?;
+    let server = Arc::new(
+        Server::http(format!("0.0.0.0:{}", port)).map_err(|e| format!("failed to bind: {}", e))?,
+    );
     println!("Faucet listening on http://0.0.0.0:{}", port);
     println!("RPC: {}", rpc_url);
+    println!("Workers: {}", WORKER_THREADS);
     println!(
         "Faucet address: 0x{}",
         hex::encode(faucet_address.as_slice())
     );
 
-    for request in server.incoming_requests() {
+    // A small worker pool: each thread pulls requests from the shared server so
+    // one slow drip (several sequential RPC round-trips) can't stall the queue.
+    let mut handles = Vec::new();
+    for _ in 0..WORKER_THREADS {
+        let server = Arc::clone(&server);
         let rpc_url = rpc_url.clone();
         let faucet_key = faucet_key.clone();
-        let rate_limit = &rate_limit;
-        let nonce_state = &nonce_state;
-        let _ = handle_request(
-            request,
-            rpc_url,
-            faucet_key,
-            chain_id,
-            rate_limit,
-            nonce_state,
-        );
+        let rate_limit = Arc::clone(&rate_limit);
+        let nonce_state = Arc::clone(&nonce_state);
+        handles.push(std::thread::spawn(move || {
+            while let Ok(request) = server.recv() {
+                let _ = handle_request(
+                    request,
+                    &rpc_url,
+                    &faucet_key,
+                    chain_id,
+                    &rate_limit,
+                    &nonce_state,
+                );
+            }
+        }));
+    }
+    for h in handles {
+        let _ = h.join();
     }
 
     Ok(())
@@ -93,13 +186,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn handle_request(
     mut request: Request,
-    rpc_url: String,
-    faucet_key: SigningKey,
+    rpc_url: &str,
+    faucet_key: &SigningKey,
     chain_id: u64,
-    rate_limit: &Mutex<HashMap<String, RateLimit>>,
+    rate_limit: &RateLedger,
     nonce_state: &Mutex<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let url = request.url().to_string();
+    let ip = client_ip(&request);
 
     if request.method() == &Method::Get && (url == "/" || url == "/faucet") {
         let html = include_str!("faucet.html");
@@ -110,7 +204,17 @@ fn handle_request(
     }
 
     if request.method() == &Method::Get && url == "/health" {
-        let body = json!({ "status": "ok" }).to_string();
+        let faucet_address = mersennet::crypto::address_from_signing_key(faucet_key);
+        let body = match fetch_balance(rpc_url, &faucet_address) {
+            Ok(bal) => json!({
+                "status": if bal >= low_balance_threshold() { "ok" } else { "low" },
+                "faucetAddress": format!("0x{}", hex::encode(faucet_address.as_slice())),
+                "faucetBalanceWei": bal.to_string(),
+            }),
+            // RPC unreachable: report degraded rather than a bare "ok".
+            Err(e) => json!({ "status": "degraded", "error": e.to_string() }),
+        }
+        .to_string();
         let response = Response::from_string(body)
             .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
         request.respond(response)?;
@@ -118,20 +222,14 @@ fn handle_request(
     }
 
     if request.method() == &Method::Post && url == "/faucet" {
-        let mut body = String::new();
-        request.as_reader().read_to_string(&mut body)?;
+        let body = read_body_capped(&mut request);
         let req: FaucetRequest = match serde_json::from_str(&body) {
             Ok(r) => r,
             Err(_) => {
-                let resp = FaucetResponse {
-                    success: false,
-                    tx_hash: None,
-                    error: Some("invalid JSON: expected {\"address\": \"0x...\"}".to_string()),
-                };
-                let response = Response::from_string(serde_json::to_string(&resp)?)
-                    .with_status_code(400)
-                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-                request.respond(response)?;
+                request.respond(json_response(
+                    400,
+                    &FaucetResponse::err("invalid JSON: expected {\"address\": \"0x...\"}"),
+                ))?;
                 return Ok(());
             }
         };
@@ -139,57 +237,34 @@ fn handle_request(
         let address = match parse_address(&req.address) {
             Ok(a) => a,
             Err(e) => {
-                let resp = FaucetResponse {
-                    success: false,
-                    tx_hash: None,
-                    error: Some(format!("invalid address: {}", e)),
-                };
-                let response = Response::from_string(serde_json::to_string(&resp)?)
-                    .with_status_code(400)
-                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-                request.respond(response)?;
+                request.respond(json_response(
+                    400,
+                    &FaucetResponse::err(format!("invalid address: {}", e)),
+                ))?;
                 return Ok(());
             }
         };
 
-        let addr_key = format!("0x{}", hex::encode(address.as_slice()));
-        {
-            let mut rl = rate_limit.lock().map_err(|_| "lock poisoned")?;
-            if let Some(entry) = rl.get(&addr_key)
-                && entry.last_request.elapsed() < Duration::from_secs(RATE_LIMIT_HOURS * 3600)
-            {
-                let resp = FaucetResponse {
-                    success: false,
-                    tx_hash: None,
-                    error: Some(format!(
-                        "rate limited: 1 request per address per {} hour(s)",
-                        RATE_LIMIT_HOURS
-                    )),
-                };
-                let response = Response::from_string(serde_json::to_string(&resp)?)
-                    .with_status_code(429)
-                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-                request.respond(response)?;
-                return Ok(());
-            }
-            rl.insert(
-                addr_key.clone(),
-                RateLimit {
-                    last_request: Instant::now(),
-                },
-            );
+        let addr_key = format!("native:{}", hex::encode(address.as_slice()));
+        let ip_key = format!("native-ip:{}", ip);
+        let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
+        if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err() {
+            request.respond(json_response(
+                429,
+                &FaucetResponse::err(format!(
+                    "rate limited: 1 native drip per address and per IP per {} hour(s)",
+                    RATE_LIMIT_HOURS
+                )),
+            ))?;
+            return Ok(());
         }
 
-        let nonce = reserve_nonces(
-            nonce_state,
-            &rpc_url,
-            &mersennet::crypto::address_from_signing_key(&faucet_key),
-            1,
-        )?;
-        let gas_price = fetch_gas_price(&rpc_url)?;
+        let faucet_address = mersennet::crypto::address_from_signing_key(faucet_key);
+        let nonce = reserve_nonces(nonce_state, rpc_url, &faucet_address, 1)?;
+        let gas_price = fetch_gas_price(rpc_url)?;
 
         let tx = Transaction {
-            from: mersennet::crypto::address_from_signing_key(&faucet_key),
+            from: faucet_address,
             to: Some(address),
             value: U256::from_str_radix(FAUCET_AMOUNT.trim_start_matches("0x"), 10)
                 .unwrap_or_else(|_| U256::from(1000u64) * U256::from(10u64).pow(U256::from(18))),
@@ -204,46 +279,51 @@ fn handle_request(
             hash: None,
         };
 
-        let signed = sign_transaction(&tx, &faucet_key);
-        let raw = encode_raw_signed_tx(&signed);
-        let raw_hex = format!("0x{}", hex::encode(&raw));
+        let signed = sign_transaction(&tx, faucet_key);
+        let raw_hex = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed)));
 
-        match send_raw_transaction(&rpc_url, &raw_hex) {
-            Ok(tx_hash) => {
-                let resp = FaucetResponse {
-                    success: true,
-                    tx_hash: Some(tx_hash),
-                    error: None,
-                };
-                let response = Response::from_string(serde_json::to_string(&resp)?)
-                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-                request.respond(response)?;
-            }
-            Err(e) => {
-                let resp = FaucetResponse {
-                    success: false,
-                    tx_hash: None,
-                    error: Some(e.to_string()),
-                };
-                let response = Response::from_string(serde_json::to_string(&resp)?)
-                    .with_status_code(500)
-                    .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-                request.respond(response)?;
-            }
+        match send_raw_transaction(rpc_url, &raw_hex) {
+            Ok(tx_hash) => request.respond(json_response(200, &FaucetResponse::ok(tx_hash)))?,
+            Err(e) => request.respond(json_response(500, &FaucetResponse::err(e.to_string())))?,
         }
         return Ok(());
     }
 
     if request.method() == &Method::Post && url == "/claim-token" {
-        let mut body = String::new();
-        request.as_reader().read_to_string(&mut body)?;
+        let body = read_body_capped(&mut request);
+        // Parse first so the rate-limit key can be scoped to (address, token) —
+        // this endpoint previously had NO limit at all.
+        let req: ClaimTokenRequest = match serde_json::from_str(&body) {
+            Ok(r) => r,
+            Err(_) => {
+                request.respond(json_response(
+                    400,
+                    &FaucetResponse::err(
+                        "expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}",
+                    ),
+                ))?;
+                return Ok(());
+            }
+        };
+        let token = req.token.to_lowercase();
+        let addr_norm = req.address.trim().to_lowercase();
+        let addr_key = format!("token:{}:{}", token, addr_norm);
+        let ip_key = format!("token-ip:{}:{}", token, ip);
+        let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
+        if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err() {
+            request.respond(json_response(
+                429,
+                &FaucetResponse::err(format!(
+                    "rate limited: 1 {} claim per address and per IP per {} hour(s)",
+                    token, RATE_LIMIT_HOURS
+                )),
+            ))?;
+            return Ok(());
+        }
 
-        let resp = handle_claim_token(&body, &rpc_url, &faucet_key, chain_id, nonce_state);
+        let resp = handle_claim_token(&req, rpc_url, faucet_key, chain_id, nonce_state);
         let status = if resp.success { 200 } else { 500 };
-        let response = Response::from_string(serde_json::to_string(&resp)?)
-            .with_status_code(status)
-            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-        request.respond(response)?;
+        request.respond(json_response(status, &resp))?;
         return Ok(());
     }
 
@@ -317,6 +397,13 @@ fn fetch_nonce(rpc_url: &str, address: &Address) -> Result<u64, Box<dyn std::err
     Ok(u64::from_str_radix(hex_str.trim_start_matches("0x"), 16)?)
 }
 
+fn fetch_balance(rpc_url: &str, address: &Address) -> Result<U256, Box<dyn std::error::Error>> {
+    let addr_hex = format!("0x{}", hex::encode(address.as_slice()));
+    let result = rpc_request(rpc_url, "eth_getBalance", json!([addr_hex, "latest"]))?;
+    let hex_str = result.as_str().ok_or("balance not string")?;
+    Ok(U256::from_str_radix(hex_str.trim_start_matches("0x"), 16)?)
+}
+
 /// Reserve `count` consecutive nonces for the faucet account, returning the
 /// first. Uses `max(locally tracked, chain "latest")` so it self-heals after
 /// restarts/failures while staying ahead of still-unmined txs.
@@ -348,32 +435,15 @@ fn send_raw_transaction(
 }
 
 fn handle_claim_token(
-    body: &str,
+    req: &ClaimTokenRequest,
     rpc_url: &str,
     faucet_key: &SigningKey,
     chain_id: u64,
     nonce_state: &Mutex<u64>,
 ) -> FaucetResponse {
-    let req: ClaimTokenRequest = match serde_json::from_str(body) {
-        Ok(r) => r,
-        Err(_) => {
-            return FaucetResponse {
-                success: false,
-                tx_hash: None,
-                error: Some("expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}".into()),
-            };
-        }
-    };
-
     let user_address = match parse_address(&req.address) {
         Ok(a) => a,
-        Err(e) => {
-            return FaucetResponse {
-                success: false,
-                tx_hash: None,
-                error: Some(format!("invalid address: {}", e)),
-            };
-        }
+        Err(e) => return FaucetResponse::err(format!("invalid address: {}", e)),
     };
 
     // (contract, transfer amount) — faucet() mints 10,000 tokens scaled to the
@@ -535,5 +605,86 @@ fn parse_args() -> Args {
         port,
         rpc_url,
         private_key,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rate_limit_blocks_repeat_within_window() {
+        let ledger: RateLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_secs(3600);
+        let keys = vec!["native:aa".to_string(), "native-ip:1.2.3.4".to_string()];
+        // First grant succeeds.
+        assert!(rate_limit_grant(&ledger, &keys, window).is_ok());
+        // Immediate repeat on the same keys is blocked.
+        assert!(rate_limit_grant(&ledger, &keys, window).is_err());
+    }
+
+    #[test]
+    fn rate_limit_blocks_when_only_ip_matches() {
+        let ledger: RateLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_secs(3600);
+        // Address A from IP X.
+        assert!(rate_limit_grant(
+            &ledger,
+            &["native:a".to_string(), "native-ip:9.9.9.9".to_string()],
+            window
+        )
+        .is_ok());
+        // Different address B but the SAME IP — must be blocked (per-IP limit).
+        assert!(rate_limit_grant(
+            &ledger,
+            &["native:b".to_string(), "native-ip:9.9.9.9".to_string()],
+            window
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rate_limit_independent_keys_are_allowed() {
+        let ledger: RateLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_secs(3600);
+        // Native drip and a USDC token claim use disjoint key namespaces, so a
+        // user can do both — but each is limited within its own namespace.
+        assert!(rate_limit_grant(
+            &ledger,
+            &["native:a".to_string(), "native-ip:1.1.1.1".to_string()],
+            window
+        )
+        .is_ok());
+        assert!(rate_limit_grant(
+            &ledger,
+            &["token:usdc:a".to_string(), "token-ip:usdc:1.1.1.1".to_string()],
+            window
+        )
+        .is_ok());
+        assert!(rate_limit_grant(
+            &ledger,
+            &["token:usdt:a".to_string(), "token-ip:usdt:1.1.1.1".to_string()],
+            window
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn rate_limit_grants_again_after_window() {
+        let ledger: RateLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_millis(50);
+        let keys = vec!["native:z".to_string()];
+        assert!(rate_limit_grant(&ledger, &keys, window).is_ok());
+        assert!(rate_limit_grant(&ledger, &keys, window).is_err());
+        std::thread::sleep(Duration::from_millis(60));
+        // Window elapsed — allowed again (and the stale entry is purged).
+        assert!(rate_limit_grant(&ledger, &keys, window).is_ok());
+    }
+
+    #[test]
+    fn low_balance_threshold_is_50k_ether() {
+        let expected = U256::from(50_000u64) * U256::from(10u64).pow(U256::from(18));
+        assert_eq!(low_balance_threshold(), expected);
+        assert_eq!(expected.to_string(), "50000000000000000000000");
     }
 }
