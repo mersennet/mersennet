@@ -2230,7 +2230,7 @@ impl Engine {
         // visible via the counter and the periodic sample.
         if block.state_root != B256::ZERO && state_root != block.state_root {
             metrics::increment_counter!("mersennet_import_state_root_recompute_diff_total");
-            if block.number % 500 == 0 {
+            if block.number.is_multiple_of(500) {
                 tracing::warn!(
                     height = block.number,
                     local = %state_root,
