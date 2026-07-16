@@ -12,7 +12,14 @@ use mersennet::precompile_abi::{
     deposit_collateral_selector, encode_place_order, encode_u256,
 };
 use revm::primitives::{Address, Bytes, U256};
+use std::sync::Mutex;
 use tempfile::TempDir;
+
+// The CLOB precompile uses a process-global context set per `execute_block`, so
+// two tests in this binary running on separate threads clobber each other's
+// order events. Serialize them behind one lock (recovering from poison so a
+// failure in one test does not cascade into the other).
+static ORDERS_CTX_LOCK: Mutex<()> = Mutex::new(());
 
 fn tx(from: Address, nonce: u64, gas_limit: u64, data: Bytes) -> Transaction {
     Transaction {
@@ -33,6 +40,7 @@ fn tx(from: Address, nonce: u64, gas_limit: u64, data: Bytes) -> Transaction {
 
 #[test]
 fn precompile_txs_emit_domain_events() {
+    let _guard = ORDERS_CTX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TempDir::new().unwrap();
     let mut engine = Engine::new_with_state(1, dir.path());
 
@@ -122,6 +130,7 @@ fn precompile_txs_emit_domain_events() {
 /// the imported block serves the same fills as the producer's copy.
 #[test]
 fn imported_block_regenerates_precompile_events() {
+    let _guard = ORDERS_CTX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let maker = Address::from([0x31; 20]);
     let taker = Address::from([0x32; 20]);
 
