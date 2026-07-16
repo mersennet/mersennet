@@ -1179,7 +1179,7 @@ fn block_to_dto_with_privacy(block: &Block, include_txs: bool, privacy_active: b
         parent_hash: hex_b256(block.parent_hash),
         nonce: "0x0000000000000000".to_string(),
         sha3_uncles: hex_b256(B256::ZERO),
-        logs_bloom: format!("0x{}", "0".repeat(512)),
+        logs_bloom: block_logs_bloom_hex(block),
         transactions_root: hex_b256(block.hash),
         state_root: hex_b256(block.state_root),
         receipts_root: hex_b256(B256::ZERO),
@@ -1441,7 +1441,7 @@ fn receipt_to_dto(
             "0x0".to_string()
         },
         contract_address: receipt.created_address.map(hex_address),
-        logs_bloom: format!("0x{}", "0".repeat(512)),
+        logs_bloom: logs_bloom_hex(&receipt.logs),
         tx_type: "0x0".to_string(),
         logs,
     }
@@ -1521,6 +1521,31 @@ mod tests {
     use mersennet::events::{DomainEvent, MersennetOrdersEvent};
     use mersennet::mersennet_orders::{Side, TimeInForce};
     use tempfile::TempDir;
+
+    #[test]
+    fn logs_bloom_empty_is_zero() {
+        assert_eq!(compute_logs_bloom(&[]), [0u8; 256]);
+    }
+
+    #[test]
+    fn logs_bloom_matches_geth_bloom9_for_zero_address() {
+        // keccak256(20 zero bytes) = 0x5380c7b7…, whose byte pairs 0/2/4 select
+        // bloom bits 896, 1665, 1975 per go-ethereum's bloom9. This pins both the
+        // bit math and the big-endian orientation, so external clients that trust
+        // logsBloom agree.
+        let log = LogEntry {
+            address: Address::ZERO,
+            topics: vec![],
+            data: Bytes::new(),
+        };
+        let bloom = compute_logs_bloom(std::slice::from_ref(&log));
+        let bit_set = |bit: usize| bloom[256 - 1 - bit / 8] & (1u8 << (bit % 8)) != 0;
+        for bit in [896usize, 1665, 1975] {
+            assert!(bit_set(bit), "expected bloom bit {bit} to be set");
+        }
+        let popcount: u32 = bloom.iter().map(|b| b.count_ones()).sum();
+        assert_eq!(popcount, 3, "a single zero-address log sets exactly 3 bits");
+    }
 
     #[test]
     fn block_dto_hides_sensitive_mersennet_orders_events_after_privacy_activation() {
@@ -1844,4 +1869,42 @@ fn hex_address(address: Address) -> String {
 
 fn hex_b256(hash: B256) -> String {
     format!("0x{}", hex::encode(hash.as_slice()))
+}
+
+/// Ethereum 2048-bit logs bloom (go-ethereum `bloom9`): for a log's address and
+/// each topic, keccak-hash it and set three bits chosen from byte pairs 0/2/4 of
+/// the hash. Returns the 256-byte bloom as a `0x`-prefixed 512-hex string.
+fn compute_logs_bloom(logs: &[LogEntry]) -> [u8; 256] {
+    let mut bloom = [0u8; 256];
+    let mut add = |bytes: &[u8]| {
+        let hash = revm::primitives::keccak256(bytes);
+        for i in [0usize, 2, 4] {
+            let bit = (((hash[i] as usize) << 8) | hash[i + 1] as usize) & 0x7ff;
+            // Bit `bit` counted from the low end of the 2048-bit big-endian array.
+            bloom[256 - 1 - bit / 8] |= 1u8 << (bit % 8);
+        }
+    };
+    for log in logs {
+        add(log.address.as_slice());
+        for topic in &log.topics {
+            add(topic.as_slice());
+        }
+    }
+    bloom
+}
+
+fn logs_bloom_hex(logs: &[LogEntry]) -> String {
+    format!("0x{}", hex::encode(compute_logs_bloom(logs)))
+}
+
+/// OR-fold the per-receipt blooms into one block-level bloom.
+fn block_logs_bloom_hex(block: &Block) -> String {
+    let mut bloom = [0u8; 256];
+    for receipt in &block.receipts {
+        let rb = compute_logs_bloom(&receipt.logs);
+        for (b, r) in bloom.iter_mut().zip(rb.iter()) {
+            *b |= *r;
+        }
+    }
+    format!("0x{}", hex::encode(bloom))
 }
