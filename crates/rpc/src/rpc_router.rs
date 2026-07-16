@@ -416,6 +416,11 @@ struct MersennetOrderInput {
     tif: Option<String>,
 }
 
+// Scaffolding for the order-mutation / admin RPCs (submitOrder result shape,
+// addMarket, setMarginParams) that are hard-disabled on the public router and
+// return -32601. Kept intact so they can be wired on a permissioned deployment
+// without rebuilding the DTOs; `#[allow(dead_code)]` keeps `-D warnings` green.
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct MersennetOrderResultDto {
     order_id: Option<String>,
@@ -424,6 +429,7 @@ struct MersennetOrderResultDto {
     trades: Vec<TradeDto>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct TradeDto {
     taker: String,
@@ -517,6 +523,8 @@ fn parse_balance_params(params: Value) -> RpcResult<(Address, Value)> {
     Ok((address, block))
 }
 
+// Parser for the disabled addMarket RPC — see the DTO note above.
+#[allow(dead_code)]
 fn parse_market_input(params: Value) -> RpcResult<(String, U256, U256)> {
     let array = match params {
         Value::Array(values) => values,
@@ -577,6 +585,8 @@ fn parse_market_id(params: Value) -> RpcResult<u64> {
     }
 }
 
+// Parser for the disabled setMarginParams RPC — see the DTO note above.
+#[allow(dead_code)]
 fn parse_margin_params(params: Value) -> RpcResult<(u64, u64)> {
     let array = match params {
         Value::Array(values) => values,
@@ -739,6 +749,7 @@ fn hex_b256(hash: B256) -> String {
     format!("0x{}", hex::encode(hash.as_slice()))
 }
 
+#[allow(dead_code)]
 fn order_outcome_to_dto(outcome: OrderOutcome) -> MersennetOrderResultDto {
     MersennetOrderResultDto {
         order_id: outcome.order_id.map(|id| hex_u64(id.0)),
@@ -748,6 +759,7 @@ fn order_outcome_to_dto(outcome: OrderOutcome) -> MersennetOrderResultDto {
     }
 }
 
+#[allow(dead_code)]
 fn trade_to_dto(trade: mersennet::mersennet_orders::Trade) -> TradeDto {
     TradeDto {
         taker: hex_address(trade.taker),
@@ -1005,6 +1017,8 @@ fn bridge_queue_kind_to_str(queue: &BridgeQueueKind) -> &'static str {
     }
 }
 
+// Error mapper for the disabled order-mutation RPCs — see the DTO note above.
+#[allow(dead_code)]
 fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
     let code = match err {
         MersennetOrdersError::UnknownMarket => -32010,
