@@ -82,7 +82,7 @@ That's it. The script will:
 |---------|-----|
 | JSON-RPC | `http://<PUBLIC_IP>:8545` |
 | Faucet | `http://<PUBLIC_IP>:8080` |
-| Grafana | `http://<PUBLIC_IP>:3000` (admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`) |
+| Grafana | `http://<PUBLIC_IP>:3000` (admin / `GRAFANA_ADMIN_PASSWORD`, required — no default) |
 | Prometheus | `http://<PUBLIC_IP>:9090` |
 | Metrics | `http://<PUBLIC_IP>:8545/metrics` |
 

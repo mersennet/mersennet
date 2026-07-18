@@ -286,7 +286,7 @@ fi
 echo -e "${CYAN}╠══════════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  RPC:     http://$PUBLIC_NODE:8545"
 echo -e "${CYAN}║${NC}  Faucet:  http://$PUBLIC_NODE:8080"
-echo -e "${CYAN}║${NC}  Grafana: http://$PUBLIC_NODE:3000  (admin/changeme by default)"
+echo -e "${CYAN}║${NC}  Grafana: http://$PUBLIC_NODE:3000  (admin / \$GRAFANA_ADMIN_PASSWORD, required)"
 echo -e "${CYAN}║${NC}  Metrics: http://$PUBLIC_NODE:8545/metrics"
 if [ -n "${RPC_DOMAIN:-}" ]; then
     echo -e "${CYAN}║${NC}  TLS RPC: https://$RPC_DOMAIN"

@@ -28,7 +28,7 @@ Performance-focused metrics:
 ### Option 1: Manual Import (UI)
 
 1. Start Grafana (see `../docker-compose.monitoring.yml`)
-2. Log in (default: admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`)
+2. Log in as `admin` with the password from `GRAFANA_ADMIN_PASSWORD` (required — there is no default)
 3. Go to **Dashboards** → **Import**
 4. Click **Upload JSON file** and select a dashboard file
 5. Select your Prometheus datasource from the dropdown
@@ -60,7 +60,7 @@ Performance-focused metrics:
 ```bash
 curl -X POST -H "Content-Type: application/json" \
   -d @monitoring/grafana/mersennet-overview.json \
-  -u admin:changeme \
+  -u "admin:$GRAFANA_ADMIN_PASSWORD" \
   http://localhost:3000/api/dashboards/db
 ```
 

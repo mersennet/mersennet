@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::Read;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Response, Server};
-use tracing::info;
+use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
 // Filter state for eth_newFilter / eth_getFilterChanges / eth_uninstallFilter
@@ -62,6 +64,65 @@ impl FilterState {
 
     fn remove(&mut self, id: u64) -> bool {
         self.filters.remove(&id).is_some()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-IP throttle — this endpoint sits on the public internet.
+// ---------------------------------------------------------------------------
+
+/// Fixed-window per-IP request cap. Legit clients batch (a JSON-RPC batch is
+/// one HTTP request), so anything above this rate is abuse or a stuck loop.
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(1);
+const RATE_LIMIT_MAX_PER_WINDOW: u32 = 100;
+/// Bound tracker memory: drop all state rather than let a botnet grow the map.
+const RATE_LIMIT_MAX_TRACKED_IPS: usize = 100_000;
+
+/// Resolve the address to throttle on. Direct connections are keyed on the
+/// socket peer. Loopback connections come from the local reverse proxy (Caddy
+/// terminates TLS for rpc.mersennet.com on this host), so key on the client
+/// address it forwards instead — otherwise every proxied request shares the
+/// 127.0.0.1 bucket and one abuser starves all legitimate users.
+fn throttle_ip(peer: IpAddr, cf_connecting_ip: Option<&str>, x_forwarded_for: Option<&str>) -> IpAddr {
+    if !peer.is_loopback() {
+        return peer;
+    }
+    if let Some(ip) = cf_connecting_ip.and_then(|v| v.trim().parse().ok()) {
+        return ip;
+    }
+    if let Some(ip) = x_forwarded_for
+        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.trim().parse().ok())
+    {
+        return ip;
+    }
+    peer
+}
+
+#[derive(Debug)]
+struct RateLimiter {
+    hits: HashMap<IpAddr, (Instant, u32)>,
+}
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            hits: HashMap::new(),
+        }
+    }
+
+    /// True if this IP may make another request right now.
+    fn allow(&mut self, ip: IpAddr) -> bool {
+        if self.hits.len() >= RATE_LIMIT_MAX_TRACKED_IPS {
+            self.hits.clear();
+        }
+        let now = Instant::now();
+        let entry = self.hits.entry(ip).or_insert((now, 0));
+        if now.duration_since(entry.0) >= RATE_LIMIT_WINDOW {
+            *entry = (now, 0);
+        }
+        entry.1 += 1;
+        entry.1 <= RATE_LIMIT_MAX_PER_WINDOW
     }
 }
 
@@ -224,10 +285,16 @@ enum TopicFilter {
 pub fn serve(engine: Arc<Mutex<Engine>>, addr: &str) -> Result<()> {
     let server = Server::http(addr).map_err(|err| anyhow!(err.to_string()))?;
     let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+    let mut rate_limiter = RateLimiter::new();
     info!("RPC listening on http://{addr}");
 
     for request in server.incoming_requests() {
-        handle_request(request, &engine, &filters)?;
+        // One malformed request must never take down the node (this process
+        // is the public RPC for the whole stack): log the failure, drop the
+        // connection, and keep serving.
+        if let Err(err) = handle_request(request, &engine, &filters, &mut rate_limiter) {
+            warn!("RPC request failed: {err:#}");
+        }
     }
 
     Ok(())
@@ -237,7 +304,38 @@ fn handle_request(
     mut request: tiny_http::Request,
     engine: &Arc<Mutex<Engine>>,
     filters: &FilterStore,
+    rate_limiter: &mut RateLimiter,
 ) -> Result<()> {
+    // Per-IP throttle before any work: the whole stack hangs off this one
+    // process, so a flood from a single source must not starve everyone else.
+    if let Some(addr) = request.remote_addr() {
+        let cf_ip = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("CF-Connecting-IP"))
+            .map(|h| h.value.as_str().to_owned());
+        let xff = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("X-Forwarded-For"))
+            .map(|h| h.value.as_str().to_owned());
+        let ip = throttle_ip(addr.ip(), cf_ip.as_deref(), xff.as_deref());
+        if !rate_limiter.allow(ip) {
+            let response = Response::from_string(error_body(
+                Value::Null,
+                -32005,
+                "rate limit exceeded".to_string(),
+            )?)
+            .with_status_code(429)
+            .with_header(
+                Header::from_bytes("Content-Type", "application/json")
+                    .map_err(|_| anyhow!("invalid header"))?,
+            );
+            request.respond(response)?;
+            return Ok(());
+        }
+    }
+
     // Expose metrics on GET /metrics
     if request.method() == &Method::Get && request.url() == "/metrics" {
         if let Some(handle) = prometheus::handle() {
@@ -301,12 +399,21 @@ fn handle_request(
     }
 
     // Cap the body read — this endpoint is on the public internet.
-    let mut content = String::new();
+    // Read raw bytes first: an invalid-UTF-8 body is a client error (-32700),
+    // not an I/O error that would kill the accept loop.
+    let mut raw = Vec::new();
     request
         .as_reader()
         .take(MAX_BODY_BYTES + 1)
-        .read_to_string(&mut content)?;
-    let response = handle_body(&content, engine, filters)?;
+        .read_to_end(&mut raw)?;
+    let response = match String::from_utf8(raw) {
+        Ok(content) => handle_body(&content, engine, filters)?,
+        Err(_) => error_body(
+            Value::Null,
+            -32700,
+            "request body is not valid UTF-8".to_string(),
+        )?,
+    };
 
     let response = Response::from_string(response)
         .with_header(
@@ -1584,6 +1691,37 @@ mod tests {
     #[test]
     fn logs_bloom_empty_is_zero() {
         assert_eq!(compute_logs_bloom(&[]), [0u8; 256]);
+    }
+
+    #[test]
+    fn throttle_ip_uses_forwarded_headers_only_for_loopback_peers() {
+        let lo: IpAddr = "127.0.0.1".parse().unwrap();
+        let direct: IpAddr = "198.51.100.4".parse().unwrap();
+        let client: IpAddr = "203.0.113.9".parse().unwrap();
+        // Direct peers are never overridden by (spoofable) headers.
+        assert_eq!(throttle_ip(direct, Some("203.0.113.9"), None), direct);
+        // Loopback = local reverse proxy: trust CF-Connecting-IP first…
+        assert_eq!(throttle_ip(lo, Some("203.0.113.9"), Some("192.0.2.1")), client);
+        // …then the first X-Forwarded-For hop…
+        assert_eq!(
+            throttle_ip(lo, None, Some("203.0.113.9, 198.51.100.4")),
+            client
+        );
+        // …and fall back to the peer when neither is present or parseable.
+        assert_eq!(throttle_ip(lo, Some("garbage"), None), lo);
+    }
+
+    #[test]
+    fn rate_limiter_caps_per_ip_per_window() {
+        let mut limiter = RateLimiter::new();
+        let ip: IpAddr = "203.0.113.7".parse().unwrap();
+        for _ in 0..RATE_LIMIT_MAX_PER_WINDOW {
+            assert!(limiter.allow(ip), "requests within the cap must pass");
+        }
+        assert!(!limiter.allow(ip), "request beyond the cap must be denied");
+        // A different source IP is unaffected.
+        let other: IpAddr = "203.0.113.8".parse().unwrap();
+        assert!(limiter.allow(other));
     }
 
     #[test]
