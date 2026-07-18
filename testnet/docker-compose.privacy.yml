@@ -176,7 +176,7 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set (no default; choose a strong password)}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - privacy-grafana-data:/var/lib/grafana

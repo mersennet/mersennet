@@ -93,7 +93,7 @@ docker compose -f docker-compose.testnet.yml up -d --build
 
 - **RPC**: http://localhost:8545
 - **Faucet**: http://localhost:8080
-- **Grafana**: http://localhost:3000 (admin / `changeme`, override with `GRAFANA_ADMIN_PASSWORD`)
+- **Grafana**: http://localhost:3000 (admin / `GRAFANA_ADMIN_PASSWORD`, required — no default)
 - **Prometheus**: http://localhost:9099
 
 ## Network Parameters
