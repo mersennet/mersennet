@@ -6,6 +6,12 @@ use crate::consensus::{
     Unbonding, Validator, ValidatorChange,
 };
 use crate::crypto::{self, SignedTransaction};
+
+/// On import, a block's proposer is accepted if it is the elected leader for
+/// this height at any round in `0..MAX_LEADER_ROUND_WINDOW`. The leader rotates
+/// each round on timeout, so this bounds how far a legitimately-elected leader
+/// can be from round 0 while still rejecting non-leaders.
+const MAX_LEADER_ROUND_WINDOW: u64 = 32;
 use crate::errors::MersennetOrdersError;
 use crate::events::{
     BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
@@ -221,6 +227,12 @@ pub struct Block {
     /// `None` until Workstream E delivers the real prover.
     #[serde(default)]
     pub state_proof: Option<crate::zk_proofs::StateTransitionProof>,
+    /// Proposer's signature over `(height, hash)` as `(r, s, y_parity)`.
+    /// Proves the block was authored by `proposer`; verified on import so a
+    /// non-validator cannot inject blocks. `None` only for locally produced
+    /// blocks before signing and for genesis.
+    #[serde(default)]
+    pub proposer_sig: Option<(U256, U256, u64)>,
 }
 
 impl Default for Block {
@@ -256,6 +268,7 @@ impl Default for Block {
             nullifier_root: B256::ZERO,
             shielded_event_root: B256::ZERO,
             state_proof: None,
+            proposer_sig: None,
         }
     }
 }
@@ -784,6 +797,30 @@ impl Engine {
         }
         if self.finalized_heights.contains_key(&height) {
             return false;
+        }
+        // Equivocation detection: a validator that has already voted for a
+        // DIFFERENT block hash at this height is double-voting, which is a
+        // slashable safety fault. Record evidence and ignore the conflicting
+        // vote (never count both toward a quorum).
+        if let Some(per_hash) = self.finality_votes.get(&height) {
+            let already_voted_other = per_hash
+                .iter()
+                .any(|(h, voters)| *h != block_hash && voters.contains(&voter));
+            if already_voted_other {
+                metrics::increment_counter!("mersennet_bft_equivocation_total");
+                tracing::warn!(
+                    height,
+                    validator = %voter,
+                    conflicting_hash = %block_hash,
+                    "equivocation detected: validator voted for two hashes at one height; slashing"
+                );
+                let _ = self.slash_validator(
+                    voter,
+                    self.stake_of(voter),
+                    format!("equivocation at height {height}"),
+                );
+                return false;
+            }
         }
         let voters_snapshot: Vec<Address> = {
             let per_hash = self.finality_votes.entry(height).or_default();
@@ -1662,6 +1699,7 @@ impl Engine {
             nullifier_root,
             shielded_event_root,
             state_proof,
+            proposer_sig: None,
         };
 
         self.chain.push(block.clone());
@@ -2033,6 +2071,7 @@ impl Engine {
             nullifier_root,
             shielded_event_root,
             state_proof,
+            proposer_sig: None,
         };
 
         self.chain.push(block.clone());
@@ -2095,7 +2134,23 @@ impl Engine {
         while let Some(next) = self.import_buffer.remove(&self.block_number) {
             let height = next.number;
             if let Err(e) = self.apply_imported_block(next) {
-                tracing::warn!(height, error = %e, "failed to apply imported block");
+                let msg = e.to_string();
+                // A persistent parent-hash mismatch means this node is on a
+                // minority fork and can no longer follow the canonical chain
+                // (there is no automatic reorg yet — full fork-choice is the
+                // remaining consensus item). Surface it loudly and via a metric
+                // so monitoring can trigger an operator resync instead of the
+                // node silently stalling.
+                if msg.contains("parent hash mismatch") {
+                    metrics::increment_counter!("mersennet_import_fork_detected_total");
+                    tracing::error!(
+                        height,
+                        error = %msg,
+                        "FORK DETECTED: local head diverges from canonical chain; node needs a state resync"
+                    );
+                } else {
+                    tracing::warn!(height, error = %msg, "failed to apply imported block");
+                }
                 // Stop draining; the block will be re-gossiped and
                 // retried. Do not loop on a persistently failing block.
                 break;
@@ -2128,13 +2183,61 @@ impl Engine {
         // inconsistent chain. (Genesis-adjacent blocks with a zero
         // parent are allowed when we have no prior block.)
         let expected_parent = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
-        if block.parent_hash != B256::ZERO && block.parent_hash != expected_parent {
+        // A zero parent hash is only legitimate at genesis (empty local chain).
+        // Previously any block with parent_hash == ZERO skipped the link check,
+        // which let an injected block bypass it at any height.
+        let genesis_adjacent = self.chain.is_empty();
+        if !(genesis_adjacent && block.parent_hash == B256::ZERO)
+            && block.parent_hash != expected_parent
+        {
             anyhow::bail!(
                 "parent hash mismatch at height {}: block parent {} != local head {}",
                 block.number,
                 block.parent_hash,
                 expected_parent
             );
+        }
+
+        // Authenticate the proposer: the block must be signed by the address in
+        // `block.proposer`, that address must be a current validator, and it
+        // must be a legitimately elected leader for this height (at some early
+        // round). Without this, anyone who can deliver a gossip packet could
+        // inject an arbitrary block. Genesis (height 0) is exempt, and so are
+        // validator-less setups (single-node/dev), where there is no leader
+        // schedule to verify against — a live network always has validators.
+        if block.number > 0 && !self.consensus.validators().is_empty() {
+            let (r, s, y) = block.proposer_sig.ok_or_else(|| {
+                anyhow::anyhow!("imported block {} has no proposer signature", block.number)
+            })?;
+            let recovered =
+                crypto::recover_block_proposer(block.number, block.hash, r, s, y)
+                    .map_err(|e| anyhow::anyhow!("proposer signature invalid: {e}"))?;
+            if recovered != block.proposer {
+                anyhow::bail!(
+                    "proposer signature signer {} != block proposer {}",
+                    recovered,
+                    block.proposer
+                );
+            }
+            if self.stake_of(block.proposer).is_zero() {
+                anyhow::bail!(
+                    "block {} proposer {} is not a staked validator",
+                    block.number,
+                    block.proposer
+                );
+            }
+            // The elected leader rotates by round on timeout; accept the
+            // proposer if it is the leader at any round within a bounded window.
+            let is_elected_leader = (0..MAX_LEADER_ROUND_WINDOW).any(|round| {
+                self.leader_for_height(block.number, round) == Some(block.proposer)
+            });
+            if !is_elected_leader {
+                anyhow::bail!(
+                    "block {} proposer {} is not an elected leader for this height",
+                    block.number,
+                    block.proposer
+                );
+            }
         }
 
         // Match the producer's per-tx execution environment.

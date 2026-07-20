@@ -333,6 +333,7 @@ fn main() -> anyhow::Result<()> {
                 let zk_interval = app_config.zk.checkpoint_interval;
                 let ws_mgr_producer = ws_manager.clone();
                 let my_addr = identity.address;
+                let producer_key = identity.signing_key.clone();
                 std::thread::Builder::new()
                     .name("block-producer".into())
                     .spawn(move || {
@@ -433,8 +434,17 @@ fn main() -> anyhow::Result<()> {
                                 }
                                 let _ = my_addr;
                                 match e.execute_block() {
-                                    Ok(b) => {
+                                    Ok(mut b) => {
                                         ws::set_privacy_mode_activated(e.privacy_mode_activated());
+                                        // Sign the block so followers can verify
+                                        // it was authored by the elected leader
+                                        // (see Engine::apply_imported_block).
+                                        let sig = mersennet::crypto::sign_block_proposal(
+                                            b.number,
+                                            b.hash,
+                                            &producer_key,
+                                        );
+                                        b.proposer_sig = Some(sig);
                                         b
                                     }
                                     Err(err) => {
