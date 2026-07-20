@@ -2112,6 +2112,24 @@ impl Engine {
         Ok(block)
     }
 
+    /// After a locally produced block is signed, stamp the proposer's address
+    /// and signature onto the copy already stored in `self.chain` so peer
+    /// sync (which reads from the chain) serves authenticated blocks — not
+    /// the unsigned pre-signature snapshot.
+    pub fn attach_proposer_sig(
+        &mut self,
+        height: u64,
+        proposer: Address,
+        sig: (U256, U256, u64),
+    ) {
+        if let Some(block) = self.chain.iter_mut().rev().find(|b| b.number == height) {
+            block.proposer = proposer;
+            block.coinbase = proposer;
+            block.consensus.proposer = proposer;
+            block.proposer_sig = Some(sig);
+        }
+    }
+
     /// Ingest a gossiped block. Blocks are buffered and applied
     /// strictly in ascending-height order via [`Engine::apply_imported_block`],
     /// which re-executes the block's transactions so non-producing
