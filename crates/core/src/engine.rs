@@ -521,6 +521,12 @@ pub struct Engine {
     finality_votes: std::collections::HashMap<u64, std::collections::HashMap<B256, std::collections::HashSet<Address>>>,
     /// Heights that reached a 2/3-stake quorum, with the winning hash.
     finalized_heights: std::collections::HashMap<u64, B256>,
+    /// Highest block height ever observed from the network (gossip or sync),
+    /// whether or not it applied locally. Used to gate block production: a
+    /// validator that is behind the network head must NOT produce (it would
+    /// fork off a stale height), it must sync first. This is the guard that
+    /// stops a restarted/lagging validator from re-forking itself.
+    highest_observed_height: u64,
 }
 
 impl Engine {
@@ -681,6 +687,7 @@ impl Engine {
             dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
             code_publication_registry: CodePublicationRegistry::default(),
             import_buffer: std::collections::BTreeMap::new(),
+            highest_observed_height: 0,
             raw_tx_cache: std::collections::HashMap::new(),
             local_validator: None,
             finality_votes: std::collections::HashMap::new(),
@@ -901,6 +908,22 @@ impl Engine {
 
     pub fn latest_height(&self) -> u64 {
         self.chain.last().map(|block| block.number).unwrap_or(0)
+    }
+
+    /// Highest block height seen from the network (may be ahead of our applied
+    /// head if we are syncing or wedged).
+    pub fn highest_observed_height(&self) -> u64 {
+        self.highest_observed_height
+    }
+
+    /// True if the network head is ahead of our applied head — i.e. we are
+    /// behind (syncing) or wedged on a fork. A validator in this state must
+    /// not produce: its next block would build on a stale head and fork the
+    /// chain (the restarted-validator re-fork failure mode). It should sync
+    /// to the canonical head first. `slack` tolerates the normal 1-block race
+    /// where we are the elected proposer for `head+1` and haven't produced yet.
+    pub fn is_behind_network(&self, slack: u64) -> bool {
+        self.highest_observed_height > self.latest_height().saturating_add(slack)
     }
 
     pub fn block_by_number(&self, number: u64) -> Option<&Block> {
@@ -2127,6 +2150,16 @@ impl Engine {
             block.coinbase = proposer;
             block.consensus.proposer = proposer;
             block.proposer_sig = Some(sig);
+            // Persist the SIGNED block. `execute_block` calls `store_block`
+            // before the signature exists, so the on-disk copy is unsigned;
+            // peers serve synced blocks from disk (`get_block`), and a
+            // syncing node rejects unsigned blocks ("no proposer signature").
+            // Re-store here so block-sync serves authenticated blocks —
+            // without this a wiped/behind node can never catch up.
+            let signed = block.clone();
+            if let Err(e) = self.evm.state.store_block(&signed) {
+                tracing::warn!(height, error = %e, "failed to persist signed block");
+            }
         }
     }
 
@@ -2136,6 +2169,12 @@ impl Engine {
     /// nodes converge on the same state as the producer. Out-of-order
     /// or duplicate deliveries are tolerated.
     pub fn import_block(&mut self, block: Block) {
+        // Track the network's head regardless of whether we can apply this
+        // block, so a behind/wedged validator knows not to produce (see
+        // `is_behind_network`).
+        if block.number > self.highest_observed_height {
+            self.highest_observed_height = block.number;
+        }
         // Already applied or stale.
         if block.number < self.block_number {
             return;

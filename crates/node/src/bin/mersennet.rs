@@ -364,11 +364,30 @@ fn main() -> anyhow::Result<()> {
                         // of a full block time.
                         let mut last_seen_height: u64 = 0;
                         let mut last_block_at = std::time::Instant::now();
+                        // Startup sync grace: before producing our FIRST block,
+                        // give the gossip/sync layer time to tell us the network
+                        // head. Without this, a validator that restarted with a
+                        // wiped/behind chain would immediately produce a
+                        // genesis-adjacent block (parent 0x0 is legal on an empty
+                        // chain), fork itself, and then reject every canonical
+                        // block as a parent-hash mismatch. Waiting lets
+                        // `highest_observed_height` populate so the `behind`
+                        // check below gates production correctly. On a genuine
+                        // genesis start every node just waits this once.
+                        let boot = std::time::Instant::now();
+                        let startup_sync_grace = std::time::Duration::from_secs(15);
+                        let mut produced_since_boot = false;
                         loop {
                             if shutdown_producer.load(Ordering::SeqCst) {
                                 break;
                             }
                             std::thread::sleep(poll);
+
+                            // Hold off the very first production until we've had
+                            // a chance to learn the network head.
+                            if !produced_since_boot && boot.elapsed() < startup_sync_grace {
+                                continue;
+                            }
 
                             // Determine the next height and whether this
                             // node is its elected leader (at the current
@@ -400,6 +419,22 @@ fn main() -> anyhow::Result<()> {
                                         "leader timed out — rotating to next leader"
                                     );
                                 }
+                            }
+
+                            // Do not produce while behind the network head. A
+                            // validator that restarted or briefly diverged is
+                            // still catching up; producing now would build on a
+                            // stale head and fork the chain (the re-fork failure
+                            // mode). Sync to the canonical head first. Slack of 0:
+                            // if the network is at height N and we are at N, we
+                            // may lead N+1; if the network is already past N we
+                            // must sync.
+                            let behind = {
+                                let Ok(e) = eng.lock() else { break };
+                                e.is_behind_network(0)
+                            };
+                            if behind {
+                                continue;
                             }
 
                             let am_leader = {
@@ -581,6 +616,7 @@ fn main() -> anyhow::Result<()> {
                                 }
                             }
 
+                            produced_since_boot = true;
                             if let Err(err) = net.broadcast_block(&block) {
                                 tracing::warn!(%err, "block broadcast error");
                             }
