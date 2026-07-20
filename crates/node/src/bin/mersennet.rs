@@ -436,15 +436,26 @@ fn main() -> anyhow::Result<()> {
                                 match e.execute_block() {
                                     Ok(mut b) => {
                                         ws::set_privacy_mode_activated(e.privacy_mode_activated());
-                                        // Sign the block so followers can verify
-                                        // it was authored by the elected leader
-                                        // (see Engine::apply_imported_block).
+                                        // `consensus.proposer()` uses a weighted
+                                        // priority lottery that does NOT match
+                                        // `leader_for_height` (rotation + round
+                                        // failover). Overwrite with this node's
+                                        // address — we only produce when
+                                        // `is_leader` says we are the leader —
+                                        // so import auth and the signature agree.
+                                        b.proposer = my_addr;
+                                        b.coinbase = my_addr;
+                                        b.consensus.proposer = my_addr;
                                         let sig = mersennet::crypto::sign_block_proposal(
                                             b.number,
                                             b.hash,
                                             &producer_key,
                                         );
                                         b.proposer_sig = Some(sig);
+                                        // Also stamp the chain copy so peer sync
+                                        // serves the signed block, not the
+                                        // unsigned snapshot stored mid-produce.
+                                        e.attach_proposer_sig(b.number, my_addr, sig);
                                         b
                                     }
                                     Err(err) => {
