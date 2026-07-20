@@ -199,6 +199,14 @@ pub struct WireBlock {
     /// bincode-encoded `StateTransitionProof`, hex string.
     #[serde(default)]
     pub state_proof: Option<String>,
+    /// Proposer signature over `(height, hash)` as hex `r`, `s`, and y-parity.
+    /// Verified on import so only the elected validator's blocks are accepted.
+    #[serde(default)]
+    pub proposer_sig_r: Option<String>,
+    #[serde(default)]
+    pub proposer_sig_s: Option<String>,
+    #[serde(default)]
+    pub proposer_sig_y: Option<u64>,
 }
 
 /// A signed BFT finality vote, gossiped on the "vote" topic. The
@@ -368,6 +376,9 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
             .as_ref()
             .and_then(|p| bincode::serialize(p).ok())
             .map(hex::encode),
+        proposer_sig_r: block.proposer_sig.map(|(r, _, _)| hex_u256(&r)),
+        proposer_sig_s: block.proposer_sig.map(|(_, s, _)| hex_u256(&s)),
+        proposer_sig_y: block.proposer_sig.map(|(_, _, y)| y),
     }
 }
 
@@ -458,6 +469,14 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
             .as_deref()
             .and_then(|s| hex::decode(s).ok())
             .and_then(|b| bincode::deserialize(&b).ok()),
+        proposer_sig: match (
+            wire.proposer_sig_r.as_deref().and_then(parse_hex_u256),
+            wire.proposer_sig_s.as_deref().and_then(parse_hex_u256),
+            wire.proposer_sig_y,
+        ) {
+            (Some(r), Some(s), Some(y)) => Some((r, s, y)),
+            _ => None,
+        },
     })
 }
 
@@ -548,22 +567,21 @@ impl NetworkNode {
                                             ),
                                         }
                                     } else if let Some(tx) = wire_to_tx(&wire) {
-                                        // Native-format signed txs verify via
-                                        // the Mersennet signing hash; unsigned
-                                        // txs (consensus-routed CLOB ops) are
-                                        // accepted only when the node permits
-                                        // the unsigned-orders path.
-                                        let res = if tx.signature.is_some() {
-                                            eng.submit_tx(tx)
-                                        } else if eng.allow_unsigned_orders_rpc() {
-                                            eng.submit_tx_unsigned(tx)
+                                        // Native-format txs must carry a valid
+                                        // signature — submit_tx verifies the
+                                        // signer matches `from`. Unsigned txs
+                                        // relayed over gossip are rejected
+                                        // (they could execute as any account).
+                                        if tx.signature.is_some() {
+                                            if let Err(err) = eng.submit_tx(tx) {
+                                                tracing::debug!(
+                                                    reason = err.code(),
+                                                    "dropped relayed tx"
+                                                );
+                                            }
                                         } else {
-                                            Ok(())
-                                        };
-                                        if let Err(err) = res {
                                             tracing::debug!(
-                                                reason = err.code(),
-                                                "dropped relayed tx"
+                                                "dropped relayed unsigned tx (signatures required)"
                                             );
                                         }
                                     }

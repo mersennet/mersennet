@@ -1028,6 +1028,7 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::InsufficientEquity => -32014,
         MersennetOrdersError::MarketHalted => -32015,
         MersennetOrdersError::WithdrawalExceedsEquity => -32016,
+        MersennetOrdersError::NotOrderOwner => -32017,
     };
     RpcError::new(code, err.message())
 }

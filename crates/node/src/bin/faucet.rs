@@ -81,12 +81,26 @@ impl FaucetResponse {
 /// Client IP for per-IP limiting. Behind Caddy the real client is the first
 /// entry of `X-Forwarded-For`; fall back to the socket peer for direct hits.
 fn client_ip(request: &Request) -> String {
+    // Prefer CF-Connecting-IP: Cloudflare sets and overwrites it with the real
+    // client, so it can't be forged through CF. This is the per-IP limit's
+    // trusted source.
+    for h in request.headers() {
+        if h.field.equiv("CF-Connecting-IP") {
+            let v = h.value.as_str().trim();
+            if !v.is_empty() {
+                return v.to_string();
+            }
+        }
+    }
+    // Fallback: the LAST X-Forwarded-For hop (appended by our own proxy). The
+    // FIRST entry is client-controlled, so using it would let an attacker
+    // rotate the per-IP bucket with a spoofed header and drain the faucet.
     for h in request.headers() {
         if h.field.equiv("X-Forwarded-For")
-            && let Some(first) = h.value.as_str().split(',').next()
-            && !first.trim().is_empty()
+            && let Some(last) = h.value.as_str().split(',').next_back()
+            && !last.trim().is_empty()
         {
-            return first.trim().to_string();
+            return last.trim().to_string();
         }
     }
     request

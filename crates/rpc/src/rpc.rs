@@ -5,7 +5,7 @@ use mersennet::engine::{Block, Engine, LogEntry, Receipt, Transaction};
 use mersennet::errors::RpcInputError;
 use mersennet::events::{BridgeEvent, BridgeQueueKind, DomainEvent, MersennetOrdersEvent};
 use mersennet::prometheus;
-use revm::primitives::{Address, B256, Bytes, U256};
+use revm::primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -87,11 +87,17 @@ fn throttle_ip(peer: IpAddr, cf_connecting_ip: Option<&str>, x_forwarded_for: Op
     if !peer.is_loopback() {
         return peer;
     }
+    // Behind our own loopback reverse proxy (Caddy) fronted by Cloudflare.
+    // Prefer CF-Connecting-IP, which Cloudflare sets and overwrites (a client
+    // cannot forge it through CF). For X-Forwarded-For, take the LAST hop —
+    // the entry our own proxy appended — not the first, which is
+    // client-controlled and would let an attacker rotate the per-IP bucket
+    // with a spoofed header.
     if let Some(ip) = cf_connecting_ip.and_then(|v| v.trim().parse().ok()) {
         return ip;
     }
     if let Some(ip) = x_forwarded_for
-        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.split(',').next_back())
         .and_then(|v| v.trim().parse().ok())
     {
         return ip;
@@ -207,21 +213,6 @@ struct TxDto {
     r: String,
     s: String,
     chain_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TxInput {
-    from: String,
-    to: Option<String>,
-    value: Option<String>,
-    data: Option<String>,
-    gas: Option<String>,
-    #[serde(alias = "gas_price")]
-    gas_price: Option<String>,
-    nonce: Option<String>,
-    #[serde(alias = "chain_id")]
-    chain_id: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -639,23 +630,18 @@ fn dispatch(
             Value::String(hex_b256(tx_hash))
         }
         "mersennet_sendTransaction" | "eth_sendTransaction" => {
-            let params = call.params.unwrap_or(Value::Null);
-            let tx = parse_tx_input(params)
-                .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let mut engine = engine
-                .lock()
-                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
-            let tx_hash = tx_hash(&tx);
-            engine.submit_tx_unsigned(tx).map_err(|err| {
-                let data = json!({
-                    "reason": err.code(),
-                });
-                (
-                    id.clone(),
-                    rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
-                )
-            })?;
-            Value::String(hex_b256(tx_hash))
+            // Disabled on the public RPC: this signs with a node-held key /
+            // trusts a caller-supplied `from`, so exposing it lets anyone
+            // execute transactions as any account. Wallets must sign locally
+            // and submit via eth_sendRawTransaction.
+            return Err((
+                id.clone(),
+                rpc_error_with_data(
+                    -32601,
+                    "eth_sendTransaction is disabled; sign the transaction in your wallet and submit it via eth_sendRawTransaction".to_string(),
+                    Value::Null,
+                ),
+            ));
         }
         "mersennet_getLogs" | "eth_getLogs" => {
             let params = call.params.unwrap_or(Value::Null);
@@ -713,11 +699,18 @@ fn dispatch(
                 Value::Array(v) => v,
                 _ => vec![],
             };
+            // Clamp blockCount: this is attacker-controlled and each block is a
+            // lookup into the in-memory chain window done while holding the
+            // engine lock (which also serializes block production and every
+            // other RPC). An unclamped huge count is a whole-node DoS.
+            // Standard clients never request more than 1024.
+            const MAX_FEE_HISTORY_BLOCKS: u64 = 1024;
             let block_count = match array.first() {
                 Some(Value::String(s)) => parse_hex_u64(s).unwrap_or(1),
                 Some(Value::Number(n)) => n.as_u64().unwrap_or(1),
                 _ => 1,
-            };
+            }
+            .clamp(1, MAX_FEE_HISTORY_BLOCKS);
             let newest = match array.get(1) {
                 Some(Value::String(s)) if s == "latest" || s == "pending" => latest,
                 Some(Value::String(s)) => parse_hex_u64(s).unwrap_or(latest),
@@ -1106,70 +1099,6 @@ fn parse_hash_param(params: Value) -> Result<B256, RpcInputError> {
         _ => return Err(RpcInputError::HashRequired),
     };
     Ok(hash)
-}
-
-fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
-    let array = match params {
-        Value::Array(values) => values,
-        _ => return Err(RpcInputError::InvalidParams),
-    };
-    let obj = array
-        .first()
-        .ok_or(RpcInputError::TransactionRequired)?
-        .clone();
-    let input: TxInput = serde_json::from_value(obj)
-        .map_err(|err| RpcInputError::InvalidTransaction(err.to_string()))?;
-
-    let from = parse_address(&input.from)?;
-    let to = match input.to {
-        Some(value) => Some(parse_address(&value)?),
-        None => None,
-    };
-    let value = input
-        .value
-        .as_deref()
-        .map(parse_hex_u256)
-        .transpose()?
-        .unwrap_or(U256::ZERO);
-    let gas_limit = input
-        .gas
-        .as_deref()
-        .map(parse_hex_u64)
-        .transpose()?
-        .unwrap_or(21_000);
-    let gas_price = input
-        .gas_price
-        .as_deref()
-        .map(parse_hex_u256)
-        .transpose()?
-        .unwrap_or(U256::ZERO);
-    let nonce = input
-        .nonce
-        .as_deref()
-        .map(parse_hex_u64)
-        .transpose()?
-        .unwrap_or(0);
-    let data = input
-        .data
-        .as_deref()
-        .map(parse_hex_bytes)
-        .transpose()?
-        .unwrap_or_else(Bytes::new);
-
-    Ok(Transaction {
-        from,
-        to,
-        value,
-        data,
-        gas_limit,
-        gas_price,
-        nonce,
-        chain_id: input.chain_id,
-        signature: None,
-        tx_type: 0,
-        shielded_payload: None,
-        hash: None,
-    })
 }
 
 fn parse_log_filter(
@@ -1683,6 +1612,7 @@ fn topics_match(log_topics: &[B256], filters: &[TopicFilter]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use revm::primitives::Bytes;
     use mersennet::engine::Engine;
     use mersennet::events::{DomainEvent, MersennetOrdersEvent};
     use mersennet::mersennet_orders::{Side, TimeInForce};
@@ -1702,9 +1632,10 @@ mod tests {
         assert_eq!(throttle_ip(direct, Some("203.0.113.9"), None), direct);
         // Loopback = local reverse proxy: trust CF-Connecting-IP first…
         assert_eq!(throttle_ip(lo, Some("203.0.113.9"), Some("192.0.2.1")), client);
-        // …then the first X-Forwarded-For hop…
+        // …then the LAST X-Forwarded-For hop (the one our own proxy appended;
+        // the first entry is client-controlled and spoofable).
         assert_eq!(
-            throttle_ip(lo, None, Some("203.0.113.9, 198.51.100.4")),
+            throttle_ip(lo, None, Some("198.51.100.4, 203.0.113.9")),
             client
         );
         // …and fall back to the peer when neither is present or parseable.
@@ -2098,17 +2029,6 @@ fn tx_hash(tx: &Transaction) -> B256 {
 fn parse_hex_u64(input: &str) -> Result<u64, RpcInputError> {
     let stripped = input.strip_prefix("0x").unwrap_or(input);
     u64::from_str_radix(stripped, 16).map_err(|err| RpcInputError::InvalidHex(err.to_string()))
-}
-
-fn parse_hex_u256(input: &str) -> Result<U256, RpcInputError> {
-    let stripped = input.strip_prefix("0x").unwrap_or(input);
-    U256::from_str_radix(stripped, 16).map_err(|err| RpcInputError::InvalidHex(err.to_string()))
-}
-
-fn parse_hex_bytes(input: &str) -> Result<Bytes, RpcInputError> {
-    let stripped = input.strip_prefix("0x").unwrap_or(input);
-    let bytes = hex::decode(stripped).map_err(|err| RpcInputError::HexDecode(err.to_string()))?;
-    Ok(Bytes::from(bytes))
 }
 
 fn parse_address(value: &str) -> Result<Address, RpcInputError> {

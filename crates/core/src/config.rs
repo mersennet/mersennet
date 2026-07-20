@@ -227,8 +227,14 @@ pub struct P2pConfig {
     pub peers: Vec<String>,
     #[serde(default = "default_block_time_ms")]
     pub block_time_ms: u64,
-    #[serde(default)]
+    #[serde(default = "default_noise_enabled")]
     pub noise_enabled: bool,
+}
+
+fn default_noise_enabled() -> bool {
+    // Authenticated, encrypted validator transport. Without it, anyone who can
+    // reach a validator's gossip socket can inject blocks/votes/txs.
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,7 +368,7 @@ impl Default for P2pConfig {
             listen: default_p2p_listen(),
             peers: Vec::new(),
             block_time_ms: default_block_time_ms(),
-            noise_enabled: false,
+            noise_enabled: default_noise_enabled(),
         }
     }
 }
@@ -496,9 +502,12 @@ fn default_mersennet_orders_maintenance_margin_bps() -> u64 {
 }
 
 fn default_allow_unsigned_orders_rpc() -> bool {
-    // Defaults to true to preserve testnet seeding behavior; mainnet configs
-    // should set this to false (see Engine::allow_unsigned_orders_rpc).
-    true
+    // Defaults to false: the unsigned `mersennet_orders_*` mutation path lets a
+    // caller act for an arbitrary `owner` with no signature (account/order
+    // takeover on a public RPC). Orders now arrive as signed transactions to
+    // the CLOB precompile (0x…0100), where the caller is the verified signer.
+    // A private, firewalled seeding node may still opt in explicitly.
+    false
 }
 
 fn default_bridge_max_queue_len() -> usize {

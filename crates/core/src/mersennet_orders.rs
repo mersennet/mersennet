@@ -747,6 +747,25 @@ impl MersennetOrdersState {
             Side::Sell => current.saturating_sub(delta),
         }
     }
+    /// Cancel an order only if `caller` owns it. Returns `Err` when the order
+    /// exists but is owned by someone else (authorization failure), `Ok(None)`
+    /// when there is no such order, and `Ok(Some(order))` on success. This is
+    /// the path reachable from the precompile / untrusted callers.
+    pub fn cancel_order_owned(
+        &mut self,
+        order_id: OrderId,
+        caller: Address,
+    ) -> Result<Option<Order>, MersennetOrdersError> {
+        match self.orders.get(&order_id) {
+            None => Ok(None),
+            Some(order) if order.owner != caller => Err(MersennetOrdersError::NotOrderOwner),
+            Some(_) => Ok(self.cancel_order(order_id)),
+        }
+    }
+
+    /// Unconditional cancel — no ownership check. Only for trusted internal
+    /// callers (liquidation engine, admin). Untrusted paths must use
+    /// [`Self::cancel_order_owned`].
     pub fn cancel_order(&mut self, order_id: OrderId) -> Option<Order> {
         let order = self.orders.remove(&order_id)?;
         metrics::increment_counter!("mersennet_orders_cancelled");
@@ -859,5 +878,47 @@ fn abs_i128_to_u256(value: i128) -> U256 {
         U256::from(value as u128)
     } else {
         U256::from(value.saturating_abs() as u128)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(b: u8) -> Address {
+        Address::from_slice(&[b; 20])
+    }
+
+    fn market_with_order(owner: Address) -> (MersennetOrdersState, MarketId, OrderId) {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("TEST/USD", U256::from(1u64), U256::from(1u64));
+        // Resting limit order well away from any cross so it stays on the book.
+        let id = state.place_order(owner, m, Side::Buy, U256::from(10u64), U256::from(5u64), TimeInForce::Gtc);
+        (state, m, id)
+    }
+
+    #[test]
+    fn cancel_order_owned_rejects_non_owner() {
+        let alice = addr(0x11);
+        let mallory = addr(0x99);
+        let (mut state, _m, id) = market_with_order(alice);
+
+        // Mallory cannot cancel Alice's order.
+        let res = state.cancel_order_owned(id, mallory);
+        assert!(matches!(res, Err(MersennetOrdersError::NotOrderOwner)));
+        // The order is still on the book.
+        assert!(state.orders.contains_key(&id));
+
+        // The owner can cancel it.
+        let ok = state.cancel_order_owned(id, alice).expect("owner cancel ok");
+        assert!(ok.is_some());
+        assert!(!state.orders.contains_key(&id));
+    }
+
+    #[test]
+    fn cancel_order_owned_missing_is_ok_none() {
+        let mut state = MersennetOrdersState::new();
+        let res = state.cancel_order_owned(OrderId(123), addr(0x11));
+        assert!(matches!(res, Ok(None)));
     }
 }

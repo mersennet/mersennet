@@ -498,7 +498,7 @@ fn mersennet_orders_precompile(
     if sel == place_order_selector() {
         handle_place_order(input, gas_limit, caller)
     } else if sel == cancel_order_selector() {
-        handle_cancel_order(input, gas_limit)
+        handle_cancel_order(input, gas_limit, caller)
     } else if sel == deposit_collateral_selector() {
         handle_deposit_collateral(input, gas_limit, caller, evmctx)
     } else if sel == withdraw_collateral_selector() {
@@ -602,13 +602,17 @@ fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precomp
 // cancelOrder(uint256 orderId) -> (bool success)
 // ---------------------------------------------------------------------------
 
-fn handle_cancel_order(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+fn handle_cancel_order(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
     check_gas(gas_limit, GAS_CANCEL_ORDER)?;
 
     let id_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing orderId"))?;
     let order_id = OrderId(decode_u256(id_w).as_limbs()[0]);
 
-    let cancelled = with_orders(|state| state.cancel_order(order_id))?;
+    // Ownership is enforced here: a caller can only cancel its own resting
+    // orders. Cancelling by iterating IDs across other accounts (order-book
+    // griefing / manipulation) is rejected with "caller does not own".
+    let cancelled = with_orders(|state| state.cancel_order_owned(order_id, caller))?
+        .map_err(|e| PrecompileError::other(e.to_string()))?;
     let success = cancelled.is_some();
     if let Some(order) = cancelled {
         record_orders_event(MersennetOrdersEvent::OrderCancelled {
