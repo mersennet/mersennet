@@ -227,14 +227,14 @@ pub struct P2pConfig {
     pub peers: Vec<String>,
     #[serde(default = "default_block_time_ms")]
     pub block_time_ms: u64,
-    #[serde(default = "default_noise_enabled")]
+    // NOTE: the Noise transport module is not yet wired into the UDP gossip
+    // layer, so this flag currently only affects a startup log line. Block,
+    // transaction and vote authenticity are enforced at the application layer
+    // (proposer signatures + signed txs + validator-verified votes), which
+    // holds regardless of transport. Wiring Noise for confidentiality/DoS
+    // resistance is tracked as a follow-up.
+    #[serde(default)]
     pub noise_enabled: bool,
-}
-
-fn default_noise_enabled() -> bool {
-    // Authenticated, encrypted validator transport. Without it, anyone who can
-    // reach a validator's gossip socket can inject blocks/votes/txs.
-    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,7 +368,7 @@ impl Default for P2pConfig {
             listen: default_p2p_listen(),
             peers: Vec::new(),
             block_time_ms: default_block_time_ms(),
-            noise_enabled: default_noise_enabled(),
+            noise_enabled: false,
         }
     }
 }
