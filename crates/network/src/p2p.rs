@@ -553,8 +553,7 @@ impl NetworkNode {
                                             mersennet::crypto::decode_raw_signed_tx(&raw).ok()
                                         }) {
                                             Some(signed) => {
-                                                if let Err(err) =
-                                                    eng.submit_tx_unsigned(signed.tx)
+                                                if let Err(err) = eng.submit_tx_unsigned(signed.tx)
                                                 {
                                                     tracing::debug!(
                                                         reason = err.code(),
@@ -826,11 +825,16 @@ fn handle_vote(engine: &Arc<Mutex<Engine>>, wire: &WireVote) {
     let Some(s) = parse_hex_u256(&wire.s) else {
         return;
     };
-    let signer =
-        match mersennet::crypto::recover_vote_signer(wire.height, block_hash, r, s, wire.y_parity) {
-            Ok(addr) => addr,
-            Err(_) => return,
-        };
+    let signer = match mersennet::crypto::recover_vote_signer(
+        wire.height,
+        block_hash,
+        r,
+        s,
+        wire.y_parity,
+    ) {
+        Ok(addr) => addr,
+        Err(_) => return,
+    };
     if let Ok(mut eng) = engine.lock() {
         eng.record_finality_vote(wire.height, block_hash, signer);
     }

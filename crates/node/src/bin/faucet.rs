@@ -642,19 +642,23 @@ mod tests {
         let ledger: RateLedger = Mutex::new(HashMap::new());
         let window = Duration::from_secs(3600);
         // Address A from IP X.
-        assert!(rate_limit_grant(
-            &ledger,
-            &["native:a".to_string(), "native-ip:9.9.9.9".to_string()],
-            window
-        )
-        .is_ok());
+        assert!(
+            rate_limit_grant(
+                &ledger,
+                &["native:a".to_string(), "native-ip:9.9.9.9".to_string()],
+                window
+            )
+            .is_ok()
+        );
         // Different address B but the SAME IP — must be blocked (per-IP limit).
-        assert!(rate_limit_grant(
-            &ledger,
-            &["native:b".to_string(), "native-ip:9.9.9.9".to_string()],
-            window
-        )
-        .is_err());
+        assert!(
+            rate_limit_grant(
+                &ledger,
+                &["native:b".to_string(), "native-ip:9.9.9.9".to_string()],
+                window
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -663,24 +667,36 @@ mod tests {
         let window = Duration::from_secs(3600);
         // Native drip and a USDC token claim use disjoint key namespaces, so a
         // user can do both — but each is limited within its own namespace.
-        assert!(rate_limit_grant(
-            &ledger,
-            &["native:a".to_string(), "native-ip:1.1.1.1".to_string()],
-            window
-        )
-        .is_ok());
-        assert!(rate_limit_grant(
-            &ledger,
-            &["token:usdc:a".to_string(), "token-ip:usdc:1.1.1.1".to_string()],
-            window
-        )
-        .is_ok());
-        assert!(rate_limit_grant(
-            &ledger,
-            &["token:usdt:a".to_string(), "token-ip:usdt:1.1.1.1".to_string()],
-            window
-        )
-        .is_ok());
+        assert!(
+            rate_limit_grant(
+                &ledger,
+                &["native:a".to_string(), "native-ip:1.1.1.1".to_string()],
+                window
+            )
+            .is_ok()
+        );
+        assert!(
+            rate_limit_grant(
+                &ledger,
+                &[
+                    "token:usdc:a".to_string(),
+                    "token-ip:usdc:1.1.1.1".to_string()
+                ],
+                window
+            )
+            .is_ok()
+        );
+        assert!(
+            rate_limit_grant(
+                &ledger,
+                &[
+                    "token:usdt:a".to_string(),
+                    "token-ip:usdt:1.1.1.1".to_string()
+                ],
+                window
+            )
+            .is_ok()
+        );
     }
 
     #[test]

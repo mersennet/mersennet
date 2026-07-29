@@ -34,7 +34,8 @@ static TRANSPARENT_MERSENNET_ORDERS_ENABLED: AtomicBool = AtomicBool::new(true);
 // followers regenerate identical events deterministically). Recording is
 // gated so read-only paths (eth_call / estimateGas, which run against a
 // cloned state) never leak phantom events.
-static MERSENNET_ORDERS_EVENTS: Lazy<Mutex<Vec<DomainEvent>>> = Lazy::new(|| Mutex::new(Vec::new()));
+static MERSENNET_ORDERS_EVENTS: Lazy<Mutex<Vec<DomainEvent>>> =
+    Lazy::new(|| Mutex::new(Vec::new()));
 static MERSENNET_ORDERS_EVENTS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_orders_event_recording(enabled: bool) {

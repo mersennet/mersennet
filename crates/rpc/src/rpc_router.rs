@@ -839,7 +839,10 @@ fn hide_post_privacy_sensitive_domain_event(record: &DomainEventRecord, engine: 
     record.block_number >= activation_height
 }
 
-fn domain_event_parts(event: &DomainEvent, privacy_active: bool) -> (&'static str, &'static str, Value) {
+fn domain_event_parts(
+    event: &DomainEvent,
+    privacy_active: bool,
+) -> (&'static str, &'static str, Value) {
     match event {
         DomainEvent::MersennetOrders(event) => (
             "mersennet_orders",

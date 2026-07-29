@@ -83,7 +83,11 @@ const RATE_LIMIT_MAX_TRACKED_IPS: usize = 100_000;
 /// terminates TLS for rpc.mersennet.com on this host), so key on the client
 /// address it forwards instead — otherwise every proxied request shares the
 /// 127.0.0.1 bucket and one abuser starves all legitimate users.
-fn throttle_ip(peer: IpAddr, cf_connecting_ip: Option<&str>, x_forwarded_for: Option<&str>) -> IpAddr {
+fn throttle_ip(
+    peer: IpAddr,
+    cf_connecting_ip: Option<&str>,
+    x_forwarded_for: Option<&str>,
+) -> IpAddr {
     if !peer.is_loopback() {
         return peer;
     }
@@ -475,11 +479,7 @@ fn error_body(id: Value, code: i64, message: String) -> Result<String> {
 
 /// Run a single already-JSON-parsed call and serialize its success or error
 /// payload. Shared by the single-request path and each element of a batch.
-fn run_one_call(
-    raw: Value,
-    engine: &Arc<Mutex<Engine>>,
-    filters: &FilterStore,
-) -> Result<String> {
+fn run_one_call(raw: Value, engine: &Arc<Mutex<Engine>>, filters: &FilterStore) -> Result<String> {
     let call: RpcRequest = match serde_json::from_value(raw) {
         Ok(call) => call,
         Err(err) => return error_body(Value::Null, -32600, format!("invalid request: {err}")),
@@ -1612,10 +1612,10 @@ fn topics_match(log_topics: &[B256], filters: &[TopicFilter]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use revm::primitives::Bytes;
     use mersennet::engine::Engine;
     use mersennet::events::{DomainEvent, MersennetOrdersEvent};
     use mersennet::mersennet_orders::{Side, TimeInForce};
+    use revm::primitives::Bytes;
     use tempfile::TempDir;
 
     #[test]
@@ -1631,7 +1631,10 @@ mod tests {
         // Direct peers are never overridden by (spoofable) headers.
         assert_eq!(throttle_ip(direct, Some("203.0.113.9"), None), direct);
         // Loopback = local reverse proxy: trust CF-Connecting-IP first…
-        assert_eq!(throttle_ip(lo, Some("203.0.113.9"), Some("192.0.2.1")), client);
+        assert_eq!(
+            throttle_ip(lo, Some("203.0.113.9"), Some("192.0.2.1")),
+            client
+        );
         // …then the LAST X-Forwarded-For hop (the one our own proxy appended;
         // the first entry is client-controlled and spoofable).
         assert_eq!(

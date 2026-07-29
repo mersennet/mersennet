@@ -258,7 +258,13 @@ pub fn encode_i128(val: i128) -> [u8; 32] {
 // the operation through the mempool instead of mutating state directly.
 
 /// placeOrder(uint64 marketId, bool isBuy, uint256 price, uint256 size, uint8 tif)
-pub fn encode_place_order(market_id: u64, is_buy: bool, price: U256, size: U256, tif: u8) -> Vec<u8> {
+pub fn encode_place_order(
+    market_id: u64,
+    is_buy: bool,
+    price: U256,
+    size: U256,
+    tif: u8,
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + 32 * 5);
     out.extend_from_slice(&place_order_selector());
     out.extend_from_slice(&encode_u256(U256::from(market_id)));
