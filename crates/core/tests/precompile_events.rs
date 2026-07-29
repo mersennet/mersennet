@@ -85,7 +85,10 @@ fn precompile_txs_emit_domain_events() {
             )
         })
         .count();
-    assert_eq!(deposits, 2, "deposit events must land in block.domain_events");
+    assert_eq!(
+        deposits, 2,
+        "deposit events must land in block.domain_events"
+    );
 
     // maker places a resting ask, taker crosses it (block 2)
     let ask = encode_place_order(market_id.0, false, U256::from(100), U256::from(5), 0);
@@ -160,13 +163,10 @@ fn imported_block_regenerates_precompile_events() {
     let mut block = producer.execute_block().unwrap();
     assert!(block.receipts.iter().all(|r| r.success));
     assert!(
-        block
-            .domain_events
-            .iter()
-            .any(|e| matches!(
-                e,
-                DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade { .. })
-            )),
+        block.domain_events.iter().any(|e| matches!(
+            e,
+            DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade { .. })
+        )),
         "producer block must carry the fill"
     );
 

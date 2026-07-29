@@ -94,7 +94,10 @@ fn emitted_evm_logs_land_in_the_receipt() {
         "the emitted LOG1 must be recorded in the receipt (was empty on the live chain)"
     );
     let log = &receipt.logs[0];
-    assert_eq!(log.address, contract, "log carries the emitting contract address");
+    assert_eq!(
+        log.address, contract,
+        "log carries the emitting contract address"
+    );
     assert_eq!(log.topics.len(), 1, "LOG1 has exactly one topic");
     assert_eq!(log.topics[0].0, [0xAA; 32], "topic round-trips intact");
 }
@@ -120,8 +123,18 @@ fn imported_block_reconstructs_stripped_receipt_logs() {
     runtime.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0xa1, 0x00]);
     let runtime_len = runtime.len();
     let mut init = vec![
-        0x60, runtime_len as u8, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, runtime_len as u8, 0x60,
-        0x00, 0xf3,
+        0x60,
+        runtime_len as u8,
+        0x60,
+        0x0c,
+        0x60,
+        0x00,
+        0x39,
+        0x60,
+        runtime_len as u8,
+        0x60,
+        0x00,
+        0xf3,
     ];
     init.extend_from_slice(&runtime);
 

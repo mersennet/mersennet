@@ -1,7 +1,9 @@
 use anyhow::{Result, bail};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use revm::db::InMemoryDB;
-use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256, keccak256};
+use revm::primitives::{
+    AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256, keccak256,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;

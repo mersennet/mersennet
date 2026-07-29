@@ -893,7 +893,14 @@ mod tests {
         let mut state = MersennetOrdersState::new();
         let m = state.add_market("TEST/USD", U256::from(1u64), U256::from(1u64));
         // Resting limit order well away from any cross so it stays on the book.
-        let id = state.place_order(owner, m, Side::Buy, U256::from(10u64), U256::from(5u64), TimeInForce::Gtc);
+        let id = state.place_order(
+            owner,
+            m,
+            Side::Buy,
+            U256::from(10u64),
+            U256::from(5u64),
+            TimeInForce::Gtc,
+        );
         (state, m, id)
     }
 
@@ -910,7 +917,9 @@ mod tests {
         assert!(state.orders.contains_key(&id));
 
         // The owner can cancel it.
-        let ok = state.cancel_order_owned(id, alice).expect("owner cancel ok");
+        let ok = state
+            .cancel_order_owned(id, alice)
+            .expect("owner cancel ok");
         assert!(ok.is_some());
         assert!(!state.orders.contains_key(&id));
     }

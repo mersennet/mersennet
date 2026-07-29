@@ -285,8 +285,7 @@ fn main() -> anyhow::Result<()> {
                                 eng.mempool_pending_snapshot()
                                     .into_iter()
                                     .map(|tx| {
-                                        let raw =
-                                            tx.hash.and_then(|h| eng.raw_tx_for(&h));
+                                        let raw = tx.hash.and_then(|h| eng.raw_tx_for(&h));
                                         (tx, raw)
                                     })
                                     .collect()
@@ -666,7 +665,8 @@ fn main() -> anyhow::Result<()> {
                                 let mut out = Vec::new();
                                 // Vote for a bounded window so a lagging
                                 // voter catches up without flooding.
-                                let start = last_voted.saturating_add(1).max(head.saturating_sub(16));
+                                let start =
+                                    last_voted.saturating_add(1).max(head.saturating_sub(16));
                                 for h in start..=head {
                                     if let Some(b) = e.block_by_number(h) {
                                         out.push((h, b.hash));

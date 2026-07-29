@@ -518,7 +518,10 @@ pub struct Engine {
     /// addresses. A block is finalized once voters representing >= 2/3
     /// of total stake have voted for it. Populated from signed `Vote`
     /// gossip messages routed in by the network layer.
-    finality_votes: std::collections::HashMap<u64, std::collections::HashMap<B256, std::collections::HashSet<Address>>>,
+    finality_votes: std::collections::HashMap<
+        u64,
+        std::collections::HashMap<B256, std::collections::HashSet<Address>>,
+    >,
     /// Heights that reached a 2/3-stake quorum, with the winning hash.
     finalized_heights: std::collections::HashMap<u64, B256>,
     /// Highest block height ever observed from the network (gossip or sync),
@@ -1180,7 +1183,8 @@ impl Engine {
         // precompile runs, so the tx gas limit must cover intrinsic +
         // the precompile's internal gas requirement + headroom, or the
         // precompile OOGs and the order silently reverts.
-        let gas_limit = 21_000 + calldata.len() as u64 * 16 + precompile_gas.saturating_mul(2) + 30_000;
+        let gas_limit =
+            21_000 + calldata.len() as u64 * 16 + precompile_gas.saturating_mul(2) + 30_000;
         let tx = Transaction {
             from: owner,
             to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
@@ -2139,12 +2143,7 @@ impl Engine {
     /// and signature onto the copy already stored in `self.chain` so peer
     /// sync (which reads from the chain) serves authenticated blocks — not
     /// the unsigned pre-signature snapshot.
-    pub fn attach_proposer_sig(
-        &mut self,
-        height: u64,
-        proposer: Address,
-        sig: (U256, U256, u64),
-    ) {
+    pub fn attach_proposer_sig(&mut self, height: u64, proposer: Address, sig: (U256, U256, u64)) {
         if let Some(block) = self.chain.iter_mut().rev().find(|b| b.number == height) {
             block.proposer = proposer;
             block.coinbase = proposer;
@@ -2266,9 +2265,8 @@ impl Engine {
             let (r, s, y) = block.proposer_sig.ok_or_else(|| {
                 anyhow::anyhow!("imported block {} has no proposer signature", block.number)
             })?;
-            let recovered =
-                crypto::recover_block_proposer(block.number, block.hash, r, s, y)
-                    .map_err(|e| anyhow::anyhow!("proposer signature invalid: {e}"))?;
+            let recovered = crypto::recover_block_proposer(block.number, block.hash, r, s, y)
+                .map_err(|e| anyhow::anyhow!("proposer signature invalid: {e}"))?;
             if recovered != block.proposer {
                 anyhow::bail!(
                     "proposer signature signer {} != block proposer {}",
@@ -2285,9 +2283,8 @@ impl Engine {
             }
             // The elected leader rotates by round on timeout; accept the
             // proposer if it is the leader at any round within a bounded window.
-            let is_elected_leader = (0..MAX_LEADER_ROUND_WINDOW).any(|round| {
-                self.leader_for_height(block.number, round) == Some(block.proposer)
-            });
+            let is_elected_leader = (0..MAX_LEADER_ROUND_WINDOW)
+                .any(|round| self.leader_for_height(block.number, round) == Some(block.proposer));
             if !is_elected_leader {
                 anyhow::bail!(
                     "block {} proposer {} is not an elected leader for this height",
@@ -3051,8 +3048,10 @@ impl Engine {
         // The canonical block hash is fully determined by the header
         // witness, so the SP1 proof binds to exactly the hash the block
         // carries.
-        let block_hash =
-            B256::from(mersennet_zkp::sp1::derive_block_hash(self.block_number, header));
+        let block_hash = B256::from(mersennet_zkp::sp1::derive_block_hash(
+            self.block_number,
+            header,
+        ));
         let shielded_state_root = B256::from(self.shielded_evm.state.current_root().to_bytes());
         // Cheap nullifier-root digest: a real SMT lives in
         // ShieldedState (Workstream A7 persistence) — for header
