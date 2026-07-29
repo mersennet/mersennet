@@ -133,6 +133,17 @@ pub struct WireTx {
     pub tx_type: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shielded_payload: Option<mersennet::shielded_evm::ShieldedEnvelope>,
+    /// Canonical tx hash (keccak256 of the raw RLP) carried across
+    /// gossip so every node reports the same wallet-computed hash for a
+    /// MetaMask/ethers-submitted transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
+    /// Raw signed envelope (hex) for wallet-submitted txs. Ethereum
+    /// signatures verify against the RLP signing payload, which peers
+    /// cannot reconstruct from the parsed fields — receivers re-decode
+    /// this envelope so the tx stays self-authenticating end to end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -161,6 +172,8 @@ pub struct WireBlock {
     pub base_fee: String,
     pub coinbase: String,
     pub hash: String,
+    #[serde(default)]
+    pub parent_hash: String,
     pub proposer: String,
     pub finalized: bool,
     pub state_root: String,
@@ -174,6 +187,39 @@ pub struct WireBlock {
     pub rewards: Vec<WireReward>,
     pub transactions: Vec<WireTx>,
     pub receipts: Vec<WireReceipt>,
+    // Shielded header fields + SP1 state-transition proof. Optional and
+    // defaulted so blocks from older nodes (which never sent them) still
+    // decode; without these the proof only existed on the producing node.
+    #[serde(default)]
+    pub shielded_state_root: Option<String>,
+    #[serde(default)]
+    pub nullifier_root: Option<String>,
+    #[serde(default)]
+    pub shielded_event_root: Option<String>,
+    /// bincode-encoded `StateTransitionProof`, hex string.
+    #[serde(default)]
+    pub state_proof: Option<String>,
+    /// Proposer signature over `(height, hash)` as hex `r`, `s`, and y-parity.
+    /// Verified on import so only the elected validator's blocks are accepted.
+    #[serde(default)]
+    pub proposer_sig_r: Option<String>,
+    #[serde(default)]
+    pub proposer_sig_s: Option<String>,
+    #[serde(default)]
+    pub proposer_sig_y: Option<u64>,
+}
+
+/// A signed BFT finality vote, gossiped on the "vote" topic. The
+/// signature is over `crypto::vote_digest(height, block_hash)`; the
+/// signer address is recovered on receipt and must be a known
+/// validator for the vote to count.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WireVote {
+    pub height: u64,
+    pub block_hash: String,
+    pub r: String,
+    pub s: String,
+    pub y_parity: u64,
 }
 
 fn hex_u256(v: &U256) -> String {
@@ -217,6 +263,10 @@ fn parse_hex_bytes(s: &str) -> Option<Bytes> {
 }
 
 pub fn tx_to_wire(tx: &Transaction) -> WireTx {
+    tx_to_wire_with_raw(tx, None)
+}
+
+pub fn tx_to_wire_with_raw(tx: &Transaction, raw: Option<&[u8]>) -> WireTx {
     let (sig_r, sig_s, sig_v) = match &tx.signature {
         Some((r, s, v)) => (Some(hex_u256(r)), Some(hex_u256(s)), Some(format!("{v:x}"))),
         None => (None, None, None),
@@ -235,6 +285,8 @@ pub fn tx_to_wire(tx: &Transaction) -> WireTx {
         sig_v,
         tx_type: tx.tx_type,
         shielded_payload: tx.shielded_payload.clone(),
+        hash: tx.hash.map(|h| hex_b256(&h)),
+        raw: raw.map(hex::encode),
     }
 }
 
@@ -262,6 +314,7 @@ pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
         signature,
         tx_type: wire.tx_type,
         shielded_payload: wire.shielded_payload.clone(),
+        hash: wire.hash.as_deref().and_then(parse_hex_b256),
     })
 }
 
@@ -299,6 +352,7 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
         base_fee: hex_u256(&block.base_fee),
         coinbase: hex_addr(&block.coinbase),
         hash: hex_b256(&block.hash),
+        parent_hash: hex_b256(&block.parent_hash),
         proposer: hex_addr(&block.proposer),
         finalized: block.finalized,
         state_root: hex_b256(&block.state_root),
@@ -314,6 +368,17 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
             .collect(),
         transactions: block.transactions.iter().map(tx_to_wire).collect(),
         receipts: block.receipts.iter().map(receipt_to_wire).collect(),
+        shielded_state_root: Some(hex_b256(&block.shielded_state_root)),
+        nullifier_root: Some(hex_b256(&block.nullifier_root)),
+        shielded_event_root: Some(hex_b256(&block.shielded_event_root)),
+        state_proof: block
+            .state_proof
+            .as_ref()
+            .and_then(|p| bincode::serialize(p).ok())
+            .map(hex::encode),
+        proposer_sig_r: block.proposer_sig.map(|(r, _, _)| hex_u256(&r)),
+        proposer_sig_s: block.proposer_sig.map(|(_, s, _)| hex_u256(&s)),
+        proposer_sig_y: block.proposer_sig.map(|(_, _, y)| y),
     }
 }
 
@@ -322,6 +387,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
     let receipts: Option<Vec<Receipt>> = wire.receipts.iter().map(wire_to_receipt).collect();
     let base_fee = parse_hex_u256(&wire.base_fee)?;
     let hash = parse_hex_b256(&wire.hash)?;
+    let parent_hash = parse_hex_b256(&wire.parent_hash).unwrap_or(B256::ZERO);
     let proposer = parse_hex_addr(&wire.proposer)?;
     let coinbase = parse_hex_addr(&wire.coinbase)?;
     let state_root = parse_hex_b256(&wire.state_root)?;
@@ -352,6 +418,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         base_fee,
         coinbase,
         hash,
+        parent_hash,
         proposer,
         finalized: wire.finalized,
         state_root,
@@ -382,10 +449,34 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         bridge_orders_to_evm: Vec::new(),
         bridge_evm_to_orders: Vec::new(),
         domain_events: Vec::new(),
-        shielded_state_root: revm::primitives::B256::ZERO,
-        nullifier_root: revm::primitives::B256::ZERO,
-        shielded_event_root: revm::primitives::B256::ZERO,
-        state_proof: None,
+        shielded_state_root: wire
+            .shielded_state_root
+            .as_deref()
+            .and_then(parse_hex_b256)
+            .unwrap_or(revm::primitives::B256::ZERO),
+        nullifier_root: wire
+            .nullifier_root
+            .as_deref()
+            .and_then(parse_hex_b256)
+            .unwrap_or(revm::primitives::B256::ZERO),
+        shielded_event_root: wire
+            .shielded_event_root
+            .as_deref()
+            .and_then(parse_hex_b256)
+            .unwrap_or(revm::primitives::B256::ZERO),
+        state_proof: wire
+            .state_proof
+            .as_deref()
+            .and_then(|s| hex::decode(s).ok())
+            .and_then(|b| bincode::deserialize(&b).ok()),
+        proposer_sig: match (
+            wire.proposer_sig_r.as_deref().and_then(parse_hex_u256),
+            wire.proposer_sig_s.as_deref().and_then(parse_hex_u256),
+            wire.proposer_sig_y,
+        ) {
+            (Some(r), Some(s), Some(y)) => Some((r, s, y)),
+            _ => None,
+        },
     })
 }
 
@@ -450,11 +541,54 @@ impl NetworkNode {
                             }
                             "tx" => {
                                 if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
-                                    && let Some(tx) = wire_to_tx(&wire)
                                     && let Ok(mut eng) = engine.lock()
-                                    && let Err(err) = eng.submit_tx(tx)
                                 {
-                                    tracing::debug!(reason = err.code(), "dropped relayed tx");
+                                    // Wallet txs carry their raw signed
+                                    // envelope: re-decode it so the true
+                                    // Ethereum (EIP-155/typed) signature is
+                                    // verified — the parsed fields alone
+                                    // can't reproduce that signing payload.
+                                    if let Some(raw_hex) = &wire.raw {
+                                        match hex::decode(raw_hex).ok().and_then(|raw| {
+                                            mersennet::crypto::decode_raw_signed_tx(&raw).ok()
+                                        }) {
+                                            Some(signed) => {
+                                                if let Err(err) = eng.submit_tx_unsigned(signed.tx)
+                                                {
+                                                    tracing::debug!(
+                                                        reason = err.code(),
+                                                        "dropped relayed raw tx"
+                                                    );
+                                                }
+                                            }
+                                            None => tracing::debug!(
+                                                "dropped relayed tx: bad raw envelope"
+                                            ),
+                                        }
+                                    } else if let Some(tx) = wire_to_tx(&wire) {
+                                        // Native-format txs must carry a valid
+                                        // signature — submit_tx verifies the
+                                        // signer matches `from`. Unsigned txs
+                                        // relayed over gossip are rejected
+                                        // (they could execute as any account).
+                                        if tx.signature.is_some() {
+                                            if let Err(err) = eng.submit_tx(tx) {
+                                                tracing::debug!(
+                                                    reason = err.code(),
+                                                    "dropped relayed tx"
+                                                );
+                                            }
+                                        } else {
+                                            tracing::debug!(
+                                                "dropped relayed unsigned tx (signatures required)"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            "vote" => {
+                                if let Ok(wire) = serde_json::from_slice::<WireVote>(&packet.data) {
+                                    handle_vote(&engine, &wire);
                                 }
                             }
                             _ => {}
@@ -503,9 +637,14 @@ impl NetworkNode {
                                     1
                                 };
                                 let height = eng.latest_height();
-                                let blocks: Vec<WireBlock> = (from..=height)
-                                    .filter_map(|n| eng.block_by_number(n))
-                                    .map(block_to_wire)
+                                // Serve up to a bounded batch per request.
+                                // Use get_block so heights below the
+                                // in-memory window are read from disk — a
+                                // peer far behind can still be caught up.
+                                let batch_end = height.min(from.saturating_add(255));
+                                let blocks: Vec<WireBlock> = (from..=batch_end)
+                                    .filter_map(|n| eng.get_block(n))
+                                    .map(|b| block_to_wire(&b))
                                     .collect();
                                 let data = serde_json::to_vec(&blocks).unwrap_or_default();
                                 let gossip_pkt = crate::net_transport::GossipPacket {
@@ -628,10 +767,38 @@ impl NetworkNode {
     }
 
     pub fn broadcast_tx(&self, tx: &Transaction) -> Result<()> {
-        let wire = tx_to_wire(tx);
+        self.broadcast_tx_with_raw(tx, None)
+    }
+
+    /// Broadcast a tx, attaching its raw signed envelope when available so
+    /// receivers can re-verify wallet (Ethereum-format) signatures.
+    pub fn broadcast_tx_with_raw(&self, tx: &Transaction, raw: Option<&[u8]>) -> Result<()> {
+        let wire = tx_to_wire_with_raw(tx, raw);
         let data = serde_json::to_vec(&wire)?;
         let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
         let packet = gossip.new_packet("tx", data, 3);
+        gossip.broadcast(&packet)
+    }
+
+    /// Gossip a signed BFT finality vote for `(height, block_hash)`.
+    pub fn broadcast_vote(
+        &self,
+        height: u64,
+        block_hash: B256,
+        r: U256,
+        s: U256,
+        y_parity: u64,
+    ) -> Result<()> {
+        let wire = WireVote {
+            height,
+            block_hash: hex_b256(&block_hash),
+            r: hex_u256(&r),
+            s: hex_u256(&s),
+            y_parity,
+        };
+        let data = serde_json::to_vec(&wire)?;
+        let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let packet = gossip.new_packet("vote", data, 3);
         gossip.broadcast(&packet)
     }
 
@@ -641,6 +808,35 @@ impl NetworkNode {
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+}
+
+/// Verify a gossiped finality vote and, if the signer is a known
+/// validator, record it in the engine. Recovering the signer from the
+/// signature means a forged vote (bad signature) simply fails to
+/// recover a validator address and is dropped.
+fn handle_vote(engine: &Arc<Mutex<Engine>>, wire: &WireVote) {
+    let Some(block_hash) = parse_hex_b256(&wire.block_hash) else {
+        return;
+    };
+    let Some(r) = parse_hex_u256(&wire.r) else {
+        return;
+    };
+    let Some(s) = parse_hex_u256(&wire.s) else {
+        return;
+    };
+    let signer = match mersennet::crypto::recover_vote_signer(
+        wire.height,
+        block_hash,
+        r,
+        s,
+        wire.y_parity,
+    ) {
+        Ok(addr) => addr,
+        Err(_) => return,
+    };
+    if let Ok(mut eng) = engine.lock() {
+        eng.record_finality_vote(wire.height, block_hash, signer);
     }
 }
 

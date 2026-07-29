@@ -5,13 +5,16 @@ use mersennet::engine::{Block, Engine, LogEntry, Receipt, Transaction};
 use mersennet::errors::RpcInputError;
 use mersennet::events::{BridgeEvent, BridgeQueueKind, DomainEvent, MersennetOrdersEvent};
 use mersennet::prometheus;
-use revm::primitives::{Address, B256, Bytes, U256};
+use revm::primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::io::Read;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Response, Server};
-use tracing::info;
+use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
 // Filter state for eth_newFilter / eth_getFilterChanges / eth_uninstallFilter
@@ -61,6 +64,75 @@ impl FilterState {
 
     fn remove(&mut self, id: u64) -> bool {
         self.filters.remove(&id).is_some()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-IP throttle — this endpoint sits on the public internet.
+// ---------------------------------------------------------------------------
+
+/// Fixed-window per-IP request cap. Legit clients batch (a JSON-RPC batch is
+/// one HTTP request), so anything above this rate is abuse or a stuck loop.
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(1);
+const RATE_LIMIT_MAX_PER_WINDOW: u32 = 100;
+/// Bound tracker memory: drop all state rather than let a botnet grow the map.
+const RATE_LIMIT_MAX_TRACKED_IPS: usize = 100_000;
+
+/// Resolve the address to throttle on. Direct connections are keyed on the
+/// socket peer. Loopback connections come from the local reverse proxy (Caddy
+/// terminates TLS for rpc.mersennet.com on this host), so key on the client
+/// address it forwards instead — otherwise every proxied request shares the
+/// 127.0.0.1 bucket and one abuser starves all legitimate users.
+fn throttle_ip(
+    peer: IpAddr,
+    cf_connecting_ip: Option<&str>,
+    x_forwarded_for: Option<&str>,
+) -> IpAddr {
+    if !peer.is_loopback() {
+        return peer;
+    }
+    // Behind our own loopback reverse proxy (Caddy) fronted by Cloudflare.
+    // Prefer CF-Connecting-IP, which Cloudflare sets and overwrites (a client
+    // cannot forge it through CF). For X-Forwarded-For, take the LAST hop —
+    // the entry our own proxy appended — not the first, which is
+    // client-controlled and would let an attacker rotate the per-IP bucket
+    // with a spoofed header.
+    if let Some(ip) = cf_connecting_ip.and_then(|v| v.trim().parse().ok()) {
+        return ip;
+    }
+    if let Some(ip) = x_forwarded_for
+        .and_then(|v| v.split(',').next_back())
+        .and_then(|v| v.trim().parse().ok())
+    {
+        return ip;
+    }
+    peer
+}
+
+#[derive(Debug)]
+struct RateLimiter {
+    hits: HashMap<IpAddr, (Instant, u32)>,
+}
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            hits: HashMap::new(),
+        }
+    }
+
+    /// True if this IP may make another request right now.
+    fn allow(&mut self, ip: IpAddr) -> bool {
+        if self.hits.len() >= RATE_LIMIT_MAX_TRACKED_IPS {
+            self.hits.clear();
+        }
+        let now = Instant::now();
+        let entry = self.hits.entry(ip).or_insert((now, 0));
+        if now.duration_since(entry.0) >= RATE_LIMIT_WINDOW {
+            *entry = (now, 0);
+        }
+        entry.1 += 1;
+        entry.1 <= RATE_LIMIT_MAX_PER_WINDOW
     }
 }
 
@@ -147,21 +219,6 @@ struct TxDto {
     chain_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TxInput {
-    from: String,
-    to: Option<String>,
-    value: Option<String>,
-    data: Option<String>,
-    gas: Option<String>,
-    #[serde(alias = "gas_price")]
-    gas_price: Option<String>,
-    nonce: Option<String>,
-    #[serde(alias = "chain_id")]
-    chain_id: Option<u64>,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReceiptDto {
@@ -223,10 +280,16 @@ enum TopicFilter {
 pub fn serve(engine: Arc<Mutex<Engine>>, addr: &str) -> Result<()> {
     let server = Server::http(addr).map_err(|err| anyhow!(err.to_string()))?;
     let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+    let mut rate_limiter = RateLimiter::new();
     info!("RPC listening on http://{addr}");
 
     for request in server.incoming_requests() {
-        handle_request(request, &engine, &filters)?;
+        // One malformed request must never take down the node (this process
+        // is the public RPC for the whole stack): log the failure, drop the
+        // connection, and keep serving.
+        if let Err(err) = handle_request(request, &engine, &filters, &mut rate_limiter) {
+            warn!("RPC request failed: {err:#}");
+        }
     }
 
     Ok(())
@@ -236,7 +299,38 @@ fn handle_request(
     mut request: tiny_http::Request,
     engine: &Arc<Mutex<Engine>>,
     filters: &FilterStore,
+    rate_limiter: &mut RateLimiter,
 ) -> Result<()> {
+    // Per-IP throttle before any work: the whole stack hangs off this one
+    // process, so a flood from a single source must not starve everyone else.
+    if let Some(addr) = request.remote_addr() {
+        let cf_ip = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("CF-Connecting-IP"))
+            .map(|h| h.value.as_str().to_owned());
+        let xff = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("X-Forwarded-For"))
+            .map(|h| h.value.as_str().to_owned());
+        let ip = throttle_ip(addr.ip(), cf_ip.as_deref(), xff.as_deref());
+        if !rate_limiter.allow(ip) {
+            let response = Response::from_string(error_body(
+                Value::Null,
+                -32005,
+                "rate limit exceeded".to_string(),
+            )?)
+            .with_status_code(429)
+            .with_header(
+                Header::from_bytes("Content-Type", "application/json")
+                    .map_err(|_| anyhow!("invalid header"))?,
+            );
+            request.respond(response)?;
+            return Ok(());
+        }
+    }
+
     // Expose metrics on GET /metrics
     if request.method() == &Method::Get && request.url() == "/metrics" {
         if let Some(handle) = prometheus::handle() {
@@ -299,38 +393,21 @@ fn handle_request(
         return Ok(());
     }
 
-    let mut content = String::new();
-    request.as_reader().read_to_string(&mut content)?;
-    let parsed: Result<RpcRequest, _> = serde_json::from_str(&content);
-    let response = match parsed {
-        Ok(call) => {
-            let method = call.method.clone();
-            match dispatch(call, engine, filters) {
-                Ok(payload) => payload,
-                Err((id, error)) => {
-                    metrics::increment_counter!(
-                        "mersennet_rpc_errors",
-                        "code" => error.code.to_string(),
-                        "method" => method.clone()
-                    );
-                    tracing::warn!(method = %method, code = error.code, message = %error.message, "rpc request failed");
-                    serde_json::to_string(&RpcErrorResponse {
-                        jsonrpc: "2.0",
-                        id,
-                        error,
-                    })?
-                }
-            }
-        }
-        Err(err) => serde_json::to_string(&RpcErrorResponse {
-            jsonrpc: "2.0",
-            id: Value::Null,
-            error: RpcError {
-                code: -32700,
-                message: format!("invalid json: {err}"),
-                data: None,
-            },
-        })?,
+    // Cap the body read — this endpoint is on the public internet.
+    // Read raw bytes first: an invalid-UTF-8 body is a client error (-32700),
+    // not an I/O error that would kill the accept loop.
+    let mut raw = Vec::new();
+    request
+        .as_reader()
+        .take(MAX_BODY_BYTES + 1)
+        .read_to_end(&mut raw)?;
+    let response = match String::from_utf8(raw) {
+        Ok(content) => handle_body(&content, engine, filters)?,
+        Err(_) => error_body(
+            Value::Null,
+            -32700,
+            "request body is not valid UTF-8".to_string(),
+        )?,
     };
 
     let response = Response::from_string(response)
@@ -344,6 +421,86 @@ fn handle_request(
         );
     request.respond(response)?;
     Ok(())
+}
+
+/// Public-endpoint limits: request bodies and batch fan-out are attacker-controlled.
+const MAX_BODY_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_BATCH_CALLS: usize = 100;
+
+/// Turn a raw request body into a response body: a single JSON-RPC call, or a
+/// JSON-RPC 2.0 batch (an array of calls answered by an array of responses in
+/// the same order — ethers.js batches by default).
+fn handle_body(
+    content: &str,
+    engine: &Arc<Mutex<Engine>>,
+    filters: &FilterStore,
+) -> Result<String> {
+    if content.len() as u64 > MAX_BODY_BYTES {
+        return error_body(
+            Value::Null,
+            -32600,
+            format!("request body exceeds {MAX_BODY_BYTES} bytes"),
+        );
+    }
+    match serde_json::from_str::<Value>(content) {
+        Ok(Value::Array(calls)) => {
+            if calls.is_empty() {
+                error_body(Value::Null, -32600, "empty batch".to_string())
+            } else if calls.len() > MAX_BATCH_CALLS {
+                error_body(
+                    Value::Null,
+                    -32600,
+                    format!("batch exceeds {MAX_BATCH_CALLS} calls"),
+                )
+            } else {
+                let payloads = calls
+                    .into_iter()
+                    .map(|call| run_one_call(call, engine, filters))
+                    .collect::<Result<Vec<String>>>()?;
+                Ok(format!("[{}]", payloads.join(",")))
+            }
+        }
+        Ok(single) => run_one_call(single, engine, filters),
+        Err(err) => error_body(Value::Null, -32700, format!("invalid json: {err}")),
+    }
+}
+
+fn error_body(id: Value, code: i64, message: String) -> Result<String> {
+    Ok(serde_json::to_string(&RpcErrorResponse {
+        jsonrpc: "2.0",
+        id,
+        error: RpcError {
+            code,
+            message,
+            data: None,
+        },
+    })?)
+}
+
+/// Run a single already-JSON-parsed call and serialize its success or error
+/// payload. Shared by the single-request path and each element of a batch.
+fn run_one_call(raw: Value, engine: &Arc<Mutex<Engine>>, filters: &FilterStore) -> Result<String> {
+    let call: RpcRequest = match serde_json::from_value(raw) {
+        Ok(call) => call,
+        Err(err) => return error_body(Value::Null, -32600, format!("invalid request: {err}")),
+    };
+    let method = call.method.clone();
+    match dispatch(call, engine, filters) {
+        Ok(payload) => Ok(payload),
+        Err((id, error)) => {
+            metrics::increment_counter!(
+                "mersennet_rpc_errors",
+                "code" => error.code.to_string(),
+                "method" => method.clone()
+            );
+            tracing::warn!(method = %method, code = error.code, message = %error.message, "rpc request failed");
+            Ok(serde_json::to_string(&RpcErrorResponse {
+                jsonrpc: "2.0",
+                id,
+                error,
+            })?)
+        }
+    }
 }
 
 fn dispatch(
@@ -467,26 +624,24 @@ fn dispatch(
                     rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
                 )
             })?;
+            // Keep the raw envelope so the p2p relay can gossip it verbatim;
+            // peers re-verify the Ethereum signature from the raw bytes.
+            engine.cache_raw_tx(tx_hash, raw_hex);
             Value::String(hex_b256(tx_hash))
         }
         "mersennet_sendTransaction" | "eth_sendTransaction" => {
-            let params = call.params.unwrap_or(Value::Null);
-            let tx = parse_tx_input(params)
-                .map_err(|err| (id.clone(), rpc_error_invalid_params(err.to_string())))?;
-            let mut engine = engine
-                .lock()
-                .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
-            let tx_hash = tx_hash(&tx);
-            engine.submit_tx_unsigned(tx).map_err(|err| {
-                let data = json!({
-                    "reason": err.code(),
-                });
-                (
-                    id.clone(),
-                    rpc_error_with_data(-32005, format!("tx rejected: {}", err), data),
-                )
-            })?;
-            Value::String(hex_b256(tx_hash))
+            // Disabled on the public RPC: this signs with a node-held key /
+            // trusts a caller-supplied `from`, so exposing it lets anyone
+            // execute transactions as any account. Wallets must sign locally
+            // and submit via eth_sendRawTransaction.
+            return Err((
+                id.clone(),
+                rpc_error_with_data(
+                    -32601,
+                    "eth_sendTransaction is disabled; sign the transaction in your wallet and submit it via eth_sendRawTransaction".to_string(),
+                    Value::Null,
+                ),
+            ));
         }
         "mersennet_getLogs" | "eth_getLogs" => {
             let params = call.params.unwrap_or(Value::Null);
@@ -544,11 +699,18 @@ fn dispatch(
                 Value::Array(v) => v,
                 _ => vec![],
             };
+            // Clamp blockCount: this is attacker-controlled and each block is a
+            // lookup into the in-memory chain window done while holding the
+            // engine lock (which also serializes block production and every
+            // other RPC). An unclamped huge count is a whole-node DoS.
+            // Standard clients never request more than 1024.
+            const MAX_FEE_HISTORY_BLOCKS: u64 = 1024;
             let block_count = match array.first() {
                 Some(Value::String(s)) => parse_hex_u64(s).unwrap_or(1),
                 Some(Value::Number(n)) => n.as_u64().unwrap_or(1),
                 _ => 1,
-            };
+            }
+            .clamp(1, MAX_FEE_HISTORY_BLOCKS);
             let newest = match array.get(1) {
                 Some(Value::String(s)) if s == "latest" || s == "pending" => latest,
                 Some(Value::String(s)) => parse_hex_u64(s).unwrap_or(latest),
@@ -939,69 +1101,6 @@ fn parse_hash_param(params: Value) -> Result<B256, RpcInputError> {
     Ok(hash)
 }
 
-fn parse_tx_input(params: Value) -> Result<Transaction, RpcInputError> {
-    let array = match params {
-        Value::Array(values) => values,
-        _ => return Err(RpcInputError::InvalidParams),
-    };
-    let obj = array
-        .first()
-        .ok_or(RpcInputError::TransactionRequired)?
-        .clone();
-    let input: TxInput = serde_json::from_value(obj)
-        .map_err(|err| RpcInputError::InvalidTransaction(err.to_string()))?;
-
-    let from = parse_address(&input.from)?;
-    let to = match input.to {
-        Some(value) => Some(parse_address(&value)?),
-        None => None,
-    };
-    let value = input
-        .value
-        .as_deref()
-        .map(parse_hex_u256)
-        .transpose()?
-        .unwrap_or(U256::ZERO);
-    let gas_limit = input
-        .gas
-        .as_deref()
-        .map(parse_hex_u64)
-        .transpose()?
-        .unwrap_or(21_000);
-    let gas_price = input
-        .gas_price
-        .as_deref()
-        .map(parse_hex_u256)
-        .transpose()?
-        .unwrap_or(U256::ZERO);
-    let nonce = input
-        .nonce
-        .as_deref()
-        .map(parse_hex_u64)
-        .transpose()?
-        .unwrap_or(0);
-    let data = input
-        .data
-        .as_deref()
-        .map(parse_hex_bytes)
-        .transpose()?
-        .unwrap_or_else(Bytes::new);
-
-    Ok(Transaction {
-        from,
-        to,
-        value,
-        data,
-        gas_limit,
-        gas_price,
-        nonce,
-        chain_id: input.chain_id,
-        signature: None,
-        tx_type: 0,
-        shielded_payload: None,
-    })
-}
-
 fn parse_log_filter(
     params: Value,
     engine: &Arc<Mutex<Engine>>,
@@ -1135,6 +1234,10 @@ fn find_transaction(engine: &Engine, hash: B256) -> Option<(&Transaction, &Block
 }
 
 fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
+    block_to_dto_with_privacy(block, include_txs, crate::ws::privacy_mode_activated())
+}
+
+fn block_to_dto_with_privacy(block: &Block, include_txs: bool, privacy_active: bool) -> BlockDto {
     let block_hash = hex_b256(block.hash);
     let block_number = hex_u64(block.number);
 
@@ -1166,15 +1269,13 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
     BlockDto {
         number: block_number.clone(),
         hash: block_hash,
-        parent_hash: if block.number > 0 {
-            hex_b256(B256::from(U256::from(block.number - 1)))
-        } else {
-            hex_b256(B256::ZERO)
-        },
+        // Real hash-linked parent (was a placeholder derived from the
+        // block number). Genesis carries a zero parent.
+        parent_hash: hex_b256(block.parent_hash),
         nonce: "0x0000000000000000".to_string(),
         sha3_uncles: hex_b256(B256::ZERO),
-        logs_bloom: format!("0x{}", "0".repeat(512)),
-        transactions_root: hex_b256(block.state_root),
+        logs_bloom: block_logs_bloom_hex(block),
+        transactions_root: hex_b256(block.hash),
         state_root: hex_b256(block.state_root),
         receipts_root: hex_b256(B256::ZERO),
         miner: hex_address(block.coinbase),
@@ -1193,14 +1294,17 @@ fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
         domain_events: block
             .domain_events
             .iter()
-            .filter(|event| block_domain_event_is_visible(block, event))
-            .map(domain_event_to_value)
+            .filter(|event| block_domain_event_is_visible(event, privacy_active))
+            .map(|event| domain_event_to_value(event, privacy_active))
             .collect(),
     }
 }
 
-fn block_domain_event_is_visible(block: &Block, event: &DomainEvent) -> bool {
-    if block.shielded_state_root == B256::ZERO {
+// Pre-fork, all CLOB events are public. A non-zero shielded_state_root is NOT
+// a privacy signal any more — proof-only mode gives every block one — so
+// visibility keys on the actual privacy activation flag.
+fn block_domain_event_is_visible(event: &DomainEvent, privacy_active: bool) -> bool {
+    if !privacy_active {
         return true;
     }
 
@@ -1251,12 +1355,12 @@ fn tx_to_dto_in_block(
     }
 }
 
-fn domain_event_to_value(event: &DomainEvent) -> Value {
+fn domain_event_to_value(event: &DomainEvent, privacy_active: bool) -> Value {
     match event {
         DomainEvent::MersennetOrders(evt) => json!({
             "domain": "mersennet_orders",
             "kind": evt.kind(),
-            "data": mersennet_orders_event_data(evt),
+            "data": mersennet_orders_event_data(evt, privacy_active),
         }),
         DomainEvent::Bridge(evt) => json!({
             "domain": "bridge",
@@ -1274,8 +1378,10 @@ fn domain_event_to_value(event: &DomainEvent) -> Value {
     }
 }
 
-fn mersennet_orders_event_data(event: &MersennetOrdersEvent) -> Value {
-    if !event.is_privacy_safe_after_activation() {
+fn mersennet_orders_event_data(event: &MersennetOrdersEvent, privacy_active: bool) -> Value {
+    // Pre-fork the transparent CLOB is public by design — only redact once
+    // the privacy hard fork has actually activated.
+    if privacy_active && !event.is_privacy_safe_after_activation() {
         return json!({
             "redacted": true,
             "reason": "privacy_mode_sensitive_event",
@@ -1357,9 +1463,14 @@ fn mersennet_orders_event_data(event: &MersennetOrdersEvent) -> Value {
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
-        _ => {
-            unreachable!("privacy-sensitive MersennetOrders events should be redacted above")
-        }
+        MersennetOrdersEvent::CollateralDeposited { owner, amount } => json!({
+            "owner": hex_address(*owner),
+            "amount": hex_u256(*amount),
+        }),
+        MersennetOrdersEvent::Liquidation { owner, liquidated } => json!({
+            "owner": hex_address(*owner),
+            "liquidated": liquidated,
+        }),
     }
 }
 
@@ -1425,7 +1536,7 @@ fn receipt_to_dto(
             "0x0".to_string()
         },
         contract_address: receipt.created_address.map(hex_address),
-        logs_bloom: format!("0x{}", "0".repeat(512)),
+        logs_bloom: logs_bloom_hex(&receipt.logs),
         tx_type: "0x0".to_string(),
         logs,
     }
@@ -1504,7 +1615,68 @@ mod tests {
     use mersennet::engine::Engine;
     use mersennet::events::{DomainEvent, MersennetOrdersEvent};
     use mersennet::mersennet_orders::{Side, TimeInForce};
+    use revm::primitives::Bytes;
     use tempfile::TempDir;
+
+    #[test]
+    fn logs_bloom_empty_is_zero() {
+        assert_eq!(compute_logs_bloom(&[]), [0u8; 256]);
+    }
+
+    #[test]
+    fn throttle_ip_uses_forwarded_headers_only_for_loopback_peers() {
+        let lo: IpAddr = "127.0.0.1".parse().unwrap();
+        let direct: IpAddr = "198.51.100.4".parse().unwrap();
+        let client: IpAddr = "203.0.113.9".parse().unwrap();
+        // Direct peers are never overridden by (spoofable) headers.
+        assert_eq!(throttle_ip(direct, Some("203.0.113.9"), None), direct);
+        // Loopback = local reverse proxy: trust CF-Connecting-IP first…
+        assert_eq!(
+            throttle_ip(lo, Some("203.0.113.9"), Some("192.0.2.1")),
+            client
+        );
+        // …then the LAST X-Forwarded-For hop (the one our own proxy appended;
+        // the first entry is client-controlled and spoofable).
+        assert_eq!(
+            throttle_ip(lo, None, Some("198.51.100.4, 203.0.113.9")),
+            client
+        );
+        // …and fall back to the peer when neither is present or parseable.
+        assert_eq!(throttle_ip(lo, Some("garbage"), None), lo);
+    }
+
+    #[test]
+    fn rate_limiter_caps_per_ip_per_window() {
+        let mut limiter = RateLimiter::new();
+        let ip: IpAddr = "203.0.113.7".parse().unwrap();
+        for _ in 0..RATE_LIMIT_MAX_PER_WINDOW {
+            assert!(limiter.allow(ip), "requests within the cap must pass");
+        }
+        assert!(!limiter.allow(ip), "request beyond the cap must be denied");
+        // A different source IP is unaffected.
+        let other: IpAddr = "203.0.113.8".parse().unwrap();
+        assert!(limiter.allow(other));
+    }
+
+    #[test]
+    fn logs_bloom_matches_geth_bloom9_for_zero_address() {
+        // keccak256(20 zero bytes) = 0x5380c7b7…, whose byte pairs 0/2/4 select
+        // bloom bits 896, 1665, 1975 per go-ethereum's bloom9. This pins both the
+        // bit math and the big-endian orientation, so external clients that trust
+        // logsBloom agree.
+        let log = LogEntry {
+            address: Address::ZERO,
+            topics: vec![],
+            data: Bytes::new(),
+        };
+        let bloom = compute_logs_bloom(std::slice::from_ref(&log));
+        let bit_set = |bit: usize| bloom[256 - 1 - bit / 8] & (1u8 << (bit % 8)) != 0;
+        for bit in [896usize, 1665, 1975] {
+            assert!(bit_set(bit), "expected bloom bit {bit} to be set");
+        }
+        let popcount: u32 = bloom.iter().map(|b| b.count_ones()).sum();
+        assert_eq!(popcount, 3, "a single zero-address log sets exactly 3 bits");
+    }
 
     #[test]
     fn block_dto_hides_sensitive_mersennet_orders_events_after_privacy_activation() {
@@ -1565,6 +1737,91 @@ mod tests {
             method: method.to_string(),
             params: Some(params),
         }
+    }
+
+    fn test_engine() -> (TempDir, Arc<Mutex<Engine>>, FilterStore) {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let engine = Arc::new(Mutex::new(Engine::new_with_state(1, temp_dir.path())));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+        (temp_dir, engine, filters)
+    }
+
+    #[test]
+    fn handle_body_single_call_returns_object() {
+        let (_dir, engine, filters) = test_engine();
+        let body = r#"{"jsonrpc":"2.0","id":7,"method":"eth_chainId","params":[]}"#;
+        let out = handle_body(body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["id"], Value::from(7));
+        assert_eq!(v["result"], Value::from("0x1"));
+    }
+
+    #[test]
+    fn handle_body_batch_returns_array_in_order() {
+        let (_dir, engine, filters) = test_engine();
+        let body = r#"[
+            {"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]},
+            {"jsonrpc":"2.0","id":2,"method":"eth_blockNumber","params":[]},
+            {"jsonrpc":"2.0","id":3,"method":"no_such_method","params":[]}
+        ]"#;
+        let out = handle_body(body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json array");
+        let arr = v.as_array().expect("array response");
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0]["id"], Value::from(1));
+        assert_eq!(arr[0]["result"], Value::from("0x1"));
+        assert_eq!(arr[1]["id"], Value::from(2));
+        assert!(arr[1]["result"].is_string());
+        // Per-call failures answer in place without failing the batch.
+        assert_eq!(arr[2]["id"], Value::from(3));
+        assert_eq!(arr[2]["error"]["code"], Value::from(-32601));
+    }
+
+    #[test]
+    fn handle_body_empty_batch_is_invalid_request() {
+        let (_dir, engine, filters) = test_engine();
+        let out = handle_body("[]", &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32600));
+    }
+
+    #[test]
+    fn handle_body_oversized_batch_rejected() {
+        let (_dir, engine, filters) = test_engine();
+        let call = r#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#;
+        let body = format!("[{}]", vec![call; MAX_BATCH_CALLS + 1].join(","));
+        let out = handle_body(&body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32600));
+    }
+
+    #[test]
+    fn handle_body_malformed_batch_element_answers_in_place() {
+        let (_dir, engine, filters) = test_engine();
+        let body = r#"[{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}, 42]"#;
+        let out = handle_body(body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        let arr = v.as_array().expect("array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["result"], Value::from("0x1"));
+        assert_eq!(arr[1]["error"]["code"], Value::from(-32600));
+    }
+
+    #[test]
+    fn handle_body_garbage_is_parse_error() {
+        let (_dir, engine, filters) = test_engine();
+        let out = handle_body("not json at all", &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32700));
+    }
+
+    #[test]
+    fn handle_body_oversized_body_rejected() {
+        let (_dir, engine, filters) = test_engine();
+        let body = "x".repeat((MAX_BODY_BYTES + 1) as usize);
+        let out = handle_body(&body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(-32600));
     }
 
     #[test]
@@ -1688,6 +1945,7 @@ mod tests {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         })
         .expect("tx accepted");
         let block = eng.execute_block().expect("block executed");
@@ -1750,6 +2008,12 @@ mod tests {
 }
 
 fn tx_hash(tx: &Transaction) -> B256 {
+    // Prefer the canonical hash captured at decode time (keccak256 of the
+    // raw RLP envelope) so MetaMask/ethers-submitted txs are found by the
+    // exact hash the wallet computed.
+    if let Some(h) = tx.hash {
+        return h;
+    }
     let mut payload = Vec::new();
     payload.extend_from_slice(tx.from.as_slice());
     payload.push(if tx.to.is_some() { 1 } else { 0 });
@@ -1768,17 +2032,6 @@ fn tx_hash(tx: &Transaction) -> B256 {
 fn parse_hex_u64(input: &str) -> Result<u64, RpcInputError> {
     let stripped = input.strip_prefix("0x").unwrap_or(input);
     u64::from_str_radix(stripped, 16).map_err(|err| RpcInputError::InvalidHex(err.to_string()))
-}
-
-fn parse_hex_u256(input: &str) -> Result<U256, RpcInputError> {
-    let stripped = input.strip_prefix("0x").unwrap_or(input);
-    U256::from_str_radix(stripped, 16).map_err(|err| RpcInputError::InvalidHex(err.to_string()))
-}
-
-fn parse_hex_bytes(input: &str) -> Result<Bytes, RpcInputError> {
-    let stripped = input.strip_prefix("0x").unwrap_or(input);
-    let bytes = hex::decode(stripped).map_err(|err| RpcInputError::HexDecode(err.to_string()))?;
-    Ok(Bytes::from(bytes))
 }
 
 fn parse_address(value: &str) -> Result<Address, RpcInputError> {
@@ -1821,4 +2074,42 @@ fn hex_address(address: Address) -> String {
 
 fn hex_b256(hash: B256) -> String {
     format!("0x{}", hex::encode(hash.as_slice()))
+}
+
+/// Ethereum 2048-bit logs bloom (go-ethereum `bloom9`): for a log's address and
+/// each topic, keccak-hash it and set three bits chosen from byte pairs 0/2/4 of
+/// the hash. Returns the 256-byte bloom as a `0x`-prefixed 512-hex string.
+fn compute_logs_bloom(logs: &[LogEntry]) -> [u8; 256] {
+    let mut bloom = [0u8; 256];
+    let mut add = |bytes: &[u8]| {
+        let hash = revm::primitives::keccak256(bytes);
+        for i in [0usize, 2, 4] {
+            let bit = (((hash[i] as usize) << 8) | hash[i + 1] as usize) & 0x7ff;
+            // Bit `bit` counted from the low end of the 2048-bit big-endian array.
+            bloom[256 - 1 - bit / 8] |= 1u8 << (bit % 8);
+        }
+    };
+    for log in logs {
+        add(log.address.as_slice());
+        for topic in &log.topics {
+            add(topic.as_slice());
+        }
+    }
+    bloom
+}
+
+fn logs_bloom_hex(logs: &[LogEntry]) -> String {
+    format!("0x{}", hex::encode(compute_logs_bloom(logs)))
+}
+
+/// OR-fold the per-receipt blooms into one block-level bloom.
+fn block_logs_bloom_hex(block: &Block) -> String {
+    let mut bloom = [0u8; 256];
+    for receipt in &block.receipts {
+        let rb = compute_logs_bloom(&receipt.logs);
+        for (b, r) in bloom.iter_mut().zip(rb.iter()) {
+            *b |= *r;
+        }
+    }
+    format!("0x{}", hex::encode(bloom))
 }

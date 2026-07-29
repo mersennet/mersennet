@@ -21,7 +21,7 @@ use mersennet_zkp::{
 use std::env;
 
 fn poseidon() -> Poseidon {
-    Poseidon::default()
+    Poseidon
 }
 
 fn make_note(value: u128, owner: u64, rho: u64, psi: u64) -> Note {

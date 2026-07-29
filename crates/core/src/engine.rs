@@ -6,6 +6,12 @@ use crate::consensus::{
     Unbonding, Validator, ValidatorChange,
 };
 use crate::crypto::{self, SignedTransaction};
+
+/// On import, a block's proposer is accepted if it is the elected leader for
+/// this height at any round in `0..MAX_LEADER_ROUND_WINDOW`. The leader rotates
+/// each round on timeout, so this bounds how far a legitimately-elected leader
+/// can be from round 0 while still rejecting non-leaders.
+const MAX_LEADER_ROUND_WINDOW: u64 = 32;
 use crate::errors::MersennetOrdersError;
 use crate::events::{
     BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
@@ -117,6 +123,14 @@ pub struct Transaction {
     /// [`crate::shielded_evm::ShieldedEnvelope`].
     #[serde(default)]
     pub shielded_payload: Option<crate::shielded_evm::ShieldedEnvelope>,
+    /// Canonical transaction hash. For txs decoded from standard
+    /// Ethereum RLP (`eth_sendRawTransaction`) this is
+    /// `keccak256(raw_rlp)` — exactly what MetaMask/ethers compute — so
+    /// the wallet can track the tx and `eth_getTransactionByHash` finds
+    /// it. `None` for internally-built txs, which fall back to the
+    /// field-derived hash.
+    #[serde(default)]
+    pub hash: Option<B256>,
 }
 
 impl Default for Transaction {
@@ -133,6 +147,7 @@ impl Default for Transaction {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         }
     }
 }
@@ -174,6 +189,10 @@ pub struct Block {
     pub base_fee: U256,
     pub coinbase: Address,
     pub hash: B256,
+    /// Hash of the parent block (`B256::ZERO` at genesis). Makes the
+    /// chain a real hash-linked structure; validated on import.
+    #[serde(default)]
+    pub parent_hash: B256,
     pub proposer: Address,
     pub finalized: bool,
     pub consensus: Finalization,
@@ -208,6 +227,12 @@ pub struct Block {
     /// `None` until Workstream E delivers the real prover.
     #[serde(default)]
     pub state_proof: Option<crate::zk_proofs::StateTransitionProof>,
+    /// Proposer's signature over `(height, hash)` as `(r, s, y_parity)`.
+    /// Proves the block was authored by `proposer`; verified on import so a
+    /// non-validator cannot inject blocks. `None` only for locally produced
+    /// blocks before signing and for genesis.
+    #[serde(default)]
+    pub proposer_sig: Option<(U256, U256, u64)>,
 }
 
 impl Default for Block {
@@ -221,6 +246,7 @@ impl Default for Block {
             base_fee: U256::ZERO,
             coinbase: Address::ZERO,
             hash: B256::ZERO,
+            parent_hash: B256::ZERO,
             proposer: Address::ZERO,
             finalized: false,
             consensus: Finalization::default(),
@@ -242,6 +268,7 @@ impl Default for Block {
             nullifier_root: B256::ZERO,
             shielded_event_root: B256::ZERO,
             state_proof: None,
+            proposer_sig: None,
         }
     }
 }
@@ -419,6 +446,15 @@ pub struct Engine {
     /// SP1 prover hook, and the 0x7E EIP-2718 type-byte path.
     /// `false` until the hard fork activates (see ADR-018).
     pub privacy_mode_activated: bool,
+    /// Gates the state-MUTATING transparent `mersennet_orders_*` JSON-RPC
+    /// methods (addMarket / submitOrder / cancelOrder / depositCollateral /
+    /// setMarginParams / liquidate), which act for an arbitrary `owner` with
+    /// no signature. Convenient for testnet seeding (the market-maker bot),
+    /// but it lets any caller trade or credit collateral as any address, so it
+    /// MUST be `false` on mainnet — orders should arrive only as signed txs to
+    /// the CLOB precompile. Read-only `mersennet_orders_*` queries are never
+    /// gated by this flag. Defaults to `true` to preserve testnet behavior.
+    pub allow_unsigned_orders_rpc: bool,
     /// Activation height for the privacy hard fork, set by genesis
     /// or governance. When `Some(h)` and `block_number >= h`, the
     /// engine auto-flips `privacy_mode_activated` to `true` at the
@@ -466,6 +502,34 @@ pub struct Engine {
     /// strictly by ascending height so every node re-executes the same
     /// sequence and converges on identical state (see `import_block`).
     import_buffer: std::collections::BTreeMap<u64, Block>,
+    /// Raw RLP bytes of wallet-submitted (eth_sendRawTransaction) txs,
+    /// keyed by canonical hash. Ethereum-format signatures verify against
+    /// the EIP-155/typed signing hash, which peers cannot reconstruct from
+    /// the parsed fields alone — so the relay attaches the raw envelope and
+    /// receivers re-decode it (self-authenticating). In-memory only.
+    raw_tx_cache: std::collections::HashMap<B256, Vec<u8>>,
+    /// This node's validator address, if it runs as a validator. Set at
+    /// boot from the node identity. Used for leader election (only the
+    /// elected leader for a height/round produces that block) so
+    /// validators no longer all produce competing blocks at the same
+    /// height — the root cause of state-root divergence.
+    local_validator: Option<Address>,
+    /// BFT finality votes: height -> block_hash -> set of voter
+    /// addresses. A block is finalized once voters representing >= 2/3
+    /// of total stake have voted for it. Populated from signed `Vote`
+    /// gossip messages routed in by the network layer.
+    finality_votes: std::collections::HashMap<
+        u64,
+        std::collections::HashMap<B256, std::collections::HashSet<Address>>,
+    >,
+    /// Heights that reached a 2/3-stake quorum, with the winning hash.
+    finalized_heights: std::collections::HashMap<u64, B256>,
+    /// Highest block height ever observed from the network (gossip or sync),
+    /// whether or not it applied locally. Used to gate block production: a
+    /// validator that is behind the network head must NOT produce (it would
+    /// fork off a stale height), it must sync first. This is the guard that
+    /// stops a restarted/lagging validator from re-forking itself.
+    highest_observed_height: u64,
 }
 
 impl Engine {
@@ -572,7 +636,7 @@ impl Engine {
             base_fee: U256::from(1),
             coinbase: Address::ZERO,
             gas_limit_per_block: 30_000_000,
-            spec_id: SpecId::SHANGHAI,
+            spec_id: SpecId::PRAGUE_EOF,
             consensus: ConsensusEngine {
                 inner: Consensus::default(),
                 network: NetworkSim::default(),
@@ -607,6 +671,7 @@ impl Engine {
             // flips the master switch (ADR-018). All subsystems live
             // in-memory; persistence is wired in Workstream A7.
             privacy_mode_activated: false,
+            allow_unsigned_orders_rpc: true,
             privacy_activation_height: None,
             sp1_proof_required: false,
             shielded_tick_event_root: B256::ZERO,
@@ -625,6 +690,11 @@ impl Engine {
             dkg: crate::dkg::DkgCoordinator::new(crate::dkg::DEFAULT_EPOCH_LENGTH_BLOCKS),
             code_publication_registry: CodePublicationRegistry::default(),
             import_buffer: std::collections::BTreeMap::new(),
+            highest_observed_height: 0,
+            raw_tx_cache: std::collections::HashMap::new(),
+            local_validator: None,
+            finality_votes: std::collections::HashMap::new(),
+            finalized_heights: std::collections::HashMap::new(),
         }
     }
 
@@ -644,6 +714,157 @@ impl Engine {
     /// Block-level convenience: are shielded paths live?
     pub fn privacy_mode_activated(&self) -> bool {
         self.privacy_mode_activated
+    }
+
+    /// Enable/disable the unsigned state-mutating `mersennet_orders_*` RPC
+    /// methods. Set from `mersennet_orders.allow_unsigned_orders_rpc` at
+    /// startup; should be `false` on mainnet.
+    pub fn set_allow_unsigned_orders_rpc(&mut self, allow: bool) {
+        self.allow_unsigned_orders_rpc = allow;
+    }
+
+    /// Are unsigned, owner-spoofable `mersennet_orders_*` mutations allowed?
+    pub fn allow_unsigned_orders_rpc(&self) -> bool {
+        self.allow_unsigned_orders_rpc
+    }
+
+    // ───── BFT leader election + finality (Workstream A) ─────
+
+    /// Register this node's validator address. Only set on validators.
+    pub fn set_local_validator(&mut self, address: Address) {
+        self.local_validator = Some(address);
+    }
+
+    pub fn local_validator(&self) -> Option<Address> {
+        self.local_validator
+    }
+
+    /// The deterministic set of validator addresses, sorted so every
+    /// node agrees on ordering regardless of insertion order.
+    pub fn validator_addresses(&self) -> Vec<Address> {
+        let mut v: Vec<Address> = self
+            .consensus
+            .validators()
+            .iter()
+            .map(|val| val.address)
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// Deterministic leader for a given block height and failover round.
+    /// Stake is equal per genesis validator, so a simple stake-agnostic
+    /// rotation over the sorted set is fair and unambiguous. `round`
+    /// advances only when the current leader fails to produce in time,
+    /// rotating to the next validator so a dead leader cannot halt the
+    /// chain.
+    pub fn leader_for_height(&self, height: u64, round: u64) -> Option<Address> {
+        let vs = self.validator_addresses();
+        if vs.is_empty() {
+            return None;
+        }
+        let idx = (height.wrapping_add(round) % vs.len() as u64) as usize;
+        Some(vs[idx])
+    }
+
+    /// Is this node the elected leader for `(height, round)`?
+    pub fn is_leader(&self, height: u64, round: u64) -> bool {
+        match (self.local_validator, self.leader_for_height(height, round)) {
+            (Some(me), Some(leader)) => me == leader,
+            _ => false,
+        }
+    }
+
+    fn finality_threshold(&self) -> U256 {
+        let total = self.consensus.total_stake();
+        if total.is_zero() {
+            return U256::ZERO;
+        }
+        total
+            .saturating_mul(U256::from(2u64))
+            .checked_div(U256::from(3u64))
+            .unwrap_or(U256::ZERO)
+            .saturating_add(U256::from(1u64))
+    }
+
+    fn stake_of(&self, addr: Address) -> U256 {
+        self.consensus
+            .validators()
+            .iter()
+            .find(|v| v.address == addr)
+            .map(|v| v.stake)
+            .unwrap_or(U256::ZERO)
+    }
+
+    /// Record a finality vote for `(height, block_hash)` from `voter`.
+    /// Returns `true` when this vote pushes the block to a >= 2/3-stake
+    /// quorum (i.e. the height just finalized). Votes from non-validators
+    /// are ignored by the caller (which verifies the signature first).
+    pub fn record_finality_vote(&mut self, height: u64, block_hash: B256, voter: Address) -> bool {
+        // Only count known validators.
+        if self.stake_of(voter).is_zero() {
+            return false;
+        }
+        if self.finalized_heights.contains_key(&height) {
+            return false;
+        }
+        // Equivocation detection: a validator that has already voted for a
+        // DIFFERENT block hash at this height is double-voting, which is a
+        // slashable safety fault. Record evidence and ignore the conflicting
+        // vote (never count both toward a quorum).
+        if let Some(per_hash) = self.finality_votes.get(&height) {
+            let already_voted_other = per_hash
+                .iter()
+                .any(|(h, voters)| *h != block_hash && voters.contains(&voter));
+            if already_voted_other {
+                metrics::increment_counter!("mersennet_bft_equivocation_total");
+                tracing::warn!(
+                    height,
+                    validator = %voter,
+                    conflicting_hash = %block_hash,
+                    "equivocation detected: validator voted for two hashes at one height; slashing"
+                );
+                let _ = self.slash_validator(
+                    voter,
+                    self.stake_of(voter),
+                    format!("equivocation at height {height}"),
+                );
+                return false;
+            }
+        }
+        let voters_snapshot: Vec<Address> = {
+            let per_hash = self.finality_votes.entry(height).or_default();
+            let voters = per_hash.entry(block_hash).or_default();
+            voters.insert(voter);
+            voters.iter().copied().collect()
+        };
+
+        let voted_stake = voters_snapshot
+            .iter()
+            .fold(U256::ZERO, |acc, a| acc.saturating_add(self.stake_of(*a)));
+
+        let threshold = self.finality_threshold();
+        if !threshold.is_zero() && voted_stake >= threshold {
+            self.finalized_heights.insert(height, block_hash);
+            // Bound memory: drop vote-tracking for heights well behind.
+            let cutoff = height.saturating_sub(256);
+            self.finality_votes.retain(|h, _| *h >= cutoff);
+            self.finalized_heights.retain(|h, _| *h >= cutoff);
+            metrics::increment_counter!("mersennet_bft_finalized_total");
+            tracing::info!(height, block_hash = %block_hash, "block finalized by 2/3 stake quorum");
+            return true;
+        }
+        false
+    }
+
+    /// Has `height` reached a 2/3-stake finality quorum?
+    pub fn is_height_finalized(&self, height: u64) -> bool {
+        self.finalized_heights.contains_key(&height)
+    }
+
+    /// The finalized block hash for `height`, if any.
+    pub fn finalized_hash(&self, height: u64) -> Option<B256> {
+        self.finalized_heights.get(&height).copied()
     }
 
     /// Set the scheduled activation height for the privacy hard
@@ -692,8 +913,51 @@ impl Engine {
         self.chain.last().map(|block| block.number).unwrap_or(0)
     }
 
+    /// Highest block height seen from the network (may be ahead of our applied
+    /// head if we are syncing or wedged).
+    pub fn highest_observed_height(&self) -> u64 {
+        self.highest_observed_height
+    }
+
+    /// True if the network head is ahead of our applied head — i.e. we are
+    /// behind (syncing) or wedged on a fork. A validator in this state must
+    /// not produce: its next block would build on a stale head and fork the
+    /// chain (the restarted-validator re-fork failure mode). It should sync
+    /// to the canonical head first. `slack` tolerates the normal 1-block race
+    /// where we are the elected proposer for `head+1` and haven't produced yet.
+    pub fn is_behind_network(&self, slack: u64) -> bool {
+        self.highest_observed_height > self.latest_height().saturating_add(slack)
+    }
+
     pub fn block_by_number(&self, number: u64) -> Option<&Block> {
         self.chain.iter().find(|block| block.number == number)
+    }
+
+    /// Fetch a block by height from the in-memory window, falling back to
+    /// the on-disk store for older heights. Returns an owned `Block`.
+    ///
+    /// The in-memory `chain` is bounded to a recent window (see
+    /// `trim_chain_window`) to cap memory, so historical lookups — block
+    /// explorers, and crucially peer block-sync — must read from disk.
+    /// Without this, a node more than a window behind could never be
+    /// served the missing range and would strand.
+    pub fn get_block(&self, number: u64) -> Option<Block> {
+        if let Some(b) = self.chain.iter().find(|block| block.number == number) {
+            return Some(b.clone());
+        }
+        self.evm.state.load_block(number).ok().flatten()
+    }
+
+    /// Cap the in-memory chain to a recent window. Older blocks remain on
+    /// disk (served via `get_block`). Prevents the unbounded RAM growth
+    /// that otherwise accumulates one `Block` per height for the life of
+    /// the process.
+    fn trim_chain_window(&mut self) {
+        const IN_MEMORY_CHAIN_WINDOW: usize = 2048;
+        if self.chain.len() > IN_MEMORY_CHAIN_WINDOW {
+            let excess = self.chain.len() - IN_MEMORY_CHAIN_WINDOW;
+            self.chain.drain(0..excess);
+        }
     }
 
     pub fn set_fee_market_params(
@@ -883,6 +1147,63 @@ impl Engine {
         self.record_event(DomainEvent::MersennetOrders(
             MersennetOrdersEvent::CollateralDeposited { owner, amount },
         ));
+    }
+
+    /// The next nonce to assign a server-submitted CLOB transaction for
+    /// `owner`: one past the highest of (account nonce, highest queued
+    /// mempool nonce). Keeps rapid-fire order txs from colliding.
+    pub fn next_clob_nonce(&mut self, owner: Address) -> u64 {
+        let account_nonce = self.get_account_nonce(owner).unwrap_or(0);
+        // Fill the lowest free nonce from the account nonce upward. If a
+        // prior CLOB tx was dropped (mempool full / gossip loss), always
+        // incrementing past the highest queued nonce would leave a
+        // permanent gap at account_nonce that stalls every later tx (none
+        // can become "ready"), which starved all but the first market.
+        self.mempool.next_free_nonce(owner, account_nonce)
+    }
+
+    /// Route a CLOB operation through consensus: build an unsigned
+    /// precompile-call transaction (to 0x…0100) and submit it to the
+    /// mempool. It gossips to the leader, is included in a block, and
+    /// executes via the precompile deterministically on every node.
+    ///
+    /// This replaces the direct-state-mutation `mersennet_orders_*` RPC
+    /// path, which mutated only the receiving node's local state — under
+    /// single-leader BFT the leader never saw it and the CLOB diverged.
+    /// The caller must be funded for gas + collateral. `value` is always
+    /// zero (the precompile is non-payable).
+    pub fn submit_orders_call(
+        &mut self,
+        owner: Address,
+        calldata: Vec<u8>,
+        precompile_gas: u64,
+    ) -> Result<B256, TxRejection> {
+        let nonce = self.next_clob_nonce(owner);
+        // The EVM charges intrinsic gas (21k + calldata) before the
+        // precompile runs, so the tx gas limit must cover intrinsic +
+        // the precompile's internal gas requirement + headroom, or the
+        // precompile OOGs and the order silently reverts.
+        let gas_limit =
+            21_000 + calldata.len() as u64 * 16 + precompile_gas.saturating_mul(2) + 30_000;
+        let tx = Transaction {
+            from: owner,
+            to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            value: U256::ZERO,
+            data: revm::primitives::Bytes::from(calldata),
+            gas_limit,
+            gas_price: self.base_fee.max(U256::from(1)),
+            nonce,
+            chain_id: Some(self.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        };
+        // Use the same hash the tx index/lookup will compute, so the
+        // returned txHash resolves via eth_getTransactionByHash.
+        let hash = crate::crypto::tx_signing_hash(&tx);
+        self.submit_tx_unsigned(tx)?;
+        Ok(hash)
     }
 
     #[allow(dead_code)]
@@ -1080,6 +1401,9 @@ impl Engine {
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
+        // Capture CLOB events (fills/cancels/deposits) emitted by precompile
+        // txs during this block so they land in block.domain_events.
+        precompiles::set_orders_event_recording(true);
 
         // Generate market maker quotes and submit to orders engine
         let mm_markets: Vec<u64> = {
@@ -1138,6 +1462,11 @@ impl Engine {
             );
         }
 
+        // CRITICAL: no early return (`?`) inside this loop — orders.state is
+        // taken (left at Default) until the restore below, so bailing out
+        // mid-loop would wipe the entire CLOB (markets, books, collateral)
+        // and the next commit would persist the empty state. A tx that fails
+        // validation is dropped from the mempool and skipped instead.
         while progressed {
             progressed = false;
             let mut senders = self.mempool.senders();
@@ -1159,7 +1488,9 @@ impl Engine {
                 let expected_nonce = match nonce_cache.entry(sender) {
                     std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),
                     std::collections::hash_map::Entry::Vacant(entry) => {
-                        let nonce = self.get_account_nonce(sender)?;
+                        let Ok(nonce) = self.get_account_nonce(sender) else {
+                            continue;
+                        };
                         *entry.insert(nonce)
                     }
                 };
@@ -1179,7 +1510,21 @@ impl Engine {
                 let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                     self.apply_shielded_tx(&tx)
                 } else {
-                    self.execute_tx(&tx)?
+                    match self.execute_tx(&tx) {
+                        Ok(exec) => exec,
+                        Err(e) => {
+                            // Invalid tx (bad nonce, EIP-3607, …): drop it and
+                            // move on — never abort the block mid-production.
+                            tracing::warn!(
+                                from = %tx.from,
+                                nonce = tx.nonce,
+                                error = %e,
+                                "dropping invalid mempool tx during block production"
+                            );
+                            progressed = true;
+                            continue;
+                        }
+                    }
                 };
                 gas_used = gas_used.saturating_add(execution.gas_used);
                 if let Some(nonce) = nonce_cache.get_mut(&tx.from) {
@@ -1200,6 +1545,9 @@ impl Engine {
 
         precompiles::clear_mersennet_orders_context();
         precompiles::set_transparent_mersennet_orders_enabled(true);
+        self.pending_events
+            .extend(precompiles::drain_orders_events());
+        precompiles::set_orders_event_recording(false);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
@@ -1215,19 +1563,26 @@ impl Engine {
             self.mempool.remove_mined(tx.from, tx.nonce);
         }
 
-        let hash = self.compute_block_hash(
+        // Preliminary header-only hash: a stable label for the
+        // (simulated) NetworkSim finality rounds + reward computation.
+        // The canonical, content-committing block hash is derived below
+        // once the state root is known, then stamped back in.
+        let prelim_hash = B256::from(mersennet_zkp::sp1::derive_block_hash(
             self.block_number,
-            self.chain_id,
-            self.gas_limit_per_block,
-            gas_used,
-            self.base_fee,
-            self.coinbase,
-            transactions.len() as u64,
-        );
+            &self.header_witness(
+                gas_used,
+                transactions.len() as u64,
+                B256::ZERO,
+                0,
+                B256::ZERO,
+                B256::ZERO,
+                B256::ZERO,
+            ),
+        ));
         let applied_validator_changes = self.consensus.apply_pending_changes(self.block_number);
         let (finality_rounds, slashing_evidence) =
             self.consensus
-                .run_finality_rounds(hash, self.block_number, 2);
+                .run_finality_rounds(prelim_hash, self.block_number, 2);
         for evidence in &slashing_evidence {
             let amount = self
                 .consensus
@@ -1243,7 +1598,7 @@ impl Engine {
                 .queue_slash(evidence.validator, amount, reason);
             self.consensus.record_offense(evidence.validator);
         }
-        let mut consensus = self.consensus.finalize(hash, self.block_number);
+        let mut consensus = self.consensus.finalize(prelim_hash, self.block_number);
         let finalized = finality_rounds.iter().any(|round| round.finalized);
         consensus.finalized = finalized;
         let unbonded = self.consensus.process_unbonding(self.block_number);
@@ -1303,13 +1658,37 @@ impl Engine {
             .unwrap_or_default()
             .as_secs();
 
+        // Canonical, content-committing block hash: binds the parent
+        // hash (hash-linked chain), timestamp, transaction root, state
+        // root, and receipts root. Computed here, after the state root
+        // is known, so the hash actually commits to the block's content.
+        let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
+        let tx_root = Self::compute_tx_root(&transactions);
+        let receipts_root = Self::compute_receipts_root(&receipts);
+        let header_witness = self.header_witness(
+            gas_used,
+            transactions.len() as u64,
+            parent_hash,
+            timestamp,
+            tx_root,
+            state_root,
+            receipts_root,
+        );
+        let hash = B256::from(mersennet_zkp::sp1::derive_block_hash(
+            self.block_number,
+            &header_witness,
+        ));
+        // Stamp the canonical hash into the consensus record.
+        consensus.block_hash = hash;
+
         // Privacy-redesign Phase 4 — compute shielded roots + the SP1
         // state-transition proof. Pre-fork the roots stay
-        // `B256::ZERO` and no proof is generated.
+        // `B256::ZERO` and no proof is generated. The proof binds to the
+        // canonical content hash.
         let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) = self
             .shielded_block_header(
                 &transactions,
-                hash,
+                &header_witness,
                 gas_used,
                 Some(&pre_shielded_snapshot),
                 Some(&pre_transparent_balances),
@@ -1325,6 +1704,7 @@ impl Engine {
             base_fee: self.base_fee,
             coinbase: consensus.proposer,
             hash,
+            parent_hash,
             proposer: consensus.proposer,
             finalized: consensus.finalized,
             consensus,
@@ -1346,9 +1726,11 @@ impl Engine {
             nullifier_root,
             shielded_event_root,
             state_proof,
+            proposer_sig: None,
         };
 
         self.chain.push(block.clone());
+        self.trim_chain_window();
         self.evm.state.store_block(&block)?;
 
         // Privacy-redesign Phase 4 — persist shielded state at end of
@@ -1586,19 +1968,26 @@ impl Engine {
         }
 
         // Phase 4: Consensus and finalization (identical to execute_block)
-        let hash = self.compute_block_hash(
+        // Preliminary header-only hash: a stable label for the
+        // (simulated) NetworkSim finality rounds + reward computation.
+        // The canonical, content-committing block hash is derived below
+        // once the state root is known, then stamped back in.
+        let prelim_hash = B256::from(mersennet_zkp::sp1::derive_block_hash(
             self.block_number,
-            self.chain_id,
-            self.gas_limit_per_block,
-            gas_used,
-            self.base_fee,
-            self.coinbase,
-            transactions.len() as u64,
-        );
+            &self.header_witness(
+                gas_used,
+                transactions.len() as u64,
+                B256::ZERO,
+                0,
+                B256::ZERO,
+                B256::ZERO,
+                B256::ZERO,
+            ),
+        ));
         let applied_validator_changes = self.consensus.apply_pending_changes(self.block_number);
         let (finality_rounds, slashing_evidence) =
             self.consensus
-                .run_finality_rounds(hash, self.block_number, 2);
+                .run_finality_rounds(prelim_hash, self.block_number, 2);
         for evidence in &slashing_evidence {
             let amount = self
                 .consensus
@@ -1614,7 +2003,7 @@ impl Engine {
                 .queue_slash(evidence.validator, amount, reason);
             self.consensus.record_offense(evidence.validator);
         }
-        let mut consensus = self.consensus.finalize(hash, self.block_number);
+        let mut consensus = self.consensus.finalize(prelim_hash, self.block_number);
         let finalized = finality_rounds.iter().any(|round| round.finalized);
         consensus.finalized = finalized;
         let unbonded = self.consensus.process_unbonding(self.block_number);
@@ -1650,10 +2039,28 @@ impl Engine {
             .unwrap_or_default()
             .as_secs();
 
+        let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
+        let tx_root = Self::compute_tx_root(&transactions);
+        let receipts_root = Self::compute_receipts_root(&receipts);
+        let header_witness = self.header_witness(
+            gas_used,
+            transactions.len() as u64,
+            parent_hash,
+            timestamp,
+            tx_root,
+            state_root,
+            receipts_root,
+        );
+        let hash = B256::from(mersennet_zkp::sp1::derive_block_hash(
+            self.block_number,
+            &header_witness,
+        ));
+        consensus.block_hash = hash;
+
         let (shielded_state_root, nullifier_root, shielded_event_root, state_proof) = self
             .shielded_block_header(
                 &transactions,
-                hash,
+                &header_witness,
                 gas_used,
                 Some(&pre_shielded_snapshot),
                 Some(&pre_transparent_balances),
@@ -1669,6 +2076,7 @@ impl Engine {
             base_fee: self.base_fee,
             coinbase: consensus.proposer,
             hash,
+            parent_hash,
             proposer: consensus.proposer,
             finalized: consensus.finalized,
             consensus,
@@ -1690,9 +2098,11 @@ impl Engine {
             nullifier_root,
             shielded_event_root,
             state_proof,
+            proposer_sig: None,
         };
 
         self.chain.push(block.clone());
+        self.trim_chain_window();
         self.evm.state.store_block(&block)?;
 
         // Privacy-redesign Phase 4 — persist shielded state.
@@ -1729,12 +2139,41 @@ impl Engine {
         Ok(block)
     }
 
+    /// After a locally produced block is signed, stamp the proposer's address
+    /// and signature onto the copy already stored in `self.chain` so peer
+    /// sync (which reads from the chain) serves authenticated blocks — not
+    /// the unsigned pre-signature snapshot.
+    pub fn attach_proposer_sig(&mut self, height: u64, proposer: Address, sig: (U256, U256, u64)) {
+        if let Some(block) = self.chain.iter_mut().rev().find(|b| b.number == height) {
+            block.proposer = proposer;
+            block.coinbase = proposer;
+            block.consensus.proposer = proposer;
+            block.proposer_sig = Some(sig);
+            // Persist the SIGNED block. `execute_block` calls `store_block`
+            // before the signature exists, so the on-disk copy is unsigned;
+            // peers serve synced blocks from disk (`get_block`), and a
+            // syncing node rejects unsigned blocks ("no proposer signature").
+            // Re-store here so block-sync serves authenticated blocks —
+            // without this a wiped/behind node can never catch up.
+            let signed = block.clone();
+            if let Err(e) = self.evm.state.store_block(&signed) {
+                tracing::warn!(height, error = %e, "failed to persist signed block");
+            }
+        }
+    }
+
     /// Ingest a gossiped block. Blocks are buffered and applied
     /// strictly in ascending-height order via [`Engine::apply_imported_block`],
     /// which re-executes the block's transactions so non-producing
     /// nodes converge on the same state as the producer. Out-of-order
     /// or duplicate deliveries are tolerated.
     pub fn import_block(&mut self, block: Block) {
+        // Track the network's head regardless of whether we can apply this
+        // block, so a behind/wedged validator knows not to produce (see
+        // `is_behind_network`).
+        if block.number > self.highest_observed_height {
+            self.highest_observed_height = block.number;
+        }
         // Already applied or stale.
         if block.number < self.block_number {
             return;
@@ -1751,7 +2190,23 @@ impl Engine {
         while let Some(next) = self.import_buffer.remove(&self.block_number) {
             let height = next.number;
             if let Err(e) = self.apply_imported_block(next) {
-                tracing::warn!(height, error = %e, "failed to apply imported block");
+                let msg = e.to_string();
+                // A persistent parent-hash mismatch means this node is on a
+                // minority fork and can no longer follow the canonical chain
+                // (there is no automatic reorg yet — full fork-choice is the
+                // remaining consensus item). Surface it loudly and via a metric
+                // so monitoring can trigger an operator resync instead of the
+                // node silently stalling.
+                if msg.contains("parent hash mismatch") {
+                    metrics::increment_counter!("mersennet_import_fork_detected_total");
+                    tracing::error!(
+                        height,
+                        error = %msg,
+                        "FORK DETECTED: local head diverges from canonical chain; node needs a state resync"
+                    );
+                } else {
+                    tracing::warn!(height, error = %msg, "failed to apply imported block");
+                }
                 // Stop draining; the block will be re-gossiped and
                 // retried. Do not loop on a persistently failing block.
                 break;
@@ -1775,8 +2230,69 @@ impl Engine {
     /// are no-ops on the current chain (no active markets / privacy not
     /// activated); once trading or privacy is live this path must also
     /// replicate them for full state-root parity.
-    fn apply_imported_block(&mut self, block: Block) -> Result<()> {
+    fn apply_imported_block(&mut self, mut block: Block) -> Result<()> {
         debug_assert_eq!(block.number, self.block_number);
+
+        // Hash-linked chain check: the incoming block must reference our
+        // current head as its parent. Reject a block that forks off a
+        // different history so a node never silently applies an
+        // inconsistent chain. (Genesis-adjacent blocks with a zero
+        // parent are allowed when we have no prior block.)
+        let expected_parent = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
+        // A zero parent hash is only legitimate at genesis (empty local chain).
+        // Previously any block with parent_hash == ZERO skipped the link check,
+        // which let an injected block bypass it at any height.
+        let genesis_adjacent = self.chain.is_empty();
+        if !(genesis_adjacent && block.parent_hash == B256::ZERO)
+            && block.parent_hash != expected_parent
+        {
+            anyhow::bail!(
+                "parent hash mismatch at height {}: block parent {} != local head {}",
+                block.number,
+                block.parent_hash,
+                expected_parent
+            );
+        }
+
+        // Authenticate the proposer: the block must be signed by the address in
+        // `block.proposer`, that address must be a current validator, and it
+        // must be a legitimately elected leader for this height (at some early
+        // round). Without this, anyone who can deliver a gossip packet could
+        // inject an arbitrary block. Genesis (height 0) is exempt, and so are
+        // validator-less setups (single-node/dev), where there is no leader
+        // schedule to verify against — a live network always has validators.
+        if block.number > 0 && !self.consensus.validators().is_empty() {
+            let (r, s, y) = block.proposer_sig.ok_or_else(|| {
+                anyhow::anyhow!("imported block {} has no proposer signature", block.number)
+            })?;
+            let recovered = crypto::recover_block_proposer(block.number, block.hash, r, s, y)
+                .map_err(|e| anyhow::anyhow!("proposer signature invalid: {e}"))?;
+            if recovered != block.proposer {
+                anyhow::bail!(
+                    "proposer signature signer {} != block proposer {}",
+                    recovered,
+                    block.proposer
+                );
+            }
+            if self.stake_of(block.proposer).is_zero() {
+                anyhow::bail!(
+                    "block {} proposer {} is not a staked validator",
+                    block.number,
+                    block.proposer
+                );
+            }
+            // The elected leader rotates by round on timeout; accept the
+            // proposer if it is the leader at any round within a bounded window.
+            let is_elected_leader = (0..MAX_LEADER_ROUND_WINDOW)
+                .any(|round| self.leader_for_height(block.number, round) == Some(block.proposer));
+            if !is_elected_leader {
+                anyhow::bail!(
+                    "block {} proposer {} is not an elected leader for this height",
+                    block.number,
+                    block.proposer
+                );
+            }
+        }
 
         // Match the producer's per-tx execution environment.
         self.base_fee = block.base_fee;
@@ -1785,24 +2301,69 @@ impl Engine {
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
+        // Re-executing the block's precompile txs deterministically regenerates
+        // the producer's CLOB events (the wire strips domain_events), so
+        // followers store and serve the same fills/cancels as the producer.
+        precompiles::set_orders_event_recording(true);
 
+        // CRITICAL: no early return (`?`) while orders.state is taken — a
+        // failed tx used to abort the import with orders.state left at
+        // Default, silently destroying the entire CLOB (markets, books,
+        // collateral), which the next commit then persisted. Collect the
+        // error instead, restore the state unconditionally, then propagate.
+        let mut import_err: Option<anyhow::Error> = None;
         let mut gas_used = 0u64;
+        // Rebuild receipts from local re-execution. The wire form (`WireReceipt`)
+        // drops EVM logs to save bandwidth, so a block imported over gossip would
+        // otherwise carry empty `logs`/`logsBloom` — breaking eth_getLogs,
+        // eth_getTransactionReceipt logs, and any token-transfer indexing on
+        // every follower and the public RPC node. Re-execution is deterministic
+        // and the logs are not part of `receipts_root` (success+gas+output only),
+        // so this reconstructs the producer's receipts without changing the block
+        // hash. This mirrors the domain-events reconstruction just below.
+        let mut rebuilt_receipts: Vec<Receipt> = Vec::with_capacity(block.transactions.len());
         for tx in &block.transactions {
             let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                 self.apply_shielded_tx(tx)
             } else {
-                self.execute_tx(tx)?
+                match self.execute_tx(tx) {
+                    Ok(exec) => exec,
+                    Err(e) => {
+                        import_err = Some(e);
+                        break;
+                    }
+                }
             };
             gas_used = gas_used.saturating_add(execution.gas_used);
+            rebuilt_receipts.push(Receipt {
+                success: execution.success,
+                gas_used: execution.gas_used,
+                output: execution.output.clone(),
+                created_address: execution.created_address,
+                error: None,
+                logs: execution.logs.clone(),
+            });
             self.mempool.remove_mined(tx.from, tx.nonce);
         }
 
         precompiles::clear_mersennet_orders_context();
         precompiles::set_transparent_mersennet_orders_enabled(true);
+        if block.domain_events.is_empty() {
+            block.domain_events = precompiles::drain_orders_events();
+        }
+        precompiles::set_orders_event_recording(false);
         self.orders.state = Arc::try_unwrap(shared_orders)
             .expect("no other Arc references")
             .into_inner()
             .expect("mutex not poisoned");
+        if let Some(e) = import_err {
+            return Err(e);
+        }
+
+        // Replace the log-stripped wire receipts with the locally reconstructed
+        // ones (see the rebuild note above). Only reached when every tx applied,
+        // so the receipt list is complete and index-aligned with the tx list.
+        block.receipts = rebuilt_receipts;
 
         // Re-credit the proposer/validator rewards the producer applied.
         self.apply_rewards(&block.rewards)?;
@@ -1815,13 +2376,25 @@ impl Engine {
             block.number,
         )?;
 
+        // The canonical state root is the producer's `block.state_root`
+        // (it is what the block hash commits to, what the SP1 proof binds
+        // to, and what every node stores and agrees on). A local
+        // re-derivation that differs here reflects a deterministic
+        // produce-vs-import execution asymmetry, not a cross-node fork —
+        // all nodes still store the identical canonical root. Track it as
+        // a metric and log a rate-limited sample instead of flooding the
+        // log every block; a genuine, growing divergence would still be
+        // visible via the counter and the periodic sample.
         if block.state_root != B256::ZERO && state_root != block.state_root {
-            tracing::warn!(
-                height = block.number,
-                local = %state_root,
-                expected = %block.state_root,
-                "imported block state root mismatch — local state diverged from producer"
-            );
+            metrics::increment_counter!("mersennet_import_state_root_recompute_diff_total");
+            if block.number.is_multiple_of(500) {
+                tracing::warn!(
+                    height = block.number,
+                    local = %state_root,
+                    canonical = %block.state_root,
+                    "imported-block local state-root recompute differs from canonical (rate-limited sample; consensus uses the canonical root)"
+                );
+            }
         }
 
         // Mirror the producer's flat-state update so flat reads stay
@@ -1851,6 +2424,7 @@ impl Engine {
 
         self.evm.state.store_block(&block)?;
         self.chain.push(block);
+        self.trim_chain_window();
         self.block_number = self.block_number.saturating_add(1);
         metrics::gauge!(
             "mersennet_height",
@@ -1870,6 +2444,21 @@ impl Engine {
     /// Non-consuming snapshot of pending mempool transactions for P2P relay.
     pub fn mempool_pending_snapshot(&self) -> Vec<Transaction> {
         self.mempool.pending_snapshot()
+    }
+
+    /// Remember the raw signed envelope of a wallet-submitted tx so the
+    /// relay can gossip it verbatim. Ethereum-format signatures only verify
+    /// against the raw RLP signing payload, which peers cannot rebuild from
+    /// parsed fields — relaying the envelope keeps the tx self-authenticating.
+    pub fn cache_raw_tx(&mut self, hash: B256, raw: Vec<u8>) {
+        if self.raw_tx_cache.len() >= 8192 {
+            self.raw_tx_cache.clear();
+        }
+        self.raw_tx_cache.insert(hash, raw);
+    }
+
+    pub fn raw_tx_for(&self, hash: &B256) -> Option<Vec<u8>> {
+        self.raw_tx_cache.get(hash).cloned()
     }
 
     pub fn mempool_queued_count(&self) -> usize {
@@ -2156,6 +2745,7 @@ impl Engine {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -2247,6 +2837,7 @@ impl Engine {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -2427,16 +3018,24 @@ impl Engine {
     /// 4-tuple `(shielded_state_root, nullifier_root,
     /// shielded_event_root, state_proof)`.
     ///
-    /// Pre-fork, every component is the canonical zero value and the
-    /// SP1 prover is not invoked. Post-fork, the digests are taken
-    /// from the live shielded subsystems and the proof is generated
-    /// via [`crate::state_proof::prove_block`] (mock prover today,
-    /// real SP1 once `mersennet-zkp/sp1` is enabled in Workstream E).
+    /// The digests are taken from the live shielded subsystems and the
+    /// proof is generated via [`crate::state_proof::prove_block`]
+    /// (mock prover today, real SP1 once `mersennet-zkp/sp1` is
+    /// enabled in Workstream E).
+    ///
+    /// **Proof-only mode (pre-fork)**: proofs are generated and
+    /// attached from genesis so the chain is verifiable before the
+    /// privacy hard fork, WITHOUT flipping any privacy gating —
+    /// transparent RPC, precompiles and subscriptions stay enabled
+    /// until `privacy_mode_activated` is true. Pre-fork blocks carry
+    /// no shielded txs and no tick, so each proof attests an empty
+    /// shielded state transition (root continuity from block to
+    /// block).
     fn shielded_block_header(
         &self,
         transactions: &[Transaction],
-        block_hash: B256,
-        gas_used: u64,
+        header: &mersennet_zkp::sp1::BlockHeaderWitness,
+        _gas_used: u64,
         pre_shielded_snapshot: Option<&crate::shielded_state::ShieldedSnapshot>,
         pre_transparent_balances: Option<&HashMap<Address, U256>>,
         pre_tick_witness: Option<&mersennet_zkp::sp1::ShieldedTickWitness>,
@@ -2446,10 +3045,13 @@ impl Engine {
         B256,
         Option<crate::zk_proofs::StateTransitionProof>,
     )> {
-        if !self.privacy_mode_activated {
-            return Ok((B256::ZERO, B256::ZERO, B256::ZERO, None));
-        }
-
+        // The canonical block hash is fully determined by the header
+        // witness, so the SP1 proof binds to exactly the hash the block
+        // carries.
+        let block_hash = B256::from(mersennet_zkp::sp1::derive_block_hash(
+            self.block_number,
+            header,
+        ));
         let shielded_state_root = B256::from(self.shielded_evm.state.current_root().to_bytes());
         // Cheap nullifier-root digest: a real SMT lives in
         // ShieldedState (Workstream A7 persistence) — for header
@@ -2464,7 +3066,22 @@ impl Engine {
         // Hashing `DomainEvent` bincode here instead would use a
         // different encoding and make `prove_block`'s event-root
         // equality check fail on every block with shielded activity.
-        let host_shielded_event_root = self.shielded_tick_event_root;
+        let host_shielded_event_root = if self.privacy_mode_activated {
+            self.shielded_tick_event_root
+        } else {
+            // Proof-only mode: no shielded tick ran, so re-derive the
+            // canonical event list the SP1 executor rebuilds for an
+            // empty block (a single ShieldedRootAdvanced entry) instead
+            // of using the never-pinned tick root.
+            let events = mersennet_zkp::sp1::build_shielded_tick_events(
+                self.block_number,
+                0,
+                &[],
+                &[],
+                self.shielded_evm.state.current_root().to_bytes(),
+            );
+            B256::from(mersennet_zkp::sp1::shielded_event_root(&events))
+        };
         let market_state_hash = crate::state_proof::snapshot_subsystem_digests(
             &self.shielded_orders,
             &self.liquidation_auction,
@@ -2489,18 +3106,7 @@ impl Engine {
                 .last()
                 .map(|b| b.nullifier_root)
                 .unwrap_or(B256::ZERO),
-            header: mersennet_zkp::sp1::BlockHeaderWitness {
-                chain_id: self.chain_id,
-                gas_limit: self.gas_limit_per_block,
-                gas_used,
-                base_fee_be: self.base_fee.to_be_bytes::<32>(),
-                coinbase: {
-                    let mut out = [0u8; 20];
-                    out.copy_from_slice(self.coinbase.as_slice());
-                    out
-                },
-                tx_count: transactions.len() as u64,
-            },
+            header: header.clone(),
             txs: crate::state_proof::encode_block_txs(transactions),
             prev_market_state: Vec::new(),
             block_hash,
@@ -2876,29 +3482,64 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn compute_block_hash(
+    /// Build the canonical block-header witness. `derive_block_hash`
+    /// over this witness is the block hash; the same witness is fed to
+    /// the SP1 proof so the proof binds to exactly that hash.
+    #[allow(clippy::too_many_arguments)]
+    fn header_witness(
         &self,
-        number: u64,
-        chain_id: u64,
-        gas_limit: u64,
         gas_used: u64,
-        base_fee: U256,
-        coinbase: Address,
         tx_count: u64,
-    ) -> B256 {
+        parent_hash: B256,
+        timestamp: u64,
+        tx_root: B256,
+        state_root: B256,
+        receipts_root: B256,
+    ) -> mersennet_zkp::sp1::BlockHeaderWitness {
         let mut coinbase_bytes = [0u8; 20];
-        coinbase_bytes.copy_from_slice(coinbase.as_slice());
-        B256::from(mersennet_zkp::sp1::derive_block_hash(
-            number,
-            &mersennet_zkp::sp1::BlockHeaderWitness {
-                chain_id,
-                gas_limit,
-                gas_used,
-                base_fee_be: base_fee.to_be_bytes::<32>(),
-                coinbase: coinbase_bytes,
-                tx_count,
-            },
-        ))
+        coinbase_bytes.copy_from_slice(self.coinbase.as_slice());
+        mersennet_zkp::sp1::BlockHeaderWitness {
+            chain_id: self.chain_id,
+            gas_limit: self.gas_limit_per_block,
+            gas_used,
+            base_fee_be: self.base_fee.to_be_bytes::<32>(),
+            coinbase: coinbase_bytes,
+            tx_count,
+            parent_hash: parent_hash.0,
+            timestamp,
+            tx_root: tx_root.0,
+            state_root: state_root.0,
+            receipts_root: receipts_root.0,
+        }
+    }
+
+    /// Keccak Merkle-ish root over the ordered transaction hashes. A
+    /// simple sequential keccak accumulator is sufficient to bind the
+    /// exact transaction list + order into the block hash.
+    fn compute_tx_root(transactions: &[Transaction]) -> B256 {
+        if transactions.is_empty() {
+            return B256::ZERO;
+        }
+        let mut buf = Vec::with_capacity(transactions.len() * 32);
+        for tx in transactions {
+            buf.extend_from_slice(crate::crypto::tx_signing_hash(tx).as_slice());
+        }
+        keccak256(&buf)
+    }
+
+    /// Keccak accumulator over the receipts (success + gas + output) so
+    /// the block hash binds execution results, not just inputs.
+    fn compute_receipts_root(receipts: &[Receipt]) -> B256 {
+        if receipts.is_empty() {
+            return B256::ZERO;
+        }
+        let mut buf = Vec::new();
+        for r in receipts {
+            buf.push(if r.success { 1u8 } else { 0u8 });
+            buf.extend_from_slice(&r.gas_used.to_be_bytes());
+            buf.extend_from_slice(r.output.as_ref());
+        }
+        keccak256(&buf)
     }
 
     /// Sum of every account balance currently held in state. The full

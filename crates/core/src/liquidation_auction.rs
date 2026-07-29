@@ -184,7 +184,7 @@ impl Default for LiquidationAuction {
             insurance_fund: U256::ZERO,
             stats: AuctionStats::default(),
             verifier: default_verifier(),
-            poseidon: Poseidon::default(),
+            poseidon: Poseidon,
         }
     }
 }
@@ -486,7 +486,7 @@ mod tests {
     use mersennet_zkp::note::Note;
 
     fn build_claim(state: &ShieldedState, liquidator_id: Fr, victim: &Note) -> LiquidationClaim {
-        let p = Poseidon::default();
+        let p = Poseidon;
         let oracle_price = U256::from(3_200u64);
         let claim_tag = p.hash_two(&victim.commit(&p).0, &Fr::from_u64(u256_low(&oracle_price)));
         let anchor = state.current_root();
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn unregistered_liquidator_is_rejected() {
         let mut a = LiquidationAuction::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let state = ShieldedState::new();
         let victim = Note {
             value: 1_000_000,
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn registered_liquidator_submits_claim() {
         let mut a = LiquidationAuction::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let mut state = ShieldedState::new();
         let victim = Note {
             value: 1_000_000,
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn highest_bid_wins_auction() {
         let mut a = LiquidationAuction::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let mut state = ShieldedState::new();
         let victim = Note {
             value: 1_000_000,
@@ -612,7 +612,7 @@ mod tests {
     fn execute_consumes_victim_and_mints_bounty() {
         let mut a = LiquidationAuction::new();
         let mut state = ShieldedState::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let victim = Note {
             value: 1_000_000,
             asset_id: 0,

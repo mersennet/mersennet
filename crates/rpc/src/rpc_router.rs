@@ -27,6 +27,15 @@ impl RpcError {
     }
 }
 
+/// Genesis-funded system address used as the caller for consensus-routed
+/// CLOB operations that are not owner-scoped (cancelOrder). Must be
+/// funded in the genesis config.
+fn system_clob_address() -> Address {
+    let mut a = [0u8; 20];
+    a[19] = 0x01;
+    Address::from(a)
+}
+
 fn require_transparent_mersennet_orders_enabled(engine: &Engine) -> RpcResult<()> {
     if engine.privacy_mode_activated() {
         Err(RpcError::new(
@@ -35,6 +44,22 @@ fn require_transparent_mersennet_orders_enabled(engine: &Engine) -> RpcResult<()
         ))
     } else {
         Ok(())
+    }
+}
+
+/// Gate for the state-MUTATING `mersennet_orders_*` methods. These act for an
+/// arbitrary `owner`/`caller` with no signature, so they're only allowed when
+/// the operator opts in (testnet seeding). Disabled on mainnet, where orders
+/// must arrive as signed txs to the CLOB precompile. Read-only queries don't
+/// call this.
+fn require_unsigned_orders_rpc_allowed(engine: &Engine) -> RpcResult<()> {
+    if engine.allow_unsigned_orders_rpc() {
+        Ok(())
+    } else {
+        Err(RpcError::new(
+            -32604,
+            "unsigned mersennet_orders_* mutations are disabled on this node; submit a signed transaction to the CLOB precompile (0x…0100)",
+        ))
     }
 }
 
@@ -103,47 +128,77 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 filter.domain.as_deref(),
                 filter.kind.as_deref(),
             );
+            let privacy_active = engine.privacy_mode_activated();
             let events: Vec<Value> = records
                 .into_iter()
                 .filter(|record| !hide_post_privacy_sensitive_domain_event(record, engine))
-                .map(domain_event_record_to_value)
+                .map(|record| domain_event_record_to_value(record, privacy_active))
                 .collect();
             Ok(Value::Array(events))
         }
         "mersennet_orders_addMarket" => {
-            require_transparent_mersennet_orders_enabled(engine)?;
-            let (symbol, tick_size, lot_size) = parse_market_input(params)?;
-            let market_id = engine.mersennet_orders_add_market(symbol, tick_size, lot_size);
-            Ok(Value::String(hex_u64(market_id.0)))
+            // Disabled: this mutated only the receiving node's state (markets
+            // are not consensus objects via RPC), so a market added here
+            // existed on one node and nowhere else — every order for it then
+            // reverted on the rest of the network. Markets are seeded
+            // deterministically from genesis config on every node instead.
+            Err(RpcError::new(
+                -32601,
+                "mersennet_orders_addMarket is disabled: markets are seeded from genesis config \
+                 (adding one via RPC would only mutate this node and fork CLOB state)"
+                    .to_string(),
+            ))
         }
         "mersennet_orders_submitOrder" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let input = parse_mersennet_order_input(params)?;
             let owner = parse_address(&input.owner)?;
             let side = parse_side(&input.side)?;
             let price = parse_hex_u256(&input.price)?;
             let size = parse_hex_u256(&input.size)?;
             let tif = parse_tif(input.tif.as_deref())?;
-            let outcome = engine
-                .mersennet_orders_submit_order(
-                    owner,
-                    mersennet::mersennet_orders::MarketId(input.market_id),
-                    side,
-                    price,
-                    size,
-                    tif,
-                )
-                .map_err(map_mersennet_orders_error)?;
-            Ok(serde_json::to_value(order_outcome_to_dto(outcome))
-                .map_err(|err| RpcError::new(-32000, err.to_string()))?)
+            // Route through consensus: build an unsigned placeOrder
+            // precompile tx and submit it to the mempool. It gossips to
+            // the leader and executes deterministically on every node,
+            // so the order book is consensus-consistent (the old direct
+            // state mutation only touched the receiving node).
+            let is_buy = matches!(side, Side::Buy);
+            let tif_byte = match tif {
+                TimeInForce::Gtc => 0u8,
+                TimeInForce::Ioc => 1u8,
+                TimeInForce::Fok => 2u8,
+            };
+            let calldata = mersennet::precompile_abi::encode_place_order(
+                input.market_id,
+                is_buy,
+                price,
+                size,
+                tif_byte,
+            );
+            let tx_hash = engine
+                .submit_orders_call(owner, calldata, mersennet::precompile_abi::GAS_PLACE_ORDER)
+                .map_err(|e| RpcError::new(-32005, format!("order rejected: {}", e.code())))?;
+            Ok(json!({ "accepted": true, "txHash": hex_b256(tx_hash) }))
         }
         "mersennet_orders_cancelOrder" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let order_id = parse_order_id(params)?;
-            let cancelled = engine
-                .mersennet_orders_cancel_order(mersennet::mersennet_orders::OrderId(order_id))
-                .is_some();
-            Ok(Value::Bool(cancelled))
+            // cancelOrder(uint256) is not owner-scoped in the precompile,
+            // so route it as a tx from the genesis-funded system CLOB
+            // address (0x…01). It gossips to the leader and cancels in a
+            // block deterministically, keeping the book consensus-
+            // consistent.
+            let calldata = mersennet::precompile_abi::encode_cancel_order(order_id);
+            let tx_hash = engine
+                .submit_orders_call(
+                    system_clob_address(),
+                    calldata,
+                    mersennet::precompile_abi::GAS_CANCEL_ORDER,
+                )
+                .map_err(|e| RpcError::new(-32005, format!("cancel rejected: {}", e.code())))?;
+            Ok(json!({ "accepted": true, "txHash": hex_b256(tx_hash) }))
         }
         "mersennet_orders_getOrderBook" => {
             require_transparent_mersennet_orders_enabled(engine)?;
@@ -164,16 +219,31 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(serde_json::to_value(dtos).map_err(|err| RpcError::new(-32000, err.to_string()))?)
         }
         "mersennet_orders_setMarginParams" => {
-            require_transparent_mersennet_orders_enabled(engine)?;
-            let (initial_bps, maintenance_bps) = parse_margin_params(params)?;
-            engine.mersennet_orders_set_margin_params(initial_bps, maintenance_bps);
-            Ok(Value::Bool(true))
+            // Disabled: direct local mutation — would fork CLOB margin state
+            // across nodes (same class of bug as addMarket).
+            Err(RpcError::new(
+                -32601,
+                "mersennet_orders_setMarginParams is disabled: margin params are consensus state \
+                 and cannot be mutated via RPC on a single node"
+                    .to_string(),
+            ))
         }
         "mersennet_orders_depositCollateral" => {
             require_transparent_mersennet_orders_enabled(engine)?;
+            require_unsigned_orders_rpc_allowed(engine)?;
             let (owner, amount) = parse_collateral_input(params)?;
-            engine.mersennet_orders_deposit_collateral(owner, amount);
-            Ok(Value::Bool(true))
+            // Route through consensus as a precompile depositCollateral
+            // tx from the owner (debits their native MRSN into escrow —
+            // 1:1 backed). Deterministic across nodes.
+            let calldata = mersennet::precompile_abi::encode_deposit_collateral(amount);
+            let tx_hash = engine
+                .submit_orders_call(
+                    owner,
+                    calldata,
+                    mersennet::precompile_abi::GAS_DEPOSIT_COLLATERAL,
+                )
+                .map_err(|e| RpcError::new(-32005, format!("deposit rejected: {}", e.code())))?;
+            Ok(json!({ "accepted": true, "txHash": hex_b256(tx_hash) }))
         }
         "mersennet_orders_isLiquidatable" => {
             require_transparent_mersennet_orders_enabled(engine)?;
@@ -181,9 +251,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             Ok(Value::Bool(engine.mersennet_orders_is_liquidatable(owner)))
         }
         "mersennet_orders_liquidate" => {
-            require_transparent_mersennet_orders_enabled(engine)?;
-            let owner = parse_owner_param(params)?;
-            Ok(Value::Bool(engine.mersennet_orders_liquidate(owner)))
+            // Disabled: direct local mutation — liquidation must happen
+            // deterministically in consensus, not on one node via RPC.
+            Err(RpcError::new(
+                -32601,
+                "mersennet_orders_liquidate is disabled: liquidations are consensus state \
+                 transitions and cannot be triggered via RPC on a single node"
+                    .to_string(),
+            ))
         }
         "mersennet_bridge_enqueueOrdersToEvm" => {
             let payload = parse_payload(params)?;
@@ -341,6 +416,11 @@ struct MersennetOrderInput {
     tif: Option<String>,
 }
 
+// Scaffolding for the order-mutation / admin RPCs (submitOrder result shape,
+// addMarket, setMarginParams) that are hard-disabled on the public router and
+// return -32601. Kept intact so they can be wired on a permissioned deployment
+// without rebuilding the DTOs; `#[allow(dead_code)]` keeps `-D warnings` green.
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct MersennetOrderResultDto {
     order_id: Option<String>,
@@ -349,6 +429,7 @@ struct MersennetOrderResultDto {
     trades: Vec<TradeDto>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct TradeDto {
     taker: String,
@@ -442,6 +523,8 @@ fn parse_balance_params(params: Value) -> RpcResult<(Address, Value)> {
     Ok((address, block))
 }
 
+// Parser for the disabled addMarket RPC — see the DTO note above.
+#[allow(dead_code)]
 fn parse_market_input(params: Value) -> RpcResult<(String, U256, U256)> {
     let array = match params {
         Value::Array(values) => values,
@@ -502,6 +585,8 @@ fn parse_market_id(params: Value) -> RpcResult<u64> {
     }
 }
 
+// Parser for the disabled setMarginParams RPC — see the DTO note above.
+#[allow(dead_code)]
 fn parse_margin_params(params: Value) -> RpcResult<(u64, u64)> {
     let array = match params {
         Value::Array(values) => values,
@@ -664,6 +749,7 @@ fn hex_b256(hash: B256) -> String {
     format!("0x{}", hex::encode(hash.as_slice()))
 }
 
+#[allow(dead_code)]
 fn order_outcome_to_dto(outcome: OrderOutcome) -> MersennetOrderResultDto {
     MersennetOrderResultDto {
         order_id: outcome.order_id.map(|id| hex_u64(id.0)),
@@ -673,6 +759,7 @@ fn order_outcome_to_dto(outcome: OrderOutcome) -> MersennetOrderResultDto {
     }
 }
 
+#[allow(dead_code)]
 fn trade_to_dto(trade: mersennet::mersennet_orders::Trade) -> TradeDto {
     TradeDto {
         taker: hex_address(trade.taker),
@@ -727,8 +814,8 @@ fn order_to_dto(order: Order) -> MersennetOrderDto {
     }
 }
 
-fn domain_event_record_to_value(record: DomainEventRecord) -> Value {
-    let (domain, kind, data) = domain_event_parts(&record.event);
+fn domain_event_record_to_value(record: DomainEventRecord, privacy_active: bool) -> Value {
+    let (domain, kind, data) = domain_event_parts(&record.event, privacy_active);
     let dto = DomainEventDto {
         block_number: hex_u64(record.block_number),
         event_index: hex_u64(record.event_index),
@@ -752,12 +839,15 @@ fn hide_post_privacy_sensitive_domain_event(record: &DomainEventRecord, engine: 
     record.block_number >= activation_height
 }
 
-fn domain_event_parts(event: &DomainEvent) -> (&'static str, &'static str, Value) {
+fn domain_event_parts(
+    event: &DomainEvent,
+    privacy_active: bool,
+) -> (&'static str, &'static str, Value) {
     match event {
         DomainEvent::MersennetOrders(event) => (
             "mersennet_orders",
             event.kind(),
-            mersennet_orders_event_to_value(event),
+            mersennet_orders_event_to_value(event, privacy_active),
         ),
         DomainEvent::Bridge(event) => ("bridge", event.kind(), bridge_event_to_value(event)),
         DomainEvent::Shielded(event) => ("shielded", event.kind(), shielded_event_to_value(event)),
@@ -808,8 +898,10 @@ fn shielded_event_to_value(event: &mersennet::events::ShieldedEvent) -> Value {
     }
 }
 
-fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent) -> Value {
-    if !event.is_privacy_safe_after_activation() {
+fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent, privacy_active: bool) -> Value {
+    // Pre-fork the transparent CLOB is public by design — only redact once
+    // the privacy hard fork has actually activated.
+    if privacy_active && !event.is_privacy_safe_after_activation() {
         return json!({
             "redacted": true,
             "reason": "privacy_mode_sensitive_event",
@@ -891,9 +983,14 @@ fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent) -> Value {
             "initial_bps": initial_bps,
             "maintenance_bps": maintenance_bps,
         }),
-        _ => {
-            unreachable!("privacy-sensitive MersennetOrders events should be redacted above")
-        }
+        MersennetOrdersEvent::CollateralDeposited { owner, amount } => json!({
+            "owner": hex_address(*owner),
+            "amount": hex_u256(*amount),
+        }),
+        MersennetOrdersEvent::Liquidation { owner, liquidated } => json!({
+            "owner": hex_address(*owner),
+            "liquidated": liquidated,
+        }),
     }
 }
 
@@ -923,6 +1020,8 @@ fn bridge_queue_kind_to_str(queue: &BridgeQueueKind) -> &'static str {
     }
 }
 
+// Error mapper for the disabled order-mutation RPCs — see the DTO note above.
+#[allow(dead_code)]
 fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
     let code = match err {
         MersennetOrdersError::UnknownMarket => -32010,
@@ -932,6 +1031,7 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::InsufficientEquity => -32014,
         MersennetOrdersError::MarketHalted => -32015,
         MersennetOrdersError::WithdrawalExceedsEquity => -32016,
+        MersennetOrdersError::NotOrderOwner => -32017,
     };
     RpcError::new(code, err.message())
 }

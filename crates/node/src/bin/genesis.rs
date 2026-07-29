@@ -127,9 +127,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "unbonding_period": 2
             },
             "token_economics": {
-                "max_supply": "1000000000000000000000000000",
-                "initial_reward_per_block": "10000000000000000000",
-                "halving_interval": 35000000
+                "max_supply": "618970019642690137449562111",
+                "initial_reward_per_block": "2305843009213693951",
+                "halving_interval": 33550336
             },
             "genesis": genesis
         });
@@ -171,9 +171,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "unbonding_period": 2
         },
         "token_economics": {
-            "max_supply": "1000000000000000000000000000",
-            "initial_reward_per_block": "10000000000000000000",
-            "halving_interval": 35000000
+            "max_supply": "618970019642690137449562111",
+            "initial_reward_per_block": "2305843009213693951",
+            "halving_interval": 33550336
         },
         "genesis": genesis
     });

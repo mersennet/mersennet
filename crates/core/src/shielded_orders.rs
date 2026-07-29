@@ -270,7 +270,7 @@ impl Default for ShieldedOrdersEngine {
             maintenance_margin_bps: 300,
             next_sequence: 0,
             verifier: default_verifier(),
-            poseidon: Poseidon::default(),
+            poseidon: Poseidon,
             price_tick: U256::from(10u64),
             size_lot: U256::from(1u64),
         }

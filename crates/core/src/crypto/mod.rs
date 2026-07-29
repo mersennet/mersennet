@@ -106,6 +106,13 @@ pub fn sign_transaction(tx: &Transaction, private_key: &SigningKey) -> SignedTra
     }
 }
 
+/// Half of the secp256k1 group order `n`. Signatures with `s > n/2` are
+/// non-canonical (EIP-2) and rejected to prevent signature malleability.
+const SECP256K1_HALF_N: U256 = U256::from_be_bytes([
+    0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D, 0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0,
+]);
+
 /// Recover the signer address from a `SignedTransaction` using the Mersennet custom signing hash.
 pub fn recover_signer(signed_tx: &SignedTransaction) -> Result<Address> {
     let hash = tx_signing_hash(&signed_tx.tx);
@@ -126,6 +133,14 @@ pub fn recover_signer(signed_tx: &SignedTransaction) -> Result<Address> {
 
     let recovery_id = RecoveryId::try_from(recovery_byte as u8)
         .map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+
+    // Reject high-`s` signatures (EIP-2 low-`s` rule). Without this, a third
+    // party can malleate a submitted signature (`s' = n − s`, flipped parity)
+    // into a different raw envelope that recovers the same signer but hashes to
+    // a different tx id — polluting mempool/hash tracking. secp256k1 n/2:
+    if signed_tx.s > SECP256K1_HALF_N {
+        return Err(anyhow!("non-canonical signature: s is greater than n/2"));
+    }
 
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signed_tx.r.to_be_bytes::<32>());
@@ -218,6 +233,7 @@ fn decode_mersennet_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         signature: Some((r, s, v)),
         tx_type: 0,
         shielded_payload: None,
+        hash: None,
     };
     let signed_temp = SignedTransaction {
         tx: tx.clone(),
@@ -363,6 +379,105 @@ fn rlp_encode_string(s: &[u8]) -> Vec<u8> {
     out
 }
 
+// ───── BFT consensus vote signing (Workstream A) ─────
+
+/// Domain-separated digest a validator signs to vote for a block at a
+/// given height in the BFT finality protocol.
+pub fn vote_digest(height: u64, block_hash: B256) -> B256 {
+    const DOMAIN: &[u8] = b"MERSENNET_BFT_VOTE_V1";
+    let mut buf = Vec::with_capacity(DOMAIN.len() + 8 + 32);
+    buf.extend_from_slice(DOMAIN);
+    buf.extend_from_slice(&height.to_be_bytes());
+    buf.extend_from_slice(block_hash.as_slice());
+    keccak256(buf)
+}
+
+/// Sign a finality vote. Returns `(r, s, y_parity)`.
+pub fn sign_vote(height: u64, block_hash: B256, key: &SigningKey) -> (U256, U256, u64) {
+    let digest = vote_digest(height, block_hash);
+    let (sig, recovery_id): (Signature, RecoveryId) = key
+        .sign_prehash(digest.as_slice())
+        .expect("vote signing failed");
+    let sig_bytes = sig.to_bytes();
+    let r = U256::from_be_slice(&sig_bytes[..32]);
+    let s = U256::from_be_slice(&sig_bytes[32..64]);
+    (r, s, recovery_id.to_byte() as u64)
+}
+
+/// Recover the validator address that produced a finality-vote signature.
+pub fn recover_vote_signer(
+    height: u64,
+    block_hash: B256,
+    r: U256,
+    s: U256,
+    y_parity: u64,
+) -> Result<Address> {
+    if y_parity > 1 {
+        return Err(anyhow!("invalid vote y_parity: {y_parity}"));
+    }
+    let digest = vote_digest(height, block_hash);
+    let recovery_id =
+        RecoveryId::try_from(y_parity as u8).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes[..32].copy_from_slice(&r.to_be_bytes::<32>());
+    sig_bytes[32..64].copy_from_slice(&s.to_be_bytes::<32>());
+    let signature = Signature::from_bytes((&sig_bytes).into())
+        .map_err(|e| anyhow!("invalid vote signature: {e}"))?;
+    let verifying_key =
+        VerifyingKey::recover_from_prehash(digest.as_slice(), &signature, recovery_id)
+            .map_err(|e| anyhow!("vote ECDSA recovery failed: {e}"))?;
+    Ok(public_key_to_address(&verifying_key))
+}
+
+/// Digest a block proposer signs to prove it authored the block at `height`
+/// with hash `block_hash`. Distinct domain tag from votes so a vote signature
+/// can never be replayed as a proposal signature or vice versa.
+pub fn block_proposal_digest(height: u64, block_hash: B256) -> B256 {
+    const DOMAIN: &[u8] = b"MERSENNET_BLOCK_PROPOSAL_V1";
+    let mut buf = Vec::with_capacity(DOMAIN.len() + 8 + 32);
+    buf.extend_from_slice(DOMAIN);
+    buf.extend_from_slice(&height.to_be_bytes());
+    buf.extend_from_slice(block_hash.as_slice());
+    keccak256(buf)
+}
+
+/// Sign a block proposal. Returns `(r, s, y_parity)`.
+pub fn sign_block_proposal(height: u64, block_hash: B256, key: &SigningKey) -> (U256, U256, u64) {
+    let digest = block_proposal_digest(height, block_hash);
+    let (sig, recovery_id): (Signature, RecoveryId) = key
+        .sign_prehash(digest.as_slice())
+        .expect("block proposal signing failed");
+    let sig_bytes = sig.to_bytes();
+    let r = U256::from_be_slice(&sig_bytes[..32]);
+    let s = U256::from_be_slice(&sig_bytes[32..64]);
+    (r, s, recovery_id.to_byte() as u64)
+}
+
+/// Recover the proposer address that produced a block-proposal signature.
+pub fn recover_block_proposer(
+    height: u64,
+    block_hash: B256,
+    r: U256,
+    s: U256,
+    y_parity: u64,
+) -> Result<Address> {
+    if y_parity > 1 {
+        return Err(anyhow!("invalid proposal y_parity: {y_parity}"));
+    }
+    let digest = block_proposal_digest(height, block_hash);
+    let recovery_id =
+        RecoveryId::try_from(y_parity as u8).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes[..32].copy_from_slice(&r.to_be_bytes::<32>());
+    sig_bytes[32..64].copy_from_slice(&s.to_be_bytes::<32>());
+    let signature = Signature::from_bytes((&sig_bytes).into())
+        .map_err(|e| anyhow!("invalid proposal signature: {e}"))?;
+    let verifying_key =
+        VerifyingKey::recover_from_prehash(digest.as_slice(), &signature, recovery_id)
+            .map_err(|e| anyhow!("proposal ECDSA recovery failed: {e}"))?;
+    Ok(public_key_to_address(&verifying_key))
+}
+
 /// Generate a random signing key and its corresponding address (useful for tests).
 pub fn generate_keypair() -> (SigningKey, Address) {
     let signing_key = SigningKey::random(&mut rand::thread_rng());
@@ -388,6 +503,7 @@ mod tests {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         }
     }
 
@@ -415,6 +531,58 @@ mod tests {
         let signed = sign_transaction(&tx, &key_a);
         let recovered = recover_signer(&signed).unwrap();
         assert_ne!(recovered, addr_b);
+    }
+
+    #[test]
+    fn high_s_signature_is_rejected() {
+        // secp256k1 group order n.
+        const SECP256K1_N: U256 = U256::from_be_bytes([
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFE, 0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C,
+            0xD0, 0x36, 0x41, 0x41,
+        ]);
+        let (key, addr) = generate_keypair();
+        let tx = sample_tx(addr);
+        let signed = sign_transaction(&tx, &key);
+        // A correctly produced signature is low-s and must verify.
+        assert!(recover_signer(&signed).is_ok());
+        assert!(signed.s <= SECP256K1_HALF_N);
+        // Malleate to the equivalent high-s form: s' = n - s, flipped parity.
+        let mut malleated = signed.clone();
+        malleated.s = SECP256K1_N - signed.s;
+        let recovered = recover_signer(&malleated);
+        assert!(
+            recovered.is_err(),
+            "high-s (malleated) signatures must be rejected (EIP-2)"
+        );
+    }
+
+    #[test]
+    fn block_proposal_sign_and_recover_roundtrip() {
+        let (key, addr) = generate_keypair();
+        let hash = B256::from_slice(&[0x9c; 32]);
+        let (r, s, y) = sign_block_proposal(42, hash, &key);
+        let recovered = recover_block_proposer(42, hash, r, s, y).expect("recover");
+        assert_eq!(recovered, addr);
+        // Wrong height or hash must not recover the proposer.
+        assert_ne!(recover_block_proposer(43, hash, r, s, y).unwrap(), addr);
+        let other = B256::from_slice(&[0x01; 32]);
+        assert_ne!(recover_block_proposer(42, other, r, s, y).unwrap(), addr);
+    }
+
+    #[test]
+    fn vote_and_proposal_signatures_are_domain_separated() {
+        // A vote signature must not verify as a proposal signature for the
+        // same (height, hash) — different domain tags prevent cross-replay.
+        let (key, _addr) = generate_keypair();
+        let hash = B256::from_slice(&[0x7e; 32]);
+        let (vr, vs, vy) = sign_vote(7, hash, &key);
+        let as_proposal = recover_block_proposer(7, hash, vr, vs, vy);
+        let vote_signer = recover_vote_signer(7, hash, vr, vs, vy).unwrap();
+        // Recovery still yields *an* address, but not the true signer.
+        if let Ok(addr) = as_proposal {
+            assert_ne!(addr, vote_signer);
+        }
     }
 
     fn dummy_shield_tx(addr: Address) -> crate::shielded_evm::ShieldTx {

@@ -54,6 +54,20 @@ pub struct BlockHeaderWitness {
     pub base_fee_be: [u8; 32],
     pub coinbase: [u8; 20],
     pub tx_count: u64,
+    // Content-commitment fields (added so the block hash binds to the
+    // block's parent, its transactions, and the resulting state — a real
+    // hash-linked chain rather than a header-only digest). Defaulted to
+    // zero so older witnesses / tests decode unchanged.
+    #[serde(default)]
+    pub parent_hash: [u8; 32],
+    #[serde(default)]
+    pub timestamp: u64,
+    #[serde(default)]
+    pub tx_root: [u8; 32],
+    #[serde(default)]
+    pub state_root: [u8; 32],
+    #[serde(default)]
+    pub receipts_root: [u8; 32],
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -429,7 +443,7 @@ pub fn execute_block_program(
         .map(|entry| (entry.address, entry.balance))
         .collect::<HashMap<_, _>>();
     let verifier = default_verifier();
-    let poseidon = Poseidon::default();
+    let poseidon = Poseidon;
 
     // Prev-state continuity: bind the proof to the claimed prior state by
     // re-deriving the prev roots from the restored witness instead of
@@ -505,7 +519,7 @@ pub fn execute_block_program(
 }
 
 pub fn derive_block_hash(block_number: u64, header: &BlockHeaderWitness) -> [u8; 32] {
-    let mut payload = Vec::with_capacity(8 + 8 + 8 + 8 + 32 + 20 + 8);
+    let mut payload = Vec::with_capacity(8 + 8 + 8 + 8 + 32 + 20 + 8 + 32 + 8 + 32 + 32 + 32);
     payload.extend_from_slice(&block_number.to_be_bytes());
     payload.extend_from_slice(&header.chain_id.to_be_bytes());
     payload.extend_from_slice(&header.gas_limit.to_be_bytes());
@@ -513,6 +527,14 @@ pub fn derive_block_hash(block_number: u64, header: &BlockHeaderWitness) -> [u8;
     payload.extend_from_slice(&header.base_fee_be);
     payload.extend_from_slice(&header.coinbase);
     payload.extend_from_slice(&header.tx_count.to_be_bytes());
+    // Content commitment: bind the parent hash (hash-linked chain),
+    // block timestamp, transaction root, resulting state root, and
+    // receipts root into the block hash.
+    payload.extend_from_slice(&header.parent_hash);
+    payload.extend_from_slice(&header.timestamp.to_be_bytes());
+    payload.extend_from_slice(&header.tx_root);
+    payload.extend_from_slice(&header.state_root);
+    payload.extend_from_slice(&header.receipts_root);
     let digest = Keccak256::digest(&payload);
     let mut out = [0u8; 32];
     out.copy_from_slice(&digest);
@@ -1567,6 +1589,7 @@ mod tests {
             base_fee_be,
             coinbase: [0x22; 20],
             tx_count,
+            ..Default::default()
         }
     }
 
@@ -1741,7 +1764,7 @@ mod tests {
     #[test]
     fn execute_block_program_replays_fba_market_hash() {
         let anchor_root = MerkleTree::new().root().to_bytes();
-        let side_hash = Poseidon::default().hash_two(&Fr::ZERO, &Fr::ZERO);
+        let side_hash = Poseidon.hash_two(&Fr::ZERO, &Fr::ZERO);
         let pre_tick_witness = ShieldedTickWitness {
             drained_intent_count: 0,
             decrypted_intents: vec![DecryptedIntentWitness {
@@ -1839,7 +1862,7 @@ mod tests {
             recent_roots: vec![anchor_root],
         });
         let verifier = default_verifier();
-        let poseidon = Poseidon::default();
+        let poseidon = Poseidon;
         let expected_market_state_hash =
             replay_tick_market_state(&mut state, &*verifier, &poseidon, &pre_tick_witness)
                 .unwrap()

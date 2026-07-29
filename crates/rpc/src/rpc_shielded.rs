@@ -276,6 +276,17 @@ fn read_state_proof(engine: &Engine, params: &Value) -> Value {
     }
 }
 
+/// Prover provenance for RPC/explorer honesty. `sp1` feature builds run
+/// the real SP1 zkVM prover; default builds run the deterministic
+/// development prover.
+fn prover_mode() -> &'static str {
+    if cfg!(feature = "sp1") {
+        "sp1"
+    } else {
+        "development"
+    }
+}
+
 fn state_proof_to_value(proof: &mersennet::zk_proofs::StateTransitionProof) -> Value {
     match bincode::serialize(proof) {
         Ok(bytes) => json!({
@@ -289,6 +300,11 @@ fn state_proof_to_value(proof: &mersennet::zk_proofs::StateTransitionProof) -> V
             "txCount": proof.tx_count,
             "proofBincodeHex": hex_bytes(&bytes),
             "proofType": format!("{:?}", proof.proof_type),
+            // Honest prover provenance: the node emits a real SP1 zkVM
+            // proof only when built with the `sp1` feature + a prover
+            // adapter; otherwise it is the deterministic development
+            // prover (verifiable + hash-committing, but not a zk proof).
+            "proverMode": prover_mode(),
         }),
         Err(e) => json!({ "error": format!("serialize: {e}") }),
     }
@@ -653,7 +669,7 @@ fn parse_shielded_order_request(
         Side::Buy => Fr::ZERO,
         Side::Sell => Fr::ONE,
     };
-    let side_hash = Poseidon::default().hash_two(&side_fr, &salt);
+    let side_hash = Poseidon.hash_two(&side_fr, &salt);
 
     let public_inputs = vec![
         anchor_root,
@@ -877,6 +893,7 @@ fn apply_envelope_directly(
     let tx = mersennet::engine::Transaction {
         tx_type: mersennet::shielded_evm::SHIELDED_TX_TYPE,
         shielded_payload: Some(envelope),
+        hash: None,
         ..Default::default()
     };
     let execution = engine.apply_shielded_tx(&tx);

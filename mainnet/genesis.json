@@ -7,9 +7,9 @@
     "name": "MRSN",
     "symbol": "MRSN",
     "decimals": 18,
-    "max_supply": "1000000000000000000000000000",
-    "initial_reward_per_block": "10000000000000000000",
-    "halving_interval": 35000000
+    "max_supply": "618970019642690137449562111",
+    "initial_reward_per_block": "2305843009213693951",
+    "halving_interval": 33550336
   },
   "engine": {
     "chain_id": 8191,
@@ -26,7 +26,8 @@
   },
   "mersennet_orders": {
     "initial_margin_bps": 500,
-    "maintenance_margin_bps": 250
+    "maintenance_margin_bps": 250,
+    "allow_unsigned_orders_rpc": false
   },
   "bridge": {
     "max_queue_len": 10000
@@ -43,9 +44,9 @@
     "unbonding_period": 100
   },
   "token_economics": {
-    "max_supply": "1000000000000000000000000000",
-    "initial_reward_per_block": "10000000000000000000",
-    "halving_interval": 35000000
+    "max_supply": "618970019642690137449562111",
+    "initial_reward_per_block": "2305843009213693951",
+    "halving_interval": 33550336
   },
   "rpc": {
     "enabled": true,

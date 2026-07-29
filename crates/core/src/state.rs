@@ -1,6 +1,8 @@
 use anyhow::{Result, bail};
 use revm::db::InMemoryDB;
-use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, U256, keccak256};
+use revm::primitives::{
+    AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256, keccak256,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -290,7 +292,13 @@ impl PersistentState {
             let record: AccountRecord = bincode::deserialize(&value)?;
             let balance = U256::from_be_bytes(record.balance);
             let code_hash = B256::from(record.code_hash);
-            let code = if record.code.is_empty() {
+            // KECCAK_EMPTY means the account is an EOA — force empty bytecode
+            // even if the stored record carries stray bytes. Older versions
+            // persisted revm's analyzed padding (a lone STOP byte) for
+            // code-less accounts; reloading that as real code made CacheDB
+            // recompute a non-empty code hash and EIP-3607 then rejected the
+            // account as a tx sender ("senders with deployed code").
+            let code = if record.code.is_empty() || code_hash == KECCAK_EMPTY {
                 Bytecode::new()
             } else {
                 Bytecode::new_raw(Bytes::from(record.code))
@@ -336,88 +344,55 @@ impl PersistentState {
     }
 
     fn write_evm_state(&self, evm_db: &InMemoryDB) -> Result<()> {
-        let dirty = {
+        // Always persist a full, deterministic image of `evm_db`.
+        //
+        // The previous incremental path only wrote accounts explicitly
+        // marked dirty. Any balance change a code path forgot to mark
+        // (or that a producing vs importing node marked differently) left
+        // a STALE value in the store, so two nodes with identical
+        // in-memory EVM state committed different persisted state — and
+        // thus different state roots. That was the root cause of the
+        // persistent per-block "imported state root mismatch" warning.
+        // A full rewrite makes the committed state a faithful image of
+        // `evm_db` on every node, so re-executing a block yields the same
+        // root as producing it. The account set is small on this chain,
+        // so the cost is negligible.
+        {
             let mut guard = self.dirty_accounts.lock().unwrap();
-            std::mem::take(&mut *guard)
-        };
+            guard.clear();
+        }
 
-        if dirty.is_empty() {
-            self.accounts.clear()?;
-            self.storage.clear()?;
+        self.accounts.clear()?;
+        self.storage.clear()?;
 
-            for (address, db_account) in &evm_db.accounts {
-                if let Some(info) = db_account.info() {
-                    let record = AccountRecord {
-                        balance: info.balance.to_be_bytes(),
-                        nonce: info.nonce,
-                        code_hash: info.code_hash.into(),
-                        code: info
-                            .code
-                            .map(|code| code.bytes().to_vec())
-                            .unwrap_or_default(),
-                    };
-                    let data = bincode::serialize(&record)?;
-                    self.accounts.insert(address.as_slice(), data)?;
-                }
-
-                for (slot, value) in &db_account.storage {
-                    if value.is_zero() {
-                        continue;
-                    }
-                    let mut key = [0u8; 52];
-                    key[..20].copy_from_slice(address.as_slice());
-                    key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                    self.storage
-                        .insert(key.as_slice(), value.to_be_bytes::<32>().to_vec())?;
-                }
+        for (address, db_account) in &evm_db.accounts {
+            if let Some(info) = db_account.info() {
+                let record = AccountRecord {
+                    balance: info.balance.to_be_bytes(),
+                    nonce: info.nonce,
+                    code_hash: info.code_hash.into(),
+                    // original_bytes(), NOT bytes(): analyzed bytecode is
+                    // padded with a trailing STOP, and persisting the padding
+                    // turns EOAs into "accounts with code" after a reload
+                    // (EIP-3607 then rejects them as tx senders).
+                    code: info
+                        .code
+                        .map(|code| code.original_bytes().to_vec())
+                        .unwrap_or_default(),
+                };
+                let data = bincode::serialize(&record)?;
+                self.accounts.insert(address.as_slice(), data)?;
             }
-        } else {
-            for address in &dirty {
-                if let Some(db_account) = evm_db.accounts.get(address) {
-                    if let Some(info) = db_account.info() {
-                        let record = AccountRecord {
-                            balance: info.balance.to_be_bytes(),
-                            nonce: info.nonce,
-                            code_hash: info.code_hash.into(),
-                            code: info
-                                .code
-                                .map(|code| code.bytes().to_vec())
-                                .unwrap_or_default(),
-                        };
-                        let data = bincode::serialize(&record)?;
-                        self.accounts.insert(address.as_slice(), data)?;
-                    }
 
-                    let old_keys: Vec<_> = self
-                        .storage
-                        .scan_prefix(address.as_slice())
-                        .filter_map(|entry| entry.ok().map(|(k, _)| k))
-                        .collect();
-                    for key in old_keys {
-                        self.storage.remove(&key)?;
-                    }
-
-                    for (slot, value) in &db_account.storage {
-                        if value.is_zero() {
-                            continue;
-                        }
-                        let mut key = [0u8; 52];
-                        key[..20].copy_from_slice(address.as_slice());
-                        key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                        self.storage
-                            .insert(key.as_slice(), value.to_be_bytes::<32>().to_vec())?;
-                    }
-                } else {
-                    self.accounts.remove(address.as_slice())?;
-                    let old_keys: Vec<_> = self
-                        .storage
-                        .scan_prefix(address.as_slice())
-                        .filter_map(|entry| entry.ok().map(|(k, _)| k))
-                        .collect();
-                    for key in old_keys {
-                        self.storage.remove(&key)?;
-                    }
+            for (slot, value) in &db_account.storage {
+                if value.is_zero() {
+                    continue;
                 }
+                let mut key = [0u8; 52];
+                key[..20].copy_from_slice(address.as_slice());
+                key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
+                self.storage
+                    .insert(key.as_slice(), value.to_be_bytes::<32>().to_vec())?;
             }
         }
 
@@ -512,7 +487,15 @@ impl PersistentState {
 
     pub fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()> {
         self.mersennet_orders.clear()?;
-        let markets = state
+        // CRITICAL: markets/orders/accounts/books are HashMaps, whose
+        // iteration order is non-deterministic across processes. This
+        // snapshot is bincode-serialized and folded into the state root,
+        // so unsorted iteration made two nodes with identical logical
+        // CLOB state compute DIFFERENT state roots — the root cause of
+        // the perpetual `imported block state root mismatch`. Sort every
+        // collection by a stable key so the bytes (and root) are
+        // deterministic.
+        let mut markets: Vec<MarketRecord> = state
             .markets
             .values()
             .map(|m| MarketRecord {
@@ -524,7 +507,8 @@ impl PersistentState {
                 status: encode_market_status(m.status),
             })
             .collect();
-        let orders = state
+        markets.sort_by_key(|m| m.id);
+        let mut orders: Vec<OrderRecord> = state
             .orders
             .values()
             .map(|o| OrderRecord {
@@ -537,11 +521,12 @@ impl PersistentState {
                 tif: encode_tif(o.tif),
             })
             .collect();
-        let accounts = state
+        orders.sort_by_key(|o| o.id);
+        let mut accounts: Vec<(Vec<u8>, AccountRecordV2)> = state
             .accounts
             .iter()
             .map(|(addr, acct)| {
-                let positions = acct
+                let mut positions: Vec<(u64, PositionRecord)> = acct
                     .positions
                     .iter()
                     .map(|(market_id, pos)| {
@@ -555,17 +540,21 @@ impl PersistentState {
                         )
                     })
                     .collect();
+                positions.sort_by_key(|(mid, _)| *mid);
+                let mut open_orders: Vec<u64> = acct.open_orders.iter().map(|id| id.0).collect();
+                open_orders.sort_unstable();
                 (
                     addr.as_slice().to_vec(),
                     AccountRecordV2 {
                         collateral: acct.collateral.to_be_bytes(),
-                        open_orders: acct.open_orders.iter().map(|id| id.0).collect(),
+                        open_orders,
                         positions,
                     },
                 )
             })
             .collect();
-        let books = state
+        accounts.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut books: Vec<(u64, OrderBookRecord)> = state
             .books
             .iter()
             .map(|(market_id, book)| {
@@ -592,6 +581,7 @@ impl PersistentState {
                 (market_id.0, OrderBookRecord { bids, asks })
             })
             .collect();
+        books.sort_by_key(|(mid, _)| *mid);
 
         let snapshot = MersennetOrdersSnapshot {
             next_order_id: state.next_order_id,

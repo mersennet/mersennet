@@ -271,8 +271,7 @@ mod tests {
             Fr::from_u64(13),
         ];
         let got = sponge_hash(&inputs);
-        let expected =
-            be("151e8a1d09c7d145308bedfdef746b7e09b24282053984287cf0a0adb45602e1");
+        let expected = be("151e8a1d09c7d145308bedfdef746b7e09b24282053984287cf0a0adb45602e1");
         assert_eq!(got, expected);
     }
 

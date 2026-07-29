@@ -64,7 +64,7 @@ impl Default for MerkleTree {
 
 impl MerkleTree {
     pub fn new() -> Self {
-        let hasher = Poseidon::default();
+        let hasher = Poseidon;
         let mut empty = Vec::with_capacity(MERKLE_DEPTH + 1);
         let mut cur = Fr::ZERO;
         empty.push(cur);

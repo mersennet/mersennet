@@ -62,6 +62,12 @@ pub struct MempoolStats {
 
 type SenderQueues = HashMap<Address, BTreeMap<u64, Transaction>>;
 
+/// Cap on future-nonce (queued) txs held per sender. These become ready only
+/// when the missing lower nonce arrives, so an unbounded queue just holds
+/// orphaned txs. Bounding it stops a single fast sender from growing the
+/// mempool without ever draining.
+const MAX_QUEUED_PER_SENDER: usize = 64;
+
 #[derive(Default, Debug)]
 pub struct Mempool {
     pending: SenderQueues,
@@ -216,7 +222,22 @@ impl Mempool {
             .unwrap_or(account_nonce);
 
         if tx.nonce > effective_next {
-            self.queued.entry(tx.from).or_default().insert(tx.nonce, tx);
+            let sender = tx.from;
+            let q = self.queued.entry(sender).or_default();
+            q.insert(tx.nonce, tx);
+            // Bound the future-nonce backlog per sender. Queued txs only clear
+            // when the missing nonce arrives (fill_gaps) or on mine; a sender
+            // that keeps submitting ahead of inclusion would otherwise pile up
+            // orphaned future-nonce txs that never become ready. Keep only the
+            // lowest `MAX_QUEUED_PER_SENDER` (closest to becoming ready) and
+            // drop the highest — those are the least likely to ever execute.
+            while q.len() > MAX_QUEUED_PER_SENDER {
+                if let Some(&highest) = q.keys().next_back() {
+                    q.remove(&highest);
+                } else {
+                    break;
+                }
+            }
         } else if tx.gas_price < base_fee {
             self.base_fee_pool
                 .entry(tx.from)
@@ -313,6 +334,35 @@ impl Mempool {
 
     pub fn senders(&self) -> Vec<Address> {
         self.pending.keys().copied().collect()
+    }
+
+    /// Highest nonce currently queued (pending or base-fee) for a sender,
+    /// across both pools. Used to assign the next nonce for
+    /// server-submitted CLOB txs so rapid-fire orders don't collide.
+    pub fn highest_queued_nonce(&self, sender: Address) -> Option<u64> {
+        [&self.pending, &self.queued, &self.base_fee_pool]
+            .iter()
+            .filter_map(|pool| pool.get(&sender).and_then(|q| q.keys().max().copied()))
+            .max()
+    }
+
+    /// The lowest nonce >= `from` that is NOT already occupied by any of
+    /// this sender's queued txs. Assigning CLOB tx nonces this way fills
+    /// gaps instead of always incrementing past them — a single dropped
+    /// tx would otherwise leave a permanent hole at `account_nonce` that
+    /// stalls every later tx (they can never become "ready"). `from`
+    /// should be the account's on-chain nonce.
+    pub fn next_free_nonce(&self, sender: Address, from: u64) -> u64 {
+        let occupied = |n: u64| {
+            [&self.pending, &self.queued, &self.base_fee_pool]
+                .iter()
+                .any(|pool| pool.get(&sender).is_some_and(|q| q.contains_key(&n)))
+        };
+        let mut n = from;
+        while occupied(n) {
+            n = n.saturating_add(1);
+        }
+        n
     }
 
     pub fn ready_gas(&self, sender: Address, nonce: u64) -> Option<u64> {
@@ -527,4 +577,53 @@ fn min_replacement_fee(base_fee: U256, bump_bps: u64) -> U256 {
         .checked_div(U256::from(10_000u64))
         .unwrap_or(U256::ZERO);
     base_fee.saturating_add(bump)
+}
+
+#[cfg(test)]
+mod queued_cap_tests {
+    use super::*;
+    use revm::primitives::{Address, U256};
+
+    fn tx(from: Address, nonce: u64) -> Transaction {
+        Transaction {
+            from,
+            nonce,
+            gas_limit: 21_000,
+            gas_price: U256::from(1u64),
+            chain_id: Some(131071),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn queued_backlog_is_bounded_per_sender() {
+        let mut mp = Mempool::with_limits(100_000, 100_000, 1000);
+        let sender = Address::from([7u8; 20]);
+        // account_nonce = 0, but every tx skips nonce 0 (future nonce), so they
+        // all land in the queued pool and can never become ready.
+        for n in 1..=(MAX_QUEUED_PER_SENDER as u64 + 50) {
+            let _ = mp.insert(tx(sender, n), U256::from(1u64), 0);
+        }
+        assert_eq!(
+            mp.queued_count(),
+            MAX_QUEUED_PER_SENDER,
+            "queued backlog must be capped per sender"
+        );
+    }
+
+    #[test]
+    fn queued_cap_keeps_lowest_nonces() {
+        let mut mp = Mempool::with_limits(100_000, 100_000, 1000);
+        let sender = Address::from([9u8; 20]);
+        for n in 1..=(MAX_QUEUED_PER_SENDER as u64 + 10) {
+            let _ = mp.insert(tx(sender, n), U256::from(1u64), 0);
+        }
+        // Nonce 1 (closest to ready) must be retained; the far-future ones dropped.
+        let q = mp.queued.get(&sender).unwrap();
+        assert!(q.contains_key(&1), "lowest queued nonce must be kept");
+        assert!(
+            !q.contains_key(&(MAX_QUEUED_PER_SENDER as u64 + 10)),
+            "highest future nonce must be dropped"
+        );
+    }
 }

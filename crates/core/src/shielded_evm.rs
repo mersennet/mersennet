@@ -494,7 +494,7 @@ impl MigrationPlan {
                 rho,
                 psi,
             };
-            let cm = note.commit(&mersennet_zkp::poseidon::Poseidon::default());
+            let cm = note.commit(&mersennet_zkp::poseidon::Poseidon);
             let _ = evm.state.insert_note(cm)?;
             // Clear the transparent balance; from now on the funds
             // live as a shielded note.
@@ -538,7 +538,7 @@ mod tests {
         let mut evm = ShieldedEvm::new();
         let alice = Address::repeat_byte(0xaa);
         evm.credit_transparent(alice, U256::from(1_000u64));
-        let p = Poseidon::default();
+        let p = Poseidon;
         let note = Note {
             value: 1_000,
             asset_id: 0,
@@ -570,7 +570,7 @@ mod tests {
         let mut evm = ShieldedEvm::new();
         let alice = Address::repeat_byte(0xaa);
         // No credit.
-        let p = Poseidon::default();
+        let p = Poseidon;
         let note = Note {
             value: 1_000,
             asset_id: 0,
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn unshield_credits_transparent() {
         let mut evm = ShieldedEvm::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let note = Note {
             value: 500,
             asset_id: 0,
@@ -630,7 +630,7 @@ mod tests {
     #[test]
     fn shielded_transfer_inserts_new_commitment() {
         let mut evm = ShieldedEvm::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let in_note = Note {
             value: 800,
             asset_id: 0,
@@ -670,7 +670,7 @@ mod tests {
     #[test]
     fn unshield_change_records_encrypted_payload() {
         let mut evm = ShieldedEvm::new();
-        let p = Poseidon::default();
+        let p = Poseidon;
         let note = Note {
             value: 500,
             asset_id: 0,

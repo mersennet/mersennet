@@ -14,6 +14,44 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
+/// Push a `MersennetOrdersTrades` WS notification for every fill recorded in a
+/// freshly produced block. The matching engine records `Trade` domain events
+/// (including those from `mersennet_orders_submitOrder` RPC fills, which drain
+/// into the block at production), but nothing pushed them to subscribers — so
+/// the indexer's trade subscription, and thus trades/volume/charts, stayed
+/// empty. Payload is emitted in DECIMAL (the indexer rejects hex price/size).
+fn notify_orders_trades(
+    mgr: &mut ws::WsSubscriptionManager,
+    events: &[mersennet::events::DomainEvent],
+) {
+    use mersennet::events::{DomainEvent, MersennetOrdersEvent};
+    use mersennet::mersennet_orders::Side;
+    for ev in events {
+        if let DomainEvent::MersennetOrders(MersennetOrdersEvent::Trade {
+            taker,
+            maker,
+            market_id,
+            side,
+            price,
+            size,
+        }) = ev
+        {
+            let trade = serde_json::json!({
+                "taker": format!("{}", taker),
+                "maker": format!("{}", maker),
+                "market_id": market_id.0,
+                "side": match side {
+                    Side::Buy => "buy",
+                    Side::Sell => "sell",
+                },
+                "price": price.to_string(),
+                "size": size.to_string(),
+            });
+            mgr.notify_trade(&trade, market_id.0);
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()
@@ -57,6 +95,7 @@ fn main() -> anyhow::Result<()> {
         app_config.mersennet_orders.initial_margin_bps,
         app_config.mersennet_orders.maintenance_margin_bps,
     );
+    engine.set_allow_unsigned_orders_rpc(app_config.mersennet_orders.allow_unsigned_orders_rpc);
     let bridge_limit = if app_config.bridge.max_queue_len == 0 {
         None
     } else {
@@ -64,10 +103,17 @@ fn main() -> anyhow::Result<()> {
     };
     engine.set_bridge_limits(bridge_limit);
 
-    for account in &app_config.genesis.accounts {
-        let address = parse_address(&account.address)?;
-        let balance = parse_u256(&account.balance)?;
-        engine.fund_account(address, balance, account.nonce);
+    // Genesis accounts are seeded ONLY on a fresh chain. This used to run on
+    // every startup, overwriting each listed account's balance AND nonce with
+    // the genesis values — so any restarted node reset e.g. the system CLOB
+    // address to nonce 0, could no longer import blocks whose txs carried the
+    // advanced nonce, and stalled (and diverged its state root from peers).
+    if engine.latest_height() == 0 {
+        for account in &app_config.genesis.accounts {
+            let address = parse_address(&account.address)?;
+            let balance = parse_u256(&account.balance)?;
+            engine.fund_account(address, balance, account.nonce);
+        }
     }
 
     for validator in &app_config.genesis.validators {
@@ -79,6 +125,25 @@ fn main() -> anyhow::Result<()> {
             stake = %validator.stake,
             "registered genesis validator"
         );
+    }
+
+    // Seed CLOB markets + collateral deterministically at genesis so the
+    // order book is identical on every node (consensus-deterministic
+    // under single-leader production). Only applied when starting a fresh
+    // chain (block_number == 1); a resumed chain already has them.
+    if engine.latest_height() == 0 {
+        for m in &app_config.genesis.markets {
+            let tick = parse_u256(&m.tick_size).unwrap_or(U256::from(1));
+            let lot = parse_u256(&m.lot_size).unwrap_or(U256::from(1));
+            let id = engine.mersennet_orders_add_market(m.symbol.clone(), tick, lot);
+            info!(symbol = %m.symbol, market_id = id.0, "seeded genesis market");
+        }
+        for c in &app_config.genesis.collateral {
+            if let (Ok(owner), Ok(amount)) = (parse_address(&c.owner), parse_u256(&c.amount)) {
+                engine.mersennet_orders_deposit_collateral(owner, amount);
+                info!(owner = %c.owner, amount = %c.amount, "seeded genesis collateral");
+            }
+        }
     }
 
     engine.set_unbonding_period(app_config.slashing.unbonding_period);
@@ -170,10 +235,16 @@ fn main() -> anyhow::Result<()> {
         }
         NodeMode::Full | NodeMode::Validator => {
             let is_validator = matches!(cli.mode, NodeMode::Validator);
+            // Register this node's validator identity so leader election
+            // knows whether (and when) this node should produce blocks.
+            if is_validator {
+                engine.set_local_validator(identity.address);
+            }
             info!(
                 mode = if is_validator { "validator" } else { "full" },
                 listen = %app_config.p2p.listen,
                 peers = app_config.p2p.peers.len(),
+                validator_addr = %format!("0x{}", hex::encode(identity.address.as_slice())),
                 "starting network node"
             );
 
@@ -206,16 +277,26 @@ fn main() -> anyhow::Result<()> {
                                 break;
                             }
                             std::thread::sleep(std::time::Duration::from_millis(250));
-                            let pending = {
+                            // Snapshot pending txs AND their raw envelopes
+                            // (wallet-submitted txs must be relayed verbatim so
+                            // peers can verify the Ethereum signature).
+                            let pending: Vec<(mersennet::engine::Transaction, Option<Vec<u8>>)> = {
                                 let Ok(eng) = eng_relay.lock() else { break };
                                 eng.mempool_pending_snapshot()
+                                    .into_iter()
+                                    .map(|tx| {
+                                        let raw = tx.hash.and_then(|h| eng.raw_tx_for(&h));
+                                        (tx, raw)
+                                    })
+                                    .collect()
                             };
                             if seen.len() > 16_384 {
                                 seen.clear();
                             }
-                            for tx in pending {
+                            for (tx, raw) in pending {
                                 if seen.insert((tx.from, tx.nonce))
-                                    && let Err(err) = net_relay.broadcast_tx(&tx)
+                                    && let Err(err) =
+                                        net_relay.broadcast_tx_with_raw(&tx, raw.as_deref())
                                 {
                                     tracing::warn!(%err, "tx relay broadcast error");
                                 }
@@ -250,26 +331,165 @@ fn main() -> anyhow::Result<()> {
                 let zk_enabled = app_config.zk.enabled;
                 let zk_interval = app_config.zk.checkpoint_interval;
                 let ws_mgr_producer = ws_manager.clone();
+                let my_addr = identity.address;
+                let producer_key = identity.signing_key.clone();
                 std::thread::Builder::new()
                     .name("block-producer".into())
                     .spawn(move || {
                         info!(
                             block_time_ms = block_time.as_millis(),
-                            "block production started"
+                            "block production started (leader-gated BFT)"
                         );
+                        // Failover state: the height we are currently
+                        // waiting to be produced, and how long we've
+                        // waited. If the elected leader for a height
+                        // fails to produce within a timeout, we bump the
+                        // round to rotate to the next leader so a dead
+                        // leader cannot halt the chain.
+                        let mut waiting_height: u64 = 0;
+                        let mut waiting_round: u64 = 0;
+                        let mut waited_ms: u64 = 0;
+                        // Round timeout: give the elected leader several
+                        // block-times to produce (plus slack for gossip)
+                        // before rotating. Generous relative to the
+                        // block time so healthy leaders never trip it.
+                        let round_timeout_ms = block_time.as_millis() as u64 * 8 + 3000;
+                        // Poll frequently so we detect a new height (and
+                        // our turn to lead) with low latency.
+                        let poll = std::time::Duration::from_millis(100);
+                        // Pace production against the last block we
+                        // observed rather than a fixed extra sleep, so the
+                        // per-height rotation latency is not added on top
+                        // of a full block time.
+                        let mut last_seen_height: u64 = 0;
+                        let mut last_block_at = std::time::Instant::now();
+                        // Startup sync grace: before producing our FIRST block,
+                        // give the gossip/sync layer time to tell us the network
+                        // head. Without this, a validator that restarted with a
+                        // wiped/behind chain would immediately produce a
+                        // genesis-adjacent block (parent 0x0 is legal on an empty
+                        // chain), fork itself, and then reject every canonical
+                        // block as a parent-hash mismatch. Waiting lets
+                        // `highest_observed_height` populate so the `behind`
+                        // check below gates production correctly. On a genuine
+                        // genesis start every node just waits this once.
+                        let boot = std::time::Instant::now();
+                        let startup_sync_grace = std::time::Duration::from_secs(15);
+                        let mut produced_since_boot = false;
                         loop {
                             if shutdown_producer.load(Ordering::SeqCst) {
                                 break;
                             }
-                            std::thread::sleep(block_time);
+                            std::thread::sleep(poll);
+
+                            // Hold off the very first production until we've had
+                            // a chance to learn the network head.
+                            if !produced_since_boot && boot.elapsed() < startup_sync_grace {
+                                continue;
+                            }
+
+                            // Determine the next height and whether this
+                            // node is its elected leader (at the current
+                            // failover round).
+                            let head = {
+                                let Ok(e) = eng.lock() else { break };
+                                e.latest_height()
+                            };
+                            if head > last_seen_height {
+                                last_seen_height = head;
+                                last_block_at = std::time::Instant::now();
+                            }
+                            let next_height = head.saturating_add(1);
+
+                            // Reset failover tracking when we advance to a
+                            // new height.
+                            if next_height != waiting_height {
+                                waiting_height = next_height;
+                                waiting_round = 0;
+                                waited_ms = 0;
+                            } else {
+                                waited_ms = waited_ms.saturating_add(poll.as_millis() as u64);
+                                if waited_ms >= round_timeout_ms {
+                                    waiting_round = waiting_round.saturating_add(1);
+                                    waited_ms = 0;
+                                    tracing::warn!(
+                                        height = next_height,
+                                        round = waiting_round,
+                                        "leader timed out — rotating to next leader"
+                                    );
+                                }
+                            }
+
+                            // Do not produce while behind the network head. A
+                            // validator that restarted or briefly diverged is
+                            // still catching up; producing now would build on a
+                            // stale head and fork the chain (the re-fork failure
+                            // mode). Sync to the canonical head first. Slack of 0:
+                            // if the network is at height N and we are at N, we
+                            // may lead N+1; if the network is already past N we
+                            // must sync.
+                            let behind = {
+                                let Ok(e) = eng.lock() else { break };
+                                e.is_behind_network(0)
+                            };
+                            if behind {
+                                continue;
+                            }
+
+                            let am_leader = {
+                                let Ok(e) = eng.lock() else { break };
+                                e.is_leader(next_height, waiting_round)
+                            };
+                            if !am_leader {
+                                // Not our turn — the elected leader
+                                // produces; we import via gossip and vote.
+                                continue;
+                            }
+                            // Pace to the target block time relative to the
+                            // last observed block, so consecutive blocks
+                            // are spaced by ~block_time without stacking
+                            // the rotation-detection latency on top.
+                            let since = last_block_at.elapsed();
+                            if since < block_time {
+                                std::thread::sleep(block_time - since);
+                            }
+
                             let block = {
                                 let mut e = match eng.lock() {
                                     Ok(e) => e,
                                     Err(_) => break,
                                 };
+                                // Re-check leadership under the lock: the
+                                // height may have advanced while we paced.
+                                if e.latest_height().saturating_add(1) != next_height
+                                    || !e.is_leader(next_height, waiting_round)
+                                {
+                                    continue;
+                                }
+                                let _ = my_addr;
                                 match e.execute_block() {
-                                    Ok(b) => {
+                                    Ok(mut b) => {
                                         ws::set_privacy_mode_activated(e.privacy_mode_activated());
+                                        // `consensus.proposer()` uses a weighted
+                                        // priority lottery that does NOT match
+                                        // `leader_for_height` (rotation + round
+                                        // failover). Overwrite with this node's
+                                        // address — we only produce when
+                                        // `is_leader` says we are the leader —
+                                        // so import auth and the signature agree.
+                                        b.proposer = my_addr;
+                                        b.coinbase = my_addr;
+                                        b.consensus.proposer = my_addr;
+                                        let sig = mersennet::crypto::sign_block_proposal(
+                                            b.number,
+                                            b.hash,
+                                            &producer_key,
+                                        );
+                                        b.proposer_sig = Some(sig);
+                                        // Also stamp the chain copy so peer sync
+                                        // serves the signed block, not the
+                                        // unsigned snapshot stored mid-produce.
+                                        e.attach_proposer_sig(b.number, my_addr, sig);
                                         b
                                     }
                                     Err(err) => {
@@ -289,7 +509,7 @@ fn main() -> anyhow::Result<()> {
                                 let block_json = serde_json::json!({
                                     "number": format!("0x{:x}", block.number),
                                     "hash": format!("{}", block.hash),
-                                    "parentHash": format!("0x{:064x}", block.number.saturating_sub(1)),
+                                    "parentHash": format!("{}", block.parent_hash),
                                     "timestamp": format!("0x{:x}", block.timestamp),
                                     "gasLimit": format!("0x{:x}", block.gas_limit),
                                     "gasUsed": format!("0x{:x}", block.gas_used),
@@ -301,10 +521,11 @@ fn main() -> anyhow::Result<()> {
                                     "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
                                     "sha3Uncles": "0x0000000000000000000000000000000000000000000000000000000000000000",
                                     "receiptsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                                    "transactionsRoot": format!("{}", block.state_root),
+                                    "transactionsRoot": format!("{}", block.hash),
                                     "extraData": "0x",
                                 });
                                 mgr.notify_new_block(&block_json);
+                                notify_orders_trades(&mut mgr, &block.domain_events);
 
                                 for tx in &block.transactions {
                                     let hash = mersennet::crypto::tx_signing_hash(tx);
@@ -394,6 +615,7 @@ fn main() -> anyhow::Result<()> {
                                 }
                             }
 
+                            produced_since_boot = true;
                             if let Err(err) = net.broadcast_block(&block) {
                                 tracing::warn!(%err, "block broadcast error");
                             }
@@ -410,6 +632,64 @@ fn main() -> anyhow::Result<()> {
                                     height = block.number,
                                     "ZK proof checkpoint would be generated (mock)"
                                 );
+                            }
+                        }
+                    })?;
+            }
+
+            // BFT finality voter thread. On every validator, as blocks are
+            // applied (whether produced locally or imported via gossip),
+            // sign a vote over (height, block_hash) and broadcast it. When
+            // votes representing >= 2/3 of stake are collected for a height,
+            // that block is finalized (see Engine::record_finality_vote).
+            // Decoupling voting from production means both the leader and
+            // followers vote through the identical path.
+            if is_validator {
+                let eng_voter = engine.clone();
+                let net_voter = network.clone();
+                let shutdown_voter = Arc::clone(&shutdown);
+                let voter_key = identity.signing_key.clone();
+                std::thread::Builder::new()
+                    .name("bft-voter".into())
+                    .spawn(move || {
+                        let mut last_voted: u64 = 0;
+                        loop {
+                            if shutdown_voter.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(150));
+                            // Snapshot applied blocks above last_voted.
+                            let to_vote: Vec<(u64, revm::primitives::B256)> = {
+                                let Ok(e) = eng_voter.lock() else { break };
+                                let head = e.latest_height();
+                                let mut out = Vec::new();
+                                // Vote for a bounded window so a lagging
+                                // voter catches up without flooding.
+                                let start =
+                                    last_voted.saturating_add(1).max(head.saturating_sub(16));
+                                for h in start..=head {
+                                    if let Some(b) = e.block_by_number(h) {
+                                        out.push((h, b.hash));
+                                    }
+                                }
+                                out
+                            };
+                            for (height, block_hash) in to_vote {
+                                let (r, s, y) =
+                                    mersennet::crypto::sign_vote(height, block_hash, &voter_key);
+                                // Record our own vote locally too.
+                                if let Ok(mut e) = eng_voter.lock() {
+                                    let me = e.local_validator();
+                                    if let Some(me) = me {
+                                        e.record_finality_vote(height, block_hash, me);
+                                    }
+                                }
+                                if let Err(err) =
+                                    net_voter.broadcast_vote(height, block_hash, r, s, y)
+                                {
+                                    tracing::debug!(%err, height, "vote broadcast error");
+                                }
+                                last_voted = last_voted.max(height);
                             }
                         }
                     })?;
@@ -460,6 +740,7 @@ fn main() -> anyhow::Result<()> {
                                         "difficulty": "0x0",
                                     });
                                     mgr.notify_new_block(&block_json);
+                                    notify_orders_trades(&mut mgr, &block.domain_events);
                                     for tx in &block.transactions {
                                         let hash = mersennet::crypto::tx_signing_hash(tx);
                                         mgr.notify_new_tx(&format!("{}", hash));
@@ -545,6 +826,7 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
         config.mersennet_orders.initial_margin_bps,
         config.mersennet_orders.maintenance_margin_bps,
     );
+    engine.set_allow_unsigned_orders_rpc(config.mersennet_orders.allow_unsigned_orders_rpc);
     let bridge_limit = if config.bridge.max_queue_len == 0 {
         None
     } else {
@@ -829,7 +1111,7 @@ fn run_devnet_demo(
         ProposalKind::SetTokenEconomics {
             max_supply,
             initial_reward_per_block: initial_reward,
-            halving_interval: 4_200_000,
+            halving_interval: 33_550_336,
         },
         engine.block_number,
     )?;
@@ -1082,6 +1364,7 @@ fn run_p2p_demo() -> anyhow::Result<()> {
             signature: None,
             tx_type: 0,
             shielded_payload: None,
+            hash: None,
         }),
     );
     network.broadcast(

@@ -1,7 +1,9 @@
 use anyhow::{Result, bail};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use revm::db::InMemoryDB;
-use revm::primitives::{AccountInfo, Address, B256, Bytecode, Bytes, U256, keccak256};
+use revm::primitives::{
+    AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256, keccak256,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
@@ -66,164 +68,68 @@ impl RedbState {
     }
 
     fn write_evm_state(&self, evm_db: &InMemoryDB) -> Result<()> {
-        let dirty = {
+        // Always persist a full, deterministic image of `evm_db`. The old
+        // incremental (dirty-set) path could leave stale values when a
+        // balance change wasn't marked dirty, causing producer/importer
+        // state roots to diverge. See the sled backend for the full
+        // rationale.
+        {
             let mut guard = self.dirty_accounts.lock().unwrap();
-            std::mem::take(&mut *guard)
-        };
+            guard.clear();
+        }
 
         let write_txn = self.db.begin_write()?;
-
-        if dirty.is_empty() {
-            {
-                let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
-                let keys: Vec<Vec<u8>> = {
-                    let iter = accounts_table.iter()?;
-                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                        .collect()
-                };
-                for key in keys {
-                    accounts_table.remove(key.as_slice())?;
-                }
+        {
+            let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
+            let keys: Vec<Vec<u8>> = {
+                let iter = accounts_table.iter()?;
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
+            };
+            for key in keys {
+                accounts_table.remove(key.as_slice())?;
             }
-            {
-                let mut storage_table = write_txn.open_table(STORAGE)?;
-                let keys: Vec<Vec<u8>> = {
-                    let iter = storage_table.iter()?;
-                    iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                        .collect()
-                };
-                for key in keys {
-                    storage_table.remove(key.as_slice())?;
-                }
+        }
+        {
+            let mut storage_table = write_txn.open_table(STORAGE)?;
+            let keys: Vec<Vec<u8>> = {
+                let iter = storage_table.iter()?;
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
+            };
+            for key in keys {
+                storage_table.remove(key.as_slice())?;
             }
-
-            {
-                let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
-                let mut storage_table = write_txn.open_table(STORAGE)?;
-
-                for (address, db_account) in &evm_db.accounts {
-                    if let Some(info) = db_account.info() {
-                        let record = AccountRecord {
-                            balance: info.balance.to_be_bytes(),
-                            nonce: info.nonce,
-                            code_hash: info.code_hash.into(),
-                            code: info
-                                .code
-                                .map(|code| code.bytes().to_vec())
-                                .unwrap_or_default(),
-                        };
-                        let data = bincode::serialize(&record)?;
-                        accounts_table.insert(address.as_slice(), data.as_slice())?;
-                    }
-
-                    for (slot, value) in &db_account.storage {
-                        if value.is_zero() {
-                            continue;
-                        }
-                        let mut key = [0u8; 52];
-                        key[..20].copy_from_slice(address.as_slice());
-                        key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                        storage_table
-                            .insert(key.as_slice(), value.to_be_bytes::<32>().as_slice())?;
-                    }
-                }
-            }
-        } else {
+        }
+        {
             let mut accounts_table = write_txn.open_table(ACCOUNTS)?;
             let mut storage_table = write_txn.open_table(STORAGE)?;
 
-            for address in &dirty {
-                if let Some(db_account) = evm_db.accounts.get(address) {
-                    if let Some(info) = db_account.info() {
-                        let record = AccountRecord {
-                            balance: info.balance.to_be_bytes(),
-                            nonce: info.nonce,
-                            code_hash: info.code_hash.into(),
-                            code: info
-                                .code
-                                .map(|code| code.bytes().to_vec())
-                                .unwrap_or_default(),
-                        };
-                        let data = bincode::serialize(&record)?;
-                        accounts_table.insert(address.as_slice(), data.as_slice())?;
+            for (address, db_account) in &evm_db.accounts {
+                if let Some(info) = db_account.info() {
+                    let record = AccountRecord {
+                        balance: info.balance.to_be_bytes(),
+                        nonce: info.nonce,
+                        code_hash: info.code_hash.into(),
+                        // original_bytes(): never persist analyzed padding
+                        // (see sled backend note on EIP-3607).
+                        code: info
+                            .code
+                            .map(|code| code.original_bytes().to_vec())
+                            .unwrap_or_default(),
+                    };
+                    let data = bincode::serialize(&record)?;
+                    accounts_table.insert(address.as_slice(), data.as_slice())?;
+                }
+
+                for (slot, value) in &db_account.storage {
+                    if value.is_zero() {
+                        continue;
                     }
-
-                    let prefix = address.as_slice();
-                    let range_start = {
-                        let mut start = [0u8; 52];
-                        start[..20].copy_from_slice(prefix);
-                        start
-                    };
-                    let range_end = {
-                        let mut end = [0u8; 52];
-                        end[..20].copy_from_slice(prefix);
-                        end[19] = end[19].wrapping_add(1);
-                        if end[19] == 0 {
-                            for i in (0..19).rev() {
-                                end[i] = end[i].wrapping_add(1);
-                                if end[i] != 0 {
-                                    break;
-                                }
-                            }
-                        }
-                        end
-                    };
-
-                    let old_keys: Vec<Vec<u8>> = {
-                        let range =
-                            storage_table.range(range_start.as_slice()..range_end.as_slice())?;
-                        range
-                            .filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                            .collect()
-                    };
-                    for key in old_keys {
-                        storage_table.remove(key.as_slice())?;
-                    }
-
-                    for (slot, value) in &db_account.storage {
-                        if value.is_zero() {
-                            continue;
-                        }
-                        let mut key = [0u8; 52];
-                        key[..20].copy_from_slice(address.as_slice());
-                        key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
-                        storage_table
-                            .insert(key.as_slice(), value.to_be_bytes::<32>().as_slice())?;
-                    }
-                } else {
-                    accounts_table.remove(address.as_slice())?;
-
-                    let prefix = address.as_slice();
-                    let range_start = {
-                        let mut start = [0u8; 52];
-                        start[..20].copy_from_slice(prefix);
-                        start
-                    };
-                    let range_end = {
-                        let mut end = [0u8; 52];
-                        end[..20].copy_from_slice(prefix);
-                        end[19] = end[19].wrapping_add(1);
-                        if end[19] == 0 {
-                            for i in (0..19).rev() {
-                                end[i] = end[i].wrapping_add(1);
-                                if end[i] != 0 {
-                                    break;
-                                }
-                            }
-                        }
-                        end
-                    };
-
-                    let old_keys: Vec<Vec<u8>> = {
-                        let range =
-                            storage_table.range(range_start.as_slice()..range_end.as_slice())?;
-                        range
-                            .filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
-                            .collect()
-                    };
-                    for key in old_keys {
-                        storage_table.remove(key.as_slice())?;
-                    }
+                    let mut key = [0u8; 52];
+                    key[..20].copy_from_slice(address.as_slice());
+                    key[20..52].copy_from_slice(&slot.to_be_bytes::<32>());
+                    storage_table.insert(key.as_slice(), value.to_be_bytes::<32>().as_slice())?;
                 }
             }
         }
@@ -268,7 +174,9 @@ impl StateBackend for RedbState {
             let record: AccountRecord = bincode::deserialize(value_bytes)?;
             let balance = U256::from_be_bytes(record.balance);
             let code_hash = B256::from(record.code_hash);
-            let code = if record.code.is_empty() {
+            // KECCAK_EMPTY = EOA: force empty bytecode even if the record
+            // carries stray analyzed-padding bytes (see sled backend note).
+            let code = if record.code.is_empty() || code_hash == KECCAK_EMPTY {
                 Bytecode::new()
             } else {
                 Bytecode::new_raw(Bytes::from(record.code))
@@ -398,7 +306,11 @@ impl StateBackend for RedbState {
     }
 
     fn commit_mersennet_orders(&self, state: &MersennetOrdersState) -> Result<()> {
-        let markets = state
+        // Deterministic serialization: sort every HashMap-sourced
+        // collection by a stable key so the snapshot bytes (folded into
+        // the state root) are identical across nodes. See the sled
+        // backend's commit_mersennet_orders for the rationale.
+        let mut markets: Vec<MarketRecord> = state
             .markets
             .values()
             .map(|m| MarketRecord {
@@ -410,7 +322,8 @@ impl StateBackend for RedbState {
                 status: encode_market_status(m.status),
             })
             .collect();
-        let orders = state
+        markets.sort_by_key(|m| m.id);
+        let mut orders: Vec<OrderRecord> = state
             .orders
             .values()
             .map(|o| OrderRecord {
@@ -423,11 +336,12 @@ impl StateBackend for RedbState {
                 tif: encode_tif(o.tif),
             })
             .collect();
-        let accounts = state
+        orders.sort_by_key(|o| o.id);
+        let mut accounts: Vec<(Vec<u8>, AccountRecordV2)> = state
             .accounts
             .iter()
             .map(|(addr, acct)| {
-                let positions = acct
+                let mut positions: Vec<(u64, PositionRecord)> = acct
                     .positions
                     .iter()
                     .map(|(market_id, pos)| {
@@ -441,17 +355,21 @@ impl StateBackend for RedbState {
                         )
                     })
                     .collect();
+                positions.sort_by_key(|(mid, _)| *mid);
+                let mut open_orders: Vec<u64> = acct.open_orders.iter().map(|id| id.0).collect();
+                open_orders.sort_unstable();
                 (
                     addr.as_slice().to_vec(),
                     AccountRecordV2 {
                         collateral: acct.collateral.to_be_bytes(),
-                        open_orders: acct.open_orders.iter().map(|id| id.0).collect(),
+                        open_orders,
                         positions,
                     },
                 )
             })
             .collect();
-        let books = state
+        accounts.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut books: Vec<(u64, OrderBookRecord)> = state
             .books
             .iter()
             .map(|(market_id, book)| {
@@ -478,6 +396,7 @@ impl StateBackend for RedbState {
                 (market_id.0, OrderBookRecord { bids, asks })
             })
             .collect();
+        books.sort_by_key(|(mid, _)| *mid);
 
         let snapshot = MersennetOrdersSnapshot {
             next_order_id: state.next_order_id,

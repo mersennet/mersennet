@@ -28,11 +28,12 @@ fn minting_engine(dir: &std::path::Path) -> Engine {
     engine
         .add_validator(validator, U256::from(1_000_000u64))
         .expect("add validator");
-    // 10 MRSN/block, no halving — mirrors the testnet config.
+    // Mainnet tokenomics: 2^89-1 cap, 2^61-1 reward/block (~2.3 MRSN), no halving
+    // within the test horizon (interval = 5th perfect number).
     engine.set_token_economics(
-        U256::from(1_000_000_000_000_000_000_000_000_000u128),
-        U256::from(10_000_000_000_000_000_000u128),
-        35_000_000,
+        U256::from(2u128.pow(89) - 1),
+        U256::from(2u128.pow(61) - 1),
+        33_550_336,
     );
     engine
 }
@@ -59,7 +60,14 @@ fn transfer_block_conserves_value() {
     engine.fund_account(alice, U256::from(2_000_000u64), 0);
 
     engine
-        .transfer(alice, bob, U256::from(1_000u64), 21_000, U256::from(1u64), 0)
+        .transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
         .expect("transfer");
     engine.execute_block().expect("block");
 

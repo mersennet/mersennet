@@ -16,6 +16,8 @@ pub enum MersennetOrdersError {
     MarketHalted,
     #[error("withdrawal would bring equity below maintenance margin")]
     WithdrawalExceedsEquity,
+    #[error("caller does not own this order")]
+    NotOrderOwner,
 }
 
 impl MersennetOrdersError {
@@ -32,6 +34,7 @@ impl MersennetOrdersError {
             MersennetOrdersError::WithdrawalExceedsEquity => {
                 "withdrawal would bring equity below maintenance margin"
             }
+            MersennetOrdersError::NotOrderOwner => "caller does not own this order",
         }
     }
 }

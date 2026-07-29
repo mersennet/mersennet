@@ -113,6 +113,10 @@ pub struct MersennetOrdersConfig {
     pub initial_margin_bps: u64,
     #[serde(default = "default_mersennet_orders_maintenance_margin_bps")]
     pub maintenance_margin_bps: u64,
+    /// Allow the unsigned, owner-spoofable state-mutating `mersennet_orders_*`
+    /// RPC methods (testnet seeding convenience). MUST be false on mainnet.
+    #[serde(default = "default_allow_unsigned_orders_rpc")]
+    pub allow_unsigned_orders_rpc: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +131,16 @@ pub struct GenesisConfig {
     pub accounts: Vec<GenesisAccount>,
     #[serde(default)]
     pub validators: Vec<GenesisValidator>,
+    /// CLOB markets to create deterministically at genesis on every node.
+    /// Seeding markets here (instead of via the unsigned `addMarket` RPC,
+    /// which mutates one node's local state only) is what makes the order
+    /// book consensus-deterministic under single-leader production.
+    #[serde(default)]
+    pub markets: Vec<GenesisMarket>,
+    /// Collateral to credit at genesis (e.g. the market-maker owner) so
+    /// it can quote immediately without an out-of-band deposit.
+    #[serde(default)]
+    pub collateral: Vec<GenesisCollateral>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +155,30 @@ pub struct GenesisAccount {
 pub struct GenesisValidator {
     pub address: String,
     pub stake: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisMarket {
+    pub symbol: String,
+    /// Price tick size (decimal string). Defaults to 1.
+    #[serde(default = "default_market_tick")]
+    pub tick_size: String,
+    /// Lot size (decimal string). Defaults to 1.
+    #[serde(default = "default_market_lot")]
+    pub lot_size: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisCollateral {
+    pub owner: String,
+    pub amount: String,
+}
+
+fn default_market_tick() -> String {
+    "1".to_string()
+}
+fn default_market_lot() -> String {
+    "1".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +227,12 @@ pub struct P2pConfig {
     pub peers: Vec<String>,
     #[serde(default = "default_block_time_ms")]
     pub block_time_ms: u64,
+    // NOTE: the Noise transport module is not yet wired into the UDP gossip
+    // layer, so this flag currently only affects a startup log line. Block,
+    // transaction and vote authenticity are enforced at the application layer
+    // (proposer signatures + signed txs + validator-verified votes), which
+    // holds regardless of transport. Wiring Noise for confidentiality/DoS
+    // resistance is tracked as a follow-up.
     #[serde(default)]
     pub noise_enabled: bool,
 }
@@ -271,6 +315,7 @@ impl Default for MersennetOrdersConfig {
         Self {
             initial_margin_bps: default_mersennet_orders_initial_margin_bps(),
             maintenance_margin_bps: default_mersennet_orders_maintenance_margin_bps(),
+            allow_unsigned_orders_rpc: default_allow_unsigned_orders_rpc(),
         }
     }
 }
@@ -456,6 +501,15 @@ fn default_mersennet_orders_maintenance_margin_bps() -> u64 {
     0
 }
 
+fn default_allow_unsigned_orders_rpc() -> bool {
+    // Defaults to false: the unsigned `mersennet_orders_*` mutation path lets a
+    // caller act for an arbitrary `owner` with no signature (account/order
+    // takeover on a public RPC). Orders now arrive as signed transactions to
+    // the CLOB precompile (0x…0100), where the caller is the verified signer.
+    // A private, firewalled seeding node may still opt in explicitly.
+    false
+}
+
 fn default_bridge_max_queue_len() -> usize {
     10_000
 }
@@ -485,19 +539,18 @@ fn default_unbonding_period() -> u64 {
 }
 
 fn default_max_supply() -> String {
-    let decimals = 1_000_000_000_000_000_000u128;
-    let max = 1_000_000_000u128 * decimals;
-    max.to_string()
+    // Total supply cap: 2^89 - 1 wei (a Mersenne prime), ~618.97M MRSN at 18 decimals.
+    (2u128.pow(89) - 1).to_string()
 }
 
 fn default_initial_reward() -> String {
-    let decimals = 1_000_000_000_000_000_000u128;
-    let reward = 10u128 * decimals;
-    reward.to_string()
+    // Initial block reward: 2^61 - 1 wei (a Mersenne prime), ~2.3 MRSN at 18 decimals.
+    (2u128.pow(61) - 1).to_string()
 }
 
 fn default_halving_interval() -> u64 {
-    35_000_000
+    // 5th perfect number = 2^12 * (2^13 - 1); ~1.06 years per halving at 1s blocks.
+    33_550_336
 }
 
 fn default_rpc_addr() -> String {

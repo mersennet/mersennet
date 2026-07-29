@@ -2,8 +2,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use once_cell::sync::Lazy;
-use revm::ContextPrecompile;
-use revm::Database;
 use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
 use revm::precompile::Precompile;
@@ -11,8 +9,10 @@ use revm::primitives::{
     Address, Bytes, Env, KECCAK_EMPTY, PrecompileError, PrecompileErrors, PrecompileOutput,
     PrecompileResult, U256,
 };
+use revm::{ContextPrecompile, ContextStatefulPrecompileMut, Database, InnerEvmContext};
 
 use crate::code_publication::CodePublicationRegistry;
+use crate::events::{DomainEvent, MersennetOrdersEvent};
 use crate::mersennet_orders::{MarketId, MersennetOrdersState, OrderId, Side, TimeInForce};
 use crate::precompile_abi::*;
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
@@ -26,6 +26,37 @@ static MERSENNET_ORDERS_CTX: Lazy<Mutex<Option<Arc<Mutex<MersennetOrdersState>>>
     Lazy::new(|| Mutex::new(None));
 
 static TRANSPARENT_MERSENNET_ORDERS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+// Domain-event sink for CLOB mutations executed inside the precompile.
+// The precompile has no access to the engine, so fills/cancels/deposits are
+// buffered here and drained into `block.domain_events` after tx execution —
+// on BOTH the produce and import paths (imports re-execute the same txs, so
+// followers regenerate identical events deterministically). Recording is
+// gated so read-only paths (eth_call / estimateGas, which run against a
+// cloned state) never leak phantom events.
+static MERSENNET_ORDERS_EVENTS: Lazy<Mutex<Vec<DomainEvent>>> =
+    Lazy::new(|| Mutex::new(Vec::new()));
+static MERSENNET_ORDERS_EVENTS_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_orders_event_recording(enabled: bool) {
+    MERSENNET_ORDERS_EVENTS_ENABLED.store(enabled, Ordering::SeqCst);
+    if !enabled {
+        MERSENNET_ORDERS_EVENTS.lock().unwrap().clear();
+    }
+}
+
+pub fn drain_orders_events() -> Vec<DomainEvent> {
+    std::mem::take(&mut *MERSENNET_ORDERS_EVENTS.lock().unwrap())
+}
+
+fn record_orders_event(event: MersennetOrdersEvent) {
+    if MERSENNET_ORDERS_EVENTS_ENABLED.load(Ordering::SeqCst) {
+        MERSENNET_ORDERS_EVENTS
+            .lock()
+            .unwrap()
+            .push(DomainEvent::MersennetOrders(event));
+    }
+}
 
 pub fn set_mersennet_orders_context(state: Arc<Mutex<MersennetOrdersState>>) {
     *MERSENNET_ORDERS_CTX.lock().unwrap() = Some(state);
@@ -65,6 +96,24 @@ where
 // Handler register — plugs the precompile into an EVM builder.
 // ---------------------------------------------------------------------------
 
+/// Stateful wrapper so the orders precompile receives `&mut InnerEvmContext`
+/// (journaled state + db) and can move native MRSN — depositCollateral debits
+/// the caller into the escrow at this precompile's address; withdrawCollateral
+/// pays it back. Collateral is therefore 1:1 backed by native MRSN.
+#[derive(Clone)]
+struct MersennetOrdersPrecompile;
+
+impl ContextStatefulPrecompileMut<InMemoryDB> for MersennetOrdersPrecompile {
+    fn call_mut(
+        &mut self,
+        bytes: &Bytes,
+        gas_limit: u64,
+        evmctx: &mut InnerEvmContext<InMemoryDB>,
+    ) -> PrecompileResult {
+        mersennet_orders_precompile(bytes, gas_limit, evmctx)
+    }
+}
+
 #[allow(clippy::arc_with_non_send_sync)]
 pub fn register_mersennet_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
     let prev_load = handler.pre_execution.load_precompiles.clone();
@@ -72,7 +121,7 @@ pub fn register_mersennet_orders_precompile(handler: &mut EvmHandler<'_, (), InM
         let mut precompiles = prev_load();
         precompiles.extend([(
             MERSENNET_ORDERS_PRECOMPILE,
-            ContextPrecompile::Ordinary(Precompile::Env(mersennet_orders_precompile)),
+            ContextPrecompile::ContextStatefulMut(Box::new(MersennetOrdersPrecompile)),
         )]);
         precompiles
     });
@@ -417,7 +466,11 @@ fn abi_decode_bytes_at(input: &Bytes, slot: usize) -> Result<Vec<u8>, Precompile
 // Main precompile entry-point (dispatches on function selector).
 // ---------------------------------------------------------------------------
 
-fn mersennet_orders_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> PrecompileResult {
+fn mersennet_orders_precompile(
+    input: &Bytes,
+    gas_limit: u64,
+    evmctx: &mut InnerEvmContext<InMemoryDB>,
+) -> PrecompileResult {
     if !transparent_mersennet_orders_enabled() {
         return Err(PrecompileError::other(
             "transparent MersennetOrders precompile disabled after privacy activation",
@@ -429,17 +482,28 @@ fn mersennet_orders_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> Prec
         return Err(PrecompileError::other("input too short for function selector").into());
     }
 
+    let caller = evmctx.env.tx.caller;
+
+    // Non-payable: the deposit amount is taken from calldata and debited
+    // explicitly, so any attached value would be escrowed without crediting
+    // anyone. Reject it (the frame revert returns the value to the caller).
+    if evmctx.env.tx.value != U256::ZERO {
+        return Err(PrecompileError::other(
+            "MersennetOrders precompile is non-payable; send value 0 (the deposit amount is in calldata)",
+        )
+        .into());
+    }
+
     let sel = [input[0], input[1], input[2], input[3]];
-    let caller = env.tx.caller;
 
     if sel == place_order_selector() {
         handle_place_order(input, gas_limit, caller)
     } else if sel == cancel_order_selector() {
-        handle_cancel_order(input, gas_limit)
+        handle_cancel_order(input, gas_limit, caller)
     } else if sel == deposit_collateral_selector() {
-        handle_deposit_collateral(input, gas_limit, caller)
+        handle_deposit_collateral(input, gas_limit, caller, evmctx)
     } else if sel == withdraw_collateral_selector() {
-        handle_withdraw_collateral(input, gas_limit, caller)
+        handle_withdraw_collateral(input, gas_limit, caller, evmctx)
     } else if sel == get_position_selector() {
         handle_get_position(input, gas_limit, caller)
     } else if sel == get_collateral_selector() {
@@ -500,6 +564,28 @@ fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precomp
 
     let outcome = outcome.map_err(|e| PrecompileError::other(e.to_string()))?;
 
+    record_orders_event(MersennetOrdersEvent::OrderSubmitted {
+        order_id: outcome.order_id,
+        owner: caller,
+        market_id,
+        side,
+        price,
+        size,
+        tif,
+        filled: outcome.filled,
+        remaining: outcome.remaining,
+    });
+    for trade in &outcome.trades {
+        record_orders_event(MersennetOrdersEvent::Trade {
+            taker: trade.taker,
+            maker: trade.maker,
+            market_id: trade.market,
+            side: trade.side,
+            price: trade.price,
+            size: trade.size,
+        });
+    }
+
     let order_id_val = outcome
         .order_id
         .map(|id| U256::from(id.0))
@@ -517,13 +603,25 @@ fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precomp
 // cancelOrder(uint256 orderId) -> (bool success)
 // ---------------------------------------------------------------------------
 
-fn handle_cancel_order(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+fn handle_cancel_order(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
     check_gas(gas_limit, GAS_CANCEL_ORDER)?;
 
     let id_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing orderId"))?;
     let order_id = OrderId(decode_u256(id_w).as_limbs()[0]);
 
-    let success = with_orders(|state| state.cancel_order(order_id).is_some())?;
+    // Ownership is enforced here: a caller can only cancel its own resting
+    // orders. Cancelling by iterating IDs across other accounts (order-book
+    // griefing / manipulation) is rejected with "caller does not own".
+    let cancelled = with_orders(|state| state.cancel_order_owned(order_id, caller))?
+        .map_err(|e| PrecompileError::other(e.to_string()))?;
+    let success = cancelled.is_some();
+    if let Some(order) = cancelled {
+        record_orders_event(MersennetOrdersEvent::OrderCancelled {
+            order_id: order.id,
+            owner: order.owner,
+            market_id: order.market,
+        });
+    }
 
     Ok(PrecompileOutput::new(
         GAS_CANCEL_ORDER,
@@ -535,13 +633,43 @@ fn handle_cancel_order(input: &Bytes, gas_limit: u64) -> PrecompileResult {
 // depositCollateral(uint256 amount) -> (bool success)
 // ---------------------------------------------------------------------------
 
-fn handle_deposit_collateral(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+fn handle_deposit_collateral(
+    input: &Bytes,
+    gas_limit: u64,
+    caller: Address,
+    evmctx: &mut InnerEvmContext<InMemoryDB>,
+) -> PrecompileResult {
     check_gas(gas_limit, GAS_DEPOSIT_COLLATERAL)?;
 
     let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
     let amount = decode_u256(amt_w);
 
+    // Escrow `amount` native MRSN from the caller into this precompile's address
+    // FIRST (journaled — a frame revert undoes it). Only on success do we credit
+    // the orders-side collateral, so the two ledgers never desync.
+    match evmctx
+        .journaled_state
+        .transfer(
+            &caller,
+            &MERSENNET_ORDERS_PRECOMPILE,
+            amount,
+            &mut evmctx.db,
+        )
+        .map_err(|_| PrecompileError::other("collateral deposit: state error"))?
+    {
+        None => {}
+        Some(_) => {
+            return Err(
+                PrecompileError::other("insufficient MRSN balance for collateral deposit").into(),
+            );
+        }
+    }
+
     with_orders(|state| state.deposit_collateral(caller, amount))?;
+    record_orders_event(MersennetOrdersEvent::CollateralDeposited {
+        owner: caller,
+        amount,
+    });
 
     Ok(PrecompileOutput::new(
         GAS_DEPOSIT_COLLATERAL,
@@ -553,18 +681,50 @@ fn handle_deposit_collateral(input: &Bytes, gas_limit: u64, caller: Address) -> 
 // withdrawCollateral(uint256 amount) -> (bool success)
 // ---------------------------------------------------------------------------
 
-fn handle_withdraw_collateral(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+fn handle_withdraw_collateral(
+    input: &Bytes,
+    gas_limit: u64,
+    caller: Address,
+    evmctx: &mut InnerEvmContext<InMemoryDB>,
+) -> PrecompileResult {
     check_gas(gas_limit, GAS_WITHDRAW_COLLATERAL)?;
 
     let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
     let amount = decode_u256(amt_w);
 
-    let result = with_orders(|state| state.withdraw_collateral(caller, amount))?;
+    // Validate + decrement orders-side collateral first; it only succeeds if the
+    // account stays above maintenance margin, and leaves collateral untouched on
+    // failure. Return false (not an error) for an ineligible withdrawal.
+    let withdraw_result = with_orders(|state| state.withdraw_collateral(caller, amount))?;
+    if withdraw_result.is_err() {
+        return Ok(PrecompileOutput::new(
+            GAS_WITHDRAW_COLLATERAL,
+            Bytes::from(encode_bool(false).to_vec()),
+        ));
+    }
 
-    Ok(PrecompileOutput::new(
-        GAS_WITHDRAW_COLLATERAL,
-        Bytes::from(encode_bool(result.is_ok()).to_vec()),
-    ))
+    // Pay the native MRSN back out of the escrow. Under the deposit invariant the
+    // escrow always covers it; if it somehow doesn't, roll the orders-side
+    // decrement back so the two ledgers stay consistent.
+    match evmctx
+        .journaled_state
+        .transfer(
+            &MERSENNET_ORDERS_PRECOMPILE,
+            &caller,
+            amount,
+            &mut evmctx.db,
+        )
+        .map_err(|_| PrecompileError::other("collateral withdrawal: state error"))?
+    {
+        None => Ok(PrecompileOutput::new(
+            GAS_WITHDRAW_COLLATERAL,
+            Bytes::from(encode_bool(true).to_vec()),
+        )),
+        Some(_) => {
+            let _ = with_orders(|state| state.deposit_collateral(caller, amount));
+            Err(PrecompileError::other("collateral withdrawal: escrow underfunded").into())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -670,8 +830,8 @@ mod tests {
         set_transparent_mersennet_orders_enabled(false);
 
         let input = Bytes::from(get_collateral_selector().to_vec());
-        let env = Env::default();
-        let err = mersennet_orders_precompile(&input, GAS_GET_COLLATERAL, &env)
+        let mut evmctx = InnerEvmContext::new_with_env(InMemoryDB::default(), Box::default());
+        let err = mersennet_orders_precompile(&input, GAS_GET_COLLATERAL, &mut evmctx)
             .expect_err("transparent precompile should be disabled");
 
         assert!(
