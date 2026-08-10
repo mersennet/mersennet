@@ -192,6 +192,42 @@ pub(crate) struct MersennetOrdersSnapshot {
     pub(crate) orders: Vec<OrderRecord>,
     pub(crate) accounts: Vec<(Vec<u8>, AccountRecordV2)>,
     pub(crate) books: Vec<(u64, OrderBookRecord)>,
+    pub(crate) staking: StakingSnapshot,
+    #[serde(default)]
+    pub(crate) collateral_assets: Vec<CollateralAssetRecord>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub(crate) struct StakingSnapshot {
+    pub(crate) pools: Vec<StakingPoolRecord>,
+    pub(crate) delegations: Vec<DelegationRecord>,
+    pub(crate) unbondings: Vec<UnbondingRecord>,
+    pub(crate) unbonding_period_blocks: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct StakingPoolRecord {
+    pub(crate) validator: Vec<u8>,
+    pub(crate) delegated_total: [u8; 32],
+    pub(crate) acc_reward_per_share: [u8; 32],
+    pub(crate) commission_bps: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct DelegationRecord {
+    pub(crate) delegator: Vec<u8>,
+    pub(crate) validator: Vec<u8>,
+    pub(crate) amount: [u8; 32],
+    pub(crate) reward_debt: [u8; 32],
+    pub(crate) pending_rewards: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct UnbondingRecord {
+    pub(crate) delegator: Vec<u8>,
+    pub(crate) validator: Vec<u8>,
+    pub(crate) amount: [u8; 32],
+    pub(crate) unlock_at: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -213,6 +249,8 @@ pub(crate) struct OrderRecord {
     pub(crate) price: [u8; 32],
     pub(crate) size: [u8; 32],
     pub(crate) tif: u8,
+    pub(crate) post_only: bool,
+    pub(crate) expire_at: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -227,6 +265,17 @@ pub(crate) struct AccountRecordV2 {
     pub(crate) collateral: [u8; 32],
     pub(crate) open_orders: Vec<u64>,
     pub(crate) positions: Vec<(u64, PositionRecord)>,
+    #[serde(default)]
+    pub(crate) token_collateral: Vec<(Vec<u8>, [u8; 32])>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct CollateralAssetRecord {
+    pub(crate) token: Vec<u8>,
+    pub(crate) weight_bps: u64,
+    pub(crate) value_num: [u8; 32],
+    pub(crate) value_den: [u8; 32],
+    pub(crate) balances_slot: [u8; 32],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -438,6 +487,8 @@ impl PersistentState {
                     price: U256::from_be_bytes(order.price),
                     size: U256::from_be_bytes(order.size),
                     tif: decode_tif(order.tif)?,
+                    post_only: order.post_only,
+                    expire_at: order.expire_at,
                 },
             );
         }
@@ -462,6 +513,11 @@ impl PersistentState {
                     collateral: U256::from_be_bytes(record.collateral),
                     open_orders: record.open_orders.into_iter().map(OrderId).collect(),
                     positions,
+                    token_collateral: record
+                        .token_collateral
+                        .into_iter()
+                        .map(|(t, b)| (Address::from_slice(&t), U256::from_be_bytes(b)))
+                        .collect(),
                 },
             );
         }
@@ -480,6 +536,21 @@ impl PersistentState {
                     .insert(price, orders.into_iter().map(OrderId).collect());
             }
             state.books.insert(MarketId(market_id), book);
+        }
+
+        state.staking = decode_staking(snapshot.staking);
+
+        state.collateral_assets.clear();
+        for a in snapshot.collateral_assets {
+            state.collateral_assets.insert(
+                Address::from_slice(&a.token),
+                crate::mersennet_orders::CollateralAsset {
+                    weight_bps: a.weight_bps,
+                    value_num: U256::from_be_bytes(a.value_num),
+                    value_den: U256::from_be_bytes(a.value_den),
+                    balances_slot: U256::from_be_bytes(a.balances_slot),
+                },
+            );
         }
 
         Ok(())
@@ -519,6 +590,8 @@ impl PersistentState {
                 price: o.price.to_be_bytes(),
                 size: o.size.to_be_bytes(),
                 tif: encode_tif(o.tif),
+                post_only: o.post_only,
+                expire_at: o.expire_at,
             })
             .collect();
         orders.sort_by_key(|o| o.id);
@@ -543,12 +616,19 @@ impl PersistentState {
                 positions.sort_by_key(|(mid, _)| *mid);
                 let mut open_orders: Vec<u64> = acct.open_orders.iter().map(|id| id.0).collect();
                 open_orders.sort_unstable();
+                let mut token_collateral: Vec<(Vec<u8>, [u8; 32])> = acct
+                    .token_collateral
+                    .iter()
+                    .map(|(token, bal)| (token.as_slice().to_vec(), bal.to_be_bytes()))
+                    .collect();
+                token_collateral.sort_by(|a, b| a.0.cmp(&b.0));
                 (
                     addr.as_slice().to_vec(),
                     AccountRecordV2 {
                         collateral: acct.collateral.to_be_bytes(),
                         open_orders,
                         positions,
+                        token_collateral,
                     },
                 )
             })
@@ -593,6 +673,22 @@ impl PersistentState {
             orders,
             accounts,
             books,
+            staking: encode_staking(&state.staking),
+            collateral_assets: {
+                let mut v: Vec<CollateralAssetRecord> = state
+                    .collateral_assets
+                    .iter()
+                    .map(|(token, a)| CollateralAssetRecord {
+                        token: token.as_slice().to_vec(),
+                        weight_bps: a.weight_bps,
+                        value_num: a.value_num.to_be_bytes(),
+                        value_den: a.value_den.to_be_bytes(),
+                        balances_slot: a.balances_slot.to_be_bytes(),
+                    })
+                    .collect();
+                v.sort_by(|a, b| a.token.cmp(&b.token));
+                v
+            },
         };
 
         let data = bincode::serialize(&snapshot)?;
@@ -920,6 +1016,100 @@ pub(crate) fn decode_market_status(value: u8) -> MarketStatus {
         2 => MarketStatus::SettleOnly,
         _ => MarketStatus::Active,
     }
+}
+
+/// Deterministic staking snapshot: every collection sorted by a stable key
+/// so serialized bytes (folded into the state root) match across nodes.
+pub(crate) fn encode_staking(state: &crate::staking::StakingState) -> StakingSnapshot {
+    let mut pools: Vec<StakingPoolRecord> = state
+        .pools
+        .iter()
+        .map(|(validator, p)| StakingPoolRecord {
+            validator: validator.as_slice().to_vec(),
+            delegated_total: p.delegated_total.to_be_bytes(),
+            acc_reward_per_share: p.acc_reward_per_share.to_be_bytes(),
+            commission_bps: p.commission_bps,
+        })
+        .collect();
+    pools.sort_by(|a, b| a.validator.cmp(&b.validator));
+
+    let mut delegations: Vec<DelegationRecord> = state
+        .delegations
+        .iter()
+        .map(|((delegator, validator), d)| DelegationRecord {
+            delegator: delegator.as_slice().to_vec(),
+            validator: validator.as_slice().to_vec(),
+            amount: d.amount.to_be_bytes(),
+            reward_debt: d.reward_debt.to_be_bytes(),
+            pending_rewards: d.pending_rewards.to_be_bytes(),
+        })
+        .collect();
+    delegations.sort_by(|a, b| (&a.delegator, &a.validator).cmp(&(&b.delegator, &b.validator)));
+
+    let mut unbondings: Vec<UnbondingRecord> = state
+        .unbondings
+        .iter()
+        .flat_map(|(delegator, entries)| {
+            entries.iter().map(move |e| UnbondingRecord {
+                delegator: delegator.as_slice().to_vec(),
+                validator: e.validator.as_slice().to_vec(),
+                amount: e.amount.to_be_bytes(),
+                unlock_at: e.unlock_at,
+            })
+        })
+        .collect();
+    unbondings.sort_by(|a, b| {
+        (&a.delegator, a.unlock_at, &a.validator).cmp(&(&b.delegator, b.unlock_at, &b.validator))
+    });
+
+    StakingSnapshot {
+        pools,
+        delegations,
+        unbondings,
+        unbonding_period_blocks: state.unbonding_period_blocks,
+    }
+}
+
+pub(crate) fn decode_staking(snapshot: StakingSnapshot) -> crate::staking::StakingState {
+    let mut state = crate::staking::StakingState {
+        unbonding_period_blocks: snapshot.unbonding_period_blocks,
+        ..Default::default()
+    };
+    for p in snapshot.pools {
+        state.pools.insert(
+            Address::from_slice(&p.validator),
+            crate::staking::ValidatorPool {
+                delegated_total: U256::from_be_bytes(p.delegated_total),
+                acc_reward_per_share: U256::from_be_bytes(p.acc_reward_per_share),
+                commission_bps: p.commission_bps,
+            },
+        );
+    }
+    for d in snapshot.delegations {
+        state.delegations.insert(
+            (
+                Address::from_slice(&d.delegator),
+                Address::from_slice(&d.validator),
+            ),
+            crate::staking::Delegation {
+                amount: U256::from_be_bytes(d.amount),
+                reward_debt: U256::from_be_bytes(d.reward_debt),
+                pending_rewards: U256::from_be_bytes(d.pending_rewards),
+            },
+        );
+    }
+    for u in snapshot.unbondings {
+        state
+            .unbondings
+            .entry(Address::from_slice(&u.delegator))
+            .or_default()
+            .push(crate::staking::UnbondingEntry {
+                validator: Address::from_slice(&u.validator),
+                amount: U256::from_be_bytes(u.amount),
+                unlock_at: u.unlock_at,
+            });
+    }
+    state
 }
 
 pub(crate) fn encode_bridge_queue(snapshot: BridgeQueueSnapshot) -> BridgeQueueRecord {

@@ -303,6 +303,85 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .collect();
             Ok(Value::Array(validators))
         }
+        "mersennet_staking_getValidators" => {
+            let staking = &engine.orders.state.staking;
+            let validators: Vec<Value> = engine
+                .consensus
+                .validators()
+                .iter()
+                .map(|v| {
+                    let pool = staking.pools.get(&v.address);
+                    json!({
+                        "address": hex_address(v.address),
+                        "selfStake": hex_u256(v.stake),
+                        "delegatedTotal": hex_u256(
+                            pool.map(|p| p.delegated_total).unwrap_or_default()
+                        ),
+                        "commissionBps": pool.map(|p| p.commission_bps).unwrap_or_default(),
+                    })
+                })
+                .collect();
+            Ok(Value::Array(validators))
+        }
+        "mersennet_staking_getDelegation" => {
+            let (delegator, validator) = parse_two_addresses(params)?;
+            let staking = &engine.orders.state.staking;
+            let delegation = staking.delegations.get(&(delegator, validator));
+            Ok(json!({
+                "amount": hex_u256(delegation.map(|d| d.amount).unwrap_or_default()),
+                "pendingRewards": hex_u256(staking.pending_rewards(delegator, validator)),
+            }))
+        }
+        "mersennet_staking_getUnbonding" => {
+            let (delegator, _) = parse_balance_params(params)?;
+            let staking = &engine.orders.state.staking;
+            let entries: Vec<Value> = staking
+                .unbondings
+                .get(&delegator)
+                .map(|list| {
+                    list.iter()
+                        .map(|e| {
+                            json!({
+                                "validator": hex_address(e.validator),
+                                "amount": hex_u256(e.amount),
+                                "unlockAtBlock": hex_u64(e.unlock_at),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(Value::Array(entries))
+        }
+        "mersennet_orders_getCollateralAssets" => {
+            let mut assets: Vec<(&Address, &mersennet::mersennet_orders::CollateralAsset)> =
+                engine.orders.state.collateral_assets.iter().collect();
+            assets.sort_by_key(|(addr, _)| **addr);
+            let assets: Vec<Value> = assets
+                .into_iter()
+                .map(|(token, asset)| {
+                    json!({
+                        "token": hex_address(*token),
+                        "weightBps": asset.weight_bps,
+                        "valueNum": hex_u256(asset.value_num),
+                        "valueDen": hex_u256(asset.value_den),
+                        "balancesSlot": hex_u256(asset.balances_slot),
+                    })
+                })
+                .collect();
+            Ok(Value::Array(assets))
+        }
+        "mersennet_orders_getTokenCollateral" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
+            let (owner, token) = parse_two_addresses(params)?;
+            let balance = engine
+                .orders
+                .state
+                .accounts
+                .get(&owner)
+                .and_then(|a| a.token_collateral.get(&token).copied())
+                .unwrap_or_default();
+            Ok(Value::String(hex_u256(balance)))
+        }
         "mersennet_getCodeAttestation" => {
             let (address, _) = parse_balance_params(params)?;
             match engine.published_code_attestation(address) {
@@ -555,6 +634,22 @@ fn parse_mersennet_order_input(params: Value) -> RpcResult<MersennetOrderInput> 
         .ok_or_else(|| RpcError::new(-32602, "order object required"))?
         .clone();
     serde_json::from_value(obj).map_err(|err| RpcError::new(-32602, err.to_string()))
+}
+
+fn parse_two_addresses(params: Value) -> RpcResult<(Address, Address)> {
+    let array = match params {
+        Value::Array(values) => values,
+        _ => return Err(RpcError::new(-32602, "invalid params")),
+    };
+    let first = match array.first() {
+        Some(Value::String(value)) => parse_address(value)?,
+        _ => return Err(RpcError::new(-32602, "first address required")),
+    };
+    let second = match array.get(1) {
+        Some(Value::String(value)) => parse_address(value)?,
+        _ => return Err(RpcError::new(-32602, "second address required")),
+    };
+    Ok((first, second))
 }
 
 fn parse_order_id(params: Value) -> RpcResult<u64> {
@@ -1032,6 +1127,11 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::MarketHalted => -32015,
         MersennetOrdersError::WithdrawalExceedsEquity => -32016,
         MersennetOrdersError::NotOrderOwner => -32017,
+        MersennetOrdersError::PostOnlyWouldCross => -32018,
+        MersennetOrdersError::InvalidOrderFlags => -32019,
+        MersennetOrdersError::DuplicateMarket => -32020,
+        MersennetOrdersError::InvalidMarketParams => -32021,
+        MersennetOrdersError::UnknownCollateralAsset => -32022,
     };
     RpcError::new(code, err.message())
 }

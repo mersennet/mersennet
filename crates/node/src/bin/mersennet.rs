@@ -144,6 +144,25 @@ fn main() -> anyhow::Result<()> {
                 info!(owner = %c.owner, amount = %c.amount, "seeded genesis collateral");
             }
         }
+        for a in &app_config.genesis.collateral_assets {
+            match (
+                parse_address(&a.token),
+                parse_u256(&a.value_num),
+                parse_u256(&a.value_den),
+            ) {
+                (Ok(token), Ok(num), Ok(den)) => {
+                    engine.register_collateral_asset(
+                        token,
+                        a.weight_bps,
+                        num,
+                        den,
+                        U256::from(a.balances_slot),
+                    );
+                    info!(token = %a.token, weight_bps = a.weight_bps, "registered genesis collateral asset");
+                }
+                _ => info!(token = %a.token, "skipped malformed genesis collateral asset"),
+            }
+        }
     }
 
     engine.set_unbonding_period(app_config.slashing.unbonding_period);

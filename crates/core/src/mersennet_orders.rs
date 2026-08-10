@@ -51,6 +51,12 @@ pub struct Order {
     pub price: U256,
     pub size: U256,
     pub tif: TimeInForce,
+    /// Maker-only flag: the order was accepted on the condition that it
+    /// does not take liquidity. Stored for display; enforced at submit.
+    pub post_only: bool,
+    /// Good-till-date: block height after which the order is auto-cancelled
+    /// by the end-of-block expiry sweep. 0 = never expires (plain GTC).
+    pub expire_at: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -100,8 +106,23 @@ pub struct Position {
 #[derive(Debug, Clone, Default)]
 pub struct AccountState {
     pub collateral: U256,
+    /// Non-native collateral balances in raw token units. Margin value is
+    /// computed through the `collateral_assets` registry (weight + rate).
+    pub token_collateral: HashMap<Address, U256>,
     pub open_orders: Vec<OrderId>,
     pub positions: HashMap<MarketId, Position>,
+}
+
+/// A registered non-native collateral asset. Margin value per raw token
+/// unit = `value_num / value_den`, then haircut by `weight_bps`.
+/// `balances_slot` is the storage slot index of the token's `balanceOf`
+/// mapping, so the precompile can move balances without an EVM call.
+#[derive(Debug, Clone, Copy)]
+pub struct CollateralAsset {
+    pub weight_bps: u64,
+    pub value_num: U256,
+    pub value_den: U256,
+    pub balances_slot: U256,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -121,6 +142,11 @@ pub struct MersennetOrdersState {
     pub maintenance_margin_bps: u64,
     pub insurance_fund: U256,
     pub insurance_contribution_rate_bps: u64,
+    /// Delegated staking lives alongside the CLOB so it shares the
+    /// precompile shared-context and snapshot commit/load plumbing.
+    pub staking: crate::staking::StakingState,
+    /// Registry of accepted non-native collateral tokens.
+    pub collateral_assets: HashMap<Address, CollateralAsset>,
 }
 
 impl MersennetOrdersState {
@@ -148,6 +174,32 @@ impl MersennetOrdersState {
         id
     }
 
+    /// Permissionless market creation with validation — the untrusted path
+    /// (precompile). Genesis/admin seeding uses `add_market` directly.
+    pub fn create_market_checked(
+        &mut self,
+        symbol: String,
+        tick_size: U256,
+        lot_size: U256,
+    ) -> Result<MarketId, MersennetOrdersError> {
+        let valid_symbol = !symbol.is_empty()
+            && symbol.len() <= 20
+            && symbol
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_'));
+        if !valid_symbol || tick_size.is_zero() || lot_size.is_zero() {
+            return Err(MersennetOrdersError::InvalidMarketParams);
+        }
+        if self
+            .markets
+            .values()
+            .any(|m| m.symbol.eq_ignore_ascii_case(&symbol))
+        {
+            return Err(MersennetOrdersError::DuplicateMarket);
+        }
+        Ok(self.add_market(symbol, tick_size, lot_size))
+    }
+
     pub fn set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
         self.initial_margin_bps = initial_bps.min(10_000);
         self.maintenance_margin_bps = maintenance_bps.min(10_000);
@@ -158,6 +210,97 @@ impl MersennetOrdersState {
         account.collateral = account.collateral.saturating_add(amount);
     }
 
+    pub fn register_collateral_asset(&mut self, token: Address, asset: CollateralAsset) {
+        self.collateral_assets.insert(token, asset);
+    }
+
+    /// Weighted margin value of an account's non-native collateral, in the
+    /// same unit as native collateral.
+    pub fn token_margin_value(&self, owner: Address) -> U256 {
+        let Some(account) = self.accounts.get(&owner) else {
+            return U256::ZERO;
+        };
+        let mut total = U256::ZERO;
+        for (token, balance) in &account.token_collateral {
+            let Some(asset) = self.collateral_assets.get(token) else {
+                continue;
+            };
+            let value = balance
+                .saturating_mul(asset.value_num)
+                .checked_div(asset.value_den.max(U256::from(1u64)))
+                .unwrap_or(U256::ZERO)
+                .saturating_mul(U256::from(asset.weight_bps))
+                .checked_div(U256::from(10_000u64))
+                .unwrap_or(U256::ZERO);
+            total = total.saturating_add(value);
+        }
+        total
+    }
+
+    pub fn deposit_token_collateral(
+        &mut self,
+        owner: Address,
+        token: Address,
+        amount: U256,
+    ) -> Result<(), MersennetOrdersError> {
+        if !self.collateral_assets.contains_key(&token) {
+            return Err(MersennetOrdersError::UnknownCollateralAsset);
+        }
+        let account = self.accounts.entry(owner).or_default();
+        let balance = account.token_collateral.entry(token).or_default();
+        *balance = balance.saturating_add(amount);
+        Ok(())
+    }
+
+    /// Withdraw non-native collateral, refusing if the account would fall
+    /// below maintenance margin (mirrors `withdraw_collateral`).
+    pub fn withdraw_token_collateral(
+        &mut self,
+        owner: Address,
+        token: Address,
+        amount: U256,
+    ) -> Result<(), MersennetOrdersError> {
+        let asset = self
+            .collateral_assets
+            .get(&token)
+            .copied()
+            .ok_or(MersennetOrdersError::UnknownCollateralAsset)?;
+        let held = self
+            .accounts
+            .get(&owner)
+            .and_then(|a| a.token_collateral.get(&token))
+            .copied()
+            .unwrap_or(U256::ZERO);
+        if held < amount {
+            return Err(MersennetOrdersError::InsufficientEquity);
+        }
+        // Simulated equity after the withdrawal: native collateral + PnL +
+        // remaining weighted token value.
+        let removed_value = amount
+            .saturating_mul(asset.value_num)
+            .checked_div(asset.value_den.max(U256::from(1u64)))
+            .unwrap_or(U256::ZERO)
+            .saturating_mul(U256::from(asset.weight_bps))
+            .checked_div(U256::from(10_000u64))
+            .unwrap_or(U256::ZERO);
+        let equity_after =
+            self.account_equity(owner).saturating_sub(u256_to_i128(removed_value));
+        let maintenance = self.maintenance_margin_required(owner);
+        if equity_after < u256_to_i128(maintenance) {
+            return Err(MersennetOrdersError::WithdrawalExceedsEquity);
+        }
+        let account = self.accounts.get_mut(&owner).expect("held checked above");
+        let balance = account
+            .token_collateral
+            .get_mut(&token)
+            .expect("held checked above");
+        *balance = balance.saturating_sub(amount);
+        if balance.is_zero() {
+            account.token_collateral.remove(&token);
+        }
+        Ok(())
+    }
+
     pub fn place_order(
         &mut self,
         owner: Address,
@@ -166,6 +309,21 @@ impl MersennetOrdersState {
         price: U256,
         size: U256,
         tif: TimeInForce,
+    ) -> OrderId {
+        self.place_order_ext(owner, market, side, price, size, tif, false, 0)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn place_order_ext(
+        &mut self,
+        owner: Address,
+        market: MarketId,
+        side: Side,
+        price: U256,
+        size: U256,
+        tif: TimeInForce,
+        post_only: bool,
+        expire_at: u64,
     ) -> OrderId {
         let order_id = OrderId(self.next_order_id + 1);
         self.next_order_id += 1;
@@ -178,6 +336,8 @@ impl MersennetOrdersState {
             price,
             size,
             tif,
+            post_only,
+            expire_at,
         };
 
         self.orders.insert(order_id, order);
@@ -205,6 +365,21 @@ impl MersennetOrdersState {
         size: U256,
         tif: TimeInForce,
     ) -> Result<OrderOutcome, MersennetOrdersError> {
+        self.submit_order_ext(owner, market, side, price, size, tif, false, 0)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_order_ext(
+        &mut self,
+        owner: Address,
+        market: MarketId,
+        side: Side,
+        price: U256,
+        size: U256,
+        tif: TimeInForce,
+        post_only: bool,
+        expire_at: u64,
+    ) -> Result<OrderOutcome, MersennetOrdersError> {
         match self.markets.get(&market) {
             None => return Err(MersennetOrdersError::UnknownMarket),
             Some(m) if m.status != MarketStatus::Active => {
@@ -216,7 +391,34 @@ impl MersennetOrdersState {
             return Err(MersennetOrdersError::InvalidSize);
         }
 
+        // Post-only and GTD are maker semantics: they only make sense for
+        // orders that can rest on the book.
+        if (post_only || expire_at != 0) && tif != TimeInForce::Gtc {
+            return Err(MersennetOrdersError::InvalidOrderFlags);
+        }
+
         self.ensure_initial_margin(owner, price, size)?;
+
+        if post_only {
+            // Reject instead of matching if any resting liquidity crosses
+            // the limit price — the order must never take.
+            let crosses = match side {
+                Side::Buy => !self.matching_asks(market, price).is_empty(),
+                Side::Sell => !self.matching_bids(market, price).is_empty(),
+            };
+            if crosses {
+                return Err(MersennetOrdersError::PostOnlyWouldCross);
+            }
+            let order_id =
+                self.place_order_ext(owner, market, side, price, size, tif, true, expire_at);
+            metrics::increment_counter!("mersennet_orders_submitted");
+            return Ok(OrderOutcome {
+                order_id: Some(order_id),
+                filled: U256::ZERO,
+                remaining: size,
+                trades: Vec::new(),
+            });
+        }
 
         if tif == TimeInForce::Fok {
             let available = self.available_liquidity(market, side, price);
@@ -332,7 +534,7 @@ impl MersennetOrdersState {
         let order_id = if remaining.is_zero() {
             None
         } else if tif == TimeInForce::Gtc {
-            Some(self.place_order(owner, market, side, price, remaining, tif))
+            Some(self.place_order_ext(owner, market, side, price, remaining, tif, false, expire_at))
         } else {
             None
         };
@@ -418,6 +620,10 @@ impl MersennetOrdersState {
             let open_orders = account.open_orders.clone();
             account.open_orders.clear();
             let positions: Vec<(MarketId, Position)> = account.positions.drain().collect();
+            // Token collateral is treated like native collateral: it stays
+            // with the account through liquidation (only positions and
+            // orders are cleared), and remains subject to the maintenance
+            // check on withdrawal.
             for order_id in open_orders {
                 let _ = self.cancel_order(order_id);
             }
@@ -552,7 +758,8 @@ impl MersennetOrdersState {
         }
         let new_collateral = account.collateral.saturating_sub(amount);
         let equity_after = {
-            let mut simulated_equity = u256_to_i128(new_collateral);
+            let mut simulated_equity = u256_to_i128(new_collateral)
+                .saturating_add(u256_to_i128(self.token_margin_value(owner)));
             for (market_id, position) in &account.positions {
                 let mark = self.mark_price(*market_id, position.entry_price);
                 let pnl = position.size.saturating_mul(
@@ -763,6 +970,30 @@ impl MersennetOrdersState {
         }
     }
 
+    /// End-of-block sweep: cancel every resting order whose good-till-date
+    /// height has passed. Runs deterministically on producers and importers
+    /// (same block height, same state), so no domain events are needed —
+    /// every node drops the same orders at the same height. Returns the
+    /// number of orders expired.
+    pub fn expire_orders(&mut self, current_block: u64) -> usize {
+        let mut expired: Vec<OrderId> = self
+            .orders
+            .values()
+            .filter(|o| o.expire_at != 0 && o.expire_at <= current_block)
+            .map(|o| o.id)
+            .collect();
+        // Deterministic order (HashMap iteration is not).
+        expired.sort_by_key(|id| id.0);
+        let count = expired.len();
+        for id in expired {
+            let _ = self.cancel_order(id);
+        }
+        if count > 0 {
+            metrics::increment_counter!("mersennet_orders_expired");
+        }
+        count
+    }
+
     /// Unconditional cancel — no ownership check. Only for trusted internal
     /// callers (liquidation engine, admin). Untrusted paths must use
     /// [`Self::cancel_order_owned`].
@@ -805,7 +1036,8 @@ impl MersennetOrdersState {
             .accounts
             .get(&owner)
             .map(|acct| acct.collateral)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .saturating_add(self.token_margin_value(owner));
         if collateral < required {
             return Err(MersennetOrdersError::InsufficientCollateral);
         }
@@ -816,7 +1048,8 @@ impl MersennetOrdersState {
         let Some(account) = self.accounts.get(&owner) else {
             return 0;
         };
-        let mut equity = u256_to_i128(account.collateral);
+        let mut equity = u256_to_i128(account.collateral)
+            .saturating_add(u256_to_i128(self.token_margin_value(owner)));
         for (market_id, position) in &account.positions {
             let mark = self.mark_price(*market_id, position.entry_price);
             let pnl = position.size.saturating_mul(

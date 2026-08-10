@@ -141,6 +141,10 @@ pub struct GenesisConfig {
     /// it can quote immediately without an out-of-band deposit.
     #[serde(default)]
     pub collateral: Vec<GenesisCollateral>,
+    /// Non-native tokens accepted as margin collateral, registered at
+    /// genesis on every node so the collateral registry is deterministic.
+    #[serde(default)]
+    pub collateral_assets: Vec<GenesisCollateralAsset>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,6 +176,27 @@ pub struct GenesisMarket {
 pub struct GenesisCollateral {
     pub owner: String,
     pub amount: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisCollateralAsset {
+    /// ERC-20 token address.
+    pub token: String,
+    /// Collateral haircut in basis points (e.g. 9000 = 90% of value counts).
+    pub weight_bps: u64,
+    /// Margin value per raw token unit = value_num / value_den, in CLOB
+    /// collateral units (the same integer units `depositCollateral` escrows).
+    /// For a 6-decimal USD stable where 1 token should count as 1 collateral
+    /// unit, use value_num = 1, value_den = 10^6.
+    pub value_num: String,
+    pub value_den: String,
+    /// Storage slot index of the token's `balanceOf` mapping (MockERC20 = 3).
+    #[serde(default = "default_balances_slot")]
+    pub balances_slot: u64,
+}
+
+fn default_balances_slot() -> u64 {
+    3
 }
 
 fn default_market_tick() -> String {

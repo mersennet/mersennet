@@ -16,8 +16,9 @@ use crate::mersennet_orders::{
 use crate::state::{
     AccountRecord, AccountRecordV2, BridgeQueueRecord, MarketRecord, MerkleTree,
     MersennetOrdersSnapshot, OrderBookRecord, OrderRecord, PositionRecord, SnapshotMeta,
-    SnapshotRecord, StateProof, bytes_to_u256, decode_bridge_queue, decode_market_status,
-    decode_side, decode_tif, encode_bridge_queue, encode_market_status, encode_side, encode_tif,
+    CollateralAssetRecord, SnapshotRecord, StateProof, bytes_to_u256, decode_bridge_queue,
+    decode_market_status, decode_side, decode_staking, decode_tif, encode_bridge_queue,
+    encode_market_status, encode_side, encode_staking, encode_tif,
 };
 use crate::state_trait::StateBackend;
 
@@ -258,6 +259,8 @@ impl StateBackend for RedbState {
                     price: U256::from_be_bytes(order.price),
                     size: U256::from_be_bytes(order.size),
                     tif: decode_tif(order.tif)?,
+                    post_only: order.post_only,
+                    expire_at: order.expire_at,
                 },
             );
         }
@@ -282,6 +285,11 @@ impl StateBackend for RedbState {
                     collateral: U256::from_be_bytes(record.collateral),
                     open_orders: record.open_orders.into_iter().map(OrderId).collect(),
                     positions,
+                    token_collateral: record
+                        .token_collateral
+                        .into_iter()
+                        .map(|(t, b)| (Address::from_slice(&t), U256::from_be_bytes(b)))
+                        .collect(),
                 },
             );
         }
@@ -300,6 +308,21 @@ impl StateBackend for RedbState {
                     .insert(price, orders.into_iter().map(OrderId).collect());
             }
             state.books.insert(MarketId(market_id), book);
+        }
+
+        state.staking = decode_staking(snapshot.staking);
+
+        state.collateral_assets.clear();
+        for a in snapshot.collateral_assets {
+            state.collateral_assets.insert(
+                Address::from_slice(&a.token),
+                crate::mersennet_orders::CollateralAsset {
+                    weight_bps: a.weight_bps,
+                    value_num: U256::from_be_bytes(a.value_num),
+                    value_den: U256::from_be_bytes(a.value_den),
+                    balances_slot: U256::from_be_bytes(a.balances_slot),
+                },
+            );
         }
 
         Ok(())
@@ -334,6 +357,8 @@ impl StateBackend for RedbState {
                 price: o.price.to_be_bytes(),
                 size: o.size.to_be_bytes(),
                 tif: encode_tif(o.tif),
+                post_only: o.post_only,
+                expire_at: o.expire_at,
             })
             .collect();
         orders.sort_by_key(|o| o.id);
@@ -358,12 +383,19 @@ impl StateBackend for RedbState {
                 positions.sort_by_key(|(mid, _)| *mid);
                 let mut open_orders: Vec<u64> = acct.open_orders.iter().map(|id| id.0).collect();
                 open_orders.sort_unstable();
+                let mut token_collateral: Vec<(Vec<u8>, [u8; 32])> = acct
+                    .token_collateral
+                    .iter()
+                    .map(|(token, bal)| (token.as_slice().to_vec(), bal.to_be_bytes()))
+                    .collect();
+                token_collateral.sort_by(|a, b| a.0.cmp(&b.0));
                 (
                     addr.as_slice().to_vec(),
                     AccountRecordV2 {
                         collateral: acct.collateral.to_be_bytes(),
                         open_orders,
                         positions,
+                        token_collateral,
                     },
                 )
             })
@@ -408,6 +440,22 @@ impl StateBackend for RedbState {
             orders,
             accounts,
             books,
+            staking: encode_staking(&state.staking),
+            collateral_assets: {
+                let mut v: Vec<CollateralAssetRecord> = state
+                    .collateral_assets
+                    .iter()
+                    .map(|(token, a)| CollateralAssetRecord {
+                        token: token.as_slice().to_vec(),
+                        weight_bps: a.weight_bps,
+                        value_num: a.value_num.to_be_bytes(),
+                        value_den: a.value_den.to_be_bytes(),
+                        balances_slot: a.balances_slot.to_be_bytes(),
+                    })
+                    .collect();
+                v.sort_by(|a, b| a.token.cmp(&b.token));
+                v
+            },
         };
 
         let data = bincode::serialize(&snapshot)?;
