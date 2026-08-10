@@ -352,6 +352,25 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .unwrap_or_default();
             Ok(Value::Array(entries))
         }
+        "mersennet_orders_getMarkets" => {
+            let mut markets: Vec<&mersennet::mersennet_orders::Market> =
+                engine.orders.state.markets.values().collect();
+            markets.sort_by_key(|m| m.id.0);
+            let markets: Vec<Value> = markets
+                .into_iter()
+                .map(|m| {
+                    json!({
+                        "id": m.id.0,
+                        "symbol": m.symbol,
+                        "tickSize": hex_u256(m.tick_size),
+                        "lotSize": hex_u256(m.lot_size),
+                        "lastPrice": hex_u256(m.last_price),
+                        "status": format!("{:?}", m.status).to_lowercase(),
+                    })
+                })
+                .collect();
+            Ok(Value::Array(markets))
+        }
         "mersennet_orders_getCollateralAssets" => {
             let mut assets: Vec<(&Address, &mersennet::mersennet_orders::CollateralAsset)> =
                 engine.orders.state.collateral_assets.iter().collect();
@@ -369,6 +388,46 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 })
                 .collect();
             Ok(Value::Array(assets))
+        }
+        "mersennet_orders_getAccount" => {
+            require_transparent_mersennet_orders_enabled(engine)?;
+            let (owner, _) = parse_balance_params(params)?;
+            let account = engine.orders.state.accounts.get(&owner);
+            let (collateral, token_collateral, open_orders, positions) = match account {
+                Some(a) => {
+                    let mut toks: Vec<(&revm::primitives::Address, &U256)> =
+                        a.token_collateral.iter().collect();
+                    toks.sort_by_key(|(addr, _)| **addr);
+                    let token_collateral: Vec<Value> = toks
+                        .into_iter()
+                        .map(|(addr, amt)| {
+                            json!({ "token": hex_address(*addr), "amount": hex_u256(*amt) })
+                        })
+                        .collect();
+                    let mut pos: Vec<(&mersennet::mersennet_orders::MarketId, &mersennet::mersennet_orders::Position)> =
+                        a.positions.iter().collect();
+                    pos.sort_by_key(|(id, _)| id.0);
+                    let positions: Vec<Value> = pos
+                        .into_iter()
+                        .map(|(id, p)| {
+                            json!({
+                                "marketId": id.0,
+                                "size": p.size.to_string(),
+                                "entryPrice": hex_u256(p.entry_price),
+                                "realizedPnl": p.realized_pnl.to_string(),
+                            })
+                        })
+                        .collect();
+                    (a.collateral, token_collateral, a.open_orders.len(), positions)
+                }
+                None => (U256::ZERO, Vec::new(), 0, Vec::new()),
+            };
+            Ok(json!({
+                "collateral": hex_u256(collateral),
+                "tokenCollateral": token_collateral,
+                "openOrders": open_orders,
+                "positions": positions,
+            }))
         }
         "mersennet_orders_getTokenCollateral" => {
             require_transparent_mersennet_orders_enabled(engine)?;
