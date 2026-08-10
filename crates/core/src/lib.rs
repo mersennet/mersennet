@@ -39,6 +39,7 @@ pub mod shielded_evm;
 pub mod shielded_orders;
 pub mod shielded_persistence;
 pub mod shielded_state;
+pub mod staking;
 pub mod state;
 pub mod state_proof;
 pub mod state_redb;

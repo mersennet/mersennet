@@ -28,6 +28,13 @@ privacy layer, built in Rust.
 
 - EVM execution (revm) with block production and receipts
 - MersennetOrders CLOB matching engine with margin checks and liquidation hooks
+  - Post-only + good-till-date order flags (`placeOrderExt`), end-of-block
+    expiry sweep
+  - Permissionless market creation (`createMarket`, 100 MRSN listing fee)
+  - Multi-collateral margin: registered ERC-20s (weight + rate haircuts)
+    count toward the unified cross-margin account
+- Delegated staking precompile (`0x…0400`): delegate to validators, pro-rata
+  block-reward share with commission, unbonding period, F1-style accounting
 - Snapshot export/import with TCP chunked sync + hash verification
 - Structured JSON-RPC + WebSocket subscriptions, metrics, health endpoint
 - Node identity + peer-store persistence

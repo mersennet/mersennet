@@ -38,6 +38,15 @@ pub const CODE_PUBLICATION_PRECOMPILE: Address = {
     Address::new(addr)
 };
 
+/// Delegated staking precompile: 0x0000000000000000000000000000000000000400.
+/// Delegate MRSN to validators, earn a pro-rata share of block rewards.
+/// Principal + delegator rewards are escrowed at this address.
+pub const STAKING_PRECOMPILE: Address = {
+    let mut addr = [0u8; 20];
+    addr[18] = 0x04;
+    Address::new(addr)
+};
+
 /// State-transition proof verifier: 0x0000000000000000000000000000000000000300.
 /// Verifies SP1-produced block proofs for light clients and bridge
 /// consumption. Phase 5 of the privacy redesign.
@@ -86,14 +95,70 @@ pub const GAS_GET_POSITION: u64 = 5_000;
 pub const GAS_GET_COLLATERAL: u64 = 3_000;
 pub const GAS_IS_LIQUIDATABLE: u64 = 10_000;
 pub const GAS_GET_BEST_BID_ASK: u64 = 5_000;
+pub const GAS_CREATE_MARKET: u64 = 500_000;
+
+/// Listing fee for permissionless market creation, in wei (100 MRSN).
+/// Deducted from the caller's native balance and credited to the CLOB
+/// insurance fund — spam pricing, not revenue.
+pub const CREATE_MARKET_FEE_WEI: u128 = 100_000_000_000_000_000_000;
 
 fn selector(sig: &str) -> [u8; 4] {
     let hash = keccak256(sig.as_bytes());
     [hash[0], hash[1], hash[2], hash[3]]
 }
 
+// --- Delegated staking (0x…0400) ---
+
+pub const GAS_DELEGATE: u64 = 40_000;
+pub const GAS_UNDELEGATE: u64 = 40_000;
+pub const GAS_CLAIM_REWARDS: u64 = 30_000;
+pub const GAS_WITHDRAW_UNBONDED: u64 = 30_000;
+pub const GAS_STAKING_VIEW: u64 = 5_000;
+
+pub fn delegate_selector() -> [u8; 4] {
+    selector("delegate(address,uint256)")
+}
+
+pub fn undelegate_selector() -> [u8; 4] {
+    selector("undelegate(address,uint256)")
+}
+
+pub fn claim_rewards_selector() -> [u8; 4] {
+    selector("claimRewards(address)")
+}
+
+pub fn withdraw_unbonded_selector() -> [u8; 4] {
+    selector("withdrawUnbonded()")
+}
+
+pub fn get_delegation_selector() -> [u8; 4] {
+    selector("getDelegation(address,address)")
+}
+
+pub fn get_validator_staking_selector() -> [u8; 4] {
+    selector("getValidatorStaking(address)")
+}
+
+pub fn get_unbonding_selector() -> [u8; 4] {
+    selector("getUnbonding(address)")
+}
+
 pub fn place_order_selector() -> [u8; 4] {
     selector("placeOrder(uint64,bool,uint256,uint256,uint8)")
+}
+
+/// Extended placeOrder with maker flags:
+/// `flags` is a bitfield (bit 0 = post-only), `expireAtBlock` is the
+/// good-till-date height (0 = never expires).
+pub fn place_order_ext_selector() -> [u8; 4] {
+    selector("placeOrderExt(uint64,bool,uint256,uint256,uint8,uint8,uint64)")
+}
+
+/// Permissionless market listing. `symbol` is a right-padded bytes32
+/// (ASCII, trailing zeros trimmed). Charges a listing fee in native MRSN
+/// from the caller's balance into the CLOB insurance fund.
+pub fn create_market_selector() -> [u8; 4] {
+    selector("createMarket(bytes32,uint256,uint256)")
 }
 
 pub fn cancel_order_selector() -> [u8; 4] {
@@ -189,14 +254,22 @@ pub fn get_sub_accounts_selector() -> [u8; 4] {
     selector("getSubAccounts(address)")
 }
 
-// --- Phase 2: Multi-Asset Collateral ---
+// --- Multi-Asset Collateral ---
+
+pub const GAS_DEPOSIT_COLLATERAL_MULTI: u64 = 60_000;
+pub const GAS_WITHDRAW_COLLATERAL_MULTI: u64 = 60_000;
+pub const GAS_GET_COLLATERAL_MULTI: u64 = 5_000;
 
 pub fn deposit_collateral_multi_selector() -> [u8; 4] {
-    selector("depositCollateral(address,uint256)")
+    selector("depositTokenCollateral(address,uint256)")
+}
+
+pub fn withdraw_collateral_multi_selector() -> [u8; 4] {
+    selector("withdrawTokenCollateral(address,uint256)")
 }
 
 pub fn get_collateral_multi_selector() -> [u8; 4] {
-    selector("getCollateral(address)")
+    selector("getTokenCollateral(address,address)")
 }
 
 /// Read a 32-byte ABI word at the given index (0-indexed, after the 4-byte selector).

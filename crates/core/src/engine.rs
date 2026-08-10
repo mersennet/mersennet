@@ -1281,7 +1281,30 @@ impl Engine {
     }
 
     pub fn add_validator(&mut self, address: Address, stake: U256) -> Result<()> {
+        // Every consensus validator gets a delegation pool so third parties
+        // can stake to it via the 0x…0400 precompile.
+        self.orders.state.staking.ensure_pool(address);
         self.consensus.stake(address, stake)
+    }
+
+    /// Register a non-native collateral asset (genesis / admin path).
+    pub fn register_collateral_asset(
+        &mut self,
+        token: Address,
+        weight_bps: u64,
+        value_num: U256,
+        value_den: U256,
+        balances_slot: U256,
+    ) {
+        self.orders.state.register_collateral_asset(
+            token,
+            crate::mersennet_orders::CollateralAsset {
+                weight_bps,
+                value_num,
+                value_den,
+                balances_slot,
+            },
+        );
     }
 
     pub fn stake_validator(&mut self, address: Address, amount: U256) -> Result<()> {
@@ -1552,6 +1575,11 @@ impl Engine {
             .expect("no other Arc references")
             .into_inner()
             .expect("mutex not poisoned");
+
+        // Good-till-date sweep: drop resting orders whose expiry height has
+        // passed. Runs at the same point (post-tx, pre-commit) on producers
+        // and importers, so every node cancels the same orders per block.
+        let _ = self.orders.state.expire_orders(self.block_number);
 
         // Privacy-redesign Phase 4 — discrete-time auction + sealed-
         // bid liquidation tick. No-op pre-fork.
@@ -2359,6 +2387,10 @@ impl Engine {
         if let Some(e) = import_err {
             return Err(e);
         }
+
+        // Good-till-date sweep — must mirror the producer's end-of-block
+        // sweep in execute_block exactly, or state roots diverge.
+        let _ = self.orders.state.expire_orders(block.number);
 
         // Replace the log-stripped wire receipts with the locally reconstructed
         // ones (see the rebuild note above). Only reached when every tx applied,
@@ -3561,6 +3593,37 @@ impl Engine {
             if reward.amount.is_zero() {
                 continue;
             }
+            // Delegated-staking split: delegators earn a pro-rata share of
+            // the validator's reward (minus commission). The cut is credited
+            // to the staking escrow; delegators claim it via the precompile.
+            // Deterministic across produce/import (same state, same stake).
+            let delegator_cut = {
+                let self_stake = self.stake_of(reward.address);
+                self.orders
+                    .state
+                    .staking
+                    .on_reward(reward.address, reward.amount, self_stake)
+            };
+            if !delegator_cut.is_zero() {
+                self.evm
+                    .state
+                    .mark_dirty(crate::precompile_abi::STAKING_PRECOMPILE);
+                let mut escrow = self
+                    .evm
+                    .db
+                    .accounts
+                    .get(&crate::precompile_abi::STAKING_PRECOMPILE)
+                    .map(|account| account.info.clone())
+                    .unwrap_or_default();
+                escrow.balance = escrow.balance.saturating_add(delegator_cut);
+                self.evm
+                    .db
+                    .insert_account_info(crate::precompile_abi::STAKING_PRECOMPILE, escrow);
+            }
+            let validator_amount = reward.amount.saturating_sub(delegator_cut);
+            if validator_amount.is_zero() {
+                continue;
+            }
             self.evm.state.mark_dirty(reward.address);
             // Read the current account straight from the cache rather
             // than via `basic()`. `basic()` lazily loads a missing
@@ -3578,7 +3641,7 @@ impl Engine {
                 .get(&reward.address)
                 .map(|account| account.info.clone())
                 .unwrap_or_default();
-            info.balance = info.balance.saturating_add(reward.amount);
+            info.balance = info.balance.saturating_add(validator_amount);
             self.evm.db.insert_account_info(reward.address, info);
         }
         Ok(())

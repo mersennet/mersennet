@@ -18,6 +18,16 @@ pub enum MersennetOrdersError {
     WithdrawalExceedsEquity,
     #[error("caller does not own this order")]
     NotOrderOwner,
+    #[error("post-only order would cross the book")]
+    PostOnlyWouldCross,
+    #[error("post-only/expiry flags require GTC time-in-force")]
+    InvalidOrderFlags,
+    #[error("market symbol already exists")]
+    DuplicateMarket,
+    #[error("invalid market parameters")]
+    InvalidMarketParams,
+    #[error("token is not a registered collateral asset")]
+    UnknownCollateralAsset,
 }
 
 impl MersennetOrdersError {
@@ -35,6 +45,15 @@ impl MersennetOrdersError {
                 "withdrawal would bring equity below maintenance margin"
             }
             MersennetOrdersError::NotOrderOwner => "caller does not own this order",
+            MersennetOrdersError::PostOnlyWouldCross => "post-only order would cross the book",
+            MersennetOrdersError::InvalidOrderFlags => {
+                "post-only/expiry flags require GTC time-in-force"
+            }
+            MersennetOrdersError::DuplicateMarket => "market symbol already exists",
+            MersennetOrdersError::InvalidMarketParams => "invalid market parameters",
+            MersennetOrdersError::UnknownCollateralAsset => {
+                "token is not a registered collateral asset"
+            }
         }
     }
 }

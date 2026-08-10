@@ -108,6 +108,104 @@ fn mersennet_orders_and_bridge_persistence() {
 }
 
 #[test]
+fn staking_and_collateral_and_order_flags_persist() {
+    use mersennet::mersennet_orders::{CollateralAsset, Side, TimeInForce};
+
+    let dir = tempdir().expect("temp dir");
+    let state = PersistentState::open(dir.path()).expect("open state");
+    let db = InMemoryDB::default();
+
+    let mut orders = MersennetOrdersState::new();
+    orders.set_margin_params(0, 0);
+    let m = orders.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+
+    // A GTD + post-only-shaped resting order.
+    orders.place_order_ext(
+        Address::from_slice(&[0x22; 20]),
+        m,
+        Side::Buy,
+        U256::from(90u64),
+        U256::from(3u64),
+        TimeInForce::Gtc,
+        true,
+        4242,
+    );
+
+    // Delegated staking.
+    let val = Address::from_slice(&[0x01; 20]);
+    orders.staking.ensure_pool(val);
+    orders
+        .staking
+        .delegate(Address::from_slice(&[0x02; 20]), val, U256::from(500u64))
+        .unwrap();
+    orders.staking.on_reward(val, U256::from(100u64), U256::from(500u64));
+
+    // A registered collateral asset + balance.
+    let token = Address::from_slice(&[0xAA; 20]);
+    orders.register_collateral_asset(
+        token,
+        CollateralAsset {
+            weight_bps: 8_000,
+            value_num: U256::from(1u64),
+            value_den: U256::from(1u64),
+            balances_slot: U256::from(3u64),
+        },
+    );
+    orders
+        .deposit_token_collateral(Address::from_slice(&[0x02; 20]), token, U256::from(1_000u64))
+        .unwrap();
+
+    state
+        .commit_state(&db, &orders, &BridgeQueue::new(), &BridgeQueue::new(), 1)
+        .expect("commit");
+
+    // Assert both backends round-trip the new fields identically.
+    let dir2 = tempdir().expect("temp dir");
+    let redb = RedbState::open(dir2.path()).expect("open redb");
+    redb.commit_state(&db, &orders, &BridgeQueue::new(), &BridgeQueue::new(), 1)
+        .expect("redb commit");
+
+    for (label, loaded) in [
+        ("sled", {
+            let mut s = MersennetOrdersState::new();
+            state.load_mersennet_orders(&mut s).expect("sled load");
+            s
+        }),
+        ("redb", {
+            let mut s = MersennetOrdersState::new();
+            redb.load_mersennet_orders(&mut s).expect("redb load");
+            s
+        }),
+    ] {
+        let ord = loaded
+            .orders
+            .values()
+            .next()
+            .unwrap_or_else(|| panic!("{label}: order persisted"));
+        assert!(ord.post_only, "{label}: post_only");
+        assert_eq!(ord.expire_at, 4242, "{label}: expire_at");
+        assert_eq!(
+            loaded.staking.delegated_total(val),
+            U256::from(500u64),
+            "{label}: delegated total"
+        );
+        assert_eq!(
+            loaded
+                .staking
+                .pending_rewards(Address::from_slice(&[0x02; 20]), val),
+            U256::from(45u64),
+            "{label}: pending rewards"
+        );
+        assert_eq!(loaded.collateral_assets.len(), 1, "{label}: assets");
+        assert_eq!(
+            loaded.token_margin_value(Address::from_slice(&[0x02; 20])),
+            U256::from(800u64),
+            "{label}: token margin value"
+        );
+    }
+}
+
+#[test]
 fn bridge_queue_persistence_roundtrip() {
     let dir = tempdir().expect("temp dir");
     let state = PersistentState::open(dir.path()).expect("open state");

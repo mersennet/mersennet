@@ -37,9 +37,9 @@ const TOKEN_AMOUNT_18: U256 = U256::from_limbs([1_864_712_049_423_024_128u64, 54
 
 // Redeployed on the 2026-07-06 chain reset (the old addresses died with the
 // wiped chain state). Deployer 0x4f42B196A9BfcB2094fBDDFB5635A57D5421cCf7.
-const MOCK_USDC: &str = "0x8f4e0bee0fe201f10419947a7c043003f16bfd73";
-const MOCK_USDT: &str = "0x6fbe796caa747d84e3ac7611ffc2dc6d11124ed4";
-const MOCK_DAI: &str = "0x04833e1be9c451a89fc6cd1e5e698e2d4936d7f9";
+const MOCK_USDC: &str = "0xa44b23d1d0c0133da71dece399d5d5ade6dd22d1";
+const MOCK_USDT: &str = "0x3923578a19d0e9b35cef08b7eba0cb6d4b9c28f6";
+const MOCK_DAI: &str = "0x27942c2cee3e0e02377d01bfe6e74cefc9a9fd45";
 
 #[derive(Debug, Deserialize)]
 struct FaucetRequest {
