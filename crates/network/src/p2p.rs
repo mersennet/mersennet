@@ -703,6 +703,7 @@ impl NetworkNode {
                     info!("block-sync loop started");
                     // Let listeners come up before the first request.
                     std::thread::sleep(Duration::from_secs(2));
+                    let mut full_batch;
                     while running.load(Ordering::SeqCst) {
                         let from = match engine.lock() {
                             Ok(eng) => eng.latest_height().saturating_add(1),
@@ -711,6 +712,7 @@ impl NetworkNode {
                                 continue;
                             }
                         };
+                        full_batch = false;
                         for peer in &peers {
                             let tcp_addr = derive_tcp_addr(peer);
                             let Ok(mut stream) =
@@ -727,7 +729,13 @@ impl NetworkNode {
                             if TcpSync::send_packet(&mut stream, &req).is_err() {
                                 continue;
                             }
-                            let blocks: Vec<WireBlock> = match TcpSync::recv_packet(&mut stream) {
+                            // 256 dense blocks can serialize well past the
+                            // default 4 MiB frame cap — allow up to 64 MiB
+                            // from the peer we chose to sync from.
+                            let blocks: Vec<WireBlock> = match TcpSync::recv_packet_limited(
+                                &mut stream,
+                                64 * 1024 * 1024,
+                            ) {
                                 Ok(Some(resp)) if resp.topic == "sync_response" => {
                                     serde_json::from_slice(&resp.data).unwrap_or_default()
                                 }
@@ -748,10 +756,16 @@ impl NetworkNode {
                             if applied > 0 {
                                 info!(peer = %peer, from, count = applied, "synced blocks from peer");
                             }
+                            // A full batch means the peer likely has more —
+                            // keep pulling back-to-back so initial sync runs
+                            // at wire speed instead of one batch per tick.
+                            full_batch = blocks.len() >= 256 && applied > 0;
                             // One responsive peer per round is enough.
                             break;
                         }
-                        std::thread::sleep(Duration::from_secs(4));
+                        if !full_batch {
+                            std::thread::sleep(Duration::from_secs(4));
+                        }
                     }
                 })
                 .ok();

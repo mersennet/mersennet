@@ -2400,58 +2400,69 @@ impl Engine {
         // Re-credit the proposer/validator rewards the producer applied.
         self.apply_rewards(&block.rewards)?;
 
-        let state_root = self.evm.state.commit_state(
-            &self.evm.db,
-            &self.orders.state,
-            &self.bridge.orders_to_evm,
-            &self.bridge.evm_to_orders,
-            block.number,
-        )?;
+        // Committing the full state to disk every block dominates import
+        // time during deep catch-up (execution takes milliseconds; the
+        // commit serializes the whole account set and orders book). While
+        // far behind the network head, commit periodically instead —
+        // execution state lives in memory, so this only trades crash
+        // durability: on restart the node resumes from the last committed
+        // height and block-sync re-pulls the gap.
+        let catching_up = self.highest_observed_height > block.number.saturating_add(64);
+        let should_commit = !catching_up || block.number.is_multiple_of(500);
+        if should_commit {
+            let state_root = self.evm.state.commit_state(
+                &self.evm.db,
+                &self.orders.state,
+                &self.bridge.orders_to_evm,
+                &self.bridge.evm_to_orders,
+                block.number,
+            )?;
 
-        // The canonical state root is the producer's `block.state_root`
-        // (it is what the block hash commits to, what the SP1 proof binds
-        // to, and what every node stores and agrees on). A local
-        // re-derivation that differs here reflects a deterministic
-        // produce-vs-import execution asymmetry, not a cross-node fork —
-        // all nodes still store the identical canonical root. Track it as
-        // a metric and log a rate-limited sample instead of flooding the
-        // log every block; a genuine, growing divergence would still be
-        // visible via the counter and the periodic sample.
-        if block.state_root != B256::ZERO && state_root != block.state_root {
-            metrics::increment_counter!("mersennet_import_state_root_recompute_diff_total");
-            if block.number.is_multiple_of(500) {
-                tracing::warn!(
-                    height = block.number,
-                    local = %state_root,
-                    canonical = %block.state_root,
-                    "imported-block local state-root recompute differs from canonical (rate-limited sample; consensus uses the canonical root)"
-                );
+            // The canonical state root is the producer's `block.state_root`
+            // (it is what the block hash commits to, what the SP1 proof binds
+            // to, and what every node stores and agrees on). A local
+            // re-derivation that differs here reflects a deterministic
+            // produce-vs-import execution asymmetry, not a cross-node fork —
+            // all nodes still store the identical canonical root. Track it as
+            // a metric and log a rate-limited sample instead of flooding the
+            // log every block; a genuine, growing divergence would still be
+            // visible via the counter and the periodic sample.
+            if block.state_root != B256::ZERO && state_root != block.state_root {
+                metrics::increment_counter!("mersennet_import_state_root_recompute_diff_total");
+                if block.number.is_multiple_of(500) {
+                    tracing::warn!(
+                        height = block.number,
+                        local = %state_root,
+                        canonical = %block.state_root,
+                        "imported-block local state-root recompute differs from canonical (rate-limited sample; consensus uses the canonical root)"
+                    );
+                }
             }
-        }
 
-        // Mirror the producer's flat-state update so flat reads stay
-        // consistent with the committed EVM state.
-        {
-            let mut account_changes = Vec::new();
-            for (addr, info) in self.evm.db.accounts.iter() {
-                account_changes.push((
-                    *addr,
-                    FlatAccount {
-                        balance: info.info.balance,
-                        nonce: info.info.nonce,
-                        code_hash: info.info.code_hash,
-                        storage_root: B256::ZERO,
-                    },
-                ));
+            // Mirror the producer's flat-state update so flat reads stay
+            // consistent with the committed EVM state.
+            {
+                let mut account_changes = Vec::new();
+                for (addr, info) in self.evm.db.accounts.iter() {
+                    account_changes.push((
+                        *addr,
+                        FlatAccount {
+                            balance: info.info.balance,
+                            nonce: info.info.nonce,
+                            code_hash: info.info.code_hash,
+                            storage_root: B256::ZERO,
+                        },
+                    ));
+                }
+                let changeset = StateChangeset {
+                    account_changes,
+                    storage_changes: Vec::new(),
+                    code_changes: Vec::new(),
+                };
+                let _ = self
+                    .flat_state
+                    .commit_block(block.number, state_root, changeset);
             }
-            let changeset = StateChangeset {
-                account_changes,
-                storage_changes: Vec::new(),
-                code_changes: Vec::new(),
-            };
-            let _ = self
-                .flat_state
-                .commit_block(block.number, state_root, changeset);
         }
 
         self.evm.state.store_block(&block)?;
@@ -3433,14 +3444,28 @@ impl Engine {
         precompiles::set_shielded_evm_context(shared_shielded.clone());
         let publication_registry = std::mem::take(&mut self.code_publication_registry);
         let shared_publication = Arc::new(Mutex::new(publication_registry));
+        // The publication precompile only reads code hashes; snapshot just
+        // those instead of cloning the whole database (see
+        // `CodePublicationContext::code_hashes`).
+        let code_hashes: std::collections::HashMap<Address, B256> = self
+            .evm
+            .db
+            .accounts
+            .iter()
+            .map(|(addr, acc)| (*addr, acc.info.code_hash))
+            .collect();
         precompiles::set_code_publication_context(
             shared_publication.clone(),
-            self.evm.db.clone(),
+            code_hashes,
             self.block_number,
         );
 
+        // Move the database into the EVM rather than cloning it — a full
+        // `InMemoryDB` clone per transaction dominated execution time. The
+        // db is restored below on every path (including errors) before `?`
+        // can propagate.
         let mut evm = Evm::builder()
-            .with_db(self.evm.db.clone())
+            .with_db(std::mem::take(&mut self.evm.db))
             .with_spec_id(self.spec_id)
             .with_env(Box::new(env))
             .append_handler_register(precompiles::register_mersennet_orders_precompile)
@@ -3449,7 +3474,7 @@ impl Engine {
             .build();
 
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
-        let result = evm.transact_commit()?;
+        let result = evm.transact_commit();
         self.evm.db = std::mem::take(&mut evm.context.evm.db);
         precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
@@ -3463,6 +3488,9 @@ impl Engine {
             .expect("no other Arc references to code_publication_registry")
             .into_inner()
             .expect("code_publication_registry mutex not poisoned");
+        // Propagate an execution error only after the db and contexts have
+        // been restored, so a failed tx can never wipe engine state.
+        let result = result?;
         self.evm.state.mark_dirty(tx.from);
         if let Some(to) = tx.to {
             self.evm.state.mark_dirty(to);

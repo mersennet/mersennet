@@ -62,8 +62,13 @@ impl Default for MerkleTree {
     }
 }
 
-impl MerkleTree {
-    pub fn new() -> Self {
+/// Precomputed empty-subtree hashes. Computing these takes ~32 Poseidon
+/// permutations (tens of milliseconds), and `MerkleTree::new()` is on the
+/// per-transaction hot path via `ShieldedEvm::default()` — compute once.
+static EMPTY_HASHES: std::sync::OnceLock<Vec<Fr>> = std::sync::OnceLock::new();
+
+fn empty_hashes() -> &'static Vec<Fr> {
+    EMPTY_HASHES.get_or_init(|| {
         let hasher = Poseidon;
         let mut empty = Vec::with_capacity(MERKLE_DEPTH + 1);
         let mut cur = Fr::ZERO;
@@ -72,9 +77,15 @@ impl MerkleTree {
             cur = hasher.hash_two(&cur, &cur);
             empty.push(cur);
         }
+        empty
+    })
+}
+
+impl MerkleTree {
+    pub fn new() -> Self {
         Self {
-            hasher,
-            empty,
+            hasher: Poseidon,
+            empty: empty_hashes().clone(),
             nodes: HashMap::new(),
             next_index: 0,
         }
