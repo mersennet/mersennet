@@ -1,0 +1,44 @@
+[Unit]
+Description=Mersennet Full Node (testnet, chain 131071)
+Documentation=https://docs.mersennet.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mersennet
+Group=mersennet
+WorkingDirectory=/var/lib/mersennet
+
+ExecStart=/usr/local/bin/mersennet \
+    --config /etc/mersennet/config.json \
+    --mode full \
+    --rpc
+
+Restart=always
+RestartSec=5
+StartLimitInterval=200
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mersennet
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/mersennet
+PrivateTmp=yes
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+
+# Environment
+Environment="RUST_LOG=info"
+Environment="RUST_BACKTRACE=1"
+
+[Install]
+WantedBy=multi-user.target

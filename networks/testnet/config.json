@@ -1,0 +1,333 @@
+{
+  "engine": {
+    "chain_id": 131071,
+    "gas_limit_per_block": 30000000,
+    "state_path": "data/state"
+  },
+  "genesis": {
+    "accounts": [
+      {
+        "address": "0xc16b899fe8f67b483509510c1e3e74017a337026",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x9d39d8524cb925577f63cdc24d273a7a738a12fa",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x728b74dfe7dd7a2c669bf37005df2aaaabfe5755",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xe4c6bb2447de9aa0c38a732005ec112e41ff6ba4",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xecef1bb56f77fad9ed34b2fb4300393ace974ee6",
+        "balance": "10000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x0000000000000000000000000000000000000001",
+        "balance": "100000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x6DD9bB44Ddfaba76D8868915d6fe80c3F8a932eC",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x2d268a6cF714A0A58A84c5345f2113f562A9eCb6",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x05ed2c228F7FD5FC5750FBC36E7cc9eD95FDb08e",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x5D6Bc28f0dB7048fE28dfB13cb4dDCB145CcD340",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xD7E327055AB807D15dBA84cF37524C4cf50E85b2",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x2022E622d892221aceF633987f84C446995608F1",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xF27147C700feAE6699Be064dF85F9A51958BFba3",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x02305256df788283dD4881d53a291dFFB9285614",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x063d85c5Aa15a3046d3BD2aDB1e25718D1e203d0",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xD4a93bdC80411dc27F5Cd28c5fAee9d5A368b53e",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xAE19fEaCea693facAEBc3a24572Ff30Af84287df",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x19a8E9379bDd2E4fb73473D746D44dC590233C28",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x6E59D540F1843f51cfc72F18af04b1E1B99A6306",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xD33b3B34Eec8E2D116f948cE9F9C279cE74DF4B8",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x2f5E283d1Dd4BE66c4A692B83Cdb266359D63989",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xE08fD6ff63b370BEaEdF7710dB362B3ae2B5D224",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xB9d3191b8e762466E1ff523163f4517A11CC5a01",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x85B593A711BCc721A33929300f39CCD04e94B644",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x599D48e9028190f0Ce46CA2B64101d42EA07d0b9",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xa038A60c9EF33de711f4604573a7E1431A37D933",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0xED8db2Dfc8999F859048Ce83d555281D627df845",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      },
+      {
+        "address": "0x69cca4f93e6697a651c5704c76469342bb48ec95",
+        "balance": "1000000000000000000000000",
+        "nonce": 0
+      }
+    ],
+    "validators": [
+      {
+        "address": "0xc16b899fe8f67b483509510c1e3e74017a337026",
+        "stake": "1000000000000000000000000"
+      },
+      {
+        "address": "0x9d39d8524cb925577f63cdc24d273a7a738a12fa",
+        "stake": "1000000000000000000000000"
+      },
+      {
+        "address": "0x728b74dfe7dd7a2c669bf37005df2aaaabfe5755",
+        "stake": "1000000000000000000000000"
+      },
+      {
+        "address": "0xe4c6bb2447de9aa0c38a732005ec112e41ff6ba4",
+        "stake": "1000000000000000000000000"
+      }
+    ],
+    "collateral": [
+      {
+        "owner": "0x6DD9bB44Ddfaba76D8868915d6fe80c3F8a932eC",
+        "amount": "1000000000000"
+      },
+      {
+        "owner": "0x2d268a6cF714A0A58A84c5345f2113f562A9eCb6",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x05ed2c228F7FD5FC5750FBC36E7cc9eD95FDb08e",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x5D6Bc28f0dB7048fE28dfB13cb4dDCB145CcD340",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xD7E327055AB807D15dBA84cF37524C4cf50E85b2",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x2022E622d892221aceF633987f84C446995608F1",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xF27147C700feAE6699Be064dF85F9A51958BFba3",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x02305256df788283dD4881d53a291dFFB9285614",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x063d85c5Aa15a3046d3BD2aDB1e25718D1e203d0",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xD4a93bdC80411dc27F5Cd28c5fAee9d5A368b53e",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xAE19fEaCea693facAEBc3a24572Ff30Af84287df",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x19a8E9379bDd2E4fb73473D746D44dC590233C28",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x6E59D540F1843f51cfc72F18af04b1E1B99A6306",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xD33b3B34Eec8E2D116f948cE9F9C279cE74DF4B8",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x2f5E283d1Dd4BE66c4A692B83Cdb266359D63989",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xE08fD6ff63b370BEaEdF7710dB362B3ae2B5D224",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xB9d3191b8e762466E1ff523163f4517A11CC5a01",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x85B593A711BCc721A33929300f39CCD04e94B644",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0x599D48e9028190f0Ce46CA2B64101d42EA07d0b9",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xa038A60c9EF33de711f4604573a7E1431A37D933",
+        "amount": "100000000000"
+      },
+      {
+        "owner": "0xED8db2Dfc8999F859048Ce83d555281D627df845",
+        "amount": "100000000000"
+      }
+    ],
+    "markets": [
+      {
+        "symbol": "MRSN",
+        "tick_size": "1",
+        "lot_size": "1"
+      },
+      {
+        "symbol": "BTC",
+        "tick_size": "10",
+        "lot_size": "1"
+      },
+      {
+        "symbol": "ETH",
+        "tick_size": "1",
+        "lot_size": "1"
+      },
+      {
+        "symbol": "SOL",
+        "tick_size": "1",
+        "lot_size": "1"
+      },
+      {
+        "symbol": "ARB",
+        "tick_size": "1",
+        "lot_size": "1"
+      }
+    ],
+    "collateral_assets": [
+      {
+        "token": "0xa44b23d1d0c0133da71dece399d5d5ade6dd22d1",
+        "weight_bps": 9000,
+        "value_num": "1",
+        "value_den": "1000000",
+        "balances_slot": 3
+      }
+    ]
+  },
+  "mempool": {
+    "bump_bps": 1000,
+    "max_per_sender": 1000,
+    "max_total": 10000
+  },
+  "p2p": {
+    "block_time_ms": 2000,
+    "listen": "0.0.0.0:30303",
+    "node_key_path": "keys/node_key.json",
+    "peer_store_path": "data/peers.json",
+    "peers": [
+      "46.225.30.187:30303",
+      "46.225.183.192:30303",
+      "49.13.54.79:30303"
+    ]
+  },
+  "rpc": {
+    "enabled": false,
+    "addr": "127.0.0.1:8545"
+  },
+  "slashing": {
+    "double_sign_bps": 500,
+    "escalation_max_bps": 1000,
+    "escalation_step_bps": 25,
+    "round_timeout_ms": 500,
+    "timeout_bps": 100,
+    "unbonding_period": 2
+  },
+  "token_economics": {
+    "max_supply": "618970019642690137449562111",
+    "initial_reward_per_block": "2305843009213693951",
+    "halving_interval": 33550336
+  },
+  "ws": {
+    "enabled": false,
+    "addr": "127.0.0.1:8546"
+  },
+  "mersennet_orders": {
+    "allow_unsigned_orders_rpc": false,
+    "initial_margin_bps": 0,
+    "maintenance_margin_bps": 0
+  }
+}
