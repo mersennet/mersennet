@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -6,10 +7,10 @@ use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
 use revm::precompile::Precompile;
 use revm::primitives::{
-    Address, Bytes, Env, KECCAK_EMPTY, PrecompileError, PrecompileErrors, PrecompileOutput,
+    Address, B256, Bytes, Env, KECCAK_EMPTY, PrecompileError, PrecompileErrors, PrecompileOutput,
     PrecompileResult, U256, keccak256,
 };
-use revm::{ContextPrecompile, ContextStatefulPrecompileMut, Database, InnerEvmContext};
+use revm::{ContextPrecompile, ContextStatefulPrecompileMut, InnerEvmContext};
 
 use crate::code_publication::CodePublicationRegistry;
 use crate::errors::MersennetOrdersError;
@@ -176,7 +177,11 @@ pub fn clear_shielded_evm_context() {
 #[derive(Debug)]
 struct CodePublicationContext {
     registry: Arc<Mutex<CodePublicationRegistry>>,
-    db: InMemoryDB,
+    /// Pre-tx `address -> code_hash` snapshot. The publication precompile
+    /// only ever reads code hashes, so snapshotting just those (instead of
+    /// cloning the entire `InMemoryDB` per transaction) keeps identical
+    /// semantics at a fraction of the cost.
+    code_hashes: HashMap<Address, B256>,
     block_number: u64,
 }
 
@@ -185,12 +190,12 @@ static CODE_PUBLICATION_CTX: Lazy<Mutex<Option<Arc<Mutex<CodePublicationContext>
 
 pub fn set_code_publication_context(
     registry: Arc<Mutex<CodePublicationRegistry>>,
-    db: InMemoryDB,
+    code_hashes: HashMap<Address, B256>,
     block_number: u64,
 ) {
     *CODE_PUBLICATION_CTX.lock().unwrap() = Some(Arc::new(Mutex::new(CodePublicationContext {
         registry,
-        db,
+        code_hashes,
         block_number,
     })));
 }
@@ -397,12 +402,9 @@ fn code_publication_precompile(input: &Bytes, gas_limit: u64, env: &Env) -> Prec
 
         with_code_publication(|ctx| {
             let code_hash = ctx
-                .db
-                .basic(contract)
-                .map_err(|e| {
-                    PrecompileError::other(format!("publishCodeHash: db read failed: {e}"))
-                })?
-                .map(|info| info.code_hash)
+                .code_hashes
+                .get(&contract)
+                .copied()
                 .unwrap_or(KECCAK_EMPTY);
             ctx.registry
                 .lock()

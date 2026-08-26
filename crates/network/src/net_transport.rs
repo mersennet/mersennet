@@ -430,12 +430,23 @@ impl TcpSync {
     }
 
     pub fn recv_packet(stream: &mut TcpStream) -> Result<Option<GossipPacket>> {
+        Self::recv_packet_limited(stream, 4 * 1024 * 1024)
+    }
+
+    /// Like `recv_packet` but with a caller-chosen size cap. Block-sync
+    /// responses carry up to 256 full blocks whose JSON encoding easily
+    /// exceeds the 4 MiB request-path cap, so the sync client must accept
+    /// larger frames from the peer it deliberately connected to.
+    pub fn recv_packet_limited(
+        stream: &mut TcpStream,
+        max_len: usize,
+    ) -> Result<Option<GossipPacket>> {
         let mut len_buf = [0u8; 4];
         if stream.read_exact(&mut len_buf).is_err() {
             return Ok(None);
         }
         let len = u32::from_be_bytes(len_buf) as usize;
-        if len > 4 * 1024 * 1024 {
+        if len > max_len {
             bail!("packet too large");
         }
         let mut payload = vec![0u8; len];
