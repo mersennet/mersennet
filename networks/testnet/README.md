@@ -7,21 +7,34 @@ operator. Full guide: https://docs.mersennet.com/validators/run-a-node/
 |------|---------|
 | `config.json` | Canonical full-node config. The `genesis`, `engine.chain_id`, and `token_economics` sections MUST NOT be modified — every node derives the same genesis state from them. Runtime sections (`rpc`, `ws`, `p2p.listen`, paths) are yours to adjust. |
 | `mersennet.service` | Production systemd unit (hardened, auto-restart). |
-| `install.sh` | One-command installer: binary + config + user + systemd service. |
+| `install.sh` | One-command installer: binary + config + user + systemd service. Works from the release bundle or a source checkout. |
+
+| `package-release.sh` | Builds the public release bundle (binary + these files + checksums) published at https://mersennet.com/downloads/ for operators without source access. |
 
 ## Quick start
 
 ```bash
-# Build (Rust 1.85+, see docs for prerequisites)
-cargo build --release --bin mersennet
+# Without source access: download the release bundle
+curl -fLO https://mersennet.com/downloads/mersennet-node-linux-x86_64-latest.tar.gz
+tar xzf mersennet-node-linux-x86_64-latest.tar.gz && cd mersennet-node-linux-x86_64-*/
+sudo bash install.sh
 
-# Install and start as a systemd service
+# From a source checkout (Rust 1.85+, see docs for prerequisites)
+cargo build --release --bin mersennet
 sudo bash networks/testnet/install.sh
 
 # ...or run in the foreground from any working directory
-mkdir -p ~/mersennet-node && cd ~/mersennet-node
-cp <repo>/networks/testnet/config.json .
-<repo>/target/release/mersennet --config config.json --mode full --rpc
+sudo install -m 0755 target/release/mersennet /usr/local/bin/mersennet
+mkdir -p ~/mersennet-node && cp networks/testnet/config.json ~/mersennet-node/ && cd ~/mersennet-node
+RUST_LOG=info mersennet --config config.json --mode full --rpc
+```
+
+## Publishing a new bundle
+
+```bash
+cargo build --release --bin mersennet
+networks/testnet/package-release.sh          # -> dist/mersennet-node-linux-x86_64-<sha>.tar.gz + SHA256SUMS
+# upload both to /var/www/downloads/ on the app host and repoint the -latest symlink
 ```
 
 ## Network parameters

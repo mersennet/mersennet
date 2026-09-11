@@ -3,9 +3,16 @@ set -euo pipefail
 
 # Mersennet testnet full-node installer.
 #
-# Run from the repository root after building the binary:
-#   cargo build --release --bin mersennet
-#   sudo bash networks/testnet/install.sh
+# Works from either layout:
+#
+#   1. The release bundle (https://mersennet.com/downloads/) — binary, config
+#      and unit file sit next to this script:
+#        tar xzf mersennet-node-linux-x86_64-*.tar.gz && cd mersennet-node-*
+#        sudo bash install.sh
+#
+#   2. A source checkout, after building the binary:
+#        cargo build --release --bin mersennet
+#        sudo bash networks/testnet/install.sh
 #
 # Installs the binary to /usr/local/bin, the canonical testnet config to
 # /etc/mersennet, creates the mersennet system user and data directory,
@@ -16,13 +23,27 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BIN="$REPO_ROOT/target/release/mersennet"
-CONF="$REPO_ROOT/networks/testnet/config.json"
-UNIT="$REPO_ROOT/networks/testnet/mersennet.service"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$HERE/mersennet" && -f "$HERE/config.json" ]]; then
+    # Release bundle layout.
+    BIN="$HERE/mersennet"
+    CONF="$HERE/config.json"
+    UNIT="$HERE/mersennet.service"
+else
+    # Repository layout.
+    REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+    BIN="$REPO_ROOT/target/release/mersennet"
+    CONF="$REPO_ROOT/networks/testnet/config.json"
+    UNIT="$REPO_ROOT/networks/testnet/mersennet.service"
+fi
 
-[[ -x "$BIN" ]] || { echo "error: $BIN not found — run: cargo build --release --bin mersennet" >&2; exit 1; }
+[[ -x "$BIN" ]] || { echo "error: $BIN not found — download the release bundle or run: cargo build --release --bin mersennet" >&2; exit 1; }
 [[ -f "$CONF" ]] || { echo "error: $CONF not found" >&2; exit 1; }
+[[ -f "$UNIT" ]] || { echo "error: $UNIT not found" >&2; exit 1; }
+
+if [[ -f /usr/local/bin/mersennet ]] && systemctl is-active --quiet mersennet 2>/dev/null; then
+    echo "==> Existing node detected: this will upgrade the binary and restart the service (data and keys are kept)"
+fi
 
 echo "==> Installing binary to /usr/local/bin/mersennet"
 install -m 0755 "$BIN" /usr/local/bin/mersennet
