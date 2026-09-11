@@ -289,13 +289,40 @@ fn main() -> anyhow::Result<()> {
                 std::thread::Builder::new()
                     .name("tx-relay".into())
                     .spawn(move || {
-                        use std::collections::HashSet;
-                        let mut seen: HashSet<(revm::primitives::Address, u64)> = HashSet::new();
+                        use std::collections::{HashMap, HashSet};
+                        use std::time::{Duration, Instant};
+
+                        // Gossip is UDP and fire-and-forget. Broadcasting each
+                        // (sender, nonce) exactly once meant a single lost
+                        // datagram orphaned that nonce forever: peers held every
+                        // later tx from the sender as future-nonce, nothing ever
+                        // re-sent the head, and the wallet wedged until this node
+                        // restarted (the market maker sat like that for two
+                        // weeks). Re-broadcast anything still pending with
+                        // exponential backoff; a replacement (new hash for the
+                        // same nonce) goes out immediately. Entries are dropped
+                        // as soon as the tx leaves the pending pool, so the map
+                        // is bounded by pool size.
+                        struct Relayed {
+                            hash: Option<revm::primitives::B256>,
+                            last: Instant,
+                            attempts: u32,
+                        }
+                        const RETRY_BASE: Duration = Duration::from_secs(2);
+                        const RETRY_CAP: Duration = Duration::from_secs(30);
+                        const MAX_RETRIES_PER_TICK: usize = 64;
+                        fn retry_delay(attempts: u32) -> Duration {
+                            let shift = attempts.saturating_sub(1).min(4);
+                            (RETRY_BASE * 2u32.pow(shift)).min(RETRY_CAP)
+                        }
+
+                        let mut relayed: HashMap<(revm::primitives::Address, u64), Relayed> =
+                            HashMap::new();
                         loop {
                             if shutdown_relay.load(Ordering::SeqCst) {
                                 break;
                             }
-                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            std::thread::sleep(Duration::from_millis(250));
                             // Snapshot pending txs AND their raw envelopes
                             // (wallet-submitted txs must be relayed verbatim so
                             // peers can verify the Ethereum signature).
@@ -309,15 +336,52 @@ fn main() -> anyhow::Result<()> {
                                     })
                                     .collect()
                             };
-                            if seen.len() > 16_384 {
-                                seen.clear();
-                            }
+                            // Forget txs that mined or were evicted.
+                            let live: HashSet<(revm::primitives::Address, u64)> =
+                                pending.iter().map(|(tx, _)| (tx.from, tx.nonce)).collect();
+                            relayed.retain(|key, _| live.contains(key));
+
+                            let now = Instant::now();
+                            let mut retries = 0usize;
                             for (tx, raw) in pending {
-                                if seen.insert((tx.from, tx.nonce))
-                                    && let Err(err) =
-                                        net_relay.broadcast_tx_with_raw(&tx, raw.as_deref())
-                                {
+                                let key = (tx.from, tx.nonce);
+                                let (due, is_retry) = match relayed.get(&key) {
+                                    None => (true, false),
+                                    Some(prev) if prev.hash != tx.hash => (true, false),
+                                    Some(prev) => (
+                                        now.duration_since(prev.last) >= retry_delay(prev.attempts),
+                                        true,
+                                    ),
+                                };
+                                if !due {
+                                    continue;
+                                }
+                                if is_retry {
+                                    if retries >= MAX_RETRIES_PER_TICK {
+                                        continue;
+                                    }
+                                    retries += 1;
+                                }
+                                if let Err(err) = net_relay.broadcast_tx_with_raw(&tx, raw.as_deref()) {
                                     tracing::warn!(%err, "tx relay broadcast error");
+                                }
+                                let entry = relayed.entry(key).or_insert(Relayed {
+                                    hash: tx.hash,
+                                    last: now,
+                                    attempts: 0,
+                                });
+                                if entry.hash != tx.hash {
+                                    entry.attempts = 0;
+                                }
+                                entry.hash = tx.hash;
+                                entry.last = now;
+                                entry.attempts += 1;
+                                if entry.attempts == 3 {
+                                    tracing::info!(
+                                        sender = %tx.from,
+                                        nonce = tx.nonce,
+                                        "pending tx still unconfirmed after 2 relays; retrying with backoff"
+                                    );
                                 }
                             }
                         }
