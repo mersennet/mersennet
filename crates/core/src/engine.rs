@@ -410,6 +410,18 @@ impl ConsensusEngine {
     }
 }
 
+/// A live gossip peer as reported by the network layer (address plus how
+/// many seconds ago it was first and last heard from). Kept here so the RPC
+/// layer can serve `mersennet_peers` without depending on the network crate.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PeerSnapshot {
+    pub addr: String,
+    pub first_seen_secs: u64,
+    pub last_seen_secs: u64,
+    /// True when this node has received packets from the peer itself.
+    pub heard: bool,
+}
+
 #[derive(Debug)]
 pub struct Engine {
     pub chain_id: u64,
@@ -440,6 +452,8 @@ pub struct Engine {
     pub aa_bundler: Bundler,
     pub invariant_checker: InvariantChecker,
     pub peer_count: std::sync::atomic::AtomicUsize,
+    /// Live gossip peers as of the last discovery tick (for `mersennet_peers`).
+    pub peer_list: Vec<PeerSnapshot>,
 
     // ───── Privacy redesign (Phase 4 wiring) ─────
     /// Master switch — gates `apply_shielded_tx`, the FBA tick, the
@@ -666,6 +680,7 @@ impl Engine {
             aa_bundler: Bundler::new(10),
             invariant_checker: InvariantChecker::new(),
             peer_count: std::sync::atomic::AtomicUsize::new(0),
+            peer_list: Vec::new(),
 
             // Privacy-redesign Phase 4 — off until the hard fork
             // flips the master switch (ADR-018). All subsystems live

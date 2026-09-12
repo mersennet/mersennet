@@ -537,6 +537,7 @@ fn dispatch(
         | "eth_estimateGas"
         | "net_version"
         | "net_peerCount"
+        | "mersennet_peers"
         | "net_listening"
         | "web3_clientVersion"
         | "txpool_status" => {

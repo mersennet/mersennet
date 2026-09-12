@@ -30,6 +30,10 @@ pub struct GossipConfig {
     pub retry_base: Duration,
     pub retry_max: Duration,
     pub peer_discovery_topic: String,
+    /// Accept loopback addresses as peers. Off on real networks (a peer
+    /// announcing 127.0.0.1 would make every node gossip to itself); turned
+    /// on automatically for local multi-node testnets bound to loopback.
+    pub allow_loopback_peers: bool,
 }
 
 impl Default for GossipConfig {
@@ -45,6 +49,54 @@ impl Default for GossipConfig {
             retry_base: Duration::from_millis(100),
             retry_max: Duration::from_secs(5),
             peer_discovery_topic: "peer".to_string(),
+            allow_loopback_peers: false,
+        }
+    }
+}
+
+impl GossipConfig {
+    /// True when this node or any of its bootstrap peers lives on loopback,
+    /// i.e. a local development testnet where 127.0.0.1 peers are real.
+    pub fn uses_loopback(&self) -> bool {
+        let is_lo = |s: &str| {
+            s.parse::<SocketAddr>()
+                .map(|a| a.ip().is_loopback())
+                .unwrap_or(false)
+        };
+        is_lo(&self.listen_addr) || self.bootstrap_peers.iter().any(|p| is_lo(p))
+    }
+}
+
+/// One live gossip peer, for `mersennet_peers` and the explorer.
+#[derive(Clone, Debug, Serialize)]
+pub struct PeerInfo {
+    pub addr: String,
+    pub first_seen_secs: u64,
+    pub last_seen_secs: u64,
+    /// False for addresses only learned from another node's list and never
+    /// heard from directly (unconfirmed; pruned unless they speak up).
+    pub heard: bool,
+}
+
+/// Addresses that can never be a useful gossip destination: unspecified
+/// (a node announcing its 0.0.0.0 bind address), multicast, broadcast,
+/// port 0 — and loopback unless explicitly allowed. Learned peers that fail
+/// this used to be inserted verbatim, inflating peer counts and taking
+/// fanout slots from real peers.
+fn is_routable_peer(peer: &SocketAddr, allow_loopback: bool) -> bool {
+    if peer.port() == 0 {
+        return false;
+    }
+    match peer.ip() {
+        std::net::IpAddr::V4(ip) => {
+            !(ip.is_unspecified()
+                || ip.is_multicast()
+                || ip.is_broadcast()
+                || ip.is_documentation()
+                || (ip.is_loopback() && !allow_loopback))
+        }
+        std::net::IpAddr::V6(ip) => {
+            !(ip.is_unspecified() || ip.is_multicast() || (ip.is_loopback() && !allow_loopback))
         }
     }
 }
@@ -106,6 +158,15 @@ pub struct UdpGossip {
     socket: UdpSocket,
     peers: Vec<SocketAddr>,
     last_seen: HashMap<SocketAddr, Instant>,
+    first_seen: HashMap<SocketAddr, Instant>,
+    /// Peers we have actually received a packet from (vs. addresses only
+    /// learned from another node's discovery list).
+    last_heard: HashMap<SocketAddr, Instant>,
+    /// IPs of this host's own outbound interfaces (learned by probing the
+    /// route to each bootstrap peer). A bootstrap list that contains this
+    /// node — the canonical config names the bootnodes for everyone — would
+    /// otherwise make it gossip to itself and count itself as a peer.
+    self_ips: std::collections::HashSet<std::net::IpAddr>,
     seen: HashMap<String, Instant>,
     seen_order: VecDeque<String>,
     failure_counts: HashMap<SocketAddr, u32>,
@@ -122,10 +183,27 @@ impl UdpGossip {
     pub fn bind_with_config(addr: &str, config: GossipConfig) -> Result<Self> {
         let socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
+        // Which of our interfaces would talk to each bootstrap peer? On a VPS
+        // that is the public IP; behind NAT it is a private one (harmless —
+        // NAT'd nodes never receive their own packets anyway).
+        let mut self_ips = std::collections::HashSet::new();
+        for peer in &config.bootstrap_peers {
+            if let Ok(target) = peer.parse::<SocketAddr>()
+                && let Ok(probe) = UdpSocket::bind(if target.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
+                && probe.connect(target).is_ok()
+                && let Ok(local) = probe.local_addr()
+                && !local.ip().is_loopback()
+            {
+                self_ips.insert(local.ip());
+            }
+        }
         Ok(Self {
             socket,
             peers: Vec::new(),
             last_seen: HashMap::new(),
+            first_seen: HashMap::new(),
+            last_heard: HashMap::new(),
+            self_ips,
             seen: HashMap::new(),
             seen_order: VecDeque::new(),
             failure_counts: HashMap::new(),
@@ -134,9 +212,24 @@ impl UdpGossip {
         })
     }
 
+    /// True if `peer` is this very node (one of our interface IPs on our
+    /// listen port).
+    fn is_self(&self, peer: &SocketAddr) -> bool {
+        self.socket
+            .local_addr()
+            .map(|l| l.port() == peer.port() && self.self_ips.contains(&peer.ip()))
+            .unwrap_or(false)
+    }
+
+    /// Configured (bootstrap) peer: trusted, so loopback is fine for local
+    /// testnets, but an unspecified address is still meaningless, and a
+    /// bootstrap entry that is this node itself is skipped.
     pub fn add_peer(&mut self, addr: &str) -> Result<()> {
         let peer: SocketAddr = addr.parse()?;
-        self.insert_peer(peer);
+        if !is_routable_peer(&peer, true) || self.is_self(&peer) {
+            return Ok(());
+        }
+        self.insert_peer_unchecked(peer);
         Ok(())
     }
 
@@ -210,7 +303,9 @@ impl UdpGossip {
         };
 
         self.insert_peer(from);
-        self.last_seen.insert(from, Instant::now());
+        let now = Instant::now();
+        self.last_seen.insert(from, now);
+        self.last_heard.insert(from, now);
 
         if self.is_seen(&packet.id) {
             return Ok(None);
@@ -246,6 +341,8 @@ impl UdpGossip {
                 .unwrap_or(false)
         });
         self.last_seen.retain(|peer, _| self.peers.contains(peer));
+        self.first_seen.retain(|peer, _| self.peers.contains(peer));
+        self.last_heard.retain(|peer, _| self.peers.contains(peer));
         self.failure_counts
             .retain(|peer, _| self.peers.contains(peer));
         self.backoff_until
@@ -254,6 +351,13 @@ impl UdpGossip {
 
     pub fn announce_self(&mut self, ttl: u8) -> Result<()> {
         let addr = self.socket.local_addr()?;
+        // Bound to 0.0.0.0 (the normal production case): the bind address
+        // says nothing useful about how to reach us, and announcing it made
+        // every receiver insert 0.0.0.0:30303 as a peer. Peers learn our real
+        // address from the source of the packets we send them instead.
+        if !is_routable_peer(&addr, self.config.allow_loopback_peers) {
+            return Ok(());
+        }
         let packet = self.new_packet(
             self.config.peer_discovery_topic.clone(),
             addr.to_string().into_bytes(),
@@ -264,7 +368,23 @@ impl UdpGossip {
 
     pub fn discover_peers(&mut self, ttl: u8) -> Result<()> {
         self.announce_self(ttl)?;
-        let peer_list: Vec<String> = self.peers.iter().map(|p| p.to_string()).collect();
+        // Relay only peers we have heard from ourselves within the TTL. Relaying
+        // addresses that merely arrived in someone else's list let dead peers
+        // ping-pong between nodes indefinitely (each relay looked like a fresh
+        // sighting to the receiver).
+        let ttl_dur = Duration::from_secs(self.config.peer_ttl_secs);
+        let now = Instant::now();
+        let peer_list: Vec<String> = self
+            .peers
+            .iter()
+            .filter(|p| {
+                self.last_heard
+                    .get(p)
+                    .map(|t| now.duration_since(*t) <= ttl_dur)
+                    .unwrap_or(false)
+            })
+            .map(|p| p.to_string())
+            .collect();
         for peer_addr in &peer_list {
             let packet = self.new_packet(
                 self.config.peer_discovery_topic.clone(),
@@ -280,19 +400,77 @@ impl UdpGossip {
         Ok(self.socket.local_addr()?)
     }
 
+    /// Connected peers: addresses we have actually received packets from.
+    /// Unconfirmed entries learned from other nodes' lists are not counted.
     pub fn peer_count(&self) -> usize {
-        self.peers.len()
+        self.peers
+            .iter()
+            .filter(|p| self.last_heard.contains_key(p))
+            .count()
     }
 
+    /// Live peers with how long ago each was first and last heard from.
+    pub fn peers_snapshot(&self) -> Vec<PeerInfo> {
+        let now = Instant::now();
+        let mut out: Vec<PeerInfo> = self
+            .peers
+            .iter()
+            .map(|p| PeerInfo {
+                addr: p.to_string(),
+                first_seen_secs: self
+                    .first_seen
+                    .get(p)
+                    .map(|t| now.duration_since(*t).as_secs())
+                    .unwrap_or(0),
+                last_seen_secs: self
+                    .last_seen
+                    .get(p)
+                    .map(|t| now.duration_since(*t).as_secs())
+                    .unwrap_or(0),
+                heard: self.last_heard.contains_key(p),
+            })
+            .collect();
+        out.sort_by(|a, b| b.first_seen_secs.cmp(&a.first_seen_secs));
+        out
+    }
+
+    /// Learned peer (packet source or a discovery announcement): only
+    /// routable addresses are admitted.
     fn insert_peer(&mut self, peer: SocketAddr) {
+        if !is_routable_peer(&peer, self.config.allow_loopback_peers) || self.is_self(&peer) {
+            return;
+        }
+        self.insert_peer_unchecked(peer);
+    }
+
+    fn insert_peer_unchecked(&mut self, peer: SocketAddr) {
         if self.peers.contains(&peer) {
             return;
         }
         if self.peers.len() >= self.config.max_peers {
-            return;
+            // Full: make room by dropping the oldest unconfirmed entry so
+            // stale candidates can never crowd out a real peer.
+            let victim = self
+                .peers
+                .iter()
+                .filter(|p| !self.last_heard.contains_key(p))
+                .min_by_key(|p| self.last_seen.get(p).copied())
+                .copied();
+            match victim {
+                Some(v) => {
+                    self.peers.retain(|p| *p != v);
+                    self.last_seen.remove(&v);
+                    self.first_seen.remove(&v);
+                    self.failure_counts.remove(&v);
+                    self.backoff_until.remove(&v);
+                }
+                None => return,
+            }
         }
         self.peers.push(peer);
-        self.last_seen.insert(peer, Instant::now());
+        let now = Instant::now();
+        self.last_seen.insert(peer, now);
+        self.first_seen.entry(peer).or_insert(now);
         self.failure_counts.insert(peer, 0);
     }
 

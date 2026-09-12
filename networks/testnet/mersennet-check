@@ -78,6 +78,21 @@ else
     [[ -n "$chain" ]] && printf 'Chain ID     %s%s\n' "$chain" "$([[ "$chain" == "131071" ]] && echo ' (Mersennet testnet)' || red '  <-- expected 131071')"
 fi
 
+# Visibility: does the public RPC node currently hear from this machine?
+pub_ip="$(curl -s --max-time 4 https://api.ipify.org 2>/dev/null || curl -s --max-time 4 https://ifconfig.me/ip 2>/dev/null || true)"
+if [[ "$pub_ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
+    node_id="$(printf '%s' "$pub_ip" | sha256sum | cut -c1-6)"
+    peers_json="$(curl -s --max-time 6 "$PUBLIC_RPC" -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"mersennet_peers","params":[]}' 2>/dev/null || true)"
+    if [[ -z "$peers_json" ]]; then
+        printf 'Visibility   could not query the public node (id %s)\n' "$node_id"
+    elif printf '%s' "$peers_json" | grep -q "\"addr\":\"$pub_ip:[0-9]*\",\"firstSeenSecs\":[0-9]*,\"heard\":true"; then
+        printf 'Visibility   %s — the network hears this node as %s · id %s (explorer → Network → Network nodes)\n' "$(green 'visible')" "$pub_ip" "$node_id"
+    else
+        printf 'Visibility   %s — the public node has not heard from %s yet (id %s). Normal for the first minute; if it persists, allow outbound UDP 30303.\n' "$(yellow 'not yet seen')" "$pub_ip" "$node_id"
+    fi
+fi
+
 # Binary version vs the latest published release
 if [[ -x /usr/local/bin/mersennet ]] && command -v sha256sum >/dev/null; then
     have="$(sha256sum /usr/local/bin/mersennet | cut -d' ' -f1)"

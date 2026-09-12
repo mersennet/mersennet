@@ -614,49 +614,81 @@ impl NetworkNode {
                         }
                     };
                     info!(addr = %tcp_addr, "tcp snapshot listener started");
+                    // Each request is served on its own thread (bounded) so a
+                    // slow or half-open peer only ties up its own worker. The
+                    // previous single-threaded loop held the ENGINE LOCK across
+                    // an untimed socket write; one client that stopped reading
+                    // blocked that write forever, and with it every thread that
+                    // needed the engine — block import, RPC, discovery — i.e.
+                    // the whole node froze until restarted.
+                    const MAX_SYNC_WORKERS: usize = 8;
+                    let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                     while running.load(Ordering::SeqCst) {
                         if let Ok(Some(mut stream)) = tcp.accept_once() {
-                            // The listener is non-blocking; the accepted
-                            // stream inherits that, which would race
-                            // recv_packet against the client's send.
-                            // Switch to a bounded blocking read.
-                            let _ = stream.set_nonblocking(false);
-                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-                            if let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
-                                && request.topic == "sync_request"
-                                && let Ok(eng) = engine.lock()
-                            {
-                                // The requester encodes the next height it
-                                // needs as 8 big-endian bytes; default to
-                                // the full chain for legacy/empty requests.
-                                let from = if request.data.len() == 8 {
-                                    let mut buf = [0u8; 8];
-                                    buf.copy_from_slice(&request.data);
-                                    u64::from_be_bytes(buf).max(1)
-                                } else {
-                                    1
-                                };
-                                let height = eng.latest_height();
-                                // Serve up to a bounded batch per request.
-                                // Use get_block so heights below the
-                                // in-memory window are read from disk — a
-                                // peer far behind can still be caught up.
-                                let batch_end = height.min(from.saturating_add(255));
-                                let blocks: Vec<WireBlock> = (from..=batch_end)
-                                    .filter_map(|n| eng.get_block(n))
-                                    .map(|b| block_to_wire(&b))
-                                    .collect();
-                                let data = serde_json::to_vec(&blocks).unwrap_or_default();
-                                let gossip_pkt = crate::net_transport::GossipPacket {
-                                    topic: "sync_response".to_string(),
-                                    data,
-                                    id: String::new(),
-                                    ttl: 0,
-                                };
-                                let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
+                            if in_flight.load(Ordering::SeqCst) >= MAX_SYNC_WORKERS {
+                                // Busy: drop the connection; the client retries.
+                                continue;
                             }
+                            in_flight.fetch_add(1, Ordering::SeqCst);
+                            let engine = engine.clone();
+                            let in_flight_worker = in_flight.clone();
+                            let in_flight_outer = in_flight.clone();
+                            std::thread::Builder::new()
+                                .name("tcp-sync-worker".into())
+                                .spawn(move || {
+                                    // The listener is non-blocking; the accepted
+                                    // stream inherits that. Switch to bounded
+                                    // blocking I/O in both directions.
+                                    let _ = stream.set_nonblocking(false);
+                                    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                                    let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
+                                    if let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
+                                        && request.topic == "sync_request"
+                                    {
+                                        // The requester encodes the next height it
+                                        // needs as 8 big-endian bytes; default to
+                                        // the full chain for legacy/empty requests.
+                                        let from = if request.data.len() == 8 {
+                                            let mut buf = [0u8; 8];
+                                            buf.copy_from_slice(&request.data);
+                                            u64::from_be_bytes(buf).max(1)
+                                        } else {
+                                            1
+                                        };
+                                        // Build the response under the engine lock,
+                                        // then RELEASE it before touching the socket.
+                                        let data = match engine.lock() {
+                                            Ok(eng) => {
+                                                let height = eng.latest_height();
+                                                // Serve up to a bounded batch per request.
+                                                // Use get_block so heights below the
+                                                // in-memory window are read from disk — a
+                                                // peer far behind can still be caught up.
+                                                let batch_end = height.min(from.saturating_add(255));
+                                                let blocks: Vec<WireBlock> = (from..=batch_end)
+                                                    .filter_map(|n| eng.get_block(n))
+                                                    .map(|b| block_to_wire(&b))
+                                                    .collect();
+                                                Some(serde_json::to_vec(&blocks).unwrap_or_default())
+                                            }
+                                            Err(_) => None,
+                                        };
+                                        if let Some(data) = data {
+                                            let gossip_pkt = crate::net_transport::GossipPacket {
+                                                topic: "sync_response".to_string(),
+                                                data,
+                                                id: String::new(),
+                                                ttl: 0,
+                                            };
+                                            let _ = TcpSync::send_packet(&mut stream, &gossip_pkt);
+                                        }
+                                    }
+                                    in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                })
+                                .map_err(|_| in_flight_outer.fetch_sub(1, Ordering::SeqCst))
+                                .ok();
                         }
-                        std::thread::sleep(Duration::from_millis(100));
+                        std::thread::sleep(Duration::from_millis(20));
                     }
                 })
                 .ok();
@@ -677,10 +709,20 @@ impl NetworkNode {
                             let _ = g.discover_peers(2);
                             g.prune_peers();
                             let count = g.peer_count();
+                            let snapshot = g.peers_snapshot();
                             info!(peers = count, "peer discovery tick");
-                            if let Ok(eng) = engine_for_peers.lock() {
+                            if let Ok(mut eng) = engine_for_peers.lock() {
                                 eng.peer_count
                                     .store(count, std::sync::atomic::Ordering::Relaxed);
+                                eng.peer_list = snapshot
+                                    .into_iter()
+                                    .map(|p| mersennet::engine::PeerSnapshot {
+                                        addr: p.addr,
+                                        first_seen_secs: p.first_seen_secs,
+                                        last_seen_secs: p.last_seen_secs,
+                                        heard: p.heard,
+                                    })
+                                    .collect();
                             }
                         }
                     }

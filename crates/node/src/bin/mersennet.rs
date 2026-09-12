@@ -52,6 +52,10 @@ fn notify_orders_trades(
     }
 }
 
+/// Engine handle for the signal handler, so a termination signal can wait
+/// for the current block commit before the process exits.
+static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
+
 fn main() -> anyhow::Result<()> {
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()
@@ -63,9 +67,23 @@ fn main() -> anyhow::Result<()> {
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
+    // SIGINT/SIGTERM/SIGHUP (the `termination` feature covers systemd's
+    // SIGTERM — previously only Ctrl-C was handled, so `systemctl stop`
+    // killed the process at an arbitrary point, sometimes between writing
+    // the account state and recording the block height; the node then
+    // resumed one block behind its own state and wedged until a full
+    // resync). Taking the engine lock waits for any in-flight block commit
+    // to complete, after which the persisted state is self-consistent.
     ctrlc::set_handler(move || {
-        info!("shutting down...");
+        info!("shutting down: waiting for the in-flight block commit...");
         shutdown_clone.store(true, Ordering::SeqCst);
+        if let Some(engine) = SHUTDOWN_ENGINE.get() {
+            match engine.lock() {
+                Ok(_guard) => info!("state committed; exiting"),
+                Err(_) => info!("engine lock poisoned; exiting"),
+            }
+        }
+        std::process::exit(0);
     })?;
 
     let cli = read_cli_config();
@@ -267,13 +285,17 @@ fn main() -> anyhow::Result<()> {
                 "starting network node"
             );
 
-            let gossip_config = GossipConfig {
+            let mut gossip_config = GossipConfig {
                 listen_addr: app_config.p2p.listen.clone(),
                 bootstrap_peers: app_config.p2p.peers.clone(),
                 ..GossipConfig::default()
             };
+            // Local multi-node testnets live on 127.0.0.1; on a real network a
+            // loopback "peer" only makes a node gossip to itself.
+            gossip_config.allow_loopback_peers = gossip_config.uses_loopback();
 
             let engine = Arc::new(Mutex::new(engine));
+            let _ = SHUTDOWN_ENGINE.set(engine.clone());
             let network = NetworkNode::new(&gossip_config)?;
             network.start_networking(engine.clone(), &gossip_config);
 
@@ -1485,6 +1507,7 @@ fn run_network_demo(peer_store_path: &str) -> anyhow::Result<()> {
         retry_base: std::time::Duration::from_millis(50),
         retry_max: std::time::Duration::from_secs(2),
         peer_discovery_topic: "peer".to_string(),
+        allow_loopback_peers: true,
     };
     let mut node_a = UdpGossip::bind_with_config("127.0.0.1:42000", config.clone())?;
     let mut node_b = UdpGossip::bind_with_config("127.0.0.1:42001", config)?;

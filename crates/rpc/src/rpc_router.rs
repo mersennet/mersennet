@@ -530,6 +530,23 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             let count = engine.peer_count.load(std::sync::atomic::Ordering::Relaxed);
             Ok(Value::String(format!("0x{:x}", count)))
         }
+        // Live gossip peers of this node: [{addr, firstSeenSecs, lastSeenSecs}].
+        // Lets operators confirm their node is visible and the explorer list
+        // community nodes. Refreshed by the discovery loop every 30s.
+        "mersennet_peers" => Ok(Value::Array(
+            engine
+                .peer_list
+                .iter()
+                .map(|p| {
+                    json!({
+                        "addr": p.addr,
+                        "firstSeenSecs": p.first_seen_secs,
+                        "lastSeenSecs": p.last_seen_secs,
+                        "heard": p.heard,
+                    })
+                })
+                .collect(),
+        )),
         "net_listening" => Ok(Value::Bool(true)),
         "web3_clientVersion" => Ok(Value::String("Mersennet/0.1.0".to_string())),
         "txpool_status" => {
