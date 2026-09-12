@@ -238,6 +238,10 @@ pub struct RpcConfig {
     pub enabled: bool,
     #[serde(default = "default_rpc_addr")]
     pub addr: String,
+    /// Client IPs exempt from the per-IP request limiter (e.g. this
+    /// operator's own indexer/bots host). Everyone else stays limited.
+    #[serde(default)]
+    pub trusted_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -381,6 +385,7 @@ impl Default for RpcConfig {
         Self {
             enabled: false,
             addr: default_rpc_addr(),
+            trusted_ips: Vec::new(),
         }
     }
 }

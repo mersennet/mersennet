@@ -871,6 +871,37 @@ impl PersistentState {
         Ok(())
     }
 
+    pub fn begin_commit(&self, height: u64) -> Result<()> {
+        self.height_meta
+            .insert("commit_in_progress", &height.to_be_bytes())?;
+        Ok(())
+    }
+
+    pub fn end_commit(&self) -> Result<()> {
+        self.height_meta.remove("commit_in_progress")?;
+        // Must be durable: the process may exit right after this (graceful
+        // shutdown calls exit() without dropping the DB), and an unflushed
+        // removal would look like an interrupted commit on the next start.
+        self.db.flush()?;
+        Ok(())
+    }
+
+    pub fn flush(&self) -> Result<()> {
+        self.db.flush()?;
+        Ok(())
+    }
+
+    pub fn interrupted_commit(&self) -> Result<Option<u64>> {
+        match self.height_meta.get("commit_in_progress")? {
+            Some(v) if v.len() == 8 => {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&v);
+                Ok(Some(u64::from_be_bytes(buf)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub fn persisted_height(&self) -> Result<Option<u64>> {
         match self.height_meta.get("latest_height")? {
             Some(v) if v.len() == 8 => {
@@ -1236,6 +1267,18 @@ impl crate::state_trait::StateBackend for PersistentState {
 
     fn persisted_height(&self) -> Result<Option<u64>> {
         PersistentState::persisted_height(self)
+    }
+    fn begin_commit(&self, height: u64) -> Result<()> {
+        PersistentState::begin_commit(self, height)
+    }
+    fn end_commit(&self) -> Result<()> {
+        PersistentState::end_commit(self)
+    }
+    fn interrupted_commit(&self) -> Result<Option<u64>> {
+        PersistentState::interrupted_commit(self)
+    }
+    fn flush(&self) -> Result<()> {
+        PersistentState::flush(self)
     }
 
     fn prune_before(&self, height: u64) -> Result<u64> {

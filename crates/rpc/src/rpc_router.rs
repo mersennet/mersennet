@@ -548,7 +548,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .collect(),
         )),
         "net_listening" => Ok(Value::Bool(true)),
-        "web3_clientVersion" => Ok(Value::String("Mersennet/0.1.0".to_string())),
+        "web3_clientVersion" => Ok(Value::String(crate::rpc::client_version())),
         "txpool_status" => {
             let pending = engine.mempool_pending_count();
             let queued = engine.mempool_queued_count();
@@ -1276,9 +1276,14 @@ fn parse_call_input(params: Value) -> RpcResult<CallInput> {
         Some(v) => parse_hex_u256(&v)?,
         None => U256::ZERO,
     };
+    // Cap at the block gas limit: eth_call/estimateGas execute under the
+    // engine lock, so an unbounded caller-supplied gas limit would let one
+    // request burn CPU on a looping contract and stall every other RPC and
+    // block import on the node.
+    const MAX_CALL_GAS: u64 = 30_000_000;
     let gas_limit = match raw.gas {
-        Some(g) => parse_hex_u64(&g)?,
-        None => 30_000_000,
+        Some(g) => parse_hex_u64(&g)?.min(MAX_CALL_GAS),
+        None => MAX_CALL_GAS,
     };
 
     Ok(CallInput {

@@ -109,6 +109,29 @@ fn throttle_ip(
     peer
 }
 
+/// Client addresses exempt from the per-IP limiter (set once at startup from
+/// `rpc.trusted_ips`).
+static TRUSTED_IPS: std::sync::OnceLock<std::collections::HashSet<IpAddr>> = std::sync::OnceLock::new();
+/// Reported by `web3_clientVersion`; set once at startup by the node binary.
+static CLIENT_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub fn set_trusted_ips(ips: &[String]) {
+    let set: std::collections::HashSet<IpAddr> = ips.iter().filter_map(|s| s.trim().parse().ok()).collect();
+    let _ = TRUSTED_IPS.set(set);
+}
+
+pub fn set_client_version(version: String) {
+    let _ = CLIENT_VERSION.set(version);
+}
+
+pub fn client_version() -> String {
+    CLIENT_VERSION.get().cloned().unwrap_or_else(|| "Mersennet/unknown".to_string())
+}
+
+fn is_trusted(ip: &IpAddr) -> bool {
+    TRUSTED_IPS.get().map(|s| s.contains(ip)).unwrap_or(false)
+}
+
 #[derive(Debug)]
 struct RateLimiter {
     hits: HashMap<IpAddr, (Instant, u32)>,
@@ -280,16 +303,47 @@ enum TopicFilter {
 pub fn serve(engine: Arc<Mutex<Engine>>, addr: &str) -> Result<()> {
     let server = Server::http(addr).map_err(|err| anyhow!(err.to_string()))?;
     let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
-    let mut rate_limiter = RateLimiter::new();
     info!("RPC listening on http://{addr}");
 
-    for request in server.incoming_requests() {
-        // One malformed request must never take down the node (this process
-        // is the public RPC for the whole stack): log the failure, drop the
-        // connection, and keep serving.
-        if let Err(err) = handle_request(request, &engine, &filters, &mut rate_limiter) {
-            warn!("RPC request failed: {err:#}");
-        }
+    // A small pool of request workers. Requests used to be handled one at a
+    // time on this thread, so a single slow request — a client trickling its
+    // body, or a heavy eth_call — blocked every other caller (head-of-line
+    // blocking; the node-wide hang on Sep 12 showed 100+ connections parked
+    // behind one handler). State access is still serialized by the engine
+    // lock inside the handlers; the pool only removes the I/O bottleneck.
+    const RPC_WORKERS: usize = 8;
+    let server = Arc::new(server);
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    let mut workers = Vec::with_capacity(RPC_WORKERS);
+    for i in 0..RPC_WORKERS {
+        let server = Arc::clone(&server);
+        let engine = Arc::clone(&engine);
+        let filters = filters.clone();
+        let rate_limiter = Arc::clone(&rate_limiter);
+        let worker = std::thread::Builder::new()
+            .name(format!("rpc-worker-{i}"))
+            .spawn(move || {
+                loop {
+                    let request = match server.recv() {
+                        Ok(r) => r,
+                        Err(err) => {
+                            warn!("RPC accept failed: {err}");
+                            continue;
+                        }
+                    };
+                    // One malformed request must never take down the node
+                    // (this process is the public RPC for the whole stack):
+                    // log the failure, drop the connection, and keep serving.
+                    if let Err(err) = handle_request(request, &engine, &filters, &rate_limiter) {
+                        warn!("RPC request failed: {err:#}");
+                    }
+                }
+            })
+            .map_err(|e| anyhow!("spawn rpc worker: {e}"))?;
+        workers.push(worker);
+    }
+    for w in workers {
+        let _ = w.join();
     }
 
     Ok(())
@@ -299,7 +353,7 @@ fn handle_request(
     mut request: tiny_http::Request,
     engine: &Arc<Mutex<Engine>>,
     filters: &FilterStore,
-    rate_limiter: &mut RateLimiter,
+    rate_limiter: &Arc<Mutex<RateLimiter>>,
 ) -> Result<()> {
     // Per-IP throttle before any work: the whole stack hangs off this one
     // process, so a flood from a single source must not starve everyone else.
@@ -315,7 +369,12 @@ fn handle_request(
             .find(|h| h.field.equiv("X-Forwarded-For"))
             .map(|h| h.value.as_str().to_owned());
         let ip = throttle_ip(addr.ip(), cf_ip.as_deref(), xff.as_deref());
-        if !rate_limiter.allow(ip) {
+        let allowed = is_trusted(&ip)
+            || rate_limiter
+                .lock()
+                .map(|mut l| l.allow(ip))
+                .unwrap_or(true);
+        if !allowed {
             let response = Response::from_string(error_body(
                 Value::Null,
                 -32005,
