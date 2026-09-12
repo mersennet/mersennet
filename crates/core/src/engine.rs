@@ -2226,12 +2226,43 @@ impl Engine {
         if block.number > self.block_number.saturating_add(512) {
             return;
         }
+        // A proposal for a height the network has already finalized with a
+        // different hash lost a leader-timeout race. Applying it would put
+        // this node on a dead branch (there is no automatic reorg), which is
+        // exactly how a node finishing its catch-up used to fork at the tip:
+        // it had buffered every gossip proposal while syncing and applied
+        // the orphaned one when block-sync reached that height.
+        if let Some(finalized) = self.finalized_hash(block.number)
+            && finalized != block.hash
+        {
+            metrics::increment_counter!("mersennet_import_orphan_dropped_total");
+            tracing::warn!(
+                height = block.number,
+                block_hash = %block.hash,
+                finalized_hash = %finalized,
+                "dropping competing proposal for an already-finalized height"
+            );
+            return;
+        }
         self.import_buffer.insert(block.number, block);
 
         // Drain consecutive buffered blocks starting at the next
         // expected height.
         while let Some(next) = self.import_buffer.remove(&self.block_number) {
             let height = next.number;
+            // Finality may have arrived after this block was buffered.
+            if let Some(finalized) = self.finalized_hash(height)
+                && finalized != next.hash
+            {
+                metrics::increment_counter!("mersennet_import_orphan_dropped_total");
+                tracing::warn!(
+                    height,
+                    block_hash = %next.hash,
+                    finalized_hash = %finalized,
+                    "dropping buffered competing proposal for an already-finalized height; waiting for the canonical block"
+                );
+                break;
+            }
             if let Err(e) = self.apply_imported_block(next) {
                 let msg = e.to_string();
                 // A persistent parent-hash mismatch means this node is on a
