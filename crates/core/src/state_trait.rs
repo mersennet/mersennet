@@ -42,6 +42,24 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn load_blocks_range(&self, from: u64, to: u64) -> Result<Vec<Block>>;
 
     fn record_height(&self, height: u64, state_root: B256) -> Result<()>;
+    /// Durability marker around a block commit (account state, orders,
+    /// height, block are separate writes). Set before the first write and
+    /// cleared after the last; a marker still present at startup means a
+    /// previous commit was interrupted and the persisted state may be ahead
+    /// of the recorded height.
+    fn begin_commit(&self, _height: u64) -> Result<()> {
+        Ok(())
+    }
+    fn end_commit(&self) -> Result<()> {
+        Ok(())
+    }
+    fn interrupted_commit(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
+    /// Make all prior writes durable (called before a process exit).
+    fn flush(&self) -> Result<()> {
+        Ok(())
+    }
     /// The highest block height committed to this store, if any. Used
     /// on startup to resume the chain at the persisted height instead
     /// of re-producing from genesis.

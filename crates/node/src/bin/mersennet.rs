@@ -79,7 +79,12 @@ fn main() -> anyhow::Result<()> {
         shutdown_clone.store(true, Ordering::SeqCst);
         if let Some(engine) = SHUTDOWN_ENGINE.get() {
             match engine.lock() {
-                Ok(_guard) => info!("state committed; exiting"),
+                Ok(guard) => {
+                    if let Err(err) = guard.flush_state() {
+                        tracing::warn!(%err, "state flush on shutdown failed");
+                    }
+                    info!("state committed; exiting");
+                }
                 Err(_) => info!("engine lock poisoned; exiting"),
             }
         }
@@ -862,6 +867,12 @@ fn main() -> anyhow::Result<()> {
             }
 
             if app_config.rpc.enabled {
+                rpc::set_trusted_ips(&app_config.rpc.trusted_ips);
+                rpc::set_client_version(format!(
+                    "Mersennet/{}-{}",
+                    env!("CARGO_PKG_VERSION"),
+                    option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
+                ));
                 rpc::serve(engine, &app_config.rpc.addr)?;
             } else {
                 info!("node running (no RPC). Press Ctrl+C to stop.");

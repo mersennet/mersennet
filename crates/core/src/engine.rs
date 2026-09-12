@@ -624,6 +624,18 @@ impl Engine {
         // `block_number` to 1 while balances load from disk — an
         // inconsistent state that corrupts the chain and strands nodes
         // that restart after the rest of the fleet has advanced.
+        // A commit that was cut off between its writes leaves account state
+        // ahead of the recorded height; resuming would fail every import
+        // with "nonce too low" and wedge the node. Refuse to start so the
+        // watchdog restores the latest snapshot (or resyncs) instead.
+        if let Ok(Some(h)) = state.interrupted_commit() {
+            tracing::error!(
+                height = h,
+                "INTERRUPTED COMMIT: the last block commit did not complete; persisted state is inconsistent. \
+                 Restore the latest snapshot (mersennet-snapshot restore) or move data/state aside to resync."
+            );
+            std::process::exit(78);
+        }
         let resume_height = state.persisted_height().ok().flatten();
         let (start_block_number, restored_chain) = match resume_height {
             Some(h) if h >= 1 => {
@@ -1652,6 +1664,7 @@ impl Engine {
 
         self.apply_rewards(&rewards)?;
 
+        self.evm.state.begin_commit(self.block_number)?;
         let state_root = self.evm.state.commit_state(
             &self.evm.db,
             &self.orders.state,
@@ -1775,6 +1788,7 @@ impl Engine {
         self.chain.push(block.clone());
         self.trim_chain_window();
         self.evm.state.store_block(&block)?;
+        self.evm.state.end_commit()?;
 
         // Privacy-redesign Phase 4 — persist shielded state at end of
         // block. No-op pre-fork (the subsystems are still in their
@@ -2057,6 +2071,7 @@ impl Engine {
 
         self.apply_rewards(&rewards)?;
 
+        self.evm.state.begin_commit(self.block_number)?;
         let state_root = self.evm.state.commit_state(
             &self.evm.db,
             &self.orders.state,
@@ -2147,6 +2162,7 @@ impl Engine {
         self.chain.push(block.clone());
         self.trim_chain_window();
         self.evm.state.store_block(&block)?;
+        self.evm.state.end_commit()?;
 
         // Privacy-redesign Phase 4 — persist shielded state.
         if self.privacy_mode_activated
@@ -2456,6 +2472,7 @@ impl Engine {
         let catching_up = self.highest_observed_height > block.number.saturating_add(64);
         let should_commit = !catching_up || block.number.is_multiple_of(500);
         if should_commit {
+            self.evm.state.begin_commit(block.number)?;
             let state_root = self.evm.state.commit_state(
                 &self.evm.db,
                 &self.orders.state,
@@ -2512,6 +2529,9 @@ impl Engine {
         }
 
         self.evm.state.store_block(&block)?;
+        if should_commit {
+            self.evm.state.end_commit()?;
+        }
         self.chain.push(block);
         self.trim_chain_window();
         self.block_number = self.block_number.saturating_add(1);
@@ -2544,6 +2564,12 @@ impl Engine {
             self.raw_tx_cache.clear();
         }
         self.raw_tx_cache.insert(hash, raw);
+    }
+
+    /// Flush the state backend; used by the shutdown path after the engine
+    /// lock has been acquired (so no commit is in flight).
+    pub fn flush_state(&self) -> Result<()> {
+        self.evm.state.flush()
     }
 
     pub fn raw_tx_for(&self, hash: &B256) -> Option<Vec<u8>> {
