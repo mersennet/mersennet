@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# mersennet-check — one-screen health check for a Mersennet full node.
+# Installed by install.sh; safe to run as any user (reads only).
+set -u
+
+LOCAL_RPC="${MERSENNET_RPC:-http://127.0.0.1:8545}"
+PUBLIC_RPC="https://rpc.mersennet.com"
+
+rpc() { # rpc URL METHOD [PARAMS_JSON]
+    curl -s --max-time 6 "$1" -H 'Content-Type: application/json' \
+        -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":${3:-[]}}" 2>/dev/null \
+        | sed -n 's/.*"result":"\([^"]*\)".*/\1/p'
+}
+hex2dec() { [[ -n "${1:-}" ]] && printf '%d' "$1" 2>/dev/null || echo ""; }
+green() { printf '\033[32m%s\033[0m' "$1"; }
+red()   { printf '\033[31m%s\033[0m' "$1"; }
+yellow(){ printf '\033[33m%s\033[0m' "$1"; }
+
+echo "Mersennet node check — $(date -u '+%Y-%m-%d %H:%M UTC')"
+echo
+
+# Service
+if command -v systemctl >/dev/null 2>&1; then
+    state="$(systemctl is-active mersennet 2>/dev/null || true)"
+    since="$(systemctl show mersennet -p ActiveEnterTimestamp --value 2>/dev/null | cut -d' ' -f2-3)"
+    datadir="$(systemctl show mersennet -p WorkingDirectory --value 2>/dev/null)"
+    case "$state" in
+        active)   printf 'Service      %s since %s\n' "$(green running)" "${since:-?}" ;;
+        "")       printf 'Service      %s\n' "$(yellow 'not installed as a service (mersennet.service missing)')" ;;
+        *)        printf 'Service      %s (%s)\n' "$(red "$state")" "systemctl status mersennet" ;;
+    esac
+fi
+
+# Heights
+local_hex="$(rpc "$LOCAL_RPC" eth_blockNumber)"
+public_hex="$(rpc "$PUBLIC_RPC" eth_blockNumber)"
+local_h="$(hex2dec "$local_hex")"
+public_h="$(hex2dec "$public_hex")"
+if [[ -z "$local_h" ]]; then
+    printf 'Local RPC    %s at %s\n' "$(red 'not answering')" "$LOCAL_RPC"
+    echo "             The node may still be starting (first start replays the chain), or RPC is disabled."
+    echo "             Logs: journalctl -u mersennet -n 30 --no-pager"
+else
+    if [[ -z "$public_h" ]]; then
+        printf 'Block height %s (network height unavailable — no internet or rpc.mersennet.com unreachable)\n' "$local_h"
+    else
+        lag=$(( public_h - local_h ))
+        if (( lag <= 3 )); then
+            printf 'Block height %s / %s network — %s\n' "$local_h" "$public_h" "$(green 'in sync')"
+        elif (( lag <= 2000 )); then
+            printf 'Block height %s / %s network — %s (%s blocks behind)\n' "$local_h" "$public_h" "$(yellow 'catching up')" "$lag"
+        else
+            pct=$(( local_h * 100 / (public_h > 0 ? public_h : 1) ))
+            printf 'Block height %s / %s network — %s (%s%% done, %s blocks behind)\n' "$local_h" "$public_h" "$(yellow syncing)" "$pct" "$lag"
+        fi
+    fi
+    peers_hex="$(rpc "$LOCAL_RPC" net_peerCount)"
+    peers="$(hex2dec "$peers_hex")"
+    if [[ -n "$peers" ]]; then
+        if (( peers > 0 )); then printf 'Peers        %s\n' "$(green "$peers")"; else printf 'Peers        %s (P2P not connected yet — outbound UDP+TCP 30303 must be allowed)\n' "$(red 0)"; fi
+    fi
+    chain_hex="$(rpc "$LOCAL_RPC" eth_chainId)"
+    chain="$(hex2dec "$chain_hex")"
+    [[ -n "$chain" ]] && printf 'Chain ID     %s%s\n' "$chain" "$([[ "$chain" == "131071" ]] && echo ' (Mersennet testnet)' || red '  <-- expected 131071')"
+fi
+
+# Disk
+if [[ -n "${datadir:-}" && -d "$datadir" ]]; then
+    used="$(du -sh "$datadir" 2>/dev/null | cut -f1)"
+    free="$(df -h "$datadir" 2>/dev/null | awk 'NR==2{print $4" free on "$6}')"
+    printf 'Data dir     %s — %s used, %s\n' "$datadir" "${used:-?}" "${free:-?}"
+    if [[ -f "$datadir/keys/node_key.json" ]]; then
+        printf 'Node key     %s (back this up to keep your peer identity)\n' "$datadir/keys/node_key.json"
+    fi
+fi
+
+echo
+echo "Explorer: https://explorer.mersennet.com   Docs: https://docs.mersennet.com/validators/run-a-node/"
+echo "This is a full node. The validator set is fixed at genesis for now, so it will not appear in the validator list."

@@ -24,6 +24,7 @@ install -m 0755 "$BIN" "$STAGE/mersennet"
 install -m 0644 "$REPO_ROOT/networks/testnet/config.json" "$STAGE/config.json"
 install -m 0644 "$REPO_ROOT/networks/testnet/mersennet.service" "$STAGE/mersennet.service"
 install -m 0755 "$REPO_ROOT/networks/testnet/install.sh" "$STAGE/install.sh"
+install -m 0755 "$REPO_ROOT/networks/testnet/mersennet-check" "$STAGE/mersennet-check"
 
 BIN_SHA="$(sha256sum "$STAGE/mersennet" | cut -d' ' -f1)"
 GLIBC="$(objdump -T "$STAGE/mersennet" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n -u | tail -1 || echo unknown)"
@@ -42,8 +43,9 @@ Chain ID 131071 · built from mersennet/mersennet@${SHA} · ${ARCH} · requires 
 
 ## Install as a service (Ubuntu 22.04+/Debian 12+)
 
-    sudo bash install.sh
-    journalctl -u mersennet -f
+    sudo bash install.sh                                        # data in /var/lib/mersennet
+    sudo bash install.sh --data-dir /mnt/blockstorage/mersennet # data on a mounted volume
+    mersennet-check                                             # syncing? peers? disk?
 
 ## Or run in the foreground (no service)
 
@@ -59,7 +61,7 @@ connectivity is enough; opening 30303 lets others sync from you.
 Full guide: https://docs.mersennet.com/validators/run-a-node/
 EOF
 
-( cd "$STAGE" && sha256sum mersennet config.json mersennet.service install.sh README.md > SHA256SUMS )
+( cd "$STAGE" && sha256sum mersennet config.json mersennet.service install.sh mersennet-check README.md > SHA256SUMS )
 # Reproducible tarball: fixed mtimes (the commit time), sorted entries, no
 # owner info, no gzip timestamp — re-running on the same commit yields the
 # same bytes and the same checksum.
@@ -70,7 +72,9 @@ COMMIT_TIME="$(git -C "$REPO_ROOT" log -1 --format=%ct)"
 # works whichever filename the operator downloaded.
 ( cd "$DIST" && sed "s/$NAME.tar.gz/mersennet-node-${ARCH}-latest.tar.gz/" SHA256SUMS >> SHA256SUMS )
 rm -rf "$STAGE"
+install -m 0755 "$REPO_ROOT/networks/testnet/bootstrap.sh" "$DIST/install.sh"
 
 echo "bundle: $DIST/$NAME.tar.gz"
+echo "one-line installer: $DIST/install.sh (publish as downloads/install.sh)"
 echo "binary sha256: $BIN_SHA"
 cat "$DIST/SHA256SUMS"
