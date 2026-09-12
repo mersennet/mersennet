@@ -48,6 +48,7 @@ mersennet-state-proof = { path = "../state-proof" }
 [dev-dependencies]
 tempfile = "3.10"
 rand = "0.8"
+proptest = "1"
 
 [[bin]]
 name = "tps-bench"
