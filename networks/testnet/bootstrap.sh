@@ -12,7 +12,6 @@ set -euo pipefail
 # Debian 12+), systemd, curl and tar. Re-running upgrades an existing node.
 
 BASE="${MERSENNET_DOWNLOADS:-https://mersennet.com/downloads}"
-TARBALL="mersennet-node-linux-x86_64-latest.tar.gz"
 
 if [[ $EUID -ne 0 ]]; then
     echo "error: run with sudo:  curl -fsSL $BASE/install.sh | sudo bash" >&2
@@ -33,9 +32,13 @@ WORK="$(mktemp -d /tmp/mersennet-install.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
+# SHA256SUMS is never cached and names the current versioned tarball, which is
+# immutable — so we always fetch exactly the bytes the checksum describes.
+curl -fsSL -o SHA256SUMS "$BASE/SHA256SUMS"
+TARBALL="$(awk '$2 ~ /^mersennet-node-linux-x86_64-[0-9a-f]+\.tar\.gz$/ {print $2; exit}' SHA256SUMS)"
+[[ -n "$TARBALL" ]] || { echo "error: could not determine the current release from $BASE/SHA256SUMS" >&2; exit 1; }
 echo "==> Downloading $BASE/$TARBALL"
 curl -fsSL -o "$TARBALL" "$BASE/$TARBALL"
-curl -fsSL -o SHA256SUMS "$BASE/SHA256SUMS"
 echo "==> Verifying checksum"
 sha256sum -c SHA256SUMS --ignore-missing
 tar xzf "$TARBALL"

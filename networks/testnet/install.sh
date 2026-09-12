@@ -129,14 +129,14 @@ fi
 
 cat <<EOF
 
-Done. Your node is $([[ $UPGRADE -eq 1 ]] && echo "upgraded and" ) running as a systemd service.
+Done. Your node is $([[ $UPGRADE -eq 1 ]] && echo "upgraded and " || true)running as a systemd service.
 
   mersennet-check                     # is it syncing? (height vs network, peers, disk)
   journalctl -u mersennet -f          # follow logs
   sudo systemctl restart mersennet    # restart
 
-First start replays the chain from the bootnodes (several thousand blocks/s,
-usually 5-20 minutes), then follows live blocks. Chain data and your node key
+First start replays the chain from the bootnodes (typically 20-40 minutes
+depending on hardware and network), then follows live blocks. Chain data and your node key
 live in $DATA_DIR — back up $DATA_DIR/keys/node_key.json to keep your peer
 identity. The RPC listens on ${RPC_ADDR:-127.0.0.1:8545}.
 

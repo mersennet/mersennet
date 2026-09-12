@@ -9,15 +9,17 @@ operator. Full guide: https://docs.mersennet.com/validators/run-a-node/
 | `mersennet.service` | Production systemd unit (hardened, auto-restart). |
 | `install.sh` | One-command installer: binary + config + user + systemd service. Works from the release bundle or a source checkout. |
 
+| `mersennet-check` | Operator health check (service, height vs network, peers, disk); installed to /usr/local/bin. |
+| `bootstrap.sh` | Published as https://mersennet.com/downloads/install.sh — the one-line installer (fetches, verifies and runs the bundle's install.sh). |
 | `package-release.sh` | Builds the public release bundle (binary + these files + checksums) published at https://mersennet.com/downloads/ for operators without source access. |
 
 ## Quick start
 
 ```bash
-# Without source access: download the release bundle
-curl -fLO https://mersennet.com/downloads/mersennet-node-linux-x86_64-latest.tar.gz
-tar xzf mersennet-node-linux-x86_64-latest.tar.gz && cd mersennet-node-linux-x86_64-*/
-sudo bash install.sh
+# Without source access: one-line install (downloads + verifies the latest bundle)
+curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash
+#   ... --data-dir /mnt/blockstorage/mersennet   to keep chain data on a mounted volume
+mersennet-check                                   # syncing? peers? disk?
 
 # From a source checkout (Rust 1.85+, see docs for prerequisites)
 cargo build --release --bin mersennet
@@ -34,7 +36,9 @@ RUST_LOG=info mersennet --config config.json --mode full --rpc
 ```bash
 cargo build --release --bin mersennet
 networks/testnet/package-release.sh          # -> dist/mersennet-node-linux-x86_64-<sha>.tar.gz + SHA256SUMS
-# upload both to /var/www/downloads/ on the app host and repoint the -latest symlink
+# commit first (the bundle is named by the commit sha), then upload the tarball, SHA256SUMS and
+# dist/install.sh to /var/www/downloads/ on the app host and repoint the -latest symlink.
+# Never overwrite a published tarball: versioned files are cached as immutable.
 ```
 
 ## Network parameters
