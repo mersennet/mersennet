@@ -35,9 +35,9 @@ RUST_LOG=info mersennet --config config.json --mode full --rpc
 
 ```bash
 cargo build --release --bin mersennet
-networks/testnet/package-release.sh          # -> dist/mersennet-node-linux-x86_64-<sha>.tar.gz + SHA256SUMS
+networks/testnet/package-release.sh          # -> dist/<bundle>.tar.gz, SHA256SUMS, install.sh, latest.json
 # commit first (the bundle is named by the commit sha), then upload the tarball, SHA256SUMS and
-# dist/install.sh to /var/www/downloads/ on the app host and repoint the -latest symlink.
+# dist/install.sh and dist/latest.json to /var/www/downloads/ on the app host and repoint the -latest symlink.
 # Never overwrite a published tarball: versioned files are cached as immutable.
 ```
 

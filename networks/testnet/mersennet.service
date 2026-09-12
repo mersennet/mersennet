@@ -3,6 +3,9 @@ Description=Mersennet Full Node (testnet, chain 131071)
 Documentation=https://docs.mersennet.com
 After=network-online.target
 Wants=network-online.target
+# Wait for the data volume (install.sh --data-dir on a mounted disk) so the
+# node never starts against an empty mountpoint on the root filesystem.
+RequiresMountsFor=/var/lib/mersennet
 
 [Service]
 Type=simple

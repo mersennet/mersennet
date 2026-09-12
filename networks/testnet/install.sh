@@ -44,6 +44,10 @@ case "$DATA_DIR" in
         echo "error: $DATA_DIR is temporary storage (wiped on reboot and hidden from the service by PrivateTmp)." >&2
         echo "       Use a persistent path such as /var/lib/mersennet or /mnt/<volume>/mersennet." >&2
         exit 1 ;;
+    /home|/home/*|/root|/root/*)
+        echo "error: $DATA_DIR is under a home directory, which the hardened service cannot access (ProtectHome)." >&2
+        echo "       Use /var/lib/mersennet, /srv/mersennet or /mnt/<volume>/mersennet." >&2
+        exit 1 ;;
     /*) ;;
     *) echo "error: --data-dir must be an absolute path" >&2; exit 1 ;;
 esac
@@ -71,6 +75,9 @@ if systemctl is-active --quiet mersennet 2>/dev/null; then
 fi
 
 echo "==> Installing binary to /usr/local/bin/mersennet"
+if [[ -f /usr/local/bin/mersennet ]] && ! cmp -s "$BIN" /usr/local/bin/mersennet; then
+    cp -a /usr/local/bin/mersennet /usr/local/bin/mersennet.prev   # rollback copy
+fi
 install -m 0755 "$BIN" /usr/local/bin/mersennet
 if [[ -f "$CHECK" ]]; then
     install -m 0755 "$CHECK" /usr/local/bin/mersennet-check
@@ -124,6 +131,9 @@ sleep 3
 if ! systemctl is-active --quiet mersennet; then
     echo "error: the service did not stay up. Last log lines:" >&2
     journalctl -u mersennet -n 20 --no-pager >&2 || true
+    if [[ -f /usr/local/bin/mersennet.prev ]]; then
+        echo "To roll back to the previous binary:  sudo cp /usr/local/bin/mersennet.prev /usr/local/bin/mersennet && sudo systemctl restart mersennet" >&2
+    fi
     exit 1
 fi
 

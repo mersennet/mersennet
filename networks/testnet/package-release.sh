@@ -73,8 +73,21 @@ COMMIT_TIME="$(git -C "$REPO_ROOT" log -1 --format=%ct)"
 ( cd "$DIST" && sed "s/$NAME.tar.gz/mersennet-node-${ARCH}-latest.tar.gz/" SHA256SUMS >> SHA256SUMS )
 rm -rf "$STAGE"
 install -m 0755 "$REPO_ROOT/networks/testnet/bootstrap.sh" "$DIST/install.sh"
+# Machine-readable manifest: mersennet-check compares its binary against
+# binary_sha256 to tell operators when an upgrade is available.
+cat > "$DIST/latest.json" <<EOF
+{
+  "release": "$SHA",
+  "tarball": "$NAME.tar.gz",
+  "tarball_sha256": "$(cut -d' ' -f1 "$DIST/SHA256SUMS" | head -1)",
+  "binary_sha256": "$BIN_SHA",
+  "arch": "$ARCH",
+  "glibc_min": "${GLIBC/GLIBC_/}",
+  "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
 
 echo "bundle: $DIST/$NAME.tar.gz"
-echo "one-line installer: $DIST/install.sh (publish as downloads/install.sh)"
+echo "one-line installer: $DIST/install.sh (publish as downloads/install.sh); manifest: $DIST/latest.json"
 echo "binary sha256: $BIN_SHA"
 cat "$DIST/SHA256SUMS"
