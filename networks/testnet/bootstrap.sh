@@ -32,9 +32,29 @@ WORK="$(mktemp -d /tmp/mersennet-install.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
+# Release signing key (ed25519). SHA256SUMS must carry a valid detached
+# signature by this key; the key is pinned here, not downloaded, so a
+# compromised download host cannot forge a release. Rotating the key means
+# publishing a new installer.
+RELEASE_PUBKEY="-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAGhjx5fsplcdLhVLXX9JEQLeajDFpUEmiylFXO0VoLBc=
+-----END PUBLIC KEY-----"
+
 # SHA256SUMS is never cached and names the current versioned tarball, which is
 # immutable — so we always fetch exactly the bytes the checksum describes.
 curl -fsSL -o SHA256SUMS "$BASE/SHA256SUMS"
+if command -v openssl >/dev/null 2>&1; then
+    curl -fsSL -o SHA256SUMS.sig "$BASE/SHA256SUMS.sig" || { echo "error: release signature missing at $BASE/SHA256SUMS.sig" >&2; exit 1; }
+    printf '%s\n' "$RELEASE_PUBKEY" > release.pub
+    if openssl pkeyutl -verify -pubin -inkey release.pub -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig >/dev/null 2>&1; then
+        echo "==> Release signature verified"
+    else
+        echo "error: SHA256SUMS signature does NOT verify against the pinned Mersennet release key — refusing to install" >&2
+        exit 1
+    fi
+else
+    echo "warning: openssl not found; skipping release signature check (checksums still verified)" >&2
+fi
 TARBALL="$(awk '$2 ~ /^mersennet-node-linux-x86_64-[0-9a-f]+\.tar\.gz$/ {print $2; exit}' SHA256SUMS)"
 [[ -n "$TARBALL" ]] || { echo "error: could not determine the current release from $BASE/SHA256SUMS" >&2; exit 1; }
 echo "==> Downloading $BASE/$TARBALL"

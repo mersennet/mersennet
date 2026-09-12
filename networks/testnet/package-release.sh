@@ -73,6 +73,16 @@ COMMIT_TIME="$(git -C "$REPO_ROOT" log -1 --format=%ct)"
 ( cd "$DIST" && sed "s/$NAME.tar.gz/mersennet-node-${ARCH}-latest.tar.gz/" SHA256SUMS >> SHA256SUMS )
 rm -rf "$STAGE"
 install -m 0755 "$REPO_ROOT/networks/testnet/bootstrap.sh" "$DIST/install.sh"
+# Detached ed25519 signature over SHA256SUMS (the installer pins the public
+# key, so a compromised download host cannot swap tarball + checksums).
+SIGN_KEY="${MERSENNET_RELEASE_KEY:-$HOME/.mersennet/release-signing.key}"
+if [[ -f "$SIGN_KEY" ]]; then
+    openssl pkeyutl -sign -inkey "$SIGN_KEY" -rawin -in "$DIST/SHA256SUMS" -out "$DIST/SHA256SUMS.sig"
+    openssl pkey -in "$SIGN_KEY" -pubout -out "$DIST/release-signing.pub" 2>/dev/null
+    echo "signed SHA256SUMS with $(openssl pkey -in "$SIGN_KEY" -pubout 2>/dev/null | sed -n 2p | cut -c1-16)…"
+else
+    echo "WARNING: no release signing key at $SIGN_KEY — SHA256SUMS left unsigned" >&2
+fi
 # Machine-readable manifest: mersennet-check compares its binary against
 # binary_sha256 to tell operators when an upgrade is available.
 cat > "$DIST/latest.json" <<EOF
