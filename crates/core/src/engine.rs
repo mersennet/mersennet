@@ -544,6 +544,9 @@ pub struct Engine {
     /// fork off a stale height), it must sync first. This is the guard that
     /// stops a restarted/lagging validator from re-forking itself.
     highest_observed_height: u64,
+    /// When we last applied a block (produced or imported). Used to tell a
+    /// real "catching up" state from a stalled network.
+    last_block_applied_at: Option<std::time::Instant>,
 }
 
 impl Engine {
@@ -718,6 +721,7 @@ impl Engine {
             code_publication_registry: CodePublicationRegistry::default(),
             import_buffer: std::collections::BTreeMap::new(),
             highest_observed_height: 0,
+            last_block_applied_at: None,
             raw_tx_cache: std::collections::HashMap::new(),
             local_validator: None,
             finality_votes: std::collections::HashMap::new(),
@@ -946,6 +950,11 @@ impl Engine {
         self.highest_observed_height
     }
 
+    /// Seconds since this node last applied a block, if it ever did.
+    pub fn secs_since_last_applied(&self) -> Option<u64> {
+        self.last_block_applied_at.map(|t| t.elapsed().as_secs())
+    }
+
     /// True if the network head is ahead of our applied head — i.e. we are
     /// behind (syncing) or wedged on a fork. A validator in this state must
     /// not produce: its next block would build on a stale head and fork the
@@ -953,7 +962,25 @@ impl Engine {
     /// to the canonical head first. `slack` tolerates the normal 1-block race
     /// where we are the elected proposer for `head+1` and haven't produced yet.
     pub fn is_behind_network(&self, slack: u64) -> bool {
-        self.highest_observed_height > self.latest_height().saturating_add(slack)
+        if self.highest_observed_height <= self.latest_height().saturating_add(slack) {
+            return false;
+        }
+        // "Behind" is only meaningful while blocks keep arriving. The
+        // high-water mark never decreases, so a minority fork advertising a
+        // higher height (validator 2 building alone after a split, Sep 12)
+        // would otherwise convince every honest validator it was behind and
+        // stop all production for good — a permanent halt with no reorg to
+        // resolve it. If nothing has been applied for a few round timeouts,
+        // the network is stalled, not ahead of us: allow production.
+        // > 2 leader-timeout rounds (the producer rotates every ~19s).
+        const STALL_SECS: u64 = 45;
+        match self.secs_since_last_applied() {
+            Some(secs) if secs > STALL_SECS => {
+                metrics::increment_counter!("mersennet_behind_override_stalled_total");
+                false
+            }
+            _ => true,
+        }
     }
 
     pub fn block_by_number(&self, number: u64) -> Option<&Block> {
@@ -1789,6 +1816,7 @@ impl Engine {
         self.trim_chain_window();
         self.evm.state.store_block(&block)?;
         self.evm.state.end_commit()?;
+        self.last_block_applied_at = Some(std::time::Instant::now());
 
         // Privacy-redesign Phase 4 — persist shielded state at end of
         // block. No-op pre-fork (the subsystems are still in their
@@ -2163,6 +2191,7 @@ impl Engine {
         self.trim_chain_window();
         self.evm.state.store_block(&block)?;
         self.evm.state.end_commit()?;
+        self.last_block_applied_at = Some(std::time::Instant::now());
 
         // Privacy-redesign Phase 4 — persist shielded state.
         if self.privacy_mode_activated
@@ -2532,6 +2561,7 @@ impl Engine {
         if should_commit {
             self.evm.state.end_commit()?;
         }
+        self.last_block_applied_at = Some(std::time::Instant::now());
         self.chain.push(block);
         self.trim_chain_window();
         self.block_number = self.block_number.saturating_add(1);

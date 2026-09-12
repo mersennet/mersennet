@@ -546,6 +546,45 @@ fn main() -> anyhow::Result<()> {
                                 continue;
                             }
 
+                            // Rounds are local timers, so a validator that has
+                            // just caught up (restart, heal) starts at round 0
+                            // while the rest of the network may already have
+                            // timed out on *its* slot and rotated. On Sep 12
+                            // validator 3 rejoined exactly as its own slot
+                            // expired, produced a round-0 block in the same
+                            // second the round-1 leader did, and forked itself
+                            // (no reorg). Anchor the round to chain time: the
+                            // parent block's timestamp tells everyone how long
+                            // this height has been pending, so a late arrival
+                            // adopts the round the network is actually in and
+                            // only proposes if it leads *that* round.
+                            let time_round = {
+                                let Ok(e) = eng.lock() else { break };
+                                e.block_by_number(head)
+                                    .map(|b| {
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .map(|d| d.as_secs())
+                                            .unwrap_or(0);
+                                        // Peers start their round timer when the parent
+                                        // arrives (~its timestamp) and rotate every
+                                        // round_timeout; mirror that.
+                                        let pending_ms = now.saturating_sub(b.timestamp).saturating_mul(1000);
+                                        pending_ms / round_timeout_ms
+                                    })
+                                    .unwrap_or(0)
+                            };
+                            if time_round > waiting_round {
+                                tracing::info!(
+                                    height = next_height,
+                                    local_round = waiting_round,
+                                    chain_time_round = time_round,
+                                    "adopting the network's failover round from chain time (late arrival)"
+                                );
+                                waiting_round = time_round;
+                                waited_ms = 0;
+                            }
+
                             let am_leader = {
                                 let Ok(e) = eng.lock() else { break };
                                 e.is_leader(next_height, waiting_round)
