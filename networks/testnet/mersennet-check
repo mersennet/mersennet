@@ -51,7 +51,21 @@ else
             printf 'Block height %s / %s network — %s (%s blocks behind)\n' "$local_h" "$public_h" "$(yellow 'catching up')" "$lag"
         else
             pct=$(( local_h * 100 / (public_h > 0 ? public_h : 1) ))
-            printf 'Block height %s / %s network — %s (%s%% done, %s blocks behind)\n' "$local_h" "$public_h" "$(yellow syncing)" "$pct" "$lag"
+            # Measure the sync rate over a few seconds for an ETA.
+            sleep 4
+            later_h="$(hex2dec "$(rpc "$LOCAL_RPC" eth_blockNumber)")"
+            eta=""
+            if [[ -n "$later_h" ]] && (( later_h > local_h )); then
+                rate=$(( (later_h - local_h) / 4 ))
+                if (( rate > 0 )); then
+                    secs=$(( lag / rate ))
+                    if (( secs < 90 )); then eta="~1 min left"; elif (( secs < 5400 )); then eta="~$(( (secs + 59) / 60 )) min left"; else eta="~$(( (secs + 1799) / 3600 )) h left"; fi
+                    eta=", $rate blocks/s, $eta"
+                fi
+            elif [[ -n "$later_h" ]]; then
+                eta=", $(red 'not advancing') — check journalctl -u mersennet -n 30"
+            fi
+            printf 'Block height %s / %s network — %s (%s%% done%s)\n' "$later_h" "$public_h" "$(yellow syncing)" "$pct" "$eta"
         fi
     fi
     peers_hex="$(rpc "$LOCAL_RPC" net_peerCount)"
@@ -62,6 +76,21 @@ else
     chain_hex="$(rpc "$LOCAL_RPC" eth_chainId)"
     chain="$(hex2dec "$chain_hex")"
     [[ -n "$chain" ]] && printf 'Chain ID     %s%s\n' "$chain" "$([[ "$chain" == "131071" ]] && echo ' (Mersennet testnet)' || red '  <-- expected 131071')"
+fi
+
+# Binary version vs the latest published release
+if [[ -x /usr/local/bin/mersennet ]] && command -v sha256sum >/dev/null; then
+    have="$(sha256sum /usr/local/bin/mersennet | cut -d' ' -f1)"
+    latest_json="$(curl -s --max-time 6 "https://mersennet.com/downloads/latest.json" 2>/dev/null || true)"
+    want="$(printf '%s' "$latest_json" | sed -n 's/.*"binary_sha256": *"\([0-9a-f]*\)".*/\1/p')"
+    rel="$(printf '%s' "$latest_json" | sed -n 's/.*"release": *"\([^"]*\)".*/\1/p')"
+    if [[ -z "$want" ]]; then
+        printf 'Binary       %s (could not check for updates)\n' "${have:0:12}"
+    elif [[ "$have" == "$want" ]]; then
+        printf 'Binary       %s — %s (release %s)\n' "${have:0:12}" "$(green 'up to date')" "${rel:-?}"
+    else
+        printf 'Binary       %s — %s: release %s is out. Upgrade: curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash\n' "${have:0:12}" "$(yellow 'update available')" "${rel:-?}"
+    fi
 fi
 
 # Disk
