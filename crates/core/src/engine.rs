@@ -410,6 +410,18 @@ impl ConsensusEngine {
     }
 }
 
+/// A live gossip peer as reported by the network layer (address plus how
+/// many seconds ago it was first and last heard from). Kept here so the RPC
+/// layer can serve `mersennet_peers` without depending on the network crate.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PeerSnapshot {
+    pub addr: String,
+    pub first_seen_secs: u64,
+    pub last_seen_secs: u64,
+    /// True when this node has received packets from the peer itself.
+    pub heard: bool,
+}
+
 #[derive(Debug)]
 pub struct Engine {
     pub chain_id: u64,
@@ -440,6 +452,8 @@ pub struct Engine {
     pub aa_bundler: Bundler,
     pub invariant_checker: InvariantChecker,
     pub peer_count: std::sync::atomic::AtomicUsize,
+    /// Live gossip peers as of the last discovery tick (for `mersennet_peers`).
+    pub peer_list: Vec<PeerSnapshot>,
 
     // ───── Privacy redesign (Phase 4 wiring) ─────
     /// Master switch — gates `apply_shielded_tx`, the FBA tick, the
@@ -666,6 +680,7 @@ impl Engine {
             aa_bundler: Bundler::new(10),
             invariant_checker: InvariantChecker::new(),
             peer_count: std::sync::atomic::AtomicUsize::new(0),
+            peer_list: Vec::new(),
 
             // Privacy-redesign Phase 4 — off until the hard fork
             // flips the master switch (ADR-018). All subsystems live
@@ -2211,12 +2226,43 @@ impl Engine {
         if block.number > self.block_number.saturating_add(512) {
             return;
         }
+        // A proposal for a height the network has already finalized with a
+        // different hash lost a leader-timeout race. Applying it would put
+        // this node on a dead branch (there is no automatic reorg), which is
+        // exactly how a node finishing its catch-up used to fork at the tip:
+        // it had buffered every gossip proposal while syncing and applied
+        // the orphaned one when block-sync reached that height.
+        if let Some(finalized) = self.finalized_hash(block.number)
+            && finalized != block.hash
+        {
+            metrics::increment_counter!("mersennet_import_orphan_dropped_total");
+            tracing::warn!(
+                height = block.number,
+                block_hash = %block.hash,
+                finalized_hash = %finalized,
+                "dropping competing proposal for an already-finalized height"
+            );
+            return;
+        }
         self.import_buffer.insert(block.number, block);
 
         // Drain consecutive buffered blocks starting at the next
         // expected height.
         while let Some(next) = self.import_buffer.remove(&self.block_number) {
             let height = next.number;
+            // Finality may have arrived after this block was buffered.
+            if let Some(finalized) = self.finalized_hash(height)
+                && finalized != next.hash
+            {
+                metrics::increment_counter!("mersennet_import_orphan_dropped_total");
+                tracing::warn!(
+                    height,
+                    block_hash = %next.hash,
+                    finalized_hash = %finalized,
+                    "dropping buffered competing proposal for an already-finalized height; waiting for the canonical block"
+                );
+                break;
+            }
             if let Err(e) = self.apply_imported_block(next) {
                 let msg = e.to_string();
                 // A persistent parent-hash mismatch means this node is on a
