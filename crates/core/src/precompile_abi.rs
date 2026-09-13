@@ -143,6 +143,35 @@ pub fn get_unbonding_selector() -> [u8; 4] {
     selector("getUnbonding(address)")
 }
 
+// Open validator set (same precompile, 0x…0400)
+pub fn register_validator_selector() -> [u8; 4] {
+    selector("registerValidator(address,uint256,uint256,bytes)")
+}
+pub fn add_self_stake_selector() -> [u8; 4] {
+    selector("addSelfStake(address,uint256)")
+}
+pub fn unregister_validator_selector() -> [u8; 4] {
+    selector("unregisterValidator(address)")
+}
+pub fn rotate_validator_key_selector() -> [u8; 4] {
+    selector("rotateValidatorKey(address,address,bytes)")
+}
+pub const GAS_REGISTER_VALIDATOR: u64 = 80_000;
+pub const GAS_VALIDATOR_ADMIN: u64 = 40_000;
+
+/// Read a dynamic `bytes` argument whose offset word sits at `word_index`.
+pub fn read_bytes_arg(input: &[u8], word_index: usize) -> Option<Vec<u8>> {
+    let off = decode_u256(read_word(input, word_index)?);
+    let off: usize = off.try_into().ok()?;
+    let data = &input[4..];
+    let len_word: [u8; 32] = data.get(off..off + 32)?.try_into().ok()?;
+    let len: usize = decode_u256(len_word).try_into().ok()?;
+    if len > 4096 {
+        return None;
+    }
+    data.get(off + 32..off + 32 + len).map(|b| b.to_vec())
+}
+
 pub fn place_order_selector() -> [u8; 4] {
     selector("placeOrder(uint64,bool,uint256,uint256,uint8)")
 }

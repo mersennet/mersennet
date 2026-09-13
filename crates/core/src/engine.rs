@@ -314,6 +314,10 @@ impl ConsensusEngine {
         self.inner.set_round_timeout_ms(timeout_ms);
     }
 
+    pub fn replace_validators(&mut self, validators: Vec<Validator>) {
+        self.inner.replace_validators(validators);
+    }
+
     pub fn set_slashing_bps(&mut self, double_sign_bps: u64, timeout_bps: u64) {
         self.inner.set_slashing_bps(double_sign_bps, timeout_bps);
     }
@@ -841,6 +845,81 @@ impl Engine {
             .collect();
         v.sort();
         v
+    }
+
+    // ─── Open validator set ────────────────────────────────────────────────
+
+    pub fn set_validator_set_params(&mut self, params: crate::staking::ValidatorSetParams) {
+        self.orders.state.staking.set_params(params);
+    }
+
+    /// Runs at the first block of every epoch once the open set is active
+    /// (and once at the activation height): judges the past epoch, then
+    /// recomputes the active set from the registry and installs it as the
+    /// consensus validator set. Identical on producer and importer.
+    fn maybe_epoch_transition(&mut self, height: u64) {
+        let st = &self.orders.state.staking;
+        if !st.is_open_set_active(height) {
+            return;
+        }
+        let activation = st.params.activation_height;
+        let epoch_blocks = st.params.epoch_blocks.max(1);
+        let at_boundary = height == activation || height.is_multiple_of(epoch_blocks);
+        if !at_boundary {
+            return;
+        }
+        // Idempotency: the transition for this epoch already ran.
+        let epoch = height / epoch_blocks;
+        if !st.active_set.is_empty() && st.current_epoch == epoch && height != activation {
+            return;
+        }
+        if height == activation && st.current_epoch == epoch && !st.active_set.is_empty() {
+            return;
+        }
+        if st.registry.is_empty() {
+            // First activation: the genesis validators become registry
+            // entries with their consensus stake as self-stake.
+            let genesis: Vec<(Address, U256)> =
+                self.consensus.validators().iter().map(|v| (v.address, v.stake)).collect();
+            self.orders.state.staking.seed_genesis(&genesis, height);
+        }
+        let transition = self.orders.state.staking.epoch_transition(height);
+        let new_set: Vec<crate::consensus::Validator> = transition
+            .active_set
+            .iter()
+            .map(|id| crate::consensus::Validator { address: *id, stake: self.orders.state.staking.voting_stake(*id) })
+            .collect();
+        if !new_set.is_empty() {
+            self.consensus.replace_validators(new_set);
+        }
+        metrics::increment_counter!("mersennet_epoch_transitions_total");
+        tracing::info!(
+            height,
+            epoch = transition.epoch,
+            active = transition.active_set.len(),
+            jailed = transition.jailed.len(),
+            removed = transition.removed.len(),
+            rotated = transition.rotated.len(),
+            "epoch transition: validator set recomputed"
+        );
+    }
+
+    /// Leader-slot accounting for jailing: the proposer took height `height`
+    /// at the smallest round where it leads; every leader for an earlier
+    /// round missed its slot. Deterministic from (height, proposer, set).
+    fn record_leader_slots(&mut self, height: u64, proposer: Address) {
+        if !self.orders.state.staking.is_open_set_active(height) {
+            return;
+        }
+        let mut missed = Vec::new();
+        for round in 0..MAX_LEADER_ROUND_WINDOW {
+            match self.leader_for_height(height, round) {
+                Some(l) if l == proposer => break,
+                Some(l) => missed.push(l),
+                None => return,
+            }
+        }
+        self.orders.state.staking.record_slots(proposer, &missed);
     }
 
     /// Deterministic leader for a given block height and failover round.
@@ -1624,7 +1703,26 @@ impl Engine {
     }
 
     pub fn execute_block(&mut self) -> Result<Block> {
+        // Never produce for a height the network has already finalized.
+        // Votes (tiny UDP packets) routinely arrive before the block they
+        // vote for (large): on Sep 13 validator 3 reached the 2/3 quorum for
+        // validator 4's block while still waiting for the block itself, then
+        // its round timer fired and it produced a competing block — a
+        // self-fork that finality could no longer undo because the height
+        // was already marked finalized. Block-sync fetches the canonical
+        // block within seconds; producing here can only create an orphan.
+        if let Some(finalized) = self.finalized_hash(self.block_number) {
+            metrics::increment_counter!("mersennet_produce_skipped_finalized_total");
+            anyhow::bail!(
+                "height {} is already finalized by the network ({finalized}); not producing a competing block",
+                self.block_number
+            );
+        }
         self.checkpoint_before(self.block_number);
+        self.maybe_epoch_transition(self.block_number);
+        if let Some(me) = self.local_validator {
+            self.record_leader_slots(self.block_number, me);
+        }
         // Mainnet safety checks
         if let Err(e) = self.mainnet_guard.pre_block_checks(self.block_number) {
             return Err(anyhow::anyhow!("mainnet guard: {}", e));
@@ -2586,6 +2684,12 @@ impl Engine {
             );
         }
 
+        // Open validator set: the active set for this height is decided at
+        // the epoch boundary, before the proposer is authenticated against
+        // the leader schedule. Idempotent, so a rejected block re-imported
+        // later does not apply it twice.
+        self.maybe_epoch_transition(block.number);
+
         // Authenticate the proposer: the block must be signed by the address in
         // `block.proposer`, that address must be a current validator, and it
         // must be a legitimately elected leader for this height (at some early
@@ -2625,6 +2729,7 @@ impl Engine {
                 );
             }
         }
+        self.record_leader_slots(block.number, block.proposer);
 
         // Match the producer's per-tx execution environment.
         self.base_fee = block.base_fee;
@@ -4380,6 +4485,24 @@ mod reorg_tests {
         assert!(a.mempool_queued_count() <= 1);
     }
 
+    /// Votes can arrive before the block they finalize. Once a height is
+    /// finalized the node must not produce a competing block for it.
+    #[test]
+    fn no_production_for_an_already_finalized_height() {
+        let vals = validators();
+        let mut a = with_validators(engine());
+        a.set_local_validator(vals[0]);
+        let canonical = B256::from([7u8; 32]);
+        for v in vals.iter().take(3) {
+            a.record_finality_vote(1, canonical, *v);
+        }
+        assert_eq!(a.finalized_hash(1), Some(canonical));
+        assert_eq!(a.latest_height(), 0, "we never saw the block itself");
+        let err = a.execute_block().expect_err("must refuse to produce height 1");
+        assert!(err.to_string().contains("already finalized"), "{err}");
+        assert_eq!(a.latest_height(), 0);
+    }
+
     /// Finality on the block we already hold changes nothing.
     #[test]
     fn finality_on_our_own_block_is_a_no_op() {
@@ -4411,5 +4534,213 @@ mod reorg_tests {
         // Too deep: our block at height 1 stays, chain untouched.
         assert_eq!(a.block_by_number(1).unwrap().hash, first.hash);
         assert_eq!(a.latest_height() as usize, REORG_DEPTH + 3);
+    }
+}
+
+#[cfg(test)]
+mod open_validator_set_tests {
+    use super::*;
+    use crate::staking::{ValidatorSetParams, ValidatorStatus};
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+
+    fn params() -> ValidatorSetParams {
+        ValidatorSetParams {
+            activation_height: 1,
+            epoch_blocks: 10,
+            min_self_stake: U256::from(1_000u64) * U256::from(MRSN),
+            max_validators: 12,
+            unbonding_blocks: 50,
+            jail_miss_bps: 2_000,
+            jail_min_slots: 2,
+        }
+    }
+
+    fn engine() -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut e = Engine::new_with_backend(131071, sub, "redb");
+        std::mem::forget(dir);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN)).unwrap();
+        }
+        e.set_validator_set_params(params());
+        e
+    }
+
+    /// Produce the next block signed by the leader at `round` (the set for
+    /// that height is fixed by the epoch transition first, as in production).
+    fn produce(e: &mut Engine, round: u64, skip: &[Address]) -> Block {
+        e.maybe_epoch_transition(e.block_number);
+        let mut r = round;
+        let leader = loop {
+            let l = e.leader_for_height(e.block_number, r).expect("leader");
+            if skip.contains(&l) { r += 1; continue; }
+            break l;
+        };
+        let k = (1..=6u8).map(key).find(|k| crate::crypto::address_from_signing_key(k) == leader).expect("leader key");
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        let (sr, ss, v) = crate::crypto::sign_block_proposal(b.number, b.hash, &k);
+        b.proposer_sig = Some((sr, ss, v));
+        if let Some(last) = e.chain.last_mut() && last.number == b.number {
+            last.proposer = leader;
+            last.proposer_sig = b.proposer_sig;
+        }
+        b
+    }
+
+    #[test]
+    fn register_activate_jail_rehabilitate_exit_and_importer_agrees() {
+        let mut p = engine();       // producer
+        let mut c = engine();       // clean follower, imports each block as it is produced
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        let stake = U256::from(5_000u64) * U256::from(MRSN);
+
+        // Drives one height on both nodes: state mutations first (same height
+        // on both, like a tx in that block would), then produce and import.
+        let mut step = |p: &mut Engine, c: &mut Engine, skip: &[Address]| {
+            let h = p.block_number;
+            if h == 2 {
+                for e in [&mut *p, &mut *c] {
+                    e.orders.state.staking.register_validator(operator, v5, stake, 500, h).unwrap();
+                }
+            }
+            if h == 31 {
+                for e in [&mut *p, &mut *c] {
+                    e.orders.state.staking.unregister_validator(operator, v5).unwrap();
+                }
+            }
+            let b = produce(p, 0, skip);
+            c.import_block(b.clone());
+            assert_eq!(c.latest_height(), b.number, "follower applied block {}", b.number);
+            assert_eq!(c.evm.state.compute_state_root(), p.evm.state.compute_state_root(), "roots agree at height {}", b.number);
+        };
+
+        for _ in 1..=3u64 { step(&mut p, &mut c, &[]); }
+        assert_eq!(p.consensus.validators().len(), 4, "not yet an epoch boundary");
+        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Pending));
+
+        for _ in 4..=9u64 { step(&mut p, &mut c, &[]); }
+        // Epoch 1 (10..19): v5 is admitted at 10 but never shows up.
+        for _ in 10..=19u64 { step(&mut p, &mut c, &[v5]); }
+        assert_eq!(p.consensus.validators().len(), 5, "epoch 1 active set includes the newcomer");
+        assert!(p.validator_addresses().contains(&v5));
+        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Active));
+        let missed = p.orders.state.staking.registry[&v5].missed_slots;
+        assert!(missed >= 2, "v5 had leader slots in epoch 1 and missed them all (missed={missed})");
+
+        // Height 20 judges epoch 1: jailed for epoch 2.
+        step(&mut p, &mut c, &[]);
+        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Jailed));
+        assert_eq!(p.consensus.validators().len(), 4);
+        assert!(!p.validator_addresses().contains(&v5));
+
+        // Epoch 2 passes; at 30 it is eligible again and returns.
+        for _ in 21..=30u64 { step(&mut p, &mut c, &[]); }
+        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Active), "rehabilitated after one epoch");
+        assert_eq!(p.consensus.validators().len(), 5);
+
+        // Operator leaves at 31; removed at 40, self-stake unbonding.
+        for _ in 31..=40u64 { step(&mut p, &mut c, &[]); }
+        assert!(p.orders.state.staking.registry.get(&v5).is_none(), "removed at the epoch boundary");
+        assert_eq!(p.consensus.validators().len(), 4);
+        let unb = p.orders.state.staking.unbondings.get(&operator).expect("unbonding entry for the operator");
+        assert_eq!(unb[0].amount, stake);
+        assert_eq!(unb[0].unlock_at, 40 + 50);
+
+        // Follower ends identical.
+        assert_eq!(c.validator_addresses(), p.validator_addresses());
+        assert_eq!(c.orders.state.staking.current_epoch, p.orders.state.staking.current_epoch);
+        assert_eq!(c.evm.state.compute_state_root(), p.evm.state.compute_state_root());
+    }
+
+    /// ABI-encode registerValidator(address,uint256,uint256,bytes).
+    fn register_calldata(identity: Address, stake: U256, commission: u64, proof: &[u8]) -> Vec<u8> {
+        let mut d = crate::precompile_abi::register_validator_selector().to_vec();
+        let mut w = [0u8; 32]; w[12..].copy_from_slice(identity.as_slice()); d.extend_from_slice(&w);
+        d.extend_from_slice(&stake.to_be_bytes::<32>());
+        d.extend_from_slice(&U256::from(commission).to_be_bytes::<32>());
+        d.extend_from_slice(&U256::from(128u64).to_be_bytes::<32>());        // offset of bytes
+        d.extend_from_slice(&U256::from(proof.len() as u64).to_be_bytes::<32>());
+        d.extend_from_slice(proof);
+        d.resize(d.len() + (32 - proof.len() % 32) % 32, 0);
+        d
+    }
+
+    #[test]
+    fn register_through_the_precompile_with_the_node_key_proof() {
+        let mut e = engine();
+        let operator = Address::from_slice(&[0x77; 20]);
+        let node_key = key(9);
+        let identity = crate::crypto::address_from_signing_key(&node_key);
+        e.fund_account(operator, U256::from(20_000u64) * U256::from(MRSN), 0);
+        let stake = U256::from(1_000u64) * U256::from(MRSN);
+        let proof = crate::crypto::sign_validator_registration(operator, identity, &node_key);
+
+        // Wrong proof (signed for a different operator) is rejected: nothing registered, nothing escrowed.
+        let bad = crate::crypto::sign_validator_registration(Address::ZERO, identity, &node_key);
+        for (nonce, pr, expect_ok) in [(0u64, bad.clone(), false), (1u64, proof.clone(), true)] {
+            let before = e.get_balance(operator).unwrap();
+            e.submit_tx_unsigned(Transaction {
+                from: operator,
+                to: Some(crate::precompile_abi::STAKING_PRECOMPILE),
+                value: U256::ZERO,
+                data: Bytes::from(register_calldata(identity, stake, 500, &pr)),
+                gas_limit: 300_000,
+                gas_price: U256::from(1u64),
+                nonce,
+                chain_id: Some(e.chain_id),
+                signature: None,
+                tx_type: 0,
+                shielded_payload: None,
+                hash: None,
+            }).expect("tx accepted into mempool");
+            produce(&mut e, 0, &[]);
+            let registered = e.orders.state.staking.registry.contains_key(&identity);
+            let after = e.get_balance(operator).unwrap();
+            assert_eq!(registered, expect_ok, "registration outcome for proof #{nonce}");
+            if expect_ok {
+                assert!(before - after >= stake, "self-stake escrowed");
+                assert_eq!(e.get_balance(crate::precompile_abi::STAKING_PRECOMPILE).unwrap(), stake);
+            } else {
+                assert!(before - after < U256::from(MRSN), "only gas spent, stake refunded");
+            }
+        }
+        let reg = &e.orders.state.staking.registry[&identity];
+        assert_eq!(reg.operator, operator);
+        assert_eq!(reg.commission_bps, 500);
+        assert_eq!(e.orders.state.staking.status_of(identity), Some(ValidatorStatus::Pending));
+    }
+
+    #[test]
+    fn registration_rules() {
+        let mut e = engine();
+        let op = Address::from_slice(&[0x66; 20]);
+        let st = &mut e.orders.state.staking;
+        assert_eq!(st.register_validator(op, addr(5), U256::from(999u64) * U256::from(MRSN), 0, 5), Err(crate::staking::StakingError::StakeTooLow));
+        assert!(st.register_validator(op, addr(5), U256::from(1_000u64) * U256::from(MRSN), 0, 5).is_ok());
+        assert_eq!(st.register_validator(op, addr(5), U256::from(1_000u64) * U256::from(MRSN), 0, 5), Err(crate::staking::StakingError::AlreadyRegistered));
+        assert_eq!(st.unregister_validator(Address::ZERO, addr(5)), Err(crate::staking::StakingError::NotOperator));
+        assert!(st.rotate_identity(op, addr(5), addr(6)).is_ok());
+        // Before activation nothing can register.
+        let mut off = ValidatorSetParams::default();
+        off.activation_height = 0;
+        st.set_params(off);
+        assert_eq!(st.register_validator(op, Address::from_slice(&[0x77; 20]), U256::from(1_000u64) * U256::from(MRSN), 0, 5), Err(crate::staking::StakingError::NotActive));
     }
 }

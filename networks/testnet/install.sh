@@ -111,7 +111,30 @@ chown -R mersennet:mersennet "$DATA_DIR"
 
 echo "==> Installing canonical testnet config to /etc/mersennet/config.json"
 if [[ -f /etc/mersennet/config.json ]]; then
-    echo "    /etc/mersennet/config.json already exists — leaving it untouched (canonical copy: $CONF)"
+    # Consensus sections (genesis, engine, validator_set, token_economics, …)
+    # must match the network exactly and are refreshed from the canonical
+    # config on every upgrade. Node-local sections (rpc, ws, p2p.listen,
+    # p2p.operator_address, key/peer-store paths) are kept.
+    echo "    /etc/mersennet/config.json exists — refreshing consensus sections from the canonical config, keeping your node-local settings"
+    python3 - "$CONF" /etc/mersennet/config.json <<'PY'
+import json, sys
+canon = json.load(open(sys.argv[1]))
+mine = json.load(open(sys.argv[2]))
+keep_top = {"rpc", "ws"}
+keep_p2p = {"listen", "operator_address", "node_key_path", "peer_store_path"}
+merged = {k: v for k, v in canon.items() if k not in keep_top and k != "p2p"}
+for k in keep_top:
+    if k in mine:
+        merged[k] = mine[k]
+    elif k in canon:
+        merged[k] = canon[k]
+p2p = dict(canon.get("p2p", {}))
+for k in keep_p2p:
+    if k in mine.get("p2p", {}):
+        p2p[k] = mine["p2p"][k]
+merged["p2p"] = p2p
+json.dump(merged, open(sys.argv[2], "w"), indent=2)
+PY
 else
     install -m 0644 "$CONF" /etc/mersennet/config.json
 fi

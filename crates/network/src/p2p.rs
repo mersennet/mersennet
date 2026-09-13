@@ -662,6 +662,20 @@ impl NetworkNode {
                                             return;
                                         }
                                     };
+                                    if request.topic == "block_push" {
+                                        // Large block delivered peer-to-peer (see
+                                        // broadcast_block). Same handling as gossip.
+                                        if let Ok(wire) = serde_json::from_slice::<WireBlock>(&request.data)
+                                            && let Some(block) = wire_to_block(&wire)
+                                        {
+                                            info!(number = block.number, "received block over tcp");
+                                            if let Ok(mut eng) = engine.lock() {
+                                                eng.import_block(block);
+                                            }
+                                        }
+                                        in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                        return;
+                                    }
                                     if request.topic == "whoami" {
                                         // Verified-node-runner probe: echo a signed
                                         // statement of who we are, bound to the
@@ -785,6 +799,7 @@ impl NetworkNode {
                     // Let listeners come up before the first request.
                     std::thread::sleep(Duration::from_secs(2));
                     let mut full_batch;
+                    let mut round: usize = 0;
                     while running.load(Ordering::SeqCst) {
                         let from = match engine.lock() {
                             Ok(eng) => eng.latest_height().saturating_add(1),
@@ -794,7 +809,14 @@ impl NetworkNode {
                             }
                         };
                         full_batch = false;
-                        for peer in &peers {
+                        round = round.wrapping_add(1);
+                        // Start from a different peer each round and move on
+                        // when a peer's blocks do not advance our head: a
+                        // bootstrap peer sitting on a fork used to answer
+                        // first every time and starve the others.
+                        let n = peers.len().max(1);
+                        let ordered: Vec<&String> = (0..peers.len()).map(|i| &peers[(round + i) % n]).collect();
+                        for peer in ordered {
                             let tcp_addr = derive_tcp_addr(peer);
                             let Ok(mut stream) =
                                 TcpSync::connect(&tcp_addr, Duration::from_secs(5))
@@ -826,22 +848,28 @@ impl NetworkNode {
                                 continue;
                             }
                             let mut applied = 0u64;
+                            let mut advanced = false;
                             if let Ok(mut eng) = engine.lock() {
+                                let before = eng.latest_height();
                                 for wire in &blocks {
                                     if let Some(block) = wire_to_block(wire) {
                                         eng.import_block(block);
                                         applied += 1;
                                     }
                                 }
+                                advanced = eng.latest_height() > before;
                             }
-                            if applied > 0 {
+                            if advanced {
                                 info!(peer = %peer, from, count = applied, "synced blocks from peer");
+                            } else {
+                                // This peer's view did not move us (fork or
+                                // stale): try the next one this round.
+                                continue;
                             }
                             // A full batch means the peer likely has more —
                             // keep pulling back-to-back so initial sync runs
                             // at wire speed instead of one batch per tick.
-                            full_batch = blocks.len() >= 256 && applied > 0;
-                            // One responsive peer per round is enough.
+                            full_batch = blocks.len() >= 256;
                             break;
                         }
                         if !full_batch {
@@ -853,12 +881,50 @@ impl NetworkNode {
         }
     }
 
+    /// Largest gossip packet we hand to UDP. A datagram tops out at 65,507
+    /// bytes and the packet JSON encodes `data` as a number array (3-4x the
+    /// raw size), so anything bigger than this fails in `send_to` and was
+    /// silently dropped — a ~25-tx block never reached peers by gossip, they
+    /// only got it through the 4 s TCP poll, leaders timed out and competing
+    /// proposals followed. Blocks above the limit go peer-to-peer over TCP.
+    const MAX_UDP_PACKET_BYTES: usize = 60_000;
+
     pub fn broadcast_block(&self, block: &Block) -> Result<()> {
         let wire = block_to_wire(block);
         let data = serde_json::to_vec(&wire)?;
-        let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let packet = gossip.new_packet("block", data, 3);
-        gossip.broadcast(&packet)
+        let (packet, peers) = {
+            let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+            let packet = gossip.new_packet("block", data, 3);
+            let encoded = serde_json::to_vec(&packet)?.len();
+            if encoded <= Self::MAX_UDP_PACKET_BYTES {
+                return gossip.broadcast(&packet);
+            }
+            metrics::increment_counter!("mersennet_block_push_tcp_total");
+            let peers: Vec<String> = gossip.peers_snapshot().into_iter().map(|p| p.addr).collect();
+            (packet, peers)
+        };
+        // Deliver directly to every known peer over the TCP sync port.
+        let pushed = std::sync::Arc::new(packet);
+        for peer in peers {
+            let pkt = pushed.clone();
+            let addr = derive_tcp_addr(&peer);
+            std::thread::Builder::new()
+                .name("block-push".into())
+                .spawn(move || {
+                    if let Ok(mut stream) = TcpSync::connect(&addr, Duration::from_secs(3)) {
+                        let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+                        let push = crate::net_transport::GossipPacket {
+                            topic: "block_push".to_string(),
+                            data: pkt.data.clone(),
+                            id: pkt.id.clone(),
+                            ttl: 0,
+                        };
+                        let _ = TcpSync::send_packet(&mut stream, &push);
+                    }
+                })
+                .ok();
+        }
+        Ok(())
     }
 
     pub fn broadcast_tx(&self, tx: &Transaction) -> Result<()> {

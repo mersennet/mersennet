@@ -153,6 +153,10 @@ pub struct PersistentState {
     accounts: sled::Tree,
     storage: sled::Tree,
     mersennet_orders: sled::Tree,
+    /// Open validator set: registry entries keyed by node identity plus two
+    /// meta keys (active set, epoch). Kept out of the orders snapshot so the
+    /// state root is unchanged until the first registration.
+    validator_registry: sled::Tree,
     bridge_orders_to_evm: sled::Tree,
     bridge_evm_to_orders: sled::Tree,
     blocks: sled::Tree,
@@ -311,6 +315,7 @@ impl PersistentState {
         let accounts = db.open_tree("accounts")?;
         let storage = db.open_tree("storage")?;
         let mersennet_orders = db.open_tree("mersennet_orders")?;
+        let validator_registry = db.open_tree("validator_registry")?;
         let bridge_orders_to_evm = db.open_tree("bridge_orders_to_evm")?;
         let bridge_evm_to_orders = db.open_tree("bridge_evm_to_orders")?;
         let blocks = db.open_tree("blocks")?;
@@ -321,6 +326,7 @@ impl PersistentState {
             accounts,
             storage,
             mersennet_orders,
+            validator_registry,
             bridge_orders_to_evm,
             bridge_evm_to_orders,
             blocks,
@@ -449,8 +455,51 @@ impl PersistentState {
         Ok(())
     }
 
+    /// Open validator set persistence. Keys: `r:<identity>` → bincode
+    /// registration; `m:active_set`, `m:epoch`. Nothing is written while the
+    /// registry is empty, so activation does not disturb existing roots.
+    fn commit_validator_registry(&self, staking: &crate::staking::StakingState) -> Result<()> {
+        self.validator_registry.clear()?;
+        if staking.registry.is_empty() && staking.active_set.is_empty() {
+            return Ok(());
+        }
+        let mut ids: Vec<&Address> = staking.registry.keys().collect();
+        ids.sort();
+        for id in ids {
+            let reg = &staking.registry[id];
+            let mut key = b"r:".to_vec();
+            key.extend_from_slice(id.as_slice());
+            self.validator_registry.insert(key, bincode::serialize(reg)?)?;
+        }
+        let active: Vec<Vec<u8>> = staking.active_set.iter().map(|a| a.as_slice().to_vec()).collect();
+        self.validator_registry.insert(b"m:active_set", bincode::serialize(&active)?)?;
+        self.validator_registry.insert(b"m:epoch", staking.current_epoch.to_be_bytes().to_vec())?;
+        Ok(())
+    }
+
+    fn load_validator_registry(&self, staking: &mut crate::staking::StakingState) -> Result<()> {
+        staking.registry.clear();
+        staking.active_set.clear();
+        for item in self.validator_registry.iter() {
+            let (k, v) = item?;
+            if k.starts_with(b"r:") && k.len() == 22 {
+                let reg: crate::staking::ValidatorRegistration = bincode::deserialize(&v)?;
+                staking.registry.insert(Address::from_slice(&k[2..]), reg);
+            } else if k.as_ref() == b"m:active_set" {
+                let active: Vec<Vec<u8>> = bincode::deserialize(&v)?;
+                staking.active_set = active.iter().map(|a| Address::from_slice(a)).collect();
+            } else if k.as_ref() == b"m:epoch" && v.len() == 8 {
+                let mut b = [0u8; 8];
+                b.copy_from_slice(&v);
+                staking.current_epoch = u64::from_be_bytes(b);
+            }
+        }
+        Ok(())
+    }
+
     pub fn load_mersennet_orders(&self, state: &mut MersennetOrdersState) -> Result<()> {
         let Some(value) = self.mersennet_orders.get("state")? else {
+            self.load_validator_registry(&mut state.staking)?;
             return Ok(());
         };
         let snapshot: MersennetOrdersSnapshot = bincode::deserialize(&value)?;
@@ -539,6 +588,8 @@ impl PersistentState {
         }
 
         state.staking = decode_staking(snapshot.staking);
+        // The open-set registry lives in its own tree (see commit_validator_registry).
+        self.load_validator_registry(&mut state.staking)?;
 
         state.collateral_assets.clear();
         for a in snapshot.collateral_assets {
@@ -694,6 +745,7 @@ impl PersistentState {
         let data = bincode::serialize(&snapshot)?;
         self.mersennet_orders.insert("state", data)?;
         self.db.flush()?;
+        self.commit_validator_registry(&state.staking)?;
         Ok(())
     }
 
@@ -823,6 +875,7 @@ impl PersistentState {
             &self.accounts,
             &self.storage,
             &self.mersennet_orders,
+            &self.validator_registry,
             &self.bridge_orders_to_evm,
             &self.bridge_evm_to_orders,
         ] {
@@ -1295,5 +1348,39 @@ impl crate::state_trait::StateBackend for PersistentState {
 
     fn import_snapshot_bytes(&self, data: &[u8]) -> Result<SnapshotMeta> {
         PersistentState::import_snapshot_bytes(self, data)
+    }
+}
+
+#[cfg(test)]
+mod validator_registry_persistence_tests {
+    use super::*;
+    use crate::mersennet_orders::MersennetOrdersState;
+    use crate::staking::ValidatorSetParams;
+
+    #[test]
+    fn registry_round_trips_through_sled_and_is_absent_from_root_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = PersistentState::open(dir.path()).expect("open");
+        let mut orders = MersennetOrdersState::default();
+        st.commit_mersennet_orders(&orders).unwrap();
+        let root_empty = st.compute_state_root();
+        assert_eq!(st.validator_registry.len(), 0, "no registry keys while the set is closed");
+
+        let mut params = ValidatorSetParams::default();
+        params.activation_height = 1;
+        orders.staking.set_params(params);
+        let op = Address::from_slice(&[1u8; 20]);
+        let id = Address::from_slice(&[2u8; 20]);
+        orders.staking.register_validator(op, id, U256::from(5_000u64) * U256::from(10u64).pow(U256::from(18u64)), 700, 5).unwrap();
+        orders.staking.active_set = vec![id];
+        orders.staking.current_epoch = 3;
+        st.commit_mersennet_orders(&orders).unwrap();
+        assert_ne!(st.compute_state_root(), root_empty, "registrations are part of the state root");
+
+        let mut loaded = MersennetOrdersState::default();
+        st.load_mersennet_orders(&mut loaded).unwrap();
+        assert_eq!(loaded.staking.registry.get(&id), orders.staking.registry.get(&id));
+        assert_eq!(loaded.staking.active_set, vec![id]);
+        assert_eq!(loaded.staking.current_epoch, 3);
     }
 }
