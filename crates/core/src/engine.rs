@@ -654,6 +654,29 @@ impl Engine {
                     restored_blocks = blocks.len(),
                     "resuming chain from persisted height"
                 );
+                // Integrity check for restored state (snapshots, heals): the
+                // persisted state's Merkle root must equal the state root the
+                // head block commits to. Since 2026-09-13 every producer's
+                // root matches a fresh re-execution, so a mismatch means a
+                // tampered or corrupted snapshot — or a lineage drift we want
+                // to know about. Non-fatal for now (metric + error); made
+                // fatal once the fleet has run clean for a while.
+                if let Some(head) = blocks.iter().find(|b| b.number == h)
+                    && head.state_root != B256::ZERO
+                {
+                    let computed = state.compute_state_root();
+                    if computed != head.state_root {
+                        metrics::increment_counter!("mersennet_resume_state_root_mismatch_total");
+                        tracing::error!(
+                            height = h,
+                            computed = %computed,
+                            header = %head.state_root,
+                            "RESTORED STATE ROOT MISMATCH: persisted state does not match the head block's state root (tampered/corrupted snapshot or lineage drift)"
+                        );
+                    } else {
+                        tracing::info!(height = h, state_root = %computed, "restored state root matches the head block");
+                    }
+                }
                 (h.saturating_add(1), blocks)
             }
             _ => (1, Vec::new()),
@@ -2521,6 +2544,14 @@ impl Engine {
             // visible via the counter and the periodic sample.
             if block.state_root != B256::ZERO && state_root != block.state_root {
                 metrics::increment_counter!("mersennet_import_state_root_recompute_diff_total");
+                tracing::debug!(
+                    height = block.number,
+                    proposer = %block.proposer,
+                    txs = block.transactions.len(),
+                    local = %state_root,
+                    canonical = %block.state_root,
+                    "state-root recompute differs (per-block detail)"
+                );
                 if block.number.is_multiple_of(500) {
                     tracing::warn!(
                         height = block.number,
