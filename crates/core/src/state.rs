@@ -469,11 +469,18 @@ impl PersistentState {
             let reg = &staking.registry[id];
             let mut key = b"r:".to_vec();
             key.extend_from_slice(id.as_slice());
-            self.validator_registry.insert(key, bincode::serialize(reg)?)?;
+            self.validator_registry
+                .insert(key, bincode::serialize(reg)?)?;
         }
-        let active: Vec<Vec<u8>> = staking.active_set.iter().map(|a| a.as_slice().to_vec()).collect();
-        self.validator_registry.insert(b"m:active_set", bincode::serialize(&active)?)?;
-        self.validator_registry.insert(b"m:epoch", staking.current_epoch.to_be_bytes().to_vec())?;
+        let active: Vec<Vec<u8>> = staking
+            .active_set
+            .iter()
+            .map(|a| a.as_slice().to_vec())
+            .collect();
+        self.validator_registry
+            .insert(b"m:active_set", bincode::serialize(&active)?)?;
+        self.validator_registry
+            .insert(b"m:epoch", staking.current_epoch.to_be_bytes().to_vec())?;
         Ok(())
     }
 
@@ -1364,22 +1371,42 @@ mod validator_registry_persistence_tests {
         let mut orders = MersennetOrdersState::default();
         st.commit_mersennet_orders(&orders).unwrap();
         let root_empty = st.compute_state_root();
-        assert_eq!(st.validator_registry.len(), 0, "no registry keys while the set is closed");
+        assert_eq!(
+            st.validator_registry.len(),
+            0,
+            "no registry keys while the set is closed"
+        );
 
         let mut params = ValidatorSetParams::default();
         params.activation_height = 1;
         orders.staking.set_params(params);
         let op = Address::from_slice(&[1u8; 20]);
         let id = Address::from_slice(&[2u8; 20]);
-        orders.staking.register_validator(op, id, U256::from(5_000u64) * U256::from(10u64).pow(U256::from(18u64)), 700, 5).unwrap();
+        orders
+            .staking
+            .register_validator(
+                op,
+                id,
+                U256::from(5_000u64) * U256::from(10u64).pow(U256::from(18u64)),
+                700,
+                5,
+            )
+            .unwrap();
         orders.staking.active_set = vec![id];
         orders.staking.current_epoch = 3;
         st.commit_mersennet_orders(&orders).unwrap();
-        assert_ne!(st.compute_state_root(), root_empty, "registrations are part of the state root");
+        assert_ne!(
+            st.compute_state_root(),
+            root_empty,
+            "registrations are part of the state root"
+        );
 
         let mut loaded = MersennetOrdersState::default();
         st.load_mersennet_orders(&mut loaded).unwrap();
-        assert_eq!(loaded.staking.registry.get(&id), orders.staking.registry.get(&id));
+        assert_eq!(
+            loaded.staking.registry.get(&id),
+            orders.staking.registry.get(&id)
+        );
         assert_eq!(loaded.staking.active_set, vec![id]);
         assert_eq!(loaded.staking.current_epoch, 3);
     }

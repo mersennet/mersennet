@@ -596,6 +596,11 @@ impl Consensus {
         });
     }
 
+    /// Slashes queued but not yet applied at a block boundary.
+    pub fn pending_slash_count(&self) -> usize {
+        self.pending_slashes.len()
+    }
+
     pub fn apply_pending_slashes(&mut self, height: u64) -> Vec<Slashing> {
         let mut slashes = std::mem::take(&mut self.pending_slashes);
         for slash in &mut slashes {

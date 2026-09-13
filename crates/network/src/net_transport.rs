@@ -189,7 +189,11 @@ impl UdpGossip {
         let mut self_ips = std::collections::HashSet::new();
         for peer in &config.bootstrap_peers {
             if let Ok(target) = peer.parse::<SocketAddr>()
-                && let Ok(probe) = UdpSocket::bind(if target.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
+                && let Ok(probe) = UdpSocket::bind(if target.is_ipv4() {
+                    "0.0.0.0:0"
+                } else {
+                    "[::]:0"
+                })
                 && probe.connect(target).is_ok()
                 && let Ok(local) = probe.local_addr()
                 && !local.ip().is_loopback()

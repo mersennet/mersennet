@@ -399,6 +399,10 @@ impl ConsensusEngine {
         self.inner.apply_pending_slashes(height)
     }
 
+    pub fn pending_slash_count(&self) -> usize {
+        self.inner.pending_slash_count()
+    }
+
     /// Run a single HotStuff-2 round. Lazily initialises the HotStuff-2 state
     /// machine from the current validator set on first call.
     pub fn run_hotstuff2_round(&mut self, block_hash: B256, height: u64) -> HotStuff2Result {
@@ -879,15 +883,22 @@ impl Engine {
         if st.registry.is_empty() {
             // First activation: the genesis validators become registry
             // entries with their consensus stake as self-stake.
-            let genesis: Vec<(Address, U256)> =
-                self.consensus.validators().iter().map(|v| (v.address, v.stake)).collect();
+            let genesis: Vec<(Address, U256)> = self
+                .consensus
+                .validators()
+                .iter()
+                .map(|v| (v.address, v.stake))
+                .collect();
             self.orders.state.staking.seed_genesis(&genesis, height);
         }
         let transition = self.orders.state.staking.epoch_transition(height);
         let new_set: Vec<crate::consensus::Validator> = transition
             .active_set
             .iter()
-            .map(|id| crate::consensus::Validator { address: *id, stake: self.orders.state.staking.voting_stake(*id) })
+            .map(|id| crate::consensus::Validator {
+                address: *id,
+                stake: self.orders.state.staking.voting_stake(*id),
+            })
             .collect();
         if !new_set.is_empty() {
             self.consensus.replace_validators(new_set);
@@ -978,28 +989,47 @@ impl Engine {
         if self.finalized_heights.contains_key(&height) {
             return false;
         }
-        // Equivocation detection: a validator that has already voted for a
-        // DIFFERENT block hash at this height is double-voting, which is a
-        // slashable safety fault. Record evidence and ignore the conflicting
-        // vote (never count both toward a quorum).
+        // Conflicting votes: a validator that already voted for a DIFFERENT
+        // hash at this height. Two honest causes exist in this protocol —
+        // a failover round after the round-0 proposal timed out, and a node
+        // that healed onto the canonical branch after voting on a fork — so a
+        // second vote is not proof of a safety fault. Never count both toward
+        // a quorum: a vote that agrees with the block we applied supersedes a
+        // stale one; otherwise the first vote stands and the new one is
+        // dropped. Nothing is slashed here: evidence observed from gossip is
+        // not the same on every node, and applying it locally would change the
+        // consensus set non-deterministically (that is what forked the fleet
+        // after each "equivocation" this weekend). Slashing for double-signing
+        // only happens through evidence carried in blocks.
+        let local_hash = self.block_by_number(height).map(|b| b.hash);
+        let mut stale_hashes: Vec<B256> = Vec::new();
         if let Some(per_hash) = self.finality_votes.get(&height) {
-            let already_voted_other = per_hash
+            stale_hashes = per_hash
                 .iter()
-                .any(|(h, voters)| *h != block_hash && voters.contains(&voter));
-            if already_voted_other {
-                metrics::increment_counter!("mersennet_bft_equivocation_total");
-                tracing::warn!(
-                    height,
-                    validator = %voter,
-                    conflicting_hash = %block_hash,
-                    "equivocation detected: validator voted for two hashes at one height; slashing"
-                );
-                let _ = self.slash_validator(
-                    voter,
-                    self.stake_of(voter),
-                    format!("equivocation at height {height}"),
-                );
+                .filter(|(h, voters)| **h != block_hash && voters.contains(&voter))
+                .map(|(h, _)| *h)
+                .collect();
+        }
+        if !stale_hashes.is_empty() {
+            metrics::increment_counter!("mersennet_bft_conflicting_vote_total");
+            let agrees_with_local = local_hash == Some(block_hash);
+            tracing::warn!(
+                height,
+                validator = %voter,
+                new_hash = %block_hash,
+                previous_hash = %stale_hashes[0],
+                supersedes = agrees_with_local,
+                "conflicting vote at one height (failover round or healed node); not slashing"
+            );
+            if !agrees_with_local {
                 return false;
+            }
+            if let Some(per_hash) = self.finality_votes.get_mut(&height) {
+                for h in &stale_hashes {
+                    if let Some(voters) = per_hash.get_mut(h) {
+                        voters.remove(&voter);
+                    }
+                }
             }
         }
         let voters_snapshot: Vec<Address> = {
@@ -1099,7 +1129,9 @@ impl Engine {
     /// True while this node has recently rejected blocks for a parent-hash
     /// mismatch. Diagnostic only (see `fork_detected_at`).
     pub fn is_forked(&self) -> bool {
-        self.fork_detected_at.map(|t| t.elapsed().as_secs() < 120).unwrap_or(false)
+        self.fork_detected_at
+            .map(|t| t.elapsed().as_secs() < 120)
+            .unwrap_or(false)
     }
 
     /// Capture the pre-application state for `height` (the block about to be
@@ -1121,7 +1153,8 @@ impl Engine {
             base_fee: self.base_fee,
             consensus: self.consensus.inner.clone(),
         });
-        self.alt_blocks.retain(|h, _| *h + (REORG_DEPTH as u64) >= height);
+        self.alt_blocks
+            .retain(|h, _| *h + (REORG_DEPTH as u64) >= height);
     }
 
     /// Remember a competing proposal for a height we already hold, so it can
@@ -1150,7 +1183,12 @@ impl Engine {
             return false;
         };
         let cp = self.checkpoints.remove(pos).expect("position exists");
-        let orphaned: Vec<Block> = self.chain.iter().filter(|b| b.number >= height).cloned().collect();
+        let orphaned: Vec<Block> = self
+            .chain
+            .iter()
+            .filter(|b| b.number >= height)
+            .cloned()
+            .collect();
         let local_hash = orphaned.first().map(|b| b.hash).unwrap_or(B256::ZERO);
 
         // Restore consensus state to just before `height`.
@@ -1167,15 +1205,21 @@ impl Engine {
         // instead of on the orphaned branch (the orphan's block record is
         // overwritten when the canonical block at `height` is stored).
         let prev = height.saturating_sub(1);
-        if let Err(err) = self.evm.state.begin_commit(prev).and_then(|_| {
-            self.evm.state.commit_state(
-                &self.evm.db,
-                &self.orders.state,
-                &self.bridge.orders_to_evm,
-                &self.bridge.evm_to_orders,
-                prev,
-            )
-        }).and_then(|_| self.evm.state.end_commit()) {
+        if let Err(err) = self
+            .evm
+            .state
+            .begin_commit(prev)
+            .and_then(|_| {
+                self.evm.state.commit_state(
+                    &self.evm.db,
+                    &self.orders.state,
+                    &self.bridge.orders_to_evm,
+                    &self.bridge.evm_to_orders,
+                    prev,
+                )
+            })
+            .and_then(|_| self.evm.state.end_commit())
+        {
             tracing::error!(%err, "reorg: failed to persist rolled-back state");
         }
         // Flat (RPC read) cache mirrors the committed EVM state; rebuild it.
@@ -1223,7 +1267,11 @@ impl Engine {
                 },
             ));
         }
-        let changeset = StateChangeset { account_changes, storage_changes: Vec::new(), code_changes: Vec::new() };
+        let changeset = StateChangeset {
+            account_changes,
+            storage_changes: Vec::new(),
+            code_changes: Vec::new(),
+        };
         let root = self.evm.state.compute_state_root();
         let _ = self.flat_state.commit_block(height, root, changeset);
     }
@@ -2564,8 +2612,13 @@ impl Engine {
         // keep it — finality may pick it over ours (see reorg_to_finalized).
         if block.number < self.block_number {
             if block.number + (REORG_DEPTH as u64) >= self.block_number
-                && self.block_by_number(block.number).map(|b| b.hash != block.hash).unwrap_or(false)
-                && self.finalized_hash(block.number).is_none_or(|f| f == block.hash)
+                && self
+                    .block_by_number(block.number)
+                    .map(|b| b.hash != block.hash)
+                    .unwrap_or(false)
+                && self
+                    .finalized_hash(block.number)
+                    .is_none_or(|f| f == block.hash)
             {
                 self.remember_alt_block(block);
             }
@@ -4386,11 +4439,16 @@ mod reorg_tests {
     /// signature against the leader schedule, so blocks must be signed by
     /// the elected leader (`leader_for_height` = sorted addresses, (h+r)%4).
     fn keys() -> Vec<k256::ecdsa::SigningKey> {
-        (1u8..=4).map(|b| k256::ecdsa::SigningKey::from_bytes(&[b; 32].into()).unwrap()).collect()
+        (1u8..=4)
+            .map(|b| k256::ecdsa::SigningKey::from_bytes(&[b; 32].into()).unwrap())
+            .collect()
     }
 
     fn validators() -> Vec<Address> {
-        keys().iter().map(crate::crypto::address_from_signing_key).collect()
+        keys()
+            .iter()
+            .map(crate::crypto::address_from_signing_key)
+            .collect()
     }
 
     fn with_validators(mut e: Engine) -> Engine {
@@ -4404,7 +4462,10 @@ mod reorg_tests {
     /// round `round`, signing it like the node binary does.
     fn produce_as_leader(e: &mut Engine, round: u64) -> Block {
         let leader = e.leader_for_height(e.block_number, round).expect("leader");
-        let key = keys().into_iter().find(|k| crate::crypto::address_from_signing_key(k) == leader).expect("leader key");
+        let key = keys()
+            .into_iter()
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .expect("leader key");
         // `self.coinbase` stays Address::ZERO on every node (production
         // invariant: the import path re-executes with the local coinbase, so
         // it must be identical everywhere); only the block's fields name the
@@ -4418,7 +4479,9 @@ mod reorg_tests {
         b.proposer_sig = Some((r, s_, v));
         // The engine keeps its own copy of the block in `chain`; mirror the
         // signature there too, as the producer path does before broadcast.
-        if let Some(last) = e.chain.last_mut() && last.number == b.number {
+        if let Some(last) = e.chain.last_mut()
+            && last.number == b.number
+        {
             last.proposer = leader;
             last.proposer_sig = b.proposer_sig;
         }
@@ -4442,8 +4505,24 @@ mod reorg_tests {
         // A's block pays bob; B's block pays carol — same height, different
         // blocks, different resulting states. A proposes at round 0, B is
         // the round-1 leader (a leader-timeout race, as in production).
-        a.transfer(alice, bob, U256::from(1_000u64), 21_000, U256::from(1u64), 0).unwrap();
-        b.transfer(alice, carol, U256::from(1_000u64), 21_000, U256::from(1u64), 0).unwrap();
+        a.transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
+        .unwrap();
+        b.transfer(
+            alice,
+            carol,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
+        .unwrap();
         let block_a = produce_as_leader(&mut a, 0);
         let block_b = produce_as_leader(&mut b, 1);
         assert_eq!(block_a.number, 1);
@@ -4453,11 +4532,19 @@ mod reorg_tests {
         assert_eq!(a.get_balance(bob).unwrap(), U256::from(1_000u64));
         assert_eq!(a.get_balance(carol).unwrap(), U256::ZERO);
         let root_b = b.evm.state.compute_state_root();
-        assert_ne!(a.evm.state.compute_state_root(), root_b, "the two branches differ in state");
+        assert_ne!(
+            a.evm.state.compute_state_root(),
+            root_b,
+            "the two branches differ in state"
+        );
 
         // A hears B's competing proposal for a height it already holds.
         a.import_block(block_b.clone());
-        assert_eq!(a.block_by_number(1).unwrap().hash, block_a.hash, "competitor is remembered, not applied");
+        assert_eq!(
+            a.block_by_number(1).unwrap().hash,
+            block_a.hash,
+            "competitor is remembered, not applied"
+        );
 
         // Finality: three validators vote for B's block.
         for v in vals.iter().take(3) {
@@ -4467,18 +4554,42 @@ mod reorg_tests {
 
         // A rolled back and re-applied the canonical block: bob's payment is
         // undone, carol's applied, state identical to the canonical producer.
-        assert_eq!(a.latest_height(), 1, "back at height 1 on the canonical block");
-        assert_eq!(a.block_by_number(1).unwrap().hash, block_b.hash, "local head is now the finalized block");
-        assert_eq!(a.get_balance(bob).unwrap(), U256::ZERO, "orphaned branch undone");
-        assert_eq!(a.get_balance(carol).unwrap(), U256::from(1_000u64), "canonical branch applied");
+        assert_eq!(
+            a.latest_height(),
+            1,
+            "back at height 1 on the canonical block"
+        );
+        assert_eq!(
+            a.block_by_number(1).unwrap().hash,
+            block_b.hash,
+            "local head is now the finalized block"
+        );
+        assert_eq!(
+            a.get_balance(bob).unwrap(),
+            U256::ZERO,
+            "orphaned branch undone"
+        );
+        assert_eq!(
+            a.get_balance(carol).unwrap(),
+            U256::from(1_000u64),
+            "canonical branch applied"
+        );
         // Compare with an importer that never saw the orphan: the reorged
         // node must end in exactly the state a clean follower has.
         let mut c = with_validators(engine());
         c.fund_account(alice, U256::from(2_000_000u64), 0);
         c.import_block(block_b.clone());
         assert_eq!(c.block_by_number(1).unwrap().hash, block_b.hash);
-        assert_eq!(a.evm.state.compute_state_root(), c.evm.state.compute_state_root(), "reorged node matches a clean follower");
-        assert_eq!(a.evm.state.compute_state_root(), root_b, "and the canonical producer");
+        assert_eq!(
+            a.evm.state.compute_state_root(),
+            c.evm.state.compute_state_root(),
+            "reorged node matches a clean follower"
+        );
+        assert_eq!(
+            a.evm.state.compute_state_root(),
+            root_b,
+            "and the canonical producer"
+        );
         assert_eq!(a.block_number, 2);
         // The orphaned block's transaction went back to the mempool (same
         // nonce as carol's transfer, so it is rejected once that is applied).
@@ -4498,9 +4609,57 @@ mod reorg_tests {
         }
         assert_eq!(a.finalized_hash(1), Some(canonical));
         assert_eq!(a.latest_height(), 0, "we never saw the block itself");
-        let err = a.execute_block().expect_err("must refuse to produce height 1");
+        let err = a
+            .execute_block()
+            .expect_err("must refuse to produce height 1");
         assert!(err.to_string().contains("already finalized"), "{err}");
         assert_eq!(a.latest_height(), 0);
+    }
+
+    /// A validator that voted on a fork and then healed onto the canonical
+    /// branch votes again for the same height with the canonical hash. That
+    /// is not equivocation: nothing is slashed, and the canonical vote
+    /// supersedes the stale one so the quorum can still complete.
+    #[test]
+    fn heal_then_vote_produces_no_evidence_and_supersedes() {
+        let vals = validators();
+        let mut a = with_validators(engine());
+        let block_a = produce_as_leader(&mut a, 0);
+        let fork = B256::from([0xAAu8; 32]);
+        // vals[1] voted for a fork block first (as seen by us), then for ours.
+        a.record_finality_vote(1, fork, vals[1]);
+        let stake_before: Vec<_> = a.consensus.validators().iter().map(|v| v.stake).collect();
+        a.record_finality_vote(1, block_a.hash, vals[1]);
+        assert_eq!(
+            a.consensus.pending_slash_count(),
+            0,
+            "no slash from gossip-observed votes"
+        );
+        assert_eq!(a.finalized_hash(1), None);
+        // Two more votes for our block: the superseded vote counts toward quorum.
+        a.record_finality_vote(1, block_a.hash, vals[0]);
+        let finalized = a.record_finality_vote(1, block_a.hash, vals[2]);
+        assert!(finalized, "3 of 4 equal stakes reach the 2/3 quorum");
+        assert_eq!(a.finalized_hash(1), Some(block_a.hash));
+        let stake_after: Vec<_> = a.consensus.validators().iter().map(|v| v.stake).collect();
+        assert_eq!(stake_before, stake_after, "stakes untouched");
+    }
+
+    /// A conflicting vote for a hash we do not hold does not replace the
+    /// first vote and is not slashed either.
+    #[test]
+    fn conflicting_vote_for_unknown_hash_is_dropped_without_slashing() {
+        let vals = validators();
+        let mut a = with_validators(engine());
+        let block_a = produce_as_leader(&mut a, 0);
+        a.record_finality_vote(1, block_a.hash, vals[1]);
+        let other = B256::from([0xBBu8; 32]);
+        assert!(!a.record_finality_vote(1, other, vals[1]));
+        assert_eq!(a.consensus.pending_slash_count(), 0);
+        // The original vote still counts.
+        a.record_finality_vote(1, block_a.hash, vals[0]);
+        assert!(a.record_finality_vote(1, block_a.hash, vals[2]));
+        assert_eq!(a.finalized_hash(1), Some(block_a.hash));
     }
 
     /// Finality on the block we already hold changes nothing.
@@ -4572,7 +4731,8 @@ mod open_validator_set_tests {
         let mut e = Engine::new_with_backend(131071, sub, "redb");
         std::mem::forget(dir);
         for i in 1..=4u8 {
-            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN)).unwrap();
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
         }
         e.set_validator_set_params(params());
         e
@@ -4585,10 +4745,16 @@ mod open_validator_set_tests {
         let mut r = round;
         let leader = loop {
             let l = e.leader_for_height(e.block_number, r).expect("leader");
-            if skip.contains(&l) { r += 1; continue; }
+            if skip.contains(&l) {
+                r += 1;
+                continue;
+            }
             break l;
         };
-        let k = (1..=6u8).map(key).find(|k| crate::crypto::address_from_signing_key(k) == leader).expect("leader key");
+        let k = (1..=6u8)
+            .map(key)
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .expect("leader key");
         e.set_local_validator(leader);
         let mut b = e.execute_block().expect("produce");
         b.proposer = leader;
@@ -4596,7 +4762,9 @@ mod open_validator_set_tests {
         b.consensus.proposer = leader;
         let (sr, ss, v) = crate::crypto::sign_block_proposal(b.number, b.hash, &k);
         b.proposer_sig = Some((sr, ss, v));
-        if let Some(last) = e.chain.last_mut() && last.number == b.number {
+        if let Some(last) = e.chain.last_mut()
+            && last.number == b.number
+        {
             last.proposer = leader;
             last.proposer_sig = b.proposer_sig;
         }
@@ -4605,8 +4773,8 @@ mod open_validator_set_tests {
 
     #[test]
     fn register_activate_jail_rehabilitate_exit_and_importer_agrees() {
-        let mut p = engine();       // producer
-        let mut c = engine();       // clean follower, imports each block as it is produced
+        let mut p = engine(); // producer
+        let mut c = engine(); // clean follower, imports each block as it is produced
         let v5 = addr(5);
         let operator = Address::from_slice(&[0x55; 20]);
         let stake = U256::from(5_000u64) * U256::from(MRSN);
@@ -4617,65 +4785,134 @@ mod open_validator_set_tests {
             let h = p.block_number;
             if h == 2 {
                 for e in [&mut *p, &mut *c] {
-                    e.orders.state.staking.register_validator(operator, v5, stake, 500, h).unwrap();
+                    e.orders
+                        .state
+                        .staking
+                        .register_validator(operator, v5, stake, 500, h)
+                        .unwrap();
                 }
             }
             if h == 31 {
                 for e in [&mut *p, &mut *c] {
-                    e.orders.state.staking.unregister_validator(operator, v5).unwrap();
+                    e.orders
+                        .state
+                        .staking
+                        .unregister_validator(operator, v5)
+                        .unwrap();
                 }
             }
             let b = produce(p, 0, skip);
             c.import_block(b.clone());
-            assert_eq!(c.latest_height(), b.number, "follower applied block {}", b.number);
-            assert_eq!(c.evm.state.compute_state_root(), p.evm.state.compute_state_root(), "roots agree at height {}", b.number);
+            assert_eq!(
+                c.latest_height(),
+                b.number,
+                "follower applied block {}",
+                b.number
+            );
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "roots agree at height {}",
+                b.number
+            );
         };
 
-        for _ in 1..=3u64 { step(&mut p, &mut c, &[]); }
-        assert_eq!(p.consensus.validators().len(), 4, "not yet an epoch boundary");
-        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Pending));
+        for _ in 1..=3u64 {
+            step(&mut p, &mut c, &[]);
+        }
+        assert_eq!(
+            p.consensus.validators().len(),
+            4,
+            "not yet an epoch boundary"
+        );
+        assert_eq!(
+            p.orders.state.staking.status_of(v5),
+            Some(ValidatorStatus::Pending)
+        );
 
-        for _ in 4..=9u64 { step(&mut p, &mut c, &[]); }
+        for _ in 4..=9u64 {
+            step(&mut p, &mut c, &[]);
+        }
         // Epoch 1 (10..19): v5 is admitted at 10 but never shows up.
-        for _ in 10..=19u64 { step(&mut p, &mut c, &[v5]); }
-        assert_eq!(p.consensus.validators().len(), 5, "epoch 1 active set includes the newcomer");
+        for _ in 10..=19u64 {
+            step(&mut p, &mut c, &[v5]);
+        }
+        assert_eq!(
+            p.consensus.validators().len(),
+            5,
+            "epoch 1 active set includes the newcomer"
+        );
         assert!(p.validator_addresses().contains(&v5));
-        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Active));
+        assert_eq!(
+            p.orders.state.staking.status_of(v5),
+            Some(ValidatorStatus::Active)
+        );
         let missed = p.orders.state.staking.registry[&v5].missed_slots;
-        assert!(missed >= 2, "v5 had leader slots in epoch 1 and missed them all (missed={missed})");
+        assert!(
+            missed >= 2,
+            "v5 had leader slots in epoch 1 and missed them all (missed={missed})"
+        );
 
         // Height 20 judges epoch 1: jailed for epoch 2.
         step(&mut p, &mut c, &[]);
-        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Jailed));
+        assert_eq!(
+            p.orders.state.staking.status_of(v5),
+            Some(ValidatorStatus::Jailed)
+        );
         assert_eq!(p.consensus.validators().len(), 4);
         assert!(!p.validator_addresses().contains(&v5));
 
         // Epoch 2 passes; at 30 it is eligible again and returns.
-        for _ in 21..=30u64 { step(&mut p, &mut c, &[]); }
-        assert_eq!(p.orders.state.staking.status_of(v5), Some(ValidatorStatus::Active), "rehabilitated after one epoch");
+        for _ in 21..=30u64 {
+            step(&mut p, &mut c, &[]);
+        }
+        assert_eq!(
+            p.orders.state.staking.status_of(v5),
+            Some(ValidatorStatus::Active),
+            "rehabilitated after one epoch"
+        );
         assert_eq!(p.consensus.validators().len(), 5);
 
         // Operator leaves at 31; removed at 40, self-stake unbonding.
-        for _ in 31..=40u64 { step(&mut p, &mut c, &[]); }
-        assert!(p.orders.state.staking.registry.get(&v5).is_none(), "removed at the epoch boundary");
+        for _ in 31..=40u64 {
+            step(&mut p, &mut c, &[]);
+        }
+        assert!(
+            p.orders.state.staking.registry.get(&v5).is_none(),
+            "removed at the epoch boundary"
+        );
         assert_eq!(p.consensus.validators().len(), 4);
-        let unb = p.orders.state.staking.unbondings.get(&operator).expect("unbonding entry for the operator");
+        let unb = p
+            .orders
+            .state
+            .staking
+            .unbondings
+            .get(&operator)
+            .expect("unbonding entry for the operator");
         assert_eq!(unb[0].amount, stake);
         assert_eq!(unb[0].unlock_at, 40 + 50);
 
         // Follower ends identical.
         assert_eq!(c.validator_addresses(), p.validator_addresses());
-        assert_eq!(c.orders.state.staking.current_epoch, p.orders.state.staking.current_epoch);
-        assert_eq!(c.evm.state.compute_state_root(), p.evm.state.compute_state_root());
+        assert_eq!(
+            c.orders.state.staking.current_epoch,
+            p.orders.state.staking.current_epoch
+        );
+        assert_eq!(
+            c.evm.state.compute_state_root(),
+            p.evm.state.compute_state_root()
+        );
     }
 
     /// ABI-encode registerValidator(address,uint256,uint256,bytes).
     fn register_calldata(identity: Address, stake: U256, commission: u64, proof: &[u8]) -> Vec<u8> {
         let mut d = crate::precompile_abi::register_validator_selector().to_vec();
-        let mut w = [0u8; 32]; w[12..].copy_from_slice(identity.as_slice()); d.extend_from_slice(&w);
+        let mut w = [0u8; 32];
+        w[12..].copy_from_slice(identity.as_slice());
+        d.extend_from_slice(&w);
         d.extend_from_slice(&stake.to_be_bytes::<32>());
         d.extend_from_slice(&U256::from(commission).to_be_bytes::<32>());
-        d.extend_from_slice(&U256::from(128u64).to_be_bytes::<32>());        // offset of bytes
+        d.extend_from_slice(&U256::from(128u64).to_be_bytes::<32>()); // offset of bytes
         d.extend_from_slice(&U256::from(proof.len() as u64).to_be_bytes::<32>());
         d.extend_from_slice(proof);
         d.resize(d.len() + (32 - proof.len() % 32) % 32, 0);
@@ -4709,22 +4946,36 @@ mod open_validator_set_tests {
                 tx_type: 0,
                 shielded_payload: None,
                 hash: None,
-            }).expect("tx accepted into mempool");
+            })
+            .expect("tx accepted into mempool");
             produce(&mut e, 0, &[]);
             let registered = e.orders.state.staking.registry.contains_key(&identity);
             let after = e.get_balance(operator).unwrap();
-            assert_eq!(registered, expect_ok, "registration outcome for proof #{nonce}");
+            assert_eq!(
+                registered, expect_ok,
+                "registration outcome for proof #{nonce}"
+            );
             if expect_ok {
                 assert!(before - after >= stake, "self-stake escrowed");
-                assert_eq!(e.get_balance(crate::precompile_abi::STAKING_PRECOMPILE).unwrap(), stake);
+                assert_eq!(
+                    e.get_balance(crate::precompile_abi::STAKING_PRECOMPILE)
+                        .unwrap(),
+                    stake
+                );
             } else {
-                assert!(before - after < U256::from(MRSN), "only gas spent, stake refunded");
+                assert!(
+                    before - after < U256::from(MRSN),
+                    "only gas spent, stake refunded"
+                );
             }
         }
         let reg = &e.orders.state.staking.registry[&identity];
         assert_eq!(reg.operator, operator);
         assert_eq!(reg.commission_bps, 500);
-        assert_eq!(e.orders.state.staking.status_of(identity), Some(ValidatorStatus::Pending));
+        assert_eq!(
+            e.orders.state.staking.status_of(identity),
+            Some(ValidatorStatus::Pending)
+        );
     }
 
     #[test]
@@ -4732,15 +4983,36 @@ mod open_validator_set_tests {
         let mut e = engine();
         let op = Address::from_slice(&[0x66; 20]);
         let st = &mut e.orders.state.staking;
-        assert_eq!(st.register_validator(op, addr(5), U256::from(999u64) * U256::from(MRSN), 0, 5), Err(crate::staking::StakingError::StakeTooLow));
-        assert!(st.register_validator(op, addr(5), U256::from(1_000u64) * U256::from(MRSN), 0, 5).is_ok());
-        assert_eq!(st.register_validator(op, addr(5), U256::from(1_000u64) * U256::from(MRSN), 0, 5), Err(crate::staking::StakingError::AlreadyRegistered));
-        assert_eq!(st.unregister_validator(Address::ZERO, addr(5)), Err(crate::staking::StakingError::NotOperator));
+        assert_eq!(
+            st.register_validator(op, addr(5), U256::from(999u64) * U256::from(MRSN), 0, 5),
+            Err(crate::staking::StakingError::StakeTooLow)
+        );
+        assert!(
+            st.register_validator(op, addr(5), U256::from(1_000u64) * U256::from(MRSN), 0, 5)
+                .is_ok()
+        );
+        assert_eq!(
+            st.register_validator(op, addr(5), U256::from(1_000u64) * U256::from(MRSN), 0, 5),
+            Err(crate::staking::StakingError::AlreadyRegistered)
+        );
+        assert_eq!(
+            st.unregister_validator(Address::ZERO, addr(5)),
+            Err(crate::staking::StakingError::NotOperator)
+        );
         assert!(st.rotate_identity(op, addr(5), addr(6)).is_ok());
         // Before activation nothing can register.
         let mut off = ValidatorSetParams::default();
         off.activation_height = 0;
         st.set_params(off);
-        assert_eq!(st.register_validator(op, Address::from_slice(&[0x77; 20]), U256::from(1_000u64) * U256::from(MRSN), 0, 5), Err(crate::staking::StakingError::NotActive));
+        assert_eq!(
+            st.register_validator(
+                op,
+                Address::from_slice(&[0x77; 20]),
+                U256::from(1_000u64) * U256::from(MRSN),
+                0,
+                5
+            ),
+            Err(crate::staking::StakingError::NotActive)
+        );
     }
 }

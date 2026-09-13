@@ -283,8 +283,9 @@ impl MersennetOrdersState {
             .saturating_mul(U256::from(asset.weight_bps))
             .checked_div(U256::from(10_000u64))
             .unwrap_or(U256::ZERO);
-        let equity_after =
-            self.account_equity(owner).saturating_sub(u256_to_i128(removed_value));
+        let equity_after = self
+            .account_equity(owner)
+            .saturating_sub(u256_to_i128(removed_value));
         let maintenance = self.maintenance_margin_required(owner);
         if equity_after < u256_to_i128(maintenance) {
             return Err(MersennetOrdersError::WithdrawalExceedsEquity);

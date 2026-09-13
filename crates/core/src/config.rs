@@ -256,22 +256,47 @@ pub struct ValidatorSetConfig {
     pub jail_min_slots: u64,
 }
 
-fn default_epoch_blocks() -> u64 { 1_800 }
-fn default_min_self_stake_mrsn() -> u64 { 1_000 }
-fn default_max_validators() -> usize { 12 }
-fn default_vs_unbonding_blocks() -> u64 { 5_400 }
-fn default_jail_miss_bps() -> u64 { 2_000 }
-fn default_jail_min_slots() -> u64 { 5 }
+fn default_epoch_blocks() -> u64 {
+    1_800
+}
+fn default_min_self_stake_mrsn() -> u64 {
+    1_000
+}
+fn default_max_validators() -> usize {
+    12
+}
+fn default_vs_unbonding_blocks() -> u64 {
+    7_200
+}
+fn default_jail_miss_bps() -> u64 {
+    2_000
+}
+fn default_jail_min_slots() -> u64 {
+    5
+}
 
 impl ValidatorSetConfig {
     pub fn to_params(&self) -> crate::staking::ValidatorSetParams {
         let d = crate::staking::ValidatorSetParams::default();
         crate::staking::ValidatorSetParams {
             activation_height: self.activation_height,
-            epoch_blocks: if self.epoch_blocks == 0 { d.epoch_blocks } else { self.epoch_blocks },
-            min_self_stake: revm::primitives::U256::from(self.min_self_stake_mrsn) * revm::primitives::U256::from(10u64).pow(revm::primitives::U256::from(18u64)),
-            max_validators: if self.max_validators == 0 { d.max_validators } else { self.max_validators },
-            unbonding_blocks: if self.unbonding_blocks == 0 { d.unbonding_blocks } else { self.unbonding_blocks },
+            epoch_blocks: if self.epoch_blocks == 0 {
+                d.epoch_blocks
+            } else {
+                self.epoch_blocks
+            },
+            min_self_stake: revm::primitives::U256::from(self.min_self_stake_mrsn)
+                * revm::primitives::U256::from(10u64).pow(revm::primitives::U256::from(18u64)),
+            max_validators: if self.max_validators == 0 {
+                d.max_validators
+            } else {
+                self.max_validators
+            },
+            unbonding_blocks: if self.unbonding_blocks == 0 {
+                d.unbonding_blocks
+            } else {
+                self.unbonding_blocks
+            },
             jail_miss_bps: self.jail_miss_bps,
             jail_min_slots: self.jail_min_slots,
         }

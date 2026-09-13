@@ -16,8 +16,16 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 enum Action {
-    Place { owner: u8, buy: bool, price: u64, size: u64, ioc: bool },
-    Cancel { nth: usize },
+    Place {
+        owner: u8,
+        buy: bool,
+        price: u64,
+        size: u64,
+        ioc: bool,
+    },
+    Cancel {
+        nth: usize,
+    },
 }
 
 fn action() -> impl Strategy<Value = Action> {
@@ -39,7 +47,10 @@ fn check_invariants(state: &MersennetOrdersState, market: mersennet::mersennet_o
     if let (Some((best_bid, _)), Some((best_ask, _))) =
         (book.bids.iter().next_back(), book.asks.iter().next())
     {
-        assert!(best_bid < best_ask, "crossed book: bid {best_bid} >= ask {best_ask}");
+        assert!(
+            best_bid < best_ask,
+            "crossed book: bid {best_bid} >= ask {best_ask}"
+        );
     }
 
     // 2. Every resting id is a live order at that level, on that side, with size > 0.
@@ -48,10 +59,20 @@ fn check_invariants(state: &MersennetOrdersState, market: mersennet::mersennet_o
         for (price, queue) in levels {
             assert!(!queue.is_empty(), "empty level {price} left on the book");
             for id in queue {
-                assert!(resting.insert(*id), "order {id:?} appears twice on the book");
-                let o = state.orders.get(id).unwrap_or_else(|| panic!("resting {id:?} has no order"));
+                assert!(
+                    resting.insert(*id),
+                    "order {id:?} appears twice on the book"
+                );
+                let o = state
+                    .orders
+                    .get(id)
+                    .unwrap_or_else(|| panic!("resting {id:?} has no order"));
                 assert_eq!(o.price, *price, "order {id:?} sits on the wrong level");
-                assert_eq!(o.side == Side::Buy, side_is_buy, "order {id:?} on the wrong side");
+                assert_eq!(
+                    o.side == Side::Buy,
+                    side_is_buy,
+                    "order {id:?} on the wrong side"
+                );
                 assert!(o.size > U256::ZERO, "order {id:?} rests with zero size");
                 assert_eq!(o.market, market);
             }
@@ -62,13 +83,25 @@ fn check_invariants(state: &MersennetOrdersState, market: mersennet::mersennet_o
     let mut listed = HashSet::new();
     for (owner, acct) in &state.accounts {
         for id in &acct.open_orders {
-            let o = state.orders.get(id).unwrap_or_else(|| panic!("open order {id:?} missing"));
-            assert_eq!(&o.owner, owner, "open order {id:?} listed under the wrong account");
-            assert!(resting.contains(id), "account lists {id:?} but it is not on the book");
+            let o = state
+                .orders
+                .get(id)
+                .unwrap_or_else(|| panic!("open order {id:?} missing"));
+            assert_eq!(
+                &o.owner, owner,
+                "open order {id:?} listed under the wrong account"
+            );
+            assert!(
+                resting.contains(id),
+                "account lists {id:?} but it is not on the book"
+            );
             listed.insert(*id);
         }
     }
-    assert_eq!(listed, resting, "book and account open-order lists disagree");
+    assert_eq!(
+        listed, resting,
+        "book and account open-order lists disagree"
+    );
 
     // 4. Positions net to zero.
     let net: i128 = state
@@ -157,4 +190,3 @@ proptest! {
         check_invariants(&state, market);
     }
 }
-

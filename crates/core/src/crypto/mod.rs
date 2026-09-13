@@ -664,10 +664,13 @@ pub fn recover_eip191(message: &[u8], sig: &[u8]) -> Result<Address> {
         bail!("signature must be 65 bytes");
     }
     let v = sig[64];
-    let recid = RecoveryId::try_from(if v >= 27 { v - 27 } else { v }).map_err(|e| anyhow!("invalid recovery id: {e}"))?;
-    let signature = Signature::from_slice(&sig[..64]).map_err(|e| anyhow!("invalid signature: {e}"))?;
-    let key = VerifyingKey::recover_from_prehash(eip191_digest(message).as_slice(), &signature, recid)
-        .map_err(|e| anyhow!("recovery failed: {e}"))?;
+    let recid = RecoveryId::try_from(if v >= 27 { v - 27 } else { v })
+        .map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+    let signature =
+        Signature::from_slice(&sig[..64]).map_err(|e| anyhow!("invalid signature: {e}"))?;
+    let key =
+        VerifyingKey::recover_from_prehash(eip191_digest(message).as_slice(), &signature, recid)
+            .map_err(|e| anyhow!("recovery failed: {e}"))?;
     Ok(public_key_to_address(&key))
 }
 
@@ -683,12 +686,17 @@ pub fn validator_registration_message(operator: Address, identity: Address) -> S
 }
 
 /// Sign the registration statement with the node key (65-byte EIP-191 signature).
-pub fn sign_validator_registration(operator: Address, identity: Address, key: &SigningKey) -> Vec<u8> {
+pub fn sign_validator_registration(
+    operator: Address,
+    identity: Address,
+    key: &SigningKey,
+) -> Vec<u8> {
     let msg = validator_registration_message(operator, identity);
     let digest = eip191_digest(msg.as_bytes());
-    let (sig, recid): (Signature, RecoveryId) = key.sign_prehash(digest.as_slice()).expect("registration signing failed");
+    let (sig, recid): (Signature, RecoveryId) = key
+        .sign_prehash(digest.as_slice())
+        .expect("registration signing failed");
     let mut out = sig.to_bytes().to_vec();
     out.push(27 + recid.to_byte());
     out
 }
-
