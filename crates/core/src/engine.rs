@@ -547,6 +547,11 @@ pub struct Engine {
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
+    /// When we last rejected a canonical block for a parent-hash mismatch,
+    /// i.e. detected that we sit on a minority fork. A forked node must not
+    /// produce (its blocks are garbage to everyone else and mask the stall
+    /// the watchdog heals on).
+    fork_detected_at: Option<std::time::Instant>,
 }
 
 impl Engine {
@@ -745,6 +750,7 @@ impl Engine {
             import_buffer: std::collections::BTreeMap::new(),
             highest_observed_height: 0,
             last_block_applied_at: None,
+            fork_detected_at: None,
             raw_tx_cache: std::collections::HashMap::new(),
             local_validator: None,
             finality_votes: std::collections::HashMap::new(),
@@ -973,6 +979,13 @@ impl Engine {
         self.highest_observed_height
     }
 
+    /// True while this node has recently rejected canonical blocks for a
+    /// parent-hash mismatch (minority fork). Cleared implicitly when a fork
+    /// detection is more than 2 minutes old — after a heal the state is new.
+    pub fn is_forked(&self) -> bool {
+        self.fork_detected_at.map(|t| t.elapsed().as_secs() < 120).unwrap_or(false)
+    }
+
     /// Seconds since this node last applied a block, if it ever did.
     pub fn secs_since_last_applied(&self) -> Option<u64> {
         self.last_block_applied_at.map(|t| t.elapsed().as_secs())
@@ -995,6 +1008,11 @@ impl Engine {
         // stop all production for good — a permanent halt with no reorg to
         // resolve it. If nothing has been applied for a few round timeouts,
         // the network is stalled, not ahead of us: allow production.
+        // A node that knows it is forked is not "stalled with the network":
+        // producing would only extend its own dead branch. Stay behind.
+        if self.is_forked() {
+            return true;
+        }
         // > 2 leader-timeout rounds (the producer rotates every ~19s).
         const STALL_SECS: u64 = 45;
         match self.secs_since_last_applied() {
@@ -2341,6 +2359,7 @@ impl Engine {
                 // node silently stalling.
                 if msg.contains("parent hash mismatch") {
                     metrics::increment_counter!("mersennet_import_fork_detected_total");
+                    self.fork_detected_at = Some(std::time::Instant::now());
                     tracing::error!(
                         height,
                         error = %msg,
