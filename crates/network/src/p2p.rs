@@ -665,7 +665,8 @@ impl NetworkNode {
                                     if request.topic == "block_push" {
                                         // Large block delivered peer-to-peer (see
                                         // broadcast_block). Same handling as gossip.
-                                        if let Ok(wire) = serde_json::from_slice::<WireBlock>(&request.data)
+                                        if let Ok(wire) =
+                                            serde_json::from_slice::<WireBlock>(&request.data)
                                             && let Some(block) = wire_to_block(&wire)
                                         {
                                             info!(number = block.number, "received block over tcp");
@@ -684,7 +685,10 @@ impl NetworkNode {
                                         if let Some(att) = attestor_worker.as_ref()
                                             && (16..=64).contains(&request.data.len())
                                         {
-                                            let height = engine.lock().map(|e| e.latest_height()).unwrap_or(0);
+                                            let height = engine
+                                                .lock()
+                                                .map(|e| e.latest_height())
+                                                .unwrap_or(0);
                                             let body = att.attest(&request.data, height);
                                             let pkt = crate::net_transport::GossipPacket {
                                                 topic: "whoami_response".to_string(),
@@ -717,12 +721,15 @@ impl NetworkNode {
                                                 // Use get_block so heights below the
                                                 // in-memory window are read from disk — a
                                                 // peer far behind can still be caught up.
-                                                let batch_end = height.min(from.saturating_add(255));
+                                                let batch_end =
+                                                    height.min(from.saturating_add(255));
                                                 let blocks: Vec<WireBlock> = (from..=batch_end)
                                                     .filter_map(|n| eng.get_block(n))
                                                     .map(|b| block_to_wire(&b))
                                                     .collect();
-                                                Some(serde_json::to_vec(&blocks).unwrap_or_default())
+                                                Some(
+                                                    serde_json::to_vec(&blocks).unwrap_or_default(),
+                                                )
                                             }
                                             Err(_) => None,
                                         };
@@ -900,7 +907,11 @@ impl NetworkNode {
                 return gossip.broadcast(&packet);
             }
             metrics::increment_counter!("mersennet_block_push_tcp_total");
-            let peers: Vec<String> = gossip.peers_snapshot().into_iter().map(|p| p.addr).collect();
+            let peers: Vec<String> = gossip
+                .peers_snapshot()
+                .into_iter()
+                .map(|p| p.addr)
+                .collect();
             (packet, peers)
         };
         // Deliver directly to every known peer over the TCP sync port.

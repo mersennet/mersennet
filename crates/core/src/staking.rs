@@ -112,7 +112,7 @@ impl Default for ValidatorSetParams {
             epoch_blocks: 1_800,
             min_self_stake: U256::from(1_000u64) * U256::from(10u64).pow(U256::from(18u64)),
             max_validators: 12,
-            unbonding_blocks: 5_400,
+            unbonding_blocks: 7_200,
             jail_miss_bps: 2_000,
             jail_min_slots: 5,
         }
@@ -220,7 +220,11 @@ impl StakingState {
 
     /// Total stake ranking a validator: self-stake + delegations to its pool.
     pub fn voting_stake(&self, identity: Address) -> U256 {
-        let self_stake = self.registry.get(&identity).map(|r| r.self_stake).unwrap_or(U256::ZERO);
+        let self_stake = self
+            .registry
+            .get(&identity)
+            .map(|r| r.self_stake)
+            .unwrap_or(U256::ZERO);
         self_stake.saturating_add(self.delegated_total(identity))
     }
 
@@ -267,21 +271,24 @@ impl StakingState {
         if self_stake < self.params.min_self_stake {
             return Err(StakingError::StakeTooLow);
         }
-        self.registry.insert(identity, ValidatorRegistration {
-            operator,
+        self.registry.insert(
             identity,
-            self_stake,
-            commission_bps: commission_bps.min(10_000),
-            registered_at: height,
-            genesis: false,
-            jailed_until_epoch: 0,
-            exiting: false,
-            pending_identity: None,
-            proposed_slots: 0,
-            missed_slots: 0,
-            total_proposed: 0,
-            times_jailed: 0,
-        });
+            ValidatorRegistration {
+                operator,
+                identity,
+                self_stake,
+                commission_bps: commission_bps.min(10_000),
+                registered_at: height,
+                genesis: false,
+                jailed_until_epoch: 0,
+                exiting: false,
+                pending_identity: None,
+                proposed_slots: 0,
+                missed_slots: 0,
+                total_proposed: 0,
+                times_jailed: 0,
+            },
+        );
         self.ensure_pool(identity);
         if let Some(pool) = self.pools.get_mut(&identity) {
             pool.commission_bps = commission_bps.min(10_000);
@@ -289,11 +296,19 @@ impl StakingState {
         Ok(())
     }
 
-    pub fn add_self_stake(&mut self, operator: Address, identity: Address, amount: U256) -> Result<(), StakingError> {
+    pub fn add_self_stake(
+        &mut self,
+        operator: Address,
+        identity: Address,
+        amount: U256,
+    ) -> Result<(), StakingError> {
         if amount.is_zero() {
             return Err(StakingError::ZeroAmount);
         }
-        let r = self.registry.get_mut(&identity).ok_or(StakingError::UnknownValidator)?;
+        let r = self
+            .registry
+            .get_mut(&identity)
+            .ok_or(StakingError::UnknownValidator)?;
         if r.operator != operator {
             return Err(StakingError::NotOperator);
         }
@@ -305,8 +320,15 @@ impl StakingState {
     }
 
     /// Leave the set at the next epoch; self-stake starts unbonding then.
-    pub fn unregister_validator(&mut self, operator: Address, identity: Address) -> Result<(), StakingError> {
-        let r = self.registry.get_mut(&identity).ok_or(StakingError::UnknownValidator)?;
+    pub fn unregister_validator(
+        &mut self,
+        operator: Address,
+        identity: Address,
+    ) -> Result<(), StakingError> {
+        let r = self
+            .registry
+            .get_mut(&identity)
+            .ok_or(StakingError::UnknownValidator)?;
         if r.operator != operator {
             return Err(StakingError::NotOperator);
         }
@@ -318,11 +340,19 @@ impl StakingState {
     }
 
     /// Switch the block-signing key at the next epoch.
-    pub fn rotate_identity(&mut self, operator: Address, identity: Address, new_identity: Address) -> Result<(), StakingError> {
+    pub fn rotate_identity(
+        &mut self,
+        operator: Address,
+        identity: Address,
+        new_identity: Address,
+    ) -> Result<(), StakingError> {
         if self.registry.contains_key(&new_identity) {
             return Err(StakingError::AlreadyRegistered);
         }
-        let r = self.registry.get_mut(&identity).ok_or(StakingError::UnknownValidator)?;
+        let r = self
+            .registry
+            .get_mut(&identity)
+            .ok_or(StakingError::UnknownValidator)?;
         if r.operator != operator {
             return Err(StakingError::NotOperator);
         }
@@ -366,15 +396,23 @@ impl StakingState {
     /// from state, so every node agrees. Returns what changed.
     pub fn epoch_transition(&mut self, height: u64) -> EpochTransition {
         let epoch = self.epoch_of(height);
-        let mut out = EpochTransition { epoch, ..Default::default() };
+        let mut out = EpochTransition {
+            epoch,
+            ..Default::default()
+        };
         let p = self.params.clone();
 
         // 1. Judge the epoch that just ended: jail, exit, rotate.
         let ids: Vec<Address> = self.registry.keys().copied().collect();
         for id in ids {
-            let Some(r) = self.registry.get_mut(&id) else { continue };
+            let Some(r) = self.registry.get_mut(&id) else {
+                continue;
+            };
             let slots = r.proposed_slots + r.missed_slots;
-            if slots >= p.jail_min_slots && r.missed_slots * 10_000 > slots * p.jail_miss_bps && !r.genesis {
+            if slots >= p.jail_min_slots
+                && r.missed_slots * 10_000 > slots * p.jail_miss_bps
+                && !r.genesis
+            {
                 r.jailed_until_epoch = epoch + 1; // sits out this epoch, eligible again next
                 r.times_jailed += 1;
                 out.jailed.push(id);
@@ -384,11 +422,14 @@ impl StakingState {
             if r.exiting {
                 let (operator, amount) = (r.operator, r.self_stake);
                 self.registry.remove(&id);
-                self.unbondings.entry(operator).or_default().push(UnbondingEntry {
-                    validator: id,
-                    amount,
-                    unlock_at: height + p.unbonding_blocks,
-                });
+                self.unbondings
+                    .entry(operator)
+                    .or_default()
+                    .push(UnbondingEntry {
+                        validator: id,
+                        amount,
+                        unlock_at: height + p.unbonding_blocks,
+                    });
                 out.removed.push(id);
                 continue;
             }
@@ -401,7 +442,12 @@ impl StakingState {
                 if let Some(pool) = self.pools.remove(&id) {
                     self.pools.insert(new_id, pool);
                 }
-                let keys: Vec<(Address, Address)> = self.delegations.keys().filter(|(_, v)| *v == id).copied().collect();
+                let keys: Vec<(Address, Address)> = self
+                    .delegations
+                    .keys()
+                    .filter(|(_, v)| *v == id)
+                    .copied()
+                    .collect();
                 for (d, _) in keys {
                     if let Some(del) = self.delegations.remove(&(d, id)) {
                         self.delegations.insert((d, new_id), del);
@@ -422,7 +468,11 @@ impl StakingState {
             .collect();
         // Highest stake first; ties by address for determinism.
         eligible.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-        let mut active: Vec<Address> = eligible.into_iter().take(p.max_validators.max(1)).map(|(a, _)| a).collect();
+        let mut active: Vec<Address> = eligible
+            .into_iter()
+            .take(p.max_validators.max(1))
+            .map(|(a, _)| a)
+            .collect();
         active.sort();
         self.active_set = active.clone();
         self.current_epoch = epoch;
@@ -688,9 +738,7 @@ mod tests {
         s.ensure_pool(val);
         s.delegate(alice, val, U256::from(500u64)).unwrap();
 
-        let unlock = s
-            .undelegate(alice, val, U256::from(200u64), 100)
-            .unwrap();
+        let unlock = s.undelegate(alice, val, U256::from(200u64), 100).unwrap();
         assert_eq!(unlock, 100 + DEFAULT_UNBONDING_BLOCKS);
         // Not matured yet.
         assert_eq!(s.withdraw_unbonded(alice, unlock - 1), U256::ZERO);

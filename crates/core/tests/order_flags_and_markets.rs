@@ -24,7 +24,14 @@ fn post_only_rests_when_it_does_not_cross() {
     let state = &mut engine.orders.state;
 
     // Best ask at 105. A post-only bid at 100 does not cross → rests.
-    state.place_order(addr(1), m, Side::Sell, U256::from(105u64), U256::from(5u64), TimeInForce::Gtc);
+    state.place_order(
+        addr(1),
+        m,
+        Side::Sell,
+        U256::from(105u64),
+        U256::from(5u64),
+        TimeInForce::Gtc,
+    );
     let out = state
         .submit_order_ext(
             addr(2),
@@ -49,7 +56,14 @@ fn post_only_rejected_when_it_would_cross() {
     let state = &mut engine.orders.state;
 
     // Best ask at 100. A post-only bid at 100 crosses → reject, no fill.
-    state.place_order(addr(1), m, Side::Sell, U256::from(100u64), U256::from(5u64), TimeInForce::Gtc);
+    state.place_order(
+        addr(1),
+        m,
+        Side::Sell,
+        U256::from(100u64),
+        U256::from(5u64),
+        TimeInForce::Gtc,
+    );
     let err = state
         .submit_order_ext(
             addr(2),
@@ -125,7 +139,14 @@ fn gtd_zero_never_expires() {
     let (mut engine, _dir) = setup();
     let m = engine.mersennet_orders_add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
     let state = &mut engine.orders.state;
-    state.place_order(addr(2), m, Side::Buy, U256::from(90u64), U256::from(5u64), TimeInForce::Gtc);
+    state.place_order(
+        addr(2),
+        m,
+        Side::Buy,
+        U256::from(90u64),
+        U256::from(5u64),
+        TimeInForce::Gtc,
+    );
     assert_eq!(state.expire_orders(1_000_000), 0);
     assert_eq!(state.order_book(m).unwrap().bids.len(), 1);
 }
@@ -154,7 +175,11 @@ fn create_market_checked_validates_and_dedupes() {
 
     // Bad characters rejected.
     let bad2 = state
-        .create_market_checked("BAD SYMBOL!".to_string(), U256::from(1u64), U256::from(1u64))
+        .create_market_checked(
+            "BAD SYMBOL!".to_string(),
+            U256::from(1u64),
+            U256::from(1u64),
+        )
         .unwrap_err();
     assert!(matches!(bad2, MersennetOrdersError::InvalidMarketParams));
 }
@@ -180,7 +205,9 @@ fn token_collateral_counts_toward_initial_margin() {
 
     let trader = addr(0x33);
     // No native collateral, but 1000 tokens → weighted value 800.
-    state.deposit_token_collateral(trader, token, U256::from(1_000u64)).unwrap();
+    state
+        .deposit_token_collateral(trader, token, U256::from(1_000u64))
+        .unwrap();
     assert_eq!(state.token_margin_value(trader), U256::from(800u64));
 
     // Order notional 5000, initial margin 10% = 500 ≤ 800 → accepted.
@@ -194,7 +221,10 @@ fn token_collateral_counts_toward_initial_margin() {
         false,
         0,
     );
-    assert!(out.is_ok(), "token collateral should back the margin: {out:?}");
+    assert!(
+        out.is_ok(),
+        "token collateral should back the margin: {out:?}"
+    );
 }
 
 #[test]
@@ -212,12 +242,20 @@ fn token_collateral_withdraw_blocked_below_maintenance() {
         },
     );
     let trader = addr(0x33);
-    state.deposit_token_collateral(trader, token, U256::from(100u64)).unwrap();
+    state
+        .deposit_token_collateral(trader, token, U256::from(100u64))
+        .unwrap();
     // No positions → withdrawal of the full balance is allowed.
-    assert!(state.withdraw_token_collateral(trader, token, U256::from(100u64)).is_ok());
+    assert!(
+        state
+            .withdraw_token_collateral(trader, token, U256::from(100u64))
+            .is_ok()
+    );
     // Over-withdraw fails.
     assert!(matches!(
-        state.withdraw_token_collateral(trader, token, U256::from(1u64)).unwrap_err(),
+        state
+            .withdraw_token_collateral(trader, token, U256::from(1u64))
+            .unwrap_err(),
         MersennetOrdersError::InsufficientEquity
     ));
 }

@@ -677,7 +677,9 @@ fn handle_place_order_ext(input: &Bytes, gas_limit: u64, caller: Address) -> Pre
     let expire_at = decode_u64(expire_w);
 
     let outcome = with_orders(|state| {
-        state.submit_order_ext(caller, market_id, side, price, size, tif, post_only, expire_at)
+        state.submit_order_ext(
+            caller, market_id, side, price, size, tif, post_only, expire_at,
+        )
     })?;
     let outcome = outcome.map_err(|e| PrecompileError::other(e.to_string()))?;
 
@@ -993,12 +995,7 @@ fn handle_deposit_collateral_multi(
     let token = decode_address(token_w);
     let amount = decode_u256(amt_w);
 
-    let slot = with_orders(|state| {
-        state
-            .collateral_assets
-            .get(&token)
-            .map(|a| a.balances_slot)
-    })?;
+    let slot = with_orders(|state| state.collateral_assets.get(&token).map(|a| a.balances_slot))?;
     let Some(mapping_slot) = slot else {
         return Err(PrecompileError::other("token is not a registered collateral asset").into());
     };
@@ -1040,10 +1037,7 @@ fn handle_withdraw_collateral_multi(
     // Decrement the CLOB-side balance first (enforces maintenance margin);
     // only then release the escrowed tokens.
     let slot = with_orders(|state| {
-        let slot = state
-            .collateral_assets
-            .get(&token)
-            .map(|a| a.balances_slot);
+        let slot = state.collateral_assets.get(&token).map(|a| a.balances_slot);
         match slot {
             Some(s) => state
                 .withdraw_token_collateral(caller, token, amount)
@@ -1252,7 +1246,11 @@ fn staking_precompile(
 
 // ─── Open validator set ─────────────────────────────────────────────────────
 
-fn verify_registration_proof(operator: Address, identity: Address, proof: &[u8]) -> Result<(), PrecompileErrors> {
+fn verify_registration_proof(
+    operator: Address,
+    identity: Address,
+    proof: &[u8],
+) -> Result<(), PrecompileErrors> {
     let msg = crate::crypto::validator_registration_message(operator, identity);
     let signer = crate::crypto::recover_eip191(msg.as_bytes(), proof)
         .map_err(|e| PrecompileError::other(format!("invalid identity proof: {e}")))?;
@@ -1274,9 +1272,15 @@ fn handle_register_validator(
     evmctx: &mut InnerEvmContext<InMemoryDB>,
 ) -> PrecompileResult {
     check_gas(gas_limit, GAS_REGISTER_VALIDATOR)?;
-    let identity = decode_address(read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?);
-    let amount = decode_u256(read_word(input, 1).ok_or_else(|| PrecompileError::other("missing selfStake"))?);
-    let commission = decode_u256(read_word(input, 2).ok_or_else(|| PrecompileError::other("missing commissionBps"))?);
+    let identity = decode_address(
+        read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?,
+    );
+    let amount = decode_u256(
+        read_word(input, 1).ok_or_else(|| PrecompileError::other("missing selfStake"))?,
+    );
+    let commission = decode_u256(
+        read_word(input, 2).ok_or_else(|| PrecompileError::other("missing commissionBps"))?,
+    );
     let proof = read_bytes_arg(input, 3).ok_or_else(|| PrecompileError::other("missing proof"))?;
     let commission_bps: u64 = commission.try_into().unwrap_or(u64::MAX);
     if commission_bps > 10_000 {
@@ -1291,16 +1295,28 @@ fn handle_register_validator(
         .map_err(|_| PrecompileError::other("registerValidator: state error"))?
     {
         None => {}
-        Some(_) => return Err(PrecompileError::other("insufficient MRSN balance for the self-stake").into()),
+        Some(_) => {
+            return Err(
+                PrecompileError::other("insufficient MRSN balance for the self-stake").into(),
+            );
+        }
     }
     let result = with_orders(|state| {
-        state.staking.register_validator(caller, identity, amount, commission_bps, current_block)
+        state
+            .staking
+            .register_validator(caller, identity, amount, commission_bps, current_block)
     })?;
     if let Err(e) = result {
-        let _ = evmctx.journaled_state.transfer(&STAKING_PRECOMPILE, &caller, amount, &mut evmctx.db);
+        let _ =
+            evmctx
+                .journaled_state
+                .transfer(&STAKING_PRECOMPILE, &caller, amount, &mut evmctx.db);
         return Err(PrecompileError::other(e.message()).into());
     }
-    Ok(PrecompileOutput::new(GAS_REGISTER_VALIDATOR, Bytes::from(encode_bool(true).to_vec())))
+    Ok(PrecompileOutput::new(
+        GAS_REGISTER_VALIDATOR,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
 }
 
 /// addSelfStake(address identity, uint256 amount)
@@ -1311,8 +1327,11 @@ fn handle_add_self_stake(
     evmctx: &mut InnerEvmContext<InMemoryDB>,
 ) -> PrecompileResult {
     check_gas(gas_limit, GAS_VALIDATOR_ADMIN)?;
-    let identity = decode_address(read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?);
-    let amount = decode_u256(read_word(input, 1).ok_or_else(|| PrecompileError::other("missing amount"))?);
+    let identity = decode_address(
+        read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?,
+    );
+    let amount =
+        decode_u256(read_word(input, 1).ok_or_else(|| PrecompileError::other("missing amount"))?);
     match evmctx
         .journaled_state
         .transfer(&caller, &STAKING_PRECOMPILE, amount, &mut evmctx.db)
@@ -1323,33 +1342,55 @@ fn handle_add_self_stake(
     }
     let result = with_orders(|state| state.staking.add_self_stake(caller, identity, amount))?;
     if let Err(e) = result {
-        let _ = evmctx.journaled_state.transfer(&STAKING_PRECOMPILE, &caller, amount, &mut evmctx.db);
+        let _ =
+            evmctx
+                .journaled_state
+                .transfer(&STAKING_PRECOMPILE, &caller, amount, &mut evmctx.db);
         return Err(PrecompileError::other(e.message()).into());
     }
-    Ok(PrecompileOutput::new(GAS_VALIDATOR_ADMIN, Bytes::from(encode_bool(true).to_vec())))
+    Ok(PrecompileOutput::new(
+        GAS_VALIDATOR_ADMIN,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
 }
 
 /// unregisterValidator(address identity) — leaves at the next epoch; the
 /// self-stake then unbonds and is collected with withdrawUnbonded().
 fn handle_unregister_validator(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
     check_gas(gas_limit, GAS_VALIDATOR_ADMIN)?;
-    let identity = decode_address(read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?);
+    let identity = decode_address(
+        read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?,
+    );
     let result = with_orders(|state| state.staking.unregister_validator(caller, identity))?;
     result.map_err(|e| PrecompileError::other(e.message()))?;
-    Ok(PrecompileOutput::new(GAS_VALIDATOR_ADMIN, Bytes::from(encode_bool(true).to_vec())))
+    Ok(PrecompileOutput::new(
+        GAS_VALIDATOR_ADMIN,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
 }
 
 /// rotateValidatorKey(address identity, address newIdentity, bytes proof) —
 /// proof is signed by the NEW node key; takes effect at the next epoch.
 fn handle_rotate_validator_key(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
     check_gas(gas_limit, GAS_VALIDATOR_ADMIN)?;
-    let identity = decode_address(read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?);
-    let new_identity = decode_address(read_word(input, 1).ok_or_else(|| PrecompileError::other("missing newIdentity"))?);
+    let identity = decode_address(
+        read_word(input, 0).ok_or_else(|| PrecompileError::other("missing identity"))?,
+    );
+    let new_identity = decode_address(
+        read_word(input, 1).ok_or_else(|| PrecompileError::other("missing newIdentity"))?,
+    );
     let proof = read_bytes_arg(input, 2).ok_or_else(|| PrecompileError::other("missing proof"))?;
     verify_registration_proof(caller, new_identity, &proof)?;
-    let result = with_orders(|state| state.staking.rotate_identity(caller, identity, new_identity))?;
+    let result = with_orders(|state| {
+        state
+            .staking
+            .rotate_identity(caller, identity, new_identity)
+    })?;
     result.map_err(|e| PrecompileError::other(e.message()))?;
-    Ok(PrecompileOutput::new(GAS_VALIDATOR_ADMIN, Bytes::from(encode_bool(true).to_vec())))
+    Ok(PrecompileOutput::new(
+        GAS_VALIDATOR_ADMIN,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
 }
 
 /// delegate(address validator, uint256 amount)
@@ -1380,9 +1421,10 @@ fn handle_delegate(
     let result = with_orders(|state| state.staking.delegate(caller, validator, amount))?;
     if let Err(e) = result {
         // Refund the escrow before surfacing the error.
-        let _ = evmctx
-            .journaled_state
-            .transfer(&STAKING_PRECOMPILE, &caller, amount, &mut evmctx.db);
+        let _ =
+            evmctx
+                .journaled_state
+                .transfer(&STAKING_PRECOMPILE, &caller, amount, &mut evmctx.db);
         return Err(PrecompileError::other(e.message()).into());
     }
 

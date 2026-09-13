@@ -404,8 +404,10 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                             json!({ "token": hex_address(*addr), "amount": hex_u256(*amt) })
                         })
                         .collect();
-                    let mut pos: Vec<(&mersennet::mersennet_orders::MarketId, &mersennet::mersennet_orders::Position)> =
-                        a.positions.iter().collect();
+                    let mut pos: Vec<(
+                        &mersennet::mersennet_orders::MarketId,
+                        &mersennet::mersennet_orders::Position,
+                    )> = a.positions.iter().collect();
                     pos.sort_by_key(|(id, _)| id.0);
                     let positions: Vec<Value> = pos
                         .into_iter()
@@ -418,7 +420,12 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                             })
                         })
                         .collect();
-                    (a.collateral, token_collateral, a.open_orders.len(), positions)
+                    (
+                        a.collateral,
+                        token_collateral,
+                        a.open_orders.len(),
+                        positions,
+                    )
                 }
                 None => (U256::ZERO, Vec::new(), 0, Vec::new()),
             };
@@ -560,7 +567,11 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             let p = &st.params;
             let active = st.is_open_set_active(height);
             let epoch_blocks = p.epoch_blocks.max(1);
-            let next_epoch_at = if active { (height / epoch_blocks + 1) * epoch_blocks } else { 0 };
+            let next_epoch_at = if active {
+                (height / epoch_blocks + 1) * epoch_blocks
+            } else {
+                0
+            };
             let mut validators: Vec<Value> = st
                 .registry
                 .values()

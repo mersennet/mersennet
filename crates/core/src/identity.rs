@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use k256::ecdsa::{signature::hazmat::PrehashSigner, SigningKey};
+use k256::ecdsa::{SigningKey, signature::hazmat::PrehashSigner};
 use rand::rngs::OsRng;
 use revm::primitives::{Address, keccak256};
 use serde::{Deserialize, Serialize};
@@ -73,12 +73,19 @@ pub struct NodeAttestor {
     pub version: String,
 }
 
-pub fn node_attestation_message(nonce_hex: &str, identity: Address, operator: Option<Address>, height: u64) -> String {
+pub fn node_attestation_message(
+    nonce_hex: &str,
+    identity: Address,
+    operator: Option<Address>,
+    height: u64,
+) -> String {
     format!(
         "Mersennet node attestation v1\nnonce: {}\nidentity: 0x{}\noperator: {}\nheight: {}",
         nonce_hex,
         hex::encode(identity.as_slice()),
-        operator.map(|o| format!("0x{}", hex::encode(o.as_slice()))).unwrap_or_else(|| "none".to_string()),
+        operator
+            .map(|o| format!("0x{}", hex::encode(o.as_slice())))
+            .unwrap_or_else(|| "none".to_string()),
         height
     )
 }
@@ -115,7 +122,9 @@ impl NodeAttestor {
     /// Node-key signature binding this identity to the configured operator
     /// (`registerValidator` proof). None when no operator is configured.
     pub fn registration_proof(&self) -> Option<Vec<u8>> {
-        self.operator.map(|op| crate::crypto::sign_validator_registration(op, self.identity, &self.signing_key))
+        self.operator.map(|op| {
+            crate::crypto::sign_validator_registration(op, self.identity, &self.signing_key)
+        })
     }
 
     pub fn identity_json(&self) -> serde_json::Value {

@@ -111,12 +111,14 @@ fn throttle_ip(
 
 /// Client addresses exempt from the per-IP limiter (set once at startup from
 /// `rpc.trusted_ips`).
-static TRUSTED_IPS: std::sync::OnceLock<std::collections::HashSet<IpAddr>> = std::sync::OnceLock::new();
+static TRUSTED_IPS: std::sync::OnceLock<std::collections::HashSet<IpAddr>> =
+    std::sync::OnceLock::new();
 /// Reported by `web3_clientVersion`; set once at startup by the node binary.
 static CLIENT_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 pub fn set_trusted_ips(ips: &[String]) {
-    let set: std::collections::HashSet<IpAddr> = ips.iter().filter_map(|s| s.trim().parse().ok()).collect();
+    let set: std::collections::HashSet<IpAddr> =
+        ips.iter().filter_map(|s| s.trim().parse().ok()).collect();
     let _ = TRUSTED_IPS.set(set);
 }
 
@@ -132,11 +134,17 @@ pub fn set_node_identity(v: serde_json::Value) {
 }
 
 pub fn node_identity() -> serde_json::Value {
-    NODE_IDENTITY.get().cloned().unwrap_or(serde_json::Value::Null)
+    NODE_IDENTITY
+        .get()
+        .cloned()
+        .unwrap_or(serde_json::Value::Null)
 }
 
 pub fn client_version() -> String {
-    CLIENT_VERSION.get().cloned().unwrap_or_else(|| "Mersennet/unknown".to_string())
+    CLIENT_VERSION
+        .get()
+        .cloned()
+        .unwrap_or_else(|| "Mersennet/unknown".to_string())
 }
 
 fn is_trusted(ip: &IpAddr) -> bool {
@@ -380,11 +388,8 @@ fn handle_request(
             .find(|h| h.field.equiv("X-Forwarded-For"))
             .map(|h| h.value.as_str().to_owned());
         let ip = throttle_ip(addr.ip(), cf_ip.as_deref(), xff.as_deref());
-        let allowed = is_trusted(&ip)
-            || rate_limiter
-                .lock()
-                .map(|mut l| l.allow(ip))
-                .unwrap_or(true);
+        let allowed =
+            is_trusted(&ip) || rate_limiter.lock().map(|mut l| l.allow(ip)).unwrap_or(true);
         if !allowed {
             let response = Response::from_string(error_body(
                 Value::Null,

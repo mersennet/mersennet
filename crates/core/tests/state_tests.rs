@@ -138,7 +138,9 @@ fn staking_and_collateral_and_order_flags_persist() {
         .staking
         .delegate(Address::from_slice(&[0x02; 20]), val, U256::from(500u64))
         .unwrap();
-    orders.staking.on_reward(val, U256::from(100u64), U256::from(500u64));
+    orders
+        .staking
+        .on_reward(val, U256::from(100u64), U256::from(500u64));
 
     // A registered collateral asset + balance.
     let token = Address::from_slice(&[0xAA; 20]);
@@ -152,7 +154,11 @@ fn staking_and_collateral_and_order_flags_persist() {
         },
     );
     orders
-        .deposit_token_collateral(Address::from_slice(&[0x02; 20]), token, U256::from(1_000u64))
+        .deposit_token_collateral(
+            Address::from_slice(&[0x02; 20]),
+            token,
+            U256::from(1_000u64),
+        )
         .unwrap();
 
     state

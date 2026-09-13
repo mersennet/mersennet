@@ -62,7 +62,13 @@ fn token_collateral_moves_erc20_storage_through_commit() {
 
     // Register the token and seed alice's ERC-20 balance directly in storage
     // (the precompile never executes token code, only its storage).
-    engine.register_collateral_asset(token, 9_000, U256::from(1u64), U256::from(1u64), mapping_slot);
+    engine.register_collateral_asset(
+        token,
+        9_000,
+        U256::from(1u64),
+        U256::from(1u64),
+        mapping_slot,
+    );
     let alice_slot = balance_slot(alice, mapping_slot);
     engine
         .evm
@@ -76,7 +82,11 @@ fn token_collateral_moves_erc20_storage_through_commit() {
         .submit_tx_unsigned(precompile_tx(
             alice,
             0,
-            calldata(deposit_collateral_multi_selector(), token, U256::from(600u64)),
+            calldata(
+                deposit_collateral_multi_selector(),
+                token,
+                U256::from(600u64),
+            ),
         ))
         .unwrap();
     engine.execute_block().unwrap();
@@ -109,7 +119,11 @@ fn token_collateral_moves_erc20_storage_through_commit() {
         .submit_tx_unsigned(precompile_tx(
             alice,
             1,
-            calldata(withdraw_collateral_multi_selector(), token, U256::from(250u64)),
+            calldata(
+                withdraw_collateral_multi_selector(),
+                token,
+                U256::from(250u64),
+            ),
         ))
         .unwrap();
     engine.execute_block().unwrap();

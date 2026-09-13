@@ -321,7 +321,9 @@ fn main() -> anyhow::Result<()> {
                 .and_then(|a| hex::decode(a).ok())
                 .map(|b| Address::from_slice(&b));
             if app_config.p2p.operator_address.is_some() && operator.is_none() {
-                tracing::warn!("p2p.operator_address is not a valid 0x address; whoami will report no operator");
+                tracing::warn!(
+                    "p2p.operator_address is not a valid 0x address; whoami will report no operator"
+                );
             }
             let attestor = Arc::new(mersennet::identity::NodeAttestor {
                 signing_key: identity.signing_key.clone(),
@@ -868,10 +870,34 @@ fn main() -> anyhow::Result<()> {
                 let net_voter = network.clone();
                 let shutdown_voter = Arc::clone(&shutdown);
                 let voter_key = identity.signing_key.clone();
+                // The highest height this key has voted for survives restarts
+                // (and state heals, which only swap the state directory): a
+                // voter that came back with last_voted = 0 re-voted its last
+                // 16 heights, and after a heal onto the canonical branch those
+                // were different hashes — conflicting votes for honest reasons.
+                let last_voted_path = std::path::Path::new(&app_config.engine.state_path)
+                    .parent()
+                    .map(|d| d.join("voter_last_voted"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("voter_last_voted"));
                 std::thread::Builder::new()
                     .name("bft-voter".into())
                     .spawn(move || {
-                        let mut last_voted: u64 = 0;
+                        let mut last_voted: u64 = std::fs::read_to_string(&last_voted_path)
+                            .ok()
+                            .and_then(|s| s.trim().parse::<u64>().ok())
+                            .unwrap_or(0);
+                        if last_voted > 0 {
+                            tracing::info!(
+                                last_voted,
+                                "bft-voter resuming after the last persisted vote"
+                            );
+                        }
+                        let persist = |h: u64| {
+                            let tmp = last_voted_path.with_extension("tmp");
+                            if std::fs::write(&tmp, format!("{h}\n")).is_ok() {
+                                let _ = std::fs::rename(&tmp, &last_voted_path);
+                            }
+                        };
                         loop {
                             if shutdown_voter.load(Ordering::SeqCst) {
                                 break;
@@ -908,7 +934,10 @@ fn main() -> anyhow::Result<()> {
                                 {
                                     tracing::debug!(%err, height, "vote broadcast error");
                                 }
-                                last_voted = last_voted.max(height);
+                                if height > last_voted {
+                                    last_voted = height;
+                                    persist(height);
+                                }
                             }
                         }
                     })?;
