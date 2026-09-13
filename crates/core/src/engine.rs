@@ -1703,6 +1703,21 @@ impl Engine {
     }
 
     pub fn execute_block(&mut self) -> Result<Block> {
+        // Never produce for a height the network has already finalized.
+        // Votes (tiny UDP packets) routinely arrive before the block they
+        // vote for (large): on Sep 13 validator 3 reached the 2/3 quorum for
+        // validator 4's block while still waiting for the block itself, then
+        // its round timer fired and it produced a competing block — a
+        // self-fork that finality could no longer undo because the height
+        // was already marked finalized. Block-sync fetches the canonical
+        // block within seconds; producing here can only create an orphan.
+        if let Some(finalized) = self.finalized_hash(self.block_number) {
+            metrics::increment_counter!("mersennet_produce_skipped_finalized_total");
+            anyhow::bail!(
+                "height {} is already finalized by the network ({finalized}); not producing a competing block",
+                self.block_number
+            );
+        }
         self.checkpoint_before(self.block_number);
         self.maybe_epoch_transition(self.block_number);
         if let Some(me) = self.local_validator {
@@ -4468,6 +4483,24 @@ mod reorg_tests {
         // The orphaned block's transaction went back to the mempool (same
         // nonce as carol's transfer, so it is rejected once that is applied).
         assert!(a.mempool_queued_count() <= 1);
+    }
+
+    /// Votes can arrive before the block they finalize. Once a height is
+    /// finalized the node must not produce a competing block for it.
+    #[test]
+    fn no_production_for_an_already_finalized_height() {
+        let vals = validators();
+        let mut a = with_validators(engine());
+        a.set_local_validator(vals[0]);
+        let canonical = B256::from([7u8; 32]);
+        for v in vals.iter().take(3) {
+            a.record_finality_vote(1, canonical, *v);
+        }
+        assert_eq!(a.finalized_hash(1), Some(canonical));
+        assert_eq!(a.latest_height(), 0, "we never saw the block itself");
+        let err = a.execute_block().expect_err("must refuse to produce height 1");
+        assert!(err.to_string().contains("already finalized"), "{err}");
+        assert_eq!(a.latest_height(), 0);
     }
 
     /// Finality on the block we already hold changes nothing.

@@ -651,6 +651,12 @@ fn main() -> anyhow::Result<()> {
 
                             let am_leader = {
                                 let Ok(e) = eng.lock() else { break };
+                                // The network already finalized this height (the
+                                // votes beat the block to us): wait for block-sync
+                                // instead of proposing an orphan.
+                                if e.finalized_hash(next_height).is_some() {
+                                    continue;
+                                }
                                 e.is_leader(next_height, waiting_round)
                             };
                             if !am_leader {
