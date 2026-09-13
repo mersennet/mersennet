@@ -479,6 +479,7 @@ fn main() -> anyhow::Result<()> {
                         // leader cannot halt the chain.
                         let mut waiting_height: u64 = 0;
                         let mut waiting_round: u64 = 0;
+                        let mut deadline_skip_logged_for: u64 = 0;
                         let mut waited_ms: u64 = 0;
                         // Round timeout: give the elected leader several
                         // block-times to produce (plus slack for gossip)
@@ -623,12 +624,15 @@ fn main() -> anyhow::Result<()> {
                                     let into_round = pending_ms % round_timeout_ms;
                                     let margin = block_time.as_millis() as u64 * 2;
                                     if into_round + margin >= round_timeout_ms {
-                                        tracing::info!(
-                                            height = next_height,
-                                            round = waiting_round,
-                                            into_round_ms = into_round,
-                                            "too close to the round deadline — leaving this height to the next leader"
-                                        );
+                                        if deadline_skip_logged_for != next_height {
+                                            deadline_skip_logged_for = next_height;
+                                            tracing::info!(
+                                                height = next_height,
+                                                round = waiting_round,
+                                                into_round_ms = into_round,
+                                                "too close to the round deadline — leaving this height to the next leader"
+                                            );
+                                        }
                                         continue;
                                     }
                                 }
