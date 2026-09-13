@@ -31,6 +31,10 @@ mkdir -p ~/mersennet-node && cp networks/testnet/config.json ~/mersennet-node/ &
 RUST_LOG=info mersennet --config config.json --mode full --rpc
 ```
 
+## Snapshot bootstrap
+
+Fresh installs start from the latest published state snapshot (`http://46.225.30.187:8088/latest.json`, tar+zstd of `data/state`, ~1 GB, SHA-256 in the manifest) and then sync only the tail: minutes instead of the ~20 hours a genesis replay takes at current transaction density. `--from-genesis` opts out. Snapshots are produced on the public node every 6 hours by `deploy/mersennet-snapshot.sh` (`PUBLISH=1`) and served by Caddy on port 8088 (plain HTTP by IP because Cloudflare caps proxied downloads at 100 MB). Upgrades never touch existing data.
+
 ## Publishing a new bundle
 
 ```bash
