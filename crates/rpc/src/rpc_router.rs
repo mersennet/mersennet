@@ -549,6 +549,63 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         )),
         "net_listening" => Ok(Value::Bool(true)),
         "web3_clientVersion" => Ok(Value::String(crate::rpc::client_version())),
+        // This node's block-signing identity, configured operator and the
+        // proof the operator needs to call registerValidator.
+        "mersennet_nodeIdentity" => Ok(crate::rpc::node_identity()),
+        // Open validator set: parameters, epoch, active set and every
+        // registration with its live status.
+        "mersennet_validatorSet" => {
+            let st = &engine.orders.state.staking;
+            let height = engine.latest_height();
+            let p = &st.params;
+            let active = st.is_open_set_active(height);
+            let epoch_blocks = p.epoch_blocks.max(1);
+            let next_epoch_at = if active { (height / epoch_blocks + 1) * epoch_blocks } else { 0 };
+            let mut validators: Vec<Value> = st
+                .registry
+                .values()
+                .map(|r| {
+                    let delegated = st.delegated_total(r.identity);
+                    json!({
+                        "identity": format!("0x{}", hex::encode(r.identity.as_slice())),
+                        "operator": format!("0x{}", hex::encode(r.operator.as_slice())),
+                        "selfStake": format!("0x{:x}", r.self_stake),
+                        "delegated": format!("0x{:x}", delegated),
+                        "votingStake": format!("0x{:x}", st.voting_stake(r.identity)),
+                        "commissionBps": r.commission_bps,
+                        "status": st.status_of(r.identity),
+                        "genesis": r.genesis,
+                        "registeredAt": r.registered_at,
+                        "jailedUntilEpoch": r.jailed_until_epoch,
+                        "exiting": r.exiting,
+                        "pendingIdentity": r.pending_identity.map(|a| format!("0x{}", hex::encode(a.as_slice()))),
+                        "proposedSlots": r.proposed_slots,
+                        "missedSlots": r.missed_slots,
+                        "totalProposed": r.total_proposed,
+                        "timesJailed": r.times_jailed,
+                    })
+                })
+                .collect();
+            validators.sort_by(|a, b| a["identity"].as_str().cmp(&b["identity"].as_str()));
+            Ok(json!({
+                "active": active,
+                "params": {
+                    "activationHeight": p.activation_height,
+                    "epochBlocks": p.epoch_blocks,
+                    "minSelfStake": format!("0x{:x}", p.min_self_stake),
+                    "maxValidators": p.max_validators,
+                    "unbondingBlocks": p.unbonding_blocks,
+                    "jailMissBps": p.jail_miss_bps,
+                    "jailMinSlots": p.jail_min_slots,
+                },
+                "height": height,
+                "epoch": st.current_epoch,
+                "nextEpochAt": next_epoch_at,
+                "activeSet": st.active_set.iter().map(|a| format!("0x{}", hex::encode(a.as_slice()))).collect::<Vec<_>>(),
+                "consensusValidators": engine.validator_addresses().iter().map(|a| format!("0x{}", hex::encode(a.as_slice()))).collect::<Vec<_>>(),
+                "validators": validators,
+            }))
+        }
         "txpool_status" => {
             let pending = engine.mempool_pending_count();
             let queued = engine.mempool_queued_count();

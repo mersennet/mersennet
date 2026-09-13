@@ -16,6 +16,10 @@ pub struct AppConfig {
     pub genesis: GenesisConfig,
     #[serde(default)]
     pub slashing: SlashingConfig,
+    /// Open (permissionless) validator set. Off unless `activation_height`
+    /// is set; must be identical on every node (canonical config).
+    #[serde(default)]
+    pub validator_set: ValidatorSetConfig,
     #[serde(default)]
     pub token_economics: TokenEconomicsConfig,
     #[serde(default)]
@@ -230,6 +234,48 @@ pub struct TokenEconomicsConfig {
     pub initial_reward_per_block: String,
     #[serde(default = "default_halving_interval")]
     pub halving_interval: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ValidatorSetConfig {
+    /// 0 = disabled (genesis set only).
+    #[serde(default)]
+    pub activation_height: u64,
+    #[serde(default = "default_epoch_blocks")]
+    pub epoch_blocks: u64,
+    /// In whole MRSN (converted to wei internally).
+    #[serde(default = "default_min_self_stake_mrsn")]
+    pub min_self_stake_mrsn: u64,
+    #[serde(default = "default_max_validators")]
+    pub max_validators: usize,
+    #[serde(default = "default_vs_unbonding_blocks")]
+    pub unbonding_blocks: u64,
+    #[serde(default = "default_jail_miss_bps")]
+    pub jail_miss_bps: u64,
+    #[serde(default = "default_jail_min_slots")]
+    pub jail_min_slots: u64,
+}
+
+fn default_epoch_blocks() -> u64 { 1_800 }
+fn default_min_self_stake_mrsn() -> u64 { 1_000 }
+fn default_max_validators() -> usize { 12 }
+fn default_vs_unbonding_blocks() -> u64 { 5_400 }
+fn default_jail_miss_bps() -> u64 { 2_000 }
+fn default_jail_min_slots() -> u64 { 5 }
+
+impl ValidatorSetConfig {
+    pub fn to_params(&self) -> crate::staking::ValidatorSetParams {
+        let d = crate::staking::ValidatorSetParams::default();
+        crate::staking::ValidatorSetParams {
+            activation_height: self.activation_height,
+            epoch_blocks: if self.epoch_blocks == 0 { d.epoch_blocks } else { self.epoch_blocks },
+            min_self_stake: revm::primitives::U256::from(self.min_self_stake_mrsn) * revm::primitives::U256::from(10u64).pow(revm::primitives::U256::from(18u64)),
+            max_validators: if self.max_validators == 0 { d.max_validators } else { self.max_validators },
+            unbonding_blocks: if self.unbonding_blocks == 0 { d.unbonding_blocks } else { self.unbonding_blocks },
+            jail_miss_bps: self.jail_miss_bps,
+            jail_min_slots: self.jail_min_slots,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

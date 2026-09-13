@@ -19,6 +19,7 @@
 //! symmetry that the CLOB already has.
 
 use revm::primitives::{Address, U256};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Fixed-point scale for `acc_reward_per_share`.
@@ -61,6 +62,16 @@ pub struct StakingState {
     pub delegations: HashMap<(Address, Address), Delegation>,
     pub unbondings: HashMap<Address, Vec<UnbondingEntry>>,
     pub unbonding_period_blocks: u64,
+    /// Open validator set (permissionless registration). Keyed by node
+    /// identity (the block-signing address). Persisted with the rest of the
+    /// staking ledger, so every node derives the same active set.
+    pub registry: HashMap<Address, ValidatorRegistration>,
+    /// Identities producing blocks in the current epoch (sorted).
+    pub active_set: Vec<Address>,
+    pub current_epoch: u64,
+    /// Parameters, copied from the canonical config at startup (not a
+    /// governance surface yet).
+    pub params: ValidatorSetParams,
 }
 
 impl Default for StakingState {
@@ -70,8 +81,91 @@ impl Default for StakingState {
             delegations: HashMap::new(),
             unbondings: HashMap::new(),
             unbonding_period_blocks: DEFAULT_UNBONDING_BLOCKS,
+            registry: HashMap::new(),
+            active_set: Vec::new(),
+            current_epoch: 0,
+            params: ValidatorSetParams::default(),
         }
     }
+}
+
+/// Rules of the open validator set. `activation_height == 0` means the
+/// feature is off and the genesis set is used unchanged (today's behaviour).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorSetParams {
+    pub activation_height: u64,
+    pub epoch_blocks: u64,
+    pub min_self_stake: U256,
+    pub max_validators: usize,
+    pub unbonding_blocks: u64,
+    /// Missing more than this share of a validator's leader slots in an
+    /// epoch (basis points) jails it for the following epoch. Needs at least
+    /// `jail_min_slots` slots in the epoch to be judged at all.
+    pub jail_miss_bps: u64,
+    pub jail_min_slots: u64,
+}
+
+impl Default for ValidatorSetParams {
+    fn default() -> Self {
+        Self {
+            activation_height: 0,
+            epoch_blocks: 1_800,
+            min_self_stake: U256::from(1_000u64) * U256::from(10u64).pow(U256::from(18u64)),
+            max_validators: 12,
+            unbonding_blocks: 5_400,
+            jail_miss_bps: 2_000,
+            jail_min_slots: 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorRegistration {
+    /// Wallet that registered and controls this entry (msg.sender).
+    pub operator: Address,
+    /// Block-signing address (node key). The registry is keyed by it.
+    pub identity: Address,
+    /// Native MRSN escrowed by the operator.
+    pub self_stake: U256,
+    pub commission_bps: u64,
+    pub registered_at: u64,
+    /// Genesis validators are seeded at activation and never need the
+    /// one-epoch waiting period.
+    pub genesis: bool,
+    /// Jailed while `current_epoch < jailed_until_epoch`.
+    pub jailed_until_epoch: u64,
+    /// Operator asked to leave: removed at the next epoch, stake unbonds.
+    pub exiting: bool,
+    /// Key rotation requested; applied at the next epoch.
+    pub pending_identity: Option<Address>,
+    /// Leader-slot accounting for the current epoch.
+    pub proposed_slots: u64,
+    pub missed_slots: u64,
+    pub total_proposed: u64,
+    pub times_jailed: u64,
+}
+
+/// What a validator is doing right now, for RPC/UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValidatorStatus {
+    /// Registered this epoch; eligible from the next one.
+    Pending,
+    Active,
+    /// Eligible but ranked below `max_validators`.
+    Standby,
+    Jailed,
+    Exiting,
+}
+
+/// Outcome of an epoch transition, for logs and the block-level record.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EpochTransition {
+    pub epoch: u64,
+    pub active_set: Vec<Address>,
+    pub jailed: Vec<Address>,
+    pub removed: Vec<Address>,
+    pub rotated: Vec<(Address, Address)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +173,12 @@ pub enum StakingError {
     UnknownValidator,
     ZeroAmount,
     InsufficientDelegation,
+    NotActive,
+    AlreadyRegistered,
+    StakeTooLow,
+    NotOperator,
+    Exiting,
+    GenesisImmutable,
 }
 
 impl StakingError {
@@ -87,7 +187,247 @@ impl StakingError {
             StakingError::UnknownValidator => "unknown validator",
             StakingError::ZeroAmount => "amount must be > 0",
             StakingError::InsufficientDelegation => "insufficient delegated amount",
+            StakingError::NotActive => "validator registration is not active yet",
+            StakingError::AlreadyRegistered => "this node identity is already registered",
+            StakingError::StakeTooLow => "self-stake below the minimum",
+            StakingError::NotOperator => "caller is not this validator's operator",
+            StakingError::Exiting => "validator is exiting",
+            StakingError::GenesisImmutable => "genesis validators cannot use this call",
         }
+    }
+}
+
+// ─── Open validator set ─────────────────────────────────────────────────────
+
+impl StakingState {
+    pub fn set_params(&mut self, params: ValidatorSetParams) {
+        self.params = params;
+    }
+
+    pub fn is_open_set_active(&self, height: u64) -> bool {
+        self.params.activation_height > 0 && height >= self.params.activation_height
+    }
+
+    /// Height at which the epoch containing `height` began.
+    pub fn epoch_start(&self, height: u64) -> u64 {
+        let e = self.params.epoch_blocks.max(1);
+        height - (height % e)
+    }
+
+    pub fn epoch_of(&self, height: u64) -> u64 {
+        height / self.params.epoch_blocks.max(1)
+    }
+
+    /// Total stake ranking a validator: self-stake + delegations to its pool.
+    pub fn voting_stake(&self, identity: Address) -> U256 {
+        let self_stake = self.registry.get(&identity).map(|r| r.self_stake).unwrap_or(U256::ZERO);
+        self_stake.saturating_add(self.delegated_total(identity))
+    }
+
+    /// Seed the registry with the genesis validators the first time the open
+    /// set activates (idempotent).
+    pub fn seed_genesis(&mut self, genesis: &[(Address, U256)], _height: u64) {
+        // Constant across nodes: a node that activates late (upgraded after
+        // the activation height) must derive the identical registry.
+        let registered_at = self.params.activation_height;
+        for (addr, stake) in genesis {
+            self.registry.entry(*addr).or_insert(ValidatorRegistration {
+                operator: *addr,
+                identity: *addr,
+                self_stake: *stake,
+                commission_bps: DEFAULT_COMMISSION_BPS,
+                registered_at,
+                genesis: true,
+                jailed_until_epoch: 0,
+                exiting: false,
+                pending_identity: None,
+                proposed_slots: 0,
+                missed_slots: 0,
+                total_proposed: 0,
+                times_jailed: 0,
+            });
+            self.ensure_pool(*addr);
+        }
+    }
+
+    pub fn register_validator(
+        &mut self,
+        operator: Address,
+        identity: Address,
+        self_stake: U256,
+        commission_bps: u64,
+        height: u64,
+    ) -> Result<(), StakingError> {
+        if !self.is_open_set_active(height) {
+            return Err(StakingError::NotActive);
+        }
+        if self.registry.contains_key(&identity) {
+            return Err(StakingError::AlreadyRegistered);
+        }
+        if self_stake < self.params.min_self_stake {
+            return Err(StakingError::StakeTooLow);
+        }
+        self.registry.insert(identity, ValidatorRegistration {
+            operator,
+            identity,
+            self_stake,
+            commission_bps: commission_bps.min(10_000),
+            registered_at: height,
+            genesis: false,
+            jailed_until_epoch: 0,
+            exiting: false,
+            pending_identity: None,
+            proposed_slots: 0,
+            missed_slots: 0,
+            total_proposed: 0,
+            times_jailed: 0,
+        });
+        self.ensure_pool(identity);
+        if let Some(pool) = self.pools.get_mut(&identity) {
+            pool.commission_bps = commission_bps.min(10_000);
+        }
+        Ok(())
+    }
+
+    pub fn add_self_stake(&mut self, operator: Address, identity: Address, amount: U256) -> Result<(), StakingError> {
+        if amount.is_zero() {
+            return Err(StakingError::ZeroAmount);
+        }
+        let r = self.registry.get_mut(&identity).ok_or(StakingError::UnknownValidator)?;
+        if r.operator != operator {
+            return Err(StakingError::NotOperator);
+        }
+        if r.exiting {
+            return Err(StakingError::Exiting);
+        }
+        r.self_stake = r.self_stake.saturating_add(amount);
+        Ok(())
+    }
+
+    /// Leave the set at the next epoch; self-stake starts unbonding then.
+    pub fn unregister_validator(&mut self, operator: Address, identity: Address) -> Result<(), StakingError> {
+        let r = self.registry.get_mut(&identity).ok_or(StakingError::UnknownValidator)?;
+        if r.operator != operator {
+            return Err(StakingError::NotOperator);
+        }
+        if r.genesis {
+            return Err(StakingError::GenesisImmutable);
+        }
+        r.exiting = true;
+        Ok(())
+    }
+
+    /// Switch the block-signing key at the next epoch.
+    pub fn rotate_identity(&mut self, operator: Address, identity: Address, new_identity: Address) -> Result<(), StakingError> {
+        if self.registry.contains_key(&new_identity) {
+            return Err(StakingError::AlreadyRegistered);
+        }
+        let r = self.registry.get_mut(&identity).ok_or(StakingError::UnknownValidator)?;
+        if r.operator != operator {
+            return Err(StakingError::NotOperator);
+        }
+        if r.genesis {
+            return Err(StakingError::GenesisImmutable);
+        }
+        r.pending_identity = Some(new_identity);
+        Ok(())
+    }
+
+    pub fn status_of(&self, identity: Address) -> Option<ValidatorStatus> {
+        let r = self.registry.get(&identity)?;
+        Some(if r.exiting {
+            ValidatorStatus::Exiting
+        } else if self.current_epoch < r.jailed_until_epoch {
+            ValidatorStatus::Jailed
+        } else if self.active_set.contains(&identity) {
+            ValidatorStatus::Active
+        } else if !r.genesis && self.epoch_of(r.registered_at) >= self.current_epoch {
+            ValidatorStatus::Pending
+        } else {
+            ValidatorStatus::Standby
+        })
+    }
+
+    /// Record who proposed height `h` and who missed their slot before them.
+    /// `leaders` is the leader for rounds 0..=r where `leaders[r] == proposer`.
+    pub fn record_slots(&mut self, proposer: Address, missed: &[Address]) {
+        for m in missed {
+            if let Some(r) = self.registry.get_mut(m) {
+                r.missed_slots = r.missed_slots.saturating_add(1);
+            }
+        }
+        if let Some(r) = self.registry.get_mut(&proposer) {
+            r.proposed_slots = r.proposed_slots.saturating_add(1);
+            r.total_proposed = r.total_proposed.saturating_add(1);
+        }
+    }
+
+    /// Recompute the active set at the first block of an epoch. Deterministic
+    /// from state, so every node agrees. Returns what changed.
+    pub fn epoch_transition(&mut self, height: u64) -> EpochTransition {
+        let epoch = self.epoch_of(height);
+        let mut out = EpochTransition { epoch, ..Default::default() };
+        let p = self.params.clone();
+
+        // 1. Judge the epoch that just ended: jail, exit, rotate.
+        let ids: Vec<Address> = self.registry.keys().copied().collect();
+        for id in ids {
+            let Some(r) = self.registry.get_mut(&id) else { continue };
+            let slots = r.proposed_slots + r.missed_slots;
+            if slots >= p.jail_min_slots && r.missed_slots * 10_000 > slots * p.jail_miss_bps && !r.genesis {
+                r.jailed_until_epoch = epoch + 1; // sits out this epoch, eligible again next
+                r.times_jailed += 1;
+                out.jailed.push(id);
+            }
+            r.proposed_slots = 0;
+            r.missed_slots = 0;
+            if r.exiting {
+                let (operator, amount) = (r.operator, r.self_stake);
+                self.registry.remove(&id);
+                self.unbondings.entry(operator).or_default().push(UnbondingEntry {
+                    validator: id,
+                    amount,
+                    unlock_at: height + p.unbonding_blocks,
+                });
+                out.removed.push(id);
+                continue;
+            }
+            if let Some(new_id) = r.pending_identity.take() {
+                let mut moved = r.clone();
+                moved.identity = new_id;
+                self.registry.remove(&id);
+                self.registry.insert(new_id, moved);
+                // Delegations follow the validator: re-key its pool.
+                if let Some(pool) = self.pools.remove(&id) {
+                    self.pools.insert(new_id, pool);
+                }
+                let keys: Vec<(Address, Address)> = self.delegations.keys().filter(|(_, v)| *v == id).copied().collect();
+                for (d, _) in keys {
+                    if let Some(del) = self.delegations.remove(&(d, id)) {
+                        self.delegations.insert((d, new_id), del);
+                    }
+                }
+                out.rotated.push((id, new_id));
+            }
+        }
+
+        // 2. Eligible: registered in an earlier epoch, not jailed, enough stake.
+        let mut eligible: Vec<(Address, U256)> = self
+            .registry
+            .values()
+            .filter(|r| r.genesis || self.epoch_of(r.registered_at) < epoch)
+            .filter(|r| epoch >= r.jailed_until_epoch)
+            .filter(|r| r.self_stake >= p.min_self_stake)
+            .map(|r| (r.identity, self.voting_stake(r.identity)))
+            .collect();
+        // Highest stake first; ties by address for determinism.
+        eligible.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let mut active: Vec<Address> = eligible.into_iter().take(p.max_validators.max(1)).map(|(a, _)| a).collect();
+        active.sort();
+        self.active_set = active.clone();
+        self.current_epoch = epoch;
+        out.active_set = active;
+        out
     }
 }
 

@@ -106,6 +106,24 @@ impl NodeAttestor {
             "version": self.version,
             "message": message,
             "signature": format!("0x{}", hex::encode(sig_bytes)),
+            // Lets the operator register this node as a validator with one
+            // click: the staking precompile checks this exact signature.
+            "registrationProof": self.registration_proof().map(|p| format!("0x{}", hex::encode(p))),
+        })
+    }
+
+    /// Node-key signature binding this identity to the configured operator
+    /// (`registerValidator` proof). None when no operator is configured.
+    pub fn registration_proof(&self) -> Option<Vec<u8>> {
+        self.operator.map(|op| crate::crypto::sign_validator_registration(op, self.identity, &self.signing_key))
+    }
+
+    pub fn identity_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "identity": format!("0x{}", hex::encode(self.identity.as_slice())),
+            "operator": self.operator.map(|o| format!("0x{}", hex::encode(o.as_slice()))),
+            "registrationProof": self.registration_proof().map(|p| format!("0x{}", hex::encode(p))),
+            "version": self.version,
         })
     }
 }

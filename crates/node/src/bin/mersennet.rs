@@ -195,6 +195,16 @@ fn main() -> anyhow::Result<()> {
         app_config.engine.fee_max_change_denominator,
     );
     engine.set_round_timeout_ms(app_config.slashing.round_timeout_ms);
+    engine.set_validator_set_params(app_config.validator_set.to_params());
+    if app_config.validator_set.activation_height > 0 {
+        info!(
+            activation_height = app_config.validator_set.activation_height,
+            epoch_blocks = app_config.validator_set.epoch_blocks,
+            min_self_stake_mrsn = app_config.validator_set.min_self_stake_mrsn,
+            max_validators = app_config.validator_set.max_validators,
+            "open validator set configured"
+        );
+    }
     engine.set_slashing_bps(
         app_config.slashing.double_sign_bps,
         app_config.slashing.timeout_bps,
@@ -323,6 +333,7 @@ fn main() -> anyhow::Result<()> {
                     option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
                 ),
             });
+            rpc::set_node_identity(attestor.identity_json());
             network.start_networking_with_attestor(engine.clone(), &gossip_config, Some(attestor));
 
             // Transaction relay: locally-submitted (RPC) transactions must

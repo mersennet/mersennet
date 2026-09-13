@@ -124,6 +124,17 @@ pub fn set_client_version(version: String) {
     let _ = CLIENT_VERSION.set(version);
 }
 
+/// `mersennet_nodeIdentity` payload (identity, operator, registration proof).
+static NODE_IDENTITY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+
+pub fn set_node_identity(v: serde_json::Value) {
+    let _ = NODE_IDENTITY.set(v);
+}
+
+pub fn node_identity() -> serde_json::Value {
+    NODE_IDENTITY.get().cloned().unwrap_or(serde_json::Value::Null)
+}
+
 pub fn client_version() -> String {
     CLIENT_VERSION.get().cloned().unwrap_or_else(|| "Mersennet/unknown".to_string())
 }
@@ -597,6 +608,8 @@ fn dispatch(
         | "net_version"
         | "net_peerCount"
         | "mersennet_peers"
+        | "mersennet_nodeIdentity"
+        | "mersennet_validatorSet"
         | "net_listening"
         | "web3_clientVersion"
         | "txpool_status" => {

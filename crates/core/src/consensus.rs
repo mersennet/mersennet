@@ -185,6 +185,12 @@ impl Consensus {
         &self.validators
     }
 
+    /// Replace the whole set (open validator set epoch transition). Stakes
+    /// are the voting stakes computed by the staking registry.
+    pub fn replace_validators(&mut self, validators: Vec<Validator>) {
+        self.validators = validators;
+    }
+
     // --- Validator locking (CometBFT PoLC) ---
 
     pub fn lock_on(&mut self, round: u64, hash: B256) {
