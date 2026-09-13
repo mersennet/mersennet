@@ -368,6 +368,15 @@ impl UdpGossip {
 
     pub fn discover_peers(&mut self, ttl: u8) -> Result<()> {
         self.announce_self(ttl)?;
+        // Make sure every known peer hears from us at least once per tick.
+        // Receivers mark the packet's source as a heard peer and start
+        // gossiping to it. Without this, a node bound to 0.0.0.0 (so no
+        // announce) with nothing to relay stayed invisible: bootstrap peers
+        // never learned it existed, it received no gossip, and it followed
+        // the chain only through TCP polls — the state of every community
+        // full node installed so far.
+        let hello = self.new_packet("ping".to_string(), Vec::new(), 0);
+        self.broadcast(&hello)?;
         // Relay only peers we have heard from ourselves within the TTL. Relaying
         // addresses that merely arrived in someone else's list let dead peers
         // ping-pong between nodes indefinitely (each relay looked like a fresh
