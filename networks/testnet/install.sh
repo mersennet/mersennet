@@ -3,13 +3,18 @@ set -euo pipefail
 
 # Mersennet testnet full-node installer.
 #
-#   sudo bash install.sh [--data-dir DIR] [--rpc-public]
+#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis]
 #
 #   --data-dir DIR   Put chain data and the node key under DIR instead of
 #                    /var/lib/mersennet (e.g. a mounted block volume:
 #                    --data-dir /mnt/blockstorage/mersennet). Existing data in
 #                    the previous location is moved there.
 #   --rpc-public     Listen for JSON-RPC on 0.0.0.0:8545 instead of localhost.
+#   --from-genesis   Do not bootstrap a fresh node from the latest published
+#                    state snapshot; replay the whole chain instead (many
+#                    hours). Default: snapshot (SHA-256 verified), then the
+#                    node syncs only the tail — minutes. Upgrades never touch
+#                    existing data.
 #
 # Works from either layout:
 #   1. The release bundle (https://mersennet.com/downloads/): binary, config
@@ -29,11 +34,14 @@ fi
 
 DATA_DIR="/var/lib/mersennet"
 RPC_ADDR=""
+FROM_SNAPSHOT=1
+SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --data-dir) DATA_DIR="${2:?--data-dir needs a path}"; shift 2 ;;
         --data-dir=*) DATA_DIR="${1#*=}"; shift ;;
         --rpc-public) RPC_ADDR="0.0.0.0:8545"; shift ;;
+        --from-genesis) FROM_SNAPSHOT=0; shift ;;
         -h|--help) sed -n '3,22p' "$0"; exit 0 ;;
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
     esac
@@ -123,6 +131,50 @@ echo "==> Opening firewall ports (P2P 30303 tcp+udp) if ufw is active"
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
     ufw allow 30303/udp comment "Mersennet P2P gossip" >/dev/null || true
     ufw allow 30303/tcp comment "Mersennet P2P sync" >/dev/null || true
+fi
+
+# Fresh node: start from the latest published state snapshot instead of
+# replaying ~1.3M blocks (which takes most of a day at current tx density).
+# The tarball's SHA-256 must match the manifest; the node then verifies
+# every block it imports on top, and the watchdog-style fork detection
+# would reject a state that disagrees with the network.
+if [[ $FROM_SNAPSHOT -eq 1 && ! -d "$DATA_DIR/data/state" ]]; then
+    echo "==> Bootstrapping chain state from the latest snapshot ($SNAPSHOT_MANIFEST)"
+    SNAP_TMP="$(mktemp -d "$DATA_DIR/.snapshot.XXXXXX")"
+    if curl -fsSL --max-time 20 -o "$SNAP_TMP/latest.json" "$SNAPSHOT_MANIFEST"; then
+        SNAP_URL=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$SNAP_TMP/latest.json")
+        SNAP_SHA=$(sed -n 's/.*"sha256": *"\([0-9a-f]*\)".*/\1/p' "$SNAP_TMP/latest.json")
+        SNAP_HEIGHT=$(sed -n 's/.*"height": *\([0-9]*\).*/\1/p' "$SNAP_TMP/latest.json")
+        SNAP_SIZE=$(sed -n 's/.*"size": *\([0-9]*\).*/\1/p' "$SNAP_TMP/latest.json")
+        if [[ -n "$SNAP_URL" && -n "$SNAP_SHA" ]]; then
+            echo "    snapshot at height ${SNAP_HEIGHT:-?}, $(( ${SNAP_SIZE:-0} / 1048576 )) MB — downloading"
+            if curl -fL --retry 3 --progress-bar -o "$SNAP_TMP/state.tar.zst" "$SNAP_URL" \
+               && echo "$SNAP_SHA  $SNAP_TMP/state.tar.zst" | sha256sum -c --quiet - ; then
+                if ! command -v zstd >/dev/null 2>&1; then
+                    echo "    installing zstd"; apt-get install -y -qq zstd >/dev/null 2>&1 || true
+                fi
+                if command -v zstd >/dev/null 2>&1; then
+                    mkdir -p "$DATA_DIR/data/state"
+                    if zstd -dc "$SNAP_TMP/state.tar.zst" | tar -xf - -C "$DATA_DIR/data/state"; then
+                        echo "    state restored from snapshot (height ${SNAP_HEIGHT:-?}); the node will sync the remaining blocks"
+                    else
+                        echo "    extraction failed — falling back to a full sync" >&2
+                        rm -rf "$DATA_DIR/data/state"
+                    fi
+                else
+                    echo "    zstd unavailable — falling back to a full sync" >&2
+                fi
+            else
+                echo "    download or checksum failed — falling back to a full sync" >&2
+            fi
+        else
+            echo "    manifest unreadable — falling back to a full sync" >&2
+        fi
+    else
+        echo "    snapshot server unreachable — falling back to a full sync" >&2
+    fi
+    rm -rf "$SNAP_TMP"
+    chown -R mersennet:mersennet "$DATA_DIR" 2>/dev/null || true
 fi
 
 echo "==> Starting node"
