@@ -254,6 +254,11 @@ pub struct P2pConfig {
     pub listen: String,
     #[serde(default)]
     pub peers: Vec<String>,
+    /// Wallet address of whoever operates this node. Included in the node's
+    /// signed `whoami` attestation so the operator can claim the node on
+    /// trade.mersennet.com (verified node runner). Optional.
+    #[serde(default)]
+    pub operator_address: Option<String>,
     #[serde(default = "default_block_time_ms")]
     pub block_time_ms: u64,
     // NOTE: the Noise transport module is not yet wired into the UDP gossip
@@ -399,6 +404,7 @@ impl Default for P2pConfig {
             peers: Vec::new(),
             block_time_ms: default_block_time_ms(),
             noise_enabled: false,
+            operator_address: None,
         }
     }
 }

@@ -3,13 +3,16 @@ set -euo pipefail
 
 # Mersennet testnet full-node installer.
 #
-#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis]
+#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET]
 #
 #   --data-dir DIR   Put chain data and the node key under DIR instead of
 #                    /var/lib/mersennet (e.g. a mounted block volume:
 #                    --data-dir /mnt/blockstorage/mersennet). Existing data in
 #                    the previous location is moved there.
 #   --rpc-public     Listen for JSON-RPC on 0.0.0.0:8545 instead of localhost.
+#   --operator ADDR  Your wallet address. The node signs it into its `whoami`
+#                    attestation so you can claim the node as a verified node
+#                    runner on trade.mersennet.com/points (daily points).
 #   --from-genesis   Do not bootstrap a fresh node from the latest published
 #                    state snapshot; replay the whole chain instead (many
 #                    hours). Default: snapshot (SHA-256 verified), then the
@@ -35,6 +38,7 @@ fi
 DATA_DIR="/var/lib/mersennet"
 RPC_ADDR=""
 FROM_SNAPSHOT=1
+OPERATOR=""
 SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -42,6 +46,8 @@ while [[ $# -gt 0 ]]; do
         --data-dir=*) DATA_DIR="${1#*=}"; shift ;;
         --rpc-public) RPC_ADDR="0.0.0.0:8545"; shift ;;
         --from-genesis) FROM_SNAPSHOT=0; shift ;;
+        --operator) OPERATOR="${2:?--operator needs a 0x address}"; shift 2 ;;
+        --operator=*) OPERATOR="${1#*=}"; shift ;;
         -h|--help) sed -n '3,22p' "$0"; exit 0 ;;
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
     esac
@@ -112,6 +118,20 @@ fi
 if [[ -n "$RPC_ADDR" ]]; then
     echo "==> Exposing JSON-RPC on $RPC_ADDR (was 127.0.0.1:8545)"
     sed -i "s#\"addr\": \"127.0.0.1:8545\"#\"addr\": \"$RPC_ADDR\"#" /etc/mersennet/config.json
+fi
+if [[ -n "$OPERATOR" ]]; then
+    if [[ "$OPERATOR" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+        echo "==> Recording operator wallet $OPERATOR (p2p.operator_address)"
+        python3 - "$OPERATOR" <<'PY'
+import json, sys
+p = "/etc/mersennet/config.json"
+cfg = json.load(open(p))
+cfg.setdefault("p2p", {})["operator_address"] = sys.argv[1].lower()
+json.dump(cfg, open(p, "w"), indent=2)
+PY
+    else
+        echo "error: --operator must be a 0x address (40 hex chars)" >&2; exit 1
+    fi
 fi
 
 echo "==> Installing systemd service (data dir: $DATA_DIR)"

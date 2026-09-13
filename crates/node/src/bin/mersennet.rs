@@ -302,7 +302,28 @@ fn main() -> anyhow::Result<()> {
             let engine = Arc::new(Mutex::new(engine));
             let _ = SHUTDOWN_ENGINE.set(engine.clone());
             let network = NetworkNode::new(&gossip_config)?;
-            network.start_networking(engine.clone(), &gossip_config);
+            let operator = app_config
+                .p2p
+                .operator_address
+                .as_deref()
+                .map(|a| a.trim().trim_start_matches("0x"))
+                .filter(|a| a.len() == 40)
+                .and_then(|a| hex::decode(a).ok())
+                .map(|b| Address::from_slice(&b));
+            if app_config.p2p.operator_address.is_some() && operator.is_none() {
+                tracing::warn!("p2p.operator_address is not a valid 0x address; whoami will report no operator");
+            }
+            let attestor = Arc::new(mersennet::identity::NodeAttestor {
+                signing_key: identity.signing_key.clone(),
+                identity: identity.address,
+                operator,
+                version: format!(
+                    "Mersennet/{}-{}",
+                    env!("CARGO_PKG_VERSION"),
+                    option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
+                ),
+            });
+            network.start_networking_with_attestor(engine.clone(), &gossip_config, Some(attestor));
 
             // Transaction relay: locally-submitted (RPC) transactions must
             // reach the validators. Blocks are broadcast on production, but

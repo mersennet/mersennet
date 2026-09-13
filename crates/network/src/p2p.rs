@@ -505,6 +505,17 @@ impl NetworkNode {
     }
 
     pub fn start_networking(&self, engine: Arc<Mutex<Engine>>, config: &GossipConfig) {
+        self.start_networking_with_attestor(engine, config, None);
+    }
+
+    /// `attestor` answers `whoami` requests on the TCP port with a signed
+    /// identity/operator statement (verified node runners).
+    pub fn start_networking_with_attestor(
+        &self,
+        engine: Arc<Mutex<Engine>>,
+        config: &GossipConfig,
+        attestor: Option<Arc<mersennet::identity::NodeAttestor>>,
+    ) {
         self.running.store(true, Ordering::SeqCst);
         let listen_addr = config.listen_addr.clone();
 
@@ -602,6 +613,7 @@ impl NetworkNode {
         {
             let engine = engine.clone();
             let running = self.running.clone();
+            let attestor_listener = attestor.clone();
             let tcp_addr = derive_tcp_addr(&listen_addr);
             std::thread::Builder::new()
                 .name("tcp-snapshot".into())
@@ -631,6 +643,7 @@ impl NetworkNode {
                             }
                             in_flight.fetch_add(1, Ordering::SeqCst);
                             let engine = engine.clone();
+                            let attestor_worker = attestor_listener.clone();
                             let in_flight_worker = in_flight.clone();
                             let in_flight_outer = in_flight.clone();
                             std::thread::Builder::new()
@@ -642,9 +655,35 @@ impl NetworkNode {
                                     let _ = stream.set_nonblocking(false);
                                     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                                     let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
-                                    if let Ok(Some(request)) = TcpSync::recv_packet(&mut stream)
-                                        && request.topic == "sync_request"
-                                    {
+                                    let request = match TcpSync::recv_packet(&mut stream) {
+                                        Ok(Some(r)) => r,
+                                        _ => {
+                                            in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                            return;
+                                        }
+                                    };
+                                    if request.topic == "whoami" {
+                                        // Verified-node-runner probe: echo a signed
+                                        // statement of who we are, bound to the
+                                        // caller's nonce (16..=64 bytes). Cheap and
+                                        // rate-limited by the worker pool like sync.
+                                        if let Some(att) = attestor_worker.as_ref()
+                                            && (16..=64).contains(&request.data.len())
+                                        {
+                                            let height = engine.lock().map(|e| e.latest_height()).unwrap_or(0);
+                                            let body = att.attest(&request.data, height);
+                                            let pkt = crate::net_transport::GossipPacket {
+                                                topic: "whoami_response".to_string(),
+                                                data: serde_json::to_vec(&body).unwrap_or_default(),
+                                                id: String::new(),
+                                                ttl: 0,
+                                            };
+                                            let _ = TcpSync::send_packet(&mut stream, &pkt);
+                                        }
+                                        in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                        return;
+                                    }
+                                    if request.topic == "sync_request" {
                                         // The requester encodes the next height it
                                         // needs as 8 big-endian bytes; default to
                                         // the full chain for legacy/empty requests.
