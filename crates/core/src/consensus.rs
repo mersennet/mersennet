@@ -121,7 +121,7 @@ pub struct ValidatorSigningInfo {
     pub tombstoned: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Consensus {
     validators: Vec<Validator>,
     unbonding: Vec<Unbonding>,
