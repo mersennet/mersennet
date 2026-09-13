@@ -93,6 +93,14 @@ if [[ "$pub_ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
     fi
 fi
 
+# Operator wallet (verified node runner)
+operator=$(python3 -c "import json; print(json.load(open('/etc/mersennet/config.json')).get('p2p',{}).get('operator_address') or '')" 2>/dev/null)
+if [[ -n "$operator" ]]; then
+    printf 'Operator     %s — verify this node at https://trade.mersennet.com/points to earn daily points\n' "$operator"
+else
+    printf 'Operator     %s — set one to be recognised as a node runner: re-run the installer with --operator 0xYOURWALLET (or add p2p.operator_address to /etc/mersennet/config.json and restart)\n' "$(yellow 'not set')"
+fi
+
 # Binary version vs the latest published release
 if [[ -x /usr/local/bin/mersennet ]] && command -v sha256sum >/dev/null; then
     have="$(sha256sum /usr/local/bin/mersennet | cut -d' ' -f1)"
