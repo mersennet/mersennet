@@ -302,7 +302,28 @@ fn main() -> anyhow::Result<()> {
             let engine = Arc::new(Mutex::new(engine));
             let _ = SHUTDOWN_ENGINE.set(engine.clone());
             let network = NetworkNode::new(&gossip_config)?;
-            network.start_networking(engine.clone(), &gossip_config);
+            let operator = app_config
+                .p2p
+                .operator_address
+                .as_deref()
+                .map(|a| a.trim().trim_start_matches("0x"))
+                .filter(|a| a.len() == 40)
+                .and_then(|a| hex::decode(a).ok())
+                .map(|b| Address::from_slice(&b));
+            if app_config.p2p.operator_address.is_some() && operator.is_none() {
+                tracing::warn!("p2p.operator_address is not a valid 0x address; whoami will report no operator");
+            }
+            let attestor = Arc::new(mersennet::identity::NodeAttestor {
+                signing_key: identity.signing_key.clone(),
+                identity: identity.address,
+                operator,
+                version: format!(
+                    "Mersennet/{}-{}",
+                    env!("CARGO_PKG_VERSION"),
+                    option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
+                ),
+            });
+            network.start_networking_with_attestor(engine.clone(), &gossip_config, Some(attestor));
 
             // Transaction relay: locally-submitted (RPC) transactions must
             // reach the validators. Blocks are broadcast on production, but
@@ -583,6 +604,34 @@ fn main() -> anyhow::Result<()> {
                                 );
                                 waiting_round = time_round;
                                 waited_ms = 0;
+                            }
+                            // Never propose within two block times of a rotation
+                            // deadline: peers time their rounds from when the parent
+                            // reached them, so a proposal this close to the boundary
+                            // races the next round's leader (validator 2 lost that
+                            // race by ~100 ms after a restart on Sep 13 and forked).
+                            // The next leader takes the height instead; cost: one
+                            // rotation, ~19 s, only when a leader is already late.
+                            {
+                                let Ok(e) = eng.lock() else { break };
+                                if let Some(b) = e.block_by_number(head) {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0);
+                                    let pending_ms = now.saturating_sub(b.timestamp).saturating_mul(1000);
+                                    let into_round = pending_ms % round_timeout_ms;
+                                    let margin = block_time.as_millis() as u64 * 2;
+                                    if into_round + margin >= round_timeout_ms {
+                                        tracing::info!(
+                                            height = next_height,
+                                            round = waiting_round,
+                                            into_round_ms = into_round,
+                                            "too close to the round deadline — leaving this height to the next leader"
+                                        );
+                                        continue;
+                                    }
+                                }
                             }
 
                             let am_leader = {

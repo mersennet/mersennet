@@ -422,6 +422,28 @@ pub struct PeerSnapshot {
     pub heard: bool,
 }
 
+/// Everything a block application mutates that consensus depends on — the
+/// same set `commit_state` persists — plus the block counters. Cloned before
+/// each block at the tip (the live state is a few thousand entries; the 12 GB
+/// on disk is sled history).
+#[derive(Debug)]
+struct StateCheckpoint {
+    /// Height this checkpoint precedes: the state *before* applying `height`.
+    height: u64,
+    evm_db: InMemoryDB,
+    orders: MersennetOrdersState,
+    bridge_orders_to_evm: crate::bridge::BridgeQueueSnapshot,
+    bridge_evm_to_orders: crate::bridge::BridgeQueueSnapshot,
+    base_fee: U256,
+    /// Reward/participation accounting feeds balances, so it is part of
+    /// consensus state.
+    consensus: Consensus,
+}
+
+/// How many recent heights can be rolled back. Finality normally lands
+/// within the same block interval, so 1 would do; 16 covers a slow round.
+const REORG_DEPTH: usize = 16;
+
 #[derive(Debug)]
 pub struct Engine {
     pub chain_id: u64,
@@ -547,6 +569,18 @@ pub struct Engine {
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
+    /// When we last rejected a block for a parent-hash mismatch. Diagnostic
+    /// only: it cannot tell "I am forked" from "a peer is forked".
+    fork_detected_at: Option<std::time::Instant>,
+    /// Consensus state captured *before* applying each of the last
+    /// `REORG_DEPTH` heights (what `commit_state` persists, plus the block
+    /// counters). When finality lands on a different hash than the block we
+    /// applied at that height, we roll back to the checkpoint and re-import
+    /// the canonical block — fork choice by finality, no external heal.
+    checkpoints: std::collections::VecDeque<StateCheckpoint>,
+    /// Competing proposals seen for recent heights, so a finalized block we
+    /// rejected as "duplicate height" can be applied straight after rollback.
+    alt_blocks: std::collections::HashMap<u64, Vec<Block>>,
 }
 
 impl Engine {
@@ -745,6 +779,9 @@ impl Engine {
             import_buffer: std::collections::BTreeMap::new(),
             highest_observed_height: 0,
             last_block_applied_at: None,
+            fork_detected_at: None,
+            checkpoints: std::collections::VecDeque::new(),
+            alt_blocks: std::collections::HashMap::new(),
             raw_tx_cache: std::collections::HashMap::new(),
             local_validator: None,
             finality_votes: std::collections::HashMap::new(),
@@ -900,6 +937,13 @@ impl Engine {
         let threshold = self.finality_threshold();
         if !threshold.is_zero() && voted_stake >= threshold {
             self.finalized_heights.insert(height, block_hash);
+            // Fork choice: if we applied a different block at this height,
+            // the network has overruled us — roll back and follow.
+            if let Some(local) = self.block_by_number(height).map(|b| b.hash)
+                && local != block_hash
+            {
+                self.reorg_to_finalized(height, block_hash);
+            }
             // Bound memory: drop vote-tracking for heights well behind.
             let cutoff = height.saturating_sub(256);
             self.finality_votes.retain(|h, _| *h >= cutoff);
@@ -971,6 +1015,138 @@ impl Engine {
     /// head if we are syncing or wedged).
     pub fn highest_observed_height(&self) -> u64 {
         self.highest_observed_height
+    }
+
+    /// True while this node has recently rejected blocks for a parent-hash
+    /// mismatch. Diagnostic only (see `fork_detected_at`).
+    pub fn is_forked(&self) -> bool {
+        self.fork_detected_at.map(|t| t.elapsed().as_secs() < 120).unwrap_or(false)
+    }
+
+    /// Capture the pre-application state for `height` (the block about to be
+    /// produced or imported). Only at the tip: a node replaying history has
+    /// finalized blocks and nothing to roll back.
+    fn checkpoint_before(&mut self, height: u64) {
+        // Drop any checkpoint at or above this height (re-application after
+        // a rollback, or a stale entry) and anything too deep.
+        self.checkpoints.retain(|c| c.height < height);
+        while self.checkpoints.len() >= REORG_DEPTH {
+            self.checkpoints.pop_front();
+        }
+        self.checkpoints.push_back(StateCheckpoint {
+            height,
+            evm_db: self.evm.db.clone(),
+            orders: self.orders.state.clone(),
+            bridge_orders_to_evm: self.bridge.orders_to_evm.snapshot(),
+            bridge_evm_to_orders: self.bridge.evm_to_orders.snapshot(),
+            base_fee: self.base_fee,
+            consensus: self.consensus.inner.clone(),
+        });
+        self.alt_blocks.retain(|h, _| *h + (REORG_DEPTH as u64) >= height);
+    }
+
+    /// Remember a competing proposal for a height we already hold, so it can
+    /// be applied immediately if finality picks it over ours.
+    fn remember_alt_block(&mut self, block: Block) {
+        let entry = self.alt_blocks.entry(block.number).or_default();
+        if entry.len() < 4 && !entry.iter().any(|b| b.hash == block.hash) {
+            entry.push(block);
+        }
+    }
+
+    /// Finality chose `finalized_hash` at `height` but we applied a different
+    /// block there: roll back to the checkpoint taken before `height`, drop
+    /// the orphaned blocks, and re-apply the canonical block if we have it
+    /// (block-sync backfills otherwise). Returns false if the fork is deeper
+    /// than our checkpoints — the watchdog's snapshot heal covers that.
+    fn reorg_to_finalized(&mut self, height: u64, finalized_hash: B256) -> bool {
+        let Some(pos) = self.checkpoints.iter().position(|c| c.height == height) else {
+            metrics::increment_counter!("mersennet_reorg_too_deep_total");
+            tracing::error!(
+                height,
+                %finalized_hash,
+                depth = REORG_DEPTH,
+                "FORK DETECTED beyond reorg depth: finality conflicts with a block we can no longer roll back; state resync needed"
+            );
+            return false;
+        };
+        let cp = self.checkpoints.remove(pos).expect("position exists");
+        let orphaned: Vec<Block> = self.chain.iter().filter(|b| b.number >= height).cloned().collect();
+        let local_hash = orphaned.first().map(|b| b.hash).unwrap_or(B256::ZERO);
+
+        // Restore consensus state to just before `height`.
+        self.evm.db = cp.evm_db;
+        self.orders.state = cp.orders;
+        self.bridge.orders_to_evm.restore(cp.bridge_orders_to_evm);
+        self.bridge.evm_to_orders.restore(cp.bridge_evm_to_orders);
+        self.base_fee = cp.base_fee;
+        self.consensus.inner = cp.consensus;
+        self.chain.retain(|b| b.number < height);
+        self.block_number = height;
+        self.checkpoints.retain(|c| c.height < height);
+        // Persist the rolled-back image so a crash here resumes at height-1
+        // instead of on the orphaned branch (the orphan's block record is
+        // overwritten when the canonical block at `height` is stored).
+        let prev = height.saturating_sub(1);
+        if let Err(err) = self.evm.state.begin_commit(prev).and_then(|_| {
+            self.evm.state.commit_state(
+                &self.evm.db,
+                &self.orders.state,
+                &self.bridge.orders_to_evm,
+                &self.bridge.evm_to_orders,
+                prev,
+            )
+        }).and_then(|_| self.evm.state.end_commit()) {
+            tracing::error!(%err, "reorg: failed to persist rolled-back state");
+        }
+        // Flat (RPC read) cache mirrors the committed EVM state; rebuild it.
+        self.rebuild_flat_state(prev);
+        // Give the orphaned blocks' transactions back to the mempool so they
+        // are not lost if the canonical block did not include them.
+        for b in &orphaned {
+            for tx in &b.transactions {
+                // Re-validated against the rolled-back state; duplicates of
+                // txs the canonical block already includes are rejected on
+                // nonce and simply dropped.
+                let _ = self.submit_tx(tx.clone());
+            }
+        }
+        self.import_buffer.retain(|h, _| *h >= height);
+        self.fork_detected_at = None;
+        metrics::increment_counter!("mersennet_reorg_total");
+        tracing::warn!(
+            height,
+            %local_hash,
+            %finalized_hash,
+            rolled_back = orphaned.len(),
+            "REORG: finality chose a different block at this height; rolled back to the checkpoint and following the canonical chain"
+        );
+
+        // Apply the finalized block right away if we saw it as a competitor.
+        if let Some(alts) = self.alt_blocks.remove(&height)
+            && let Some(canon) = alts.into_iter().find(|b| b.hash == finalized_hash)
+        {
+            self.import_block(canon);
+        }
+        true
+    }
+
+    fn rebuild_flat_state(&mut self, height: u64) {
+        let mut account_changes = Vec::new();
+        for (addr, info) in self.evm.db.accounts.iter() {
+            account_changes.push((
+                *addr,
+                FlatAccount {
+                    balance: info.info.balance,
+                    nonce: info.info.nonce,
+                    code_hash: info.info.code_hash,
+                    storage_root: B256::ZERO,
+                },
+            ));
+        }
+        let changeset = StateChangeset { account_changes, storage_changes: Vec::new(), code_changes: Vec::new() };
+        let root = self.evm.state.compute_state_root();
+        let _ = self.flat_state.commit_block(height, root, changeset);
     }
 
     /// Seconds since this node last applied a block, if it ever did.
@@ -1448,6 +1624,7 @@ impl Engine {
     }
 
     pub fn execute_block(&mut self) -> Result<Block> {
+        self.checkpoint_before(self.block_number);
         // Mainnet safety checks
         if let Err(e) = self.mainnet_guard.pre_block_checks(self.block_number) {
             return Err(anyhow::anyhow!("mainnet guard: {}", e));
@@ -2285,8 +2462,15 @@ impl Engine {
         if block.number > self.highest_observed_height {
             self.highest_observed_height = block.number;
         }
-        // Already applied or stale.
+        // Already applied: if it is a *different* block for a recent height,
+        // keep it — finality may pick it over ours (see reorg_to_finalized).
         if block.number < self.block_number {
+            if block.number + (REORG_DEPTH as u64) >= self.block_number
+                && self.block_by_number(block.number).map(|b| b.hash != block.hash).unwrap_or(false)
+                && self.finalized_hash(block.number).is_none_or(|f| f == block.hash)
+            {
+                self.remember_alt_block(block);
+            }
             return;
         }
         // Too far ahead to buffer usefully — block sync will backfill
@@ -2341,6 +2525,7 @@ impl Engine {
                 // node silently stalling.
                 if msg.contains("parent hash mismatch") {
                     metrics::increment_counter!("mersennet_import_fork_detected_total");
+                    self.fork_detected_at = Some(std::time::Instant::now());
                     tracing::error!(
                         height,
                         error = %msg,
@@ -2374,6 +2559,11 @@ impl Engine {
     /// replicate them for full state-root parity.
     fn apply_imported_block(&mut self, mut block: Block) -> Result<()> {
         debug_assert_eq!(block.number, self.block_number);
+        // Only worth a checkpoint near the tip; a replay of finalized
+        // history cannot be reorged.
+        if self.highest_observed_height <= block.number.saturating_add(REORG_DEPTH as u64) {
+            self.checkpoint_before(block.number);
+        }
 
         // Hash-linked chain check: the incoming block must reference our
         // current head as its parent. Reject a block that forks off a
@@ -4069,5 +4259,157 @@ mod tests {
                 .contains("mandatory SP1 proof generation failed"),
             "unexpected error: {error:#}"
         );
+    }
+}
+
+#[cfg(test)]
+mod reorg_tests {
+    use super::*;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    fn engine() -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let e = Engine::new_with_backend(131071, sub, "redb");
+        std::mem::forget(dir);
+        e
+    }
+
+    /// Four deterministic validator keys; imports authenticate the proposer
+    /// signature against the leader schedule, so blocks must be signed by
+    /// the elected leader (`leader_for_height` = sorted addresses, (h+r)%4).
+    fn keys() -> Vec<k256::ecdsa::SigningKey> {
+        (1u8..=4).map(|b| k256::ecdsa::SigningKey::from_bytes(&[b; 32].into()).unwrap()).collect()
+    }
+
+    fn validators() -> Vec<Address> {
+        keys().iter().map(crate::crypto::address_from_signing_key).collect()
+    }
+
+    fn with_validators(mut e: Engine) -> Engine {
+        for v in validators() {
+            e.add_validator(v, U256::from(1_000_000u64)).unwrap();
+        }
+        e
+    }
+
+    /// Produce a block as the leader elected for the engine's next height at
+    /// round `round`, signing it like the node binary does.
+    fn produce_as_leader(e: &mut Engine, round: u64) -> Block {
+        let leader = e.leader_for_height(e.block_number, round).expect("leader");
+        let key = keys().into_iter().find(|k| crate::crypto::address_from_signing_key(k) == leader).expect("leader key");
+        // `self.coinbase` stays Address::ZERO on every node (production
+        // invariant: the import path re-executes with the local coinbase, so
+        // it must be identical everywhere); only the block's fields name the
+        // proposer.
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        let (r, s_, v) = crate::crypto::sign_block_proposal(b.number, b.hash, &key);
+        b.proposer_sig = Some((r, s_, v));
+        // The engine keeps its own copy of the block in `chain`; mirror the
+        // signature there too, as the producer path does before broadcast.
+        if let Some(last) = e.chain.last_mut() && last.number == b.number {
+            last.proposer = leader;
+            last.proposer_sig = b.proposer_sig;
+        }
+        b
+    }
+
+    /// Two nodes produce different blocks at height 1 (different coinbase).
+    /// Node A applied its own; finality (3 of 4 validators) lands on B's block:
+    /// A must roll back and adopt B's block and state.
+    #[test]
+    fn finality_on_a_different_hash_reorgs_the_local_block() {
+        let vals = validators();
+        let alice = Address::from_slice(&[0x11; 20]);
+        let bob = Address::from_slice(&[0x22; 20]);
+        let carol = Address::from_slice(&[0x33; 20]);
+        let mut a = with_validators(engine());
+        let mut b = with_validators(engine());
+        for e in [&mut a, &mut b] {
+            e.fund_account(alice, U256::from(2_000_000u64), 0);
+        }
+        // A's block pays bob; B's block pays carol — same height, different
+        // blocks, different resulting states. A proposes at round 0, B is
+        // the round-1 leader (a leader-timeout race, as in production).
+        a.transfer(alice, bob, U256::from(1_000u64), 21_000, U256::from(1u64), 0).unwrap();
+        b.transfer(alice, carol, U256::from(1_000u64), 21_000, U256::from(1u64), 0).unwrap();
+        let block_a = produce_as_leader(&mut a, 0);
+        let block_b = produce_as_leader(&mut b, 1);
+        assert_eq!(block_a.number, 1);
+        assert_eq!(block_b.number, 1);
+        assert_ne!(block_a.hash, block_b.hash);
+        assert_eq!(a.latest_height(), 1);
+        assert_eq!(a.get_balance(bob).unwrap(), U256::from(1_000u64));
+        assert_eq!(a.get_balance(carol).unwrap(), U256::ZERO);
+        let root_b = b.evm.state.compute_state_root();
+        assert_ne!(a.evm.state.compute_state_root(), root_b, "the two branches differ in state");
+
+        // A hears B's competing proposal for a height it already holds.
+        a.import_block(block_b.clone());
+        assert_eq!(a.block_by_number(1).unwrap().hash, block_a.hash, "competitor is remembered, not applied");
+
+        // Finality: three validators vote for B's block.
+        for v in vals.iter().take(3) {
+            a.record_finality_vote(1, block_b.hash, *v);
+        }
+        assert_eq!(a.finalized_hash(1), Some(block_b.hash));
+
+        // A rolled back and re-applied the canonical block: bob's payment is
+        // undone, carol's applied, state identical to the canonical producer.
+        assert_eq!(a.latest_height(), 1, "back at height 1 on the canonical block");
+        assert_eq!(a.block_by_number(1).unwrap().hash, block_b.hash, "local head is now the finalized block");
+        assert_eq!(a.get_balance(bob).unwrap(), U256::ZERO, "orphaned branch undone");
+        assert_eq!(a.get_balance(carol).unwrap(), U256::from(1_000u64), "canonical branch applied");
+        // Compare with an importer that never saw the orphan: the reorged
+        // node must end in exactly the state a clean follower has.
+        let mut c = with_validators(engine());
+        c.fund_account(alice, U256::from(2_000_000u64), 0);
+        c.import_block(block_b.clone());
+        assert_eq!(c.block_by_number(1).unwrap().hash, block_b.hash);
+        assert_eq!(a.evm.state.compute_state_root(), c.evm.state.compute_state_root(), "reorged node matches a clean follower");
+        assert_eq!(a.evm.state.compute_state_root(), root_b, "and the canonical producer");
+        assert_eq!(a.block_number, 2);
+        // The orphaned block's transaction went back to the mempool (same
+        // nonce as carol's transfer, so it is rejected once that is applied).
+        assert!(a.mempool_queued_count() <= 1);
+    }
+
+    /// Finality on the block we already hold changes nothing.
+    #[test]
+    fn finality_on_our_own_block_is_a_no_op() {
+        let vals = validators();
+        let mut a = with_validators(engine());
+        let block_a = produce_as_leader(&mut a, 0);
+        let root = a.evm.state.compute_state_root();
+        for v in vals.iter().take(3) {
+            a.record_finality_vote(1, block_a.hash, *v);
+        }
+        assert_eq!(a.finalized_hash(1), Some(block_a.hash));
+        assert_eq!(a.block_by_number(1).unwrap().hash, block_a.hash);
+        assert_eq!(a.evm.state.compute_state_root(), root);
+    }
+
+    /// A conflict deeper than the checkpoint window is reported, not applied.
+    #[test]
+    fn conflict_beyond_reorg_depth_is_left_to_the_heal_path() {
+        let vals = validators();
+        let mut a = with_validators(engine());
+        let first = produce_as_leader(&mut a, 0);
+        for _ in 0..(REORG_DEPTH + 2) {
+            produce_as_leader(&mut a, 0);
+        }
+        let other = B256::from([9u8; 32]);
+        for v in vals.iter().take(3) {
+            a.record_finality_vote(first.number, other, *v);
+        }
+        // Too deep: our block at height 1 stays, chain untouched.
+        assert_eq!(a.block_by_number(1).unwrap().hash, first.hash);
+        assert_eq!(a.latest_height() as usize, REORG_DEPTH + 3);
     }
 }
