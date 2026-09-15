@@ -250,7 +250,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     info!("╔══════════════════════════════════════╗");
-    info!("║       Mersennet v0.7.0               ║");
+    info!("║       Mersennet v{}-{}        ║", env!("CARGO_PKG_VERSION"), option_env!("MERSENNET_GIT_SHA").unwrap_or("dev"));
     info!("║   Production Node Starting...        ║");
     info!("╚══════════════════════════════════════╝");
     info!(
