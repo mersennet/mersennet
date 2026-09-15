@@ -107,6 +107,11 @@ pub struct ValidatorSetParams {
     /// operator wallet in its registration instead of the node identity
     /// (0 = disabled: identity keeps receiving it). Consensus-critical.
     pub rewards_to_operator_height: u64,
+    /// From this height, repeat offenders are jailed for 1, 2, 4, 8, 16 then
+    /// 24 epochs (`times_jailed` counts *consecutive* jails and resets after
+    /// a full epoch served without being jailed). Before it, every jail is
+    /// one epoch and `times_jailed` is a lifetime count. 0 = off.
+    pub jail_escalation_height: u64,
 }
 
 impl Default for ValidatorSetParams {
@@ -120,6 +125,7 @@ impl Default for ValidatorSetParams {
             jail_miss_bps: 2_000,
             jail_min_slots: 5,
             rewards_to_operator_height: 0,
+            jail_escalation_height: 0,
         }
     }
 }
@@ -147,6 +153,9 @@ pub struct ValidatorRegistration {
     pub proposed_slots: u64,
     pub missed_slots: u64,
     pub total_proposed: u64,
+    /// Lifetime jail count before `jail_escalation_height`; from then on the
+    /// number of consecutive jails (cleared by a clean epoch as an active
+    /// validator), which sets the length of the next jail.
     pub times_jailed: u64,
 }
 
@@ -421,6 +430,7 @@ impl StakingState {
             ..Default::default()
         };
         let p = self.params.clone();
+        let escalate = p.jail_escalation_height > 0 && height >= p.jail_escalation_height;
 
         // 1. Judge the epoch that just ended: jail, exit, rotate.
         let ids: Vec<Address> = self.registry.keys().copied().collect();
@@ -433,9 +443,20 @@ impl StakingState {
                 && r.missed_slots * 10_000 > slots * p.jail_miss_bps
                 && !r.genesis
             {
-                r.jailed_until_epoch = epoch + 1; // sits out this epoch, eligible again next
                 r.times_jailed += 1;
+                let epochs = if escalate {
+                    // 1, 2, 4, 8, 16, then 24: a node that is down all day
+                    // stops costing the network a slow hour every other hour.
+                    (1u64 << (r.times_jailed.min(6) - 1)).min(24)
+                } else {
+                    1
+                };
+                r.jailed_until_epoch = epoch + epochs;
                 out.jailed.push(id);
+            } else if escalate && slots >= p.jail_min_slots && r.times_jailed > 0 {
+                // A full epoch served as an active validator without being
+                // jailed clears the streak.
+                r.times_jailed = 0;
             }
             r.proposed_slots = 0;
             r.missed_slots = 0;
@@ -713,6 +734,89 @@ mod tests {
 
     fn addr(n: u8) -> Address {
         Address::from([n; 20])
+    }
+
+    /// Jails escalate 1, 2, 4… epochs for consecutive offences once
+    /// `jail_escalation_height` is reached, and a clean epoch as an active
+    /// validator clears the streak. Before the height every jail is one epoch.
+    #[test]
+    fn repeat_jails_escalate_and_a_clean_epoch_resets() {
+        let mrsn = U256::from(10u64).pow(U256::from(18u64));
+        let mut s = StakingState::default();
+        let mut p = ValidatorSetParams::default();
+        p.activation_height = 10;
+        p.epoch_blocks = 10;
+        p.jail_min_slots = 2;
+        p.jail_escalation_height = 100;
+        s.set_params(p);
+        let genesis = [
+            (addr(1), U256::from(1_000_000u64) * mrsn),
+            (addr(2), U256::from(1_000_000u64) * mrsn),
+        ];
+        s.seed_genesis(&genesis, 10);
+        let v = addr(9);
+        s.register_validator(addr(8), v, U256::from(5_000u64) * mrsn, 0, 12)
+            .unwrap();
+        // Epoch boundary 20: v becomes active (registered in epoch 1 < 2).
+        s.epoch_transition(20);
+        assert!(s.active_set.contains(&v));
+
+        // Before the switch: miss everything → one-epoch jail, lifetime count 1.
+        for _ in 0..4 {
+            s.record_slots(addr(1), &[v]);
+        }
+        s.epoch_transition(30);
+        assert_eq!(s.registry[&v].jailed_until_epoch, 4, "epoch 3 + 1");
+        assert_eq!(s.registry[&v].times_jailed, 1);
+        s.epoch_transition(40); // sits out epoch 3 (no slots) — nothing changes
+        assert_eq!(s.registry[&v].times_jailed, 1);
+
+        // Past the switch (height >= 100): relapse → 2 epochs, again → 4 epochs.
+        s.epoch_transition(100); // boundary of epoch 10; v eligible again since 4
+        assert!(s.active_set.contains(&v));
+        for _ in 0..4 {
+            s.record_slots(addr(1), &[v]);
+        }
+        s.epoch_transition(110);
+        assert_eq!(s.registry[&v].times_jailed, 2);
+        assert_eq!(
+            s.registry[&v].jailed_until_epoch,
+            11 + 2,
+            "second consecutive jail: 2 epochs"
+        );
+        // out for epochs 11 and 12, back at 13
+        s.epoch_transition(120);
+        s.epoch_transition(130);
+        assert!(s.active_set.contains(&v), "back after two epochs");
+        for _ in 0..4 {
+            s.record_slots(addr(1), &[v]);
+        }
+        s.epoch_transition(140);
+        assert_eq!(s.registry[&v].times_jailed, 3);
+        assert_eq!(s.registry[&v].jailed_until_epoch, 14 + 4, "third: 4 epochs");
+
+        // Serve a clean epoch → streak cleared → the next jail is 1 epoch again.
+        for h in (150..=180).step_by(10) {
+            s.epoch_transition(h);
+        }
+        assert!(s.active_set.contains(&v));
+        for _ in 0..4 {
+            s.record_slots(v, &[]);
+        } // proposes all its slots
+        s.epoch_transition(190);
+        assert_eq!(
+            s.registry[&v].times_jailed, 0,
+            "clean epoch resets the streak"
+        );
+        for _ in 0..4 {
+            s.record_slots(addr(1), &[v]);
+        }
+        s.epoch_transition(200);
+        assert_eq!(
+            s.registry[&v].jailed_until_epoch,
+            20 + 1,
+            "streak restarted at one epoch"
+        );
     }
 
     #[test]

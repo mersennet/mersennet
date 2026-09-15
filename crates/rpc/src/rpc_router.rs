@@ -609,6 +609,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "jailMissBps": p.jail_miss_bps,
                     "jailMinSlots": p.jail_min_slots,
                     "rewardsToOperatorHeight": p.rewards_to_operator_height,
+                    "jailEscalationHeight": p.jail_escalation_height,
                 },
                 "height": height,
                 "epoch": st.current_epoch,

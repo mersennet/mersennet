@@ -257,6 +257,9 @@ pub struct ValidatorSetConfig {
     /// Height from which block rewards go to the operator wallet (0 = off).
     #[serde(default)]
     pub rewards_to_operator_height: u64,
+    /// Height from which repeat jails escalate 1, 2, 4, 8, 16, 24 epochs (0 = off).
+    #[serde(default)]
+    pub jail_escalation_height: u64,
 }
 
 fn default_epoch_blocks() -> u64 {
@@ -303,6 +306,7 @@ impl ValidatorSetConfig {
             jail_miss_bps: self.jail_miss_bps,
             jail_min_slots: self.jail_min_slots,
             rewards_to_operator_height: self.rewards_to_operator_height,
+            jail_escalation_height: self.jail_escalation_height,
         }
     }
 }

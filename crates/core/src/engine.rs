@@ -4795,6 +4795,7 @@ mod open_validator_set_tests {
             jail_miss_bps: 2_000,
             jail_min_slots: 2,
             rewards_to_operator_height: 0,
+            jail_escalation_height: 0,
         }
     }
 
