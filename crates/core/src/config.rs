@@ -342,6 +342,14 @@ pub struct P2pConfig {
     /// a fleet roll before anyone emits the compact form. 0 = from the start.
     #[serde(default)]
     pub compact_wire_height: u64,
+    /// Height from which the leader failover round is 3 block-times + 2 s
+    /// (8 s at 2 s blocks) instead of the original 8 block-times + 3 s
+    /// (19 s). Sized when large blocks could not propagate; with TCP block
+    /// push a dead leader should cost the chain seconds, not a third of a
+    /// minute. Gated by height so every node rotates on the same clock.
+    /// 0 = from the start.
+    #[serde(default)]
+    pub fast_failover_height: u64,
     // NOTE: the Noise transport module is not yet wired into the UDP gossip
     // layer, so this flag currently only affects a startup log line. Block,
     // transaction and vote authenticity are enforced at the application layer
@@ -485,6 +493,7 @@ impl Default for P2pConfig {
             peers: Vec::new(),
             block_time_ms: default_block_time_ms(),
             compact_wire_height: 0,
+            fast_failover_height: 0,
             noise_enabled: false,
             operator_address: None,
         }

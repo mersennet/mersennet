@@ -303,7 +303,8 @@
       "46.225.183.192:30303",
       "49.13.54.79:30303"
     ],
-    "compact_wire_height": 1440000
+    "compact_wire_height": 1440000,
+    "fast_failover_height": 1440000
   },
   "rpc": {
     "enabled": false,
