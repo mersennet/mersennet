@@ -528,6 +528,7 @@ impl NetworkNode {
                 .name("gossip-listener".into())
                 .spawn(move || {
                     info!("gossip listener started");
+                    let mut decode_errors: u64 = 0;
                     while running.load(Ordering::SeqCst) {
                         let packet = {
                             let mut g = match gossip.lock() {
@@ -536,8 +537,20 @@ impl NetworkNode {
                             };
                             g.recv_and_gossip(Duration::from_millis(100))
                         };
-                        let Ok(Some(packet)) = packet else {
-                            continue;
+                        let packet = match packet {
+                            Ok(Some(p)) => p,
+                            Ok(None) => continue,
+                            Err(err) => {
+                                // A datagram we could not parse (foreign
+                                // traffic, or a peer on an incompatible wire
+                                // format). Count it and say so occasionally.
+                                metrics::increment_counter!("mersennet_gossip_decode_errors_total");
+                                decode_errors += 1;
+                                if decode_errors.is_power_of_two() {
+                                    tracing::warn!(count = decode_errors, %err, "undecodable gossip datagram");
+                                }
+                                continue;
+                            }
                         };
                         match packet.topic.as_str() {
                             "block" => {

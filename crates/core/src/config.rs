@@ -336,6 +336,12 @@ pub struct P2pConfig {
     pub operator_address: Option<String>,
     #[serde(default = "default_block_time_ms")]
     pub block_time_ms: u64,
+    /// Height from which this node encodes gossip payloads as base64 instead
+    /// of JSON byte arrays (about 2.8x fewer bytes on the wire). Every build
+    /// since 2026-09-15 decodes both, so the switch is gated by height to let
+    /// a fleet roll before anyone emits the compact form. 0 = from the start.
+    #[serde(default)]
+    pub compact_wire_height: u64,
     // NOTE: the Noise transport module is not yet wired into the UDP gossip
     // layer, so this flag currently only affects a startup log line. Block,
     // transaction and vote authenticity are enforced at the application layer
@@ -478,6 +484,7 @@ impl Default for P2pConfig {
             listen: default_p2p_listen(),
             peers: Vec::new(),
             block_time_ms: default_block_time_ms(),
+            compact_wire_height: 0,
             noise_enabled: false,
             operator_address: None,
         }
