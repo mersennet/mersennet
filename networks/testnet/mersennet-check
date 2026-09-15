@@ -88,6 +88,19 @@ if [[ "$pub_ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
         printf 'Visibility   could not query the public node (id %s)\n' "$node_id"
     elif printf '%s' "$peers_json" | grep -q "\"addr\":\"$pub_ip:[0-9]*\",\"firstSeenSecs\":[0-9]*,\"heard\":true"; then
         printf 'Visibility   %s — the network hears this node as %s · id %s (explorer → Network → Network nodes)\n' "$(green 'visible')" "$pub_ip" "$node_id"
+        # Inbound TCP 30303: needed for verification, points and validator
+        # registration (the network probes the node). Ask the API to try.
+        probe=$(curl -s --max-time 12 "https://trade.mersennet.com/api/v1/nodes/probe?host=$pub_ip" 2>/dev/null | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin); print('open' if d.get('reachable') else ('blocked:'+str(d.get('error',''))[:80]))
+except Exception:
+    print('?')" 2>/dev/null)
+        case "$probe" in
+            open)     printf 'Reachable    %s — tcp/30303 answers from the internet (verification and registration work)\n' "$(green 'yes')" ;;
+            blocked:*) printf 'Reachable    %s — tcp/30303 is not reachable from the internet (%s). Allow 30303 tcp+udp in your provider firewall; until then the node cannot be verified.\n' "$(red 'no')" "${probe#blocked:}" ;;
+            *)        printf 'Reachable    could not probe right now (trade.mersennet.com unreachable)\n' ;;
+        esac
     else
         printf 'Visibility   %s — the public node has not heard from %s yet (id %s). Normal for the first minute; if it persists, allow outbound UDP 30303.\n' "$(yellow 'not yet seen')" "$pub_ip" "$node_id"
     fi
