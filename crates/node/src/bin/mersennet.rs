@@ -490,6 +490,7 @@ fn main() -> anyhow::Result<()> {
                 let ws_mgr_producer = ws_manager.clone();
                 let my_addr = identity.address;
                 let producer_key = identity.signing_key.clone();
+                let compact_wire_height = app_config.p2p.compact_wire_height;
                 std::thread::Builder::new()
                     .name("block-producer".into())
                     .spawn(move || {
@@ -542,10 +543,16 @@ fn main() -> anyhow::Result<()> {
                             // Only members of the current active set propose.
                             // Membership changes at epoch boundaries (open
                             // validator set), so re-check every poll.
-                            let member = {
+                            let (member, height_now) = {
                                 let Ok(e) = eng.lock() else { break };
-                                e.validator_addresses().contains(&my_addr)
+                                (e.validator_addresses().contains(&my_addr), e.latest_height())
                             };
+                            if !mersennet_network::net_transport::compact_wire()
+                                && height_now >= compact_wire_height
+                            {
+                                mersennet_network::net_transport::set_compact_wire(true);
+                                info!(height = height_now, "gossip payloads now base64 (compact wire format)");
+                            }
                             if in_set != Some(member) {
                                 if member {
                                     info!(identity = %format!("0x{}", hex::encode(my_addr.as_slice())), "this node is in the active validator set: proposing blocks when leader");

@@ -10,9 +10,65 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use tracing::info;
 
+/// Wire encoding of `GossipPacket::data`. Legacy: a JSON array of numbers,
+/// 3-4 bytes on the wire per payload byte (a validator moved ~25 GB/day of
+/// gossip this way). Compact: a base64 string, 1.33 bytes per byte. Every
+/// node decodes both; a node emits the compact form only once its chain
+/// height reaches `p2p.compact_wire_height`, so a rolling upgrade never has
+/// an old peer receiving something it cannot parse.
+static COMPACT_WIRE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_compact_wire(on: bool) {
+    COMPACT_WIRE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn compact_wire() -> bool {
+    COMPACT_WIRE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+mod wire_bytes {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as B64;
+    use serde::de::{SeqAccess, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        if super::compact_wire() {
+            s.serialize_str(&B64.encode(v))
+        } else {
+            s.collect_seq(v)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = Vec<u8>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a base64 string or an array of bytes")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Vec<u8>, E> {
+                B64.decode(s).map_err(E::custom)
+            }
+            fn visit_bytes<E: serde::de::Error>(self, b: &[u8]) -> Result<Vec<u8>, E> {
+                Ok(b.to_vec())
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<u8>, A::Error> {
+                let mut out = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                while let Some(b) = seq.next_element::<u8>()? {
+                    out.push(b);
+                }
+                Ok(out)
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GossipPacket {
     pub topic: String,
+    #[serde(with = "wire_bytes")]
     pub data: Vec<u8>,
     pub id: String,
     pub ttl: u8,
@@ -728,5 +784,52 @@ impl TcpSync {
         metrics::counter!("snapshot_bytes_received_total", data.len() as u64);
         info!(bytes = data.len(), chunks, "snapshot received over tcp");
         Ok(data)
+    }
+}
+
+#[cfg(test)]
+mod wire_format_tests {
+    use super::*;
+
+    #[test]
+    fn packets_round_trip_in_both_encodings_and_compact_is_smaller() {
+        let data: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        let pkt = GossipPacket {
+            topic: "block".into(),
+            data: data.clone(),
+            id: "x".into(),
+            ttl: 3,
+        };
+
+        set_compact_wire(false);
+        let legacy = serde_json::to_vec(&pkt).unwrap();
+        assert!(
+            legacy.starts_with(b"{\"topic\":\"block\",\"data\":["),
+            "legacy is a JSON array"
+        );
+        let back: GossipPacket = serde_json::from_slice(&legacy).unwrap();
+        assert_eq!(back.data, data);
+
+        set_compact_wire(true);
+        let compact = serde_json::to_vec(&pkt).unwrap();
+        assert!(
+            compact.starts_with(b"{\"topic\":\"block\",\"data\":\""),
+            "compact is a base64 string"
+        );
+        let back: GossipPacket = serde_json::from_slice(&compact).unwrap();
+        assert_eq!(back.data, data);
+        // an old-format packet is still understood while compact is on
+        let back: GossipPacket = serde_json::from_slice(&legacy).unwrap();
+        assert_eq!(back.data, data);
+        set_compact_wire(false);
+
+        assert!(
+            compact.len() * 2 < legacy.len(),
+            "compact {} vs legacy {}",
+            compact.len(),
+            legacy.len()
+        );
+        // the id travels inside the packet, so dedup is encoding-agnostic
+        assert_eq!(back.id, pkt.id);
     }
 }
