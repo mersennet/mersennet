@@ -15,7 +15,10 @@ use tiny_http::{Header, Method, Request, Response, Server};
 
 const DEFAULT_PORT: u16 = 8080;
 const RATE_LIMIT_HOURS: u64 = 1;
-const FAUCET_AMOUNT: &str = "1000000000000000000000"; // 1000 tokens (18 decimals)
+// 1,000 MRSN (the validator bond / trading collateral) plus 1 MRSN for gas: the
+// staking precompile pulls the bond from the balance after gas, so a wallet
+// holding exactly 1,000 could never bond 1,000.
+const FAUCET_AMOUNT: &str = "1001000000000000000000"; // 1001 tokens (18 decimals)
 const GAS_LIMIT: u64 = 21_000;
 const TOKEN_GAS_LIMIT: u64 = 200_000;
 /// Requests are tiny JSON bodies; cap the read so the public endpoint can't be
