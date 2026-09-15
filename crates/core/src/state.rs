@@ -962,6 +962,31 @@ impl PersistentState {
         }
     }
 
+    /// Node-local cache of the consensus set installed at the last epoch
+    /// transition (address, stake), so a restarted node resumes with exactly
+    /// the set and stakes every other node is using until the next boundary.
+    /// Lives in `height_meta`, which is not part of the state root.
+    pub fn save_consensus_set(&self, set: &[(Address, U256)]) -> Result<()> {
+        let mut buf = Vec::with_capacity(set.len() * 52);
+        for (address, stake) in set {
+            buf.extend_from_slice(address.as_slice());
+            buf.extend_from_slice(&stake.to_be_bytes::<32>());
+        }
+        self.height_meta.insert("consensus_set", buf)?;
+        Ok(())
+    }
+
+    pub fn load_consensus_set(&self) -> Result<Option<Vec<(Address, U256)>>> {
+        match self.height_meta.get("consensus_set")? {
+            Some(v) if !v.is_empty() && v.len() % 52 == 0 => Ok(Some(
+                v.chunks(52)
+                    .map(|c| (Address::from_slice(&c[..20]), U256::from_be_slice(&c[20..])))
+                    .collect(),
+            )),
+            _ => Ok(None),
+        }
+    }
+
     pub fn persisted_height(&self) -> Result<Option<u64>> {
         match self.height_meta.get("latest_height")? {
             Some(v) if v.len() == 8 => {
@@ -1327,6 +1352,12 @@ impl crate::state_trait::StateBackend for PersistentState {
 
     fn persisted_height(&self) -> Result<Option<u64>> {
         PersistentState::persisted_height(self)
+    }
+    fn save_consensus_set(&self, set: &[(Address, U256)]) -> Result<()> {
+        PersistentState::save_consensus_set(self, set)
+    }
+    fn load_consensus_set(&self) -> Result<Option<Vec<(Address, U256)>>> {
+        PersistentState::load_consensus_set(self)
     }
     fn begin_commit(&self, height: u64) -> Result<()> {
         PersistentState::begin_commit(self, height)

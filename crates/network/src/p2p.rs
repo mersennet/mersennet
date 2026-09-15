@@ -640,7 +640,10 @@ impl NetworkNode {
                                             serde_json::from_slice::<WireBlock>(&request.data)
                                             && let Some(block) = wire_to_block(&wire)
                                         {
-                                            info!(number = block.number, "received block over tcp");
+                                            tracing::debug!(
+                                                number = block.number,
+                                                "received block over tcp"
+                                            );
                                             if let Ok(mut eng) = engine.lock() {
                                                 eng.import_block(block);
                                             }
@@ -888,9 +891,16 @@ impl NetworkNode {
             let packet = gossip.new_packet("block", data, 3);
             let encoded = serde_json::to_vec(&packet)?.len();
             if encoded <= Self::MAX_UDP_PACKET_BYTES {
-                return gossip.broadcast(&packet);
+                // Fast path: one datagram to every peer. Blocks are tens of
+                // kilobytes, i.e. many IP fragments, and some providers drop
+                // fragments while small packets pass (the first outside
+                // validator's pings reached us, its blocks never did). So the
+                // datagram is a hint, not the delivery: the TCP push below
+                // goes out as well; receivers already ignore a block they hold.
+                let _ = gossip.broadcast(&packet);
+            } else {
+                metrics::increment_counter!("mersennet_block_push_tcp_total");
             }
-            metrics::increment_counter!("mersennet_block_push_tcp_total");
             let peers: Vec<String> = gossip
                 .peers_snapshot()
                 .into_iter()

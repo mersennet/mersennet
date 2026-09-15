@@ -585,6 +585,38 @@ impl StateBackend for RedbState {
         Ok(())
     }
 
+    fn save_consensus_set(&self, set: &[(Address, U256)]) -> Result<()> {
+        let mut buf = Vec::with_capacity(set.len() * 52);
+        for (address, stake) in set {
+            buf.extend_from_slice(address.as_slice());
+            buf.extend_from_slice(&stake.to_be_bytes::<32>());
+        }
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(HEIGHT_META)?;
+            table.insert(b"consensus_set".as_slice(), buf.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn load_consensus_set(&self) -> Result<Option<Vec<(Address, U256)>>> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(HEIGHT_META) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        match table.get(b"consensus_set".as_slice())? {
+            Some(v) if !v.value().is_empty() && v.value().len() % 52 == 0 => Ok(Some(
+                v.value()
+                    .chunks(52)
+                    .map(|c| (Address::from_slice(&c[..20]), U256::from_be_slice(&c[20..])))
+                    .collect(),
+            )),
+            _ => Ok(None),
+        }
+    }
+
     fn persisted_height(&self) -> Result<Option<u64>> {
         let read_txn = self.db.begin_read()?;
         let table = match read_txn.open_table(HEIGHT_META) {

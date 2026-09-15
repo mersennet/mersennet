@@ -196,6 +196,9 @@ fn main() -> anyhow::Result<()> {
     );
     engine.set_round_timeout_ms(app_config.slashing.round_timeout_ms);
     engine.set_validator_set_params(app_config.validator_set.to_params());
+    // A restart must resume with the set the network is using, not the
+    // genesis set from the config (see Engine::restore_consensus_set).
+    engine.restore_consensus_set();
     if app_config.validator_set.activation_height > 0 {
         info!(
             activation_height = app_config.validator_set.activation_height,

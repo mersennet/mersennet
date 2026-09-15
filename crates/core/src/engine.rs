@@ -857,6 +857,63 @@ impl Engine {
         self.orders.state.staking.set_params(params);
     }
 
+    /// Startup. The open set replaces the genesis set at every epoch boundary,
+    /// but a fresh process starts from the genesis validators in its config.
+    /// Reinstall the set that was active when the node stopped, otherwise a
+    /// restarted validator computes a different leader schedule and reward
+    /// split than the rest of the network until the next boundary (this is
+    /// what happened on 2026-09-15 when the fleet was rolled with a fifth
+    /// validator active). Stakes come from the node-local cache written at
+    /// the transition; if the cache is missing or names a different set,
+    /// fall back to the registry's current voting stakes.
+    pub fn restore_consensus_set(&mut self) {
+        let height = self.latest_height();
+        let (members, fallback): (Vec<Address>, Vec<crate::consensus::Validator>) = {
+            let st = &self.orders.state.staking;
+            if !st.is_open_set_active(height) || st.active_set.is_empty() {
+                return;
+            }
+            let members = st.active_set.clone();
+            let fallback = members
+                .iter()
+                .map(|id| crate::consensus::Validator {
+                    address: *id,
+                    stake: st.voting_stake(*id),
+                })
+                .collect();
+            (members, fallback)
+        };
+        let cached = self
+            .evm
+            .state
+            .load_consensus_set()
+            .ok()
+            .flatten()
+            .filter(|c| {
+                let mut a: Vec<Address> = c.iter().map(|(x, _)| *x).collect();
+                let mut m = members.clone();
+                a.sort();
+                m.sort();
+                a == m
+            });
+        let from_cache = cached.is_some();
+        let set: Vec<crate::consensus::Validator> = match cached {
+            Some(c) => c
+                .into_iter()
+                .map(|(address, stake)| crate::consensus::Validator { address, stake })
+                .collect(),
+            None => fallback,
+        };
+        let active = set.len();
+        self.consensus.replace_validators(set);
+        tracing::info!(
+            height,
+            active,
+            from_cache,
+            "consensus set restored from the persisted active set"
+        );
+    }
+
     /// Runs at the first block of every epoch once the open set is active
     /// (and once at the activation height): judges the past epoch, then
     /// recomputes the active set from the registry and installs it as the
@@ -901,7 +958,12 @@ impl Engine {
             })
             .collect();
         if !new_set.is_empty() {
+            let snapshot: Vec<(Address, U256)> =
+                new_set.iter().map(|v| (v.address, v.stake)).collect();
             self.consensus.replace_validators(new_set);
+            if let Err(err) = self.evm.state.save_consensus_set(&snapshot) {
+                tracing::warn!(%err, "could not cache the consensus set");
+            }
         }
         metrics::increment_counter!("mersennet_epoch_transitions_total");
         tracing::info!(
@@ -4733,6 +4795,7 @@ mod open_validator_set_tests {
             jail_miss_bps: 2_000,
             jail_min_slots: 2,
             rewards_to_operator_height: 0,
+            jail_escalation_height: 0,
         }
     }
 
@@ -4781,6 +4844,75 @@ mod open_validator_set_tests {
             last.proposer_sig = b.proposer_sig;
         }
         b
+    }
+
+    /// A fresh process starts from the genesis validators in its config; the
+    /// active set installed at the last boundary (with its stakes) must be
+    /// restored, or the restarted node runs a different schedule than the
+    /// network until the next boundary.
+    #[test]
+    fn restart_restores_the_active_set_and_its_stakes() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("engine");
+        std::fs::create_dir_all(&path).unwrap();
+        // sled: the backend production runs, and the one that persists the
+        // registry (redb is the fast test backend and does not).
+        let build = |path: &std::path::Path| {
+            let mut e = Engine::new_with_backend(131071, path.to_path_buf(), "sled");
+            for i in 1..=4u8 {
+                e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                    .unwrap();
+            }
+            e.set_validator_set_params(params());
+            e
+        };
+        let mut p = build(&path);
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        while p.block_number < 13 {
+            if p.block_number == 2 {
+                // After activation seeded the genesis validators, as in production.
+                p.orders
+                    .state
+                    .staking
+                    .register_validator(operator, v5, U256::from(5_000u64) * U256::from(MRSN), 0, 2)
+                    .unwrap();
+            }
+            produce(&mut p, 0, &[]);
+        }
+        assert!(
+            p.validator_addresses().contains(&v5),
+            "v5 active after the boundary at 10"
+        );
+        assert_eq!(p.validator_addresses().len(), 5, "genesis four plus v5");
+        p.evm.state.flush().unwrap();
+        let mut expected: Vec<(Address, U256)> = p
+            .consensus
+            .validators()
+            .iter()
+            .map(|v| (v.address, v.stake))
+            .collect();
+        expected.sort();
+        drop(p);
+
+        let mut r = build(&path);
+        assert_eq!(
+            r.validator_addresses().len(),
+            4,
+            "a fresh process knows only the genesis set"
+        );
+        r.restore_consensus_set();
+        let mut got: Vec<(Address, U256)> = r
+            .consensus
+            .validators()
+            .iter()
+            .map(|v| (v.address, v.stake))
+            .collect();
+        got.sort();
+        assert_eq!(
+            got, expected,
+            "restored set and stakes match what was installed"
+        );
     }
 
     /// From `rewards_to_operator_height`, a registered validator's block

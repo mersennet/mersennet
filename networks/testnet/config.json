@@ -304,7 +304,7 @@
       "49.13.54.79:30303"
     ],
     "compact_wire_height": 1440000,
-    "fast_failover_height": 1440000
+    "fast_failover_height": 1400550
   },
   "rpc": {
     "enabled": false,
@@ -340,6 +340,7 @@
     "unbonding_blocks": 7200,
     "jail_miss_bps": 2000,
     "jail_min_slots": 5,
-    "rewards_to_operator_height": 1440000
+    "rewards_to_operator_height": 1440000,
+    "jail_escalation_height": 1483200
   }
 }
