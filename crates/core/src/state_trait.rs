@@ -1,6 +1,6 @@
 use anyhow::Result;
 use revm::db::InMemoryDB;
-use revm::primitives::{Address, B256};
+use revm::primitives::{Address, B256, U256};
 
 use crate::bridge::BridgeQueue;
 use crate::engine::Block;
@@ -65,6 +65,14 @@ pub trait StateBackend: Send + std::fmt::Debug {
     /// of re-producing from genesis.
     fn persisted_height(&self) -> Result<Option<u64>>;
     fn prune_before(&self, height: u64) -> Result<u64>;
+    /// Node-local cache of the consensus set installed at the last epoch
+    /// transition, restored on startup (not part of the state root).
+    fn save_consensus_set(&self, _set: &[(Address, U256)]) -> Result<()> {
+        Ok(())
+    }
+    fn load_consensus_set(&self) -> Result<Option<Vec<(Address, U256)>>> {
+        Ok(None)
+    }
 
     fn generate_proof(&self, key: &[u8]) -> Result<StateProof>;
 
