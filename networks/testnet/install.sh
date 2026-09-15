@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Mersennet testnet full-node installer.
 #
-#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET]
+#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET] [--reset-state]
 #
 #   --data-dir DIR   Put chain data and the node key under DIR instead of
 #                    /var/lib/mersennet (e.g. a mounted block volume:
@@ -18,6 +18,12 @@ set -euo pipefail
 #                    hours). Default: snapshot (SHA-256 verified), then the
 #                    node syncs only the tail — minutes. Upgrades never touch
 #                    existing data.
+#   --reset-state    Discard this node's chain state and bootstrap it again
+#                    from the latest snapshot (keys, node identity, operator
+#                    and data dir are kept). Use it when mersennet-check says
+#                    the node is forked or logs "state root" differences —
+#                    typically a node that ran an old build through a
+#                    consensus upgrade. One minute to be back in sync.
 #
 # Works from either layout:
 #   1. The release bundle (https://mersennet.com/downloads/): binary, config
@@ -38,6 +44,7 @@ fi
 DATA_DIR="/var/lib/mersennet"
 RPC_ADDR=""
 FROM_SNAPSHOT=1
+RESET_STATE=0
 OPERATOR=""
 SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
@@ -47,6 +54,7 @@ while [[ $# -gt 0 ]]; do
         --rpc-public) RPC_ADDR="0.0.0.0:8545"; shift ;;
         --from-genesis) FROM_SNAPSHOT=0; shift ;;
         --operator) OPERATOR="${2:?--operator needs a 0x address}"; shift 2 ;;
+        --reset-state) RESET_STATE=1; shift ;;
         --operator=*) OPERATOR="${1#*=}"; shift ;;
         -h|--help) sed -n '3,22p' "$0"; exit 0 ;;
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
@@ -86,6 +94,17 @@ if systemctl is-active --quiet mersennet 2>/dev/null; then
     UPGRADE=1
     echo "==> Existing node detected: upgrading binary and restarting (data and keys are kept)"
     systemctl stop mersennet
+fi
+if [[ $RESET_STATE -eq 1 ]]; then
+    systemctl stop mersennet 2>/dev/null || true
+    if [[ -d "$DATA_DIR/data/state" ]]; then
+        echo "==> --reset-state: discarding chain state at $DATA_DIR/data/state (keys and identity are kept)"
+        # voter_last_voted stays: a validator that resets must not re-vote heights it already voted.
+        rm -rf "$DATA_DIR/data/state" "$DATA_DIR/data/peers.json"
+    else
+        echo "==> --reset-state: no chain state at $DATA_DIR/data/state — nothing to discard"
+    fi
+    FROM_SNAPSHOT=1
 fi
 
 echo "==> Installing binary to /usr/local/bin/mersennet"
