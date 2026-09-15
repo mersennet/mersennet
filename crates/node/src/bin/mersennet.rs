@@ -290,14 +290,23 @@ fn main() -> anyhow::Result<()> {
             }
         }
         NodeMode::Full | NodeMode::Validator => {
-            let is_validator = matches!(cli.mode, NodeMode::Validator);
-            // Register this node's validator identity so leader election
-            // knows whether (and when) this node should produce blocks.
-            if is_validator {
-                engine.set_local_validator(identity.address);
-            }
+            // Since the validator set is permissionless, any node can be in
+            // the active set from one epoch to the next: a full node whose
+            // operator registers it must start proposing and voting at the
+            // boundary without a restart or a mode switch. So every node
+            // registers its identity and runs the producer and voter threads;
+            // both act only while the identity is in the current set
+            // (`--mode validator` is kept for the fleet units; it behaves the
+            // same way).
+            let is_validator = true;
+            let mode_label = if matches!(cli.mode, NodeMode::Validator) {
+                "validator"
+            } else {
+                "full"
+            };
+            engine.set_local_validator(identity.address);
             info!(
-                mode = if is_validator { "validator" } else { "full" },
+                mode = mode_label,
                 listen = %app_config.p2p.listen,
                 peers = app_config.p2p.peers.len(),
                 validator_addr = %format!("0x{}", hex::encode(identity.address.as_slice())),
@@ -525,9 +534,31 @@ fn main() -> anyhow::Result<()> {
                         let boot = std::time::Instant::now();
                         let startup_sync_grace = std::time::Duration::from_secs(15);
                         let mut produced_since_boot = false;
+                        let mut in_set: Option<bool> = None;
                         loop {
                             if shutdown_producer.load(Ordering::SeqCst) {
                                 break;
+                            }
+                            // Only members of the current active set propose.
+                            // Membership changes at epoch boundaries (open
+                            // validator set), so re-check every poll.
+                            let member = {
+                                let Ok(e) = eng.lock() else { break };
+                                e.validator_addresses().contains(&my_addr)
+                            };
+                            if in_set != Some(member) {
+                                if member {
+                                    info!(identity = %format!("0x{}", hex::encode(my_addr.as_slice())), "this node is in the active validator set: proposing blocks when leader");
+                                } else if in_set.is_some() {
+                                    info!("this node left the active validator set: no longer proposing");
+                                } else {
+                                    info!("this node is not in the active validator set: following only (register at trade.mersennet.com/staking)");
+                                }
+                                in_set = Some(member);
+                            }
+                            if !member {
+                                std::thread::sleep(block_time);
+                                continue;
                             }
                             std::thread::sleep(poll);
 
@@ -912,6 +943,18 @@ fn main() -> anyhow::Result<()> {
                                 let Ok(e) = eng_voter.lock() else { break };
                                 let head = e.latest_height();
                                 let mut out = Vec::new();
+                                // Not in the active set: nothing to sign.
+                                // Track the head so that joining at an epoch
+                                // boundary starts voting from there, not
+                                // from heights we merely followed.
+                                if let Some(me) = e.local_validator()
+                                    && !e.validator_addresses().contains(&me)
+                                {
+                                    if head > last_voted {
+                                        last_voted = head;
+                                    }
+                                    continue;
+                                }
                                 // Vote for a bounded window so a lagging
                                 // voter catches up without flooding.
                                 let start =
