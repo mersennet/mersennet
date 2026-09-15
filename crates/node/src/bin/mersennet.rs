@@ -491,6 +491,7 @@ fn main() -> anyhow::Result<()> {
                 let my_addr = identity.address;
                 let producer_key = identity.signing_key.clone();
                 let compact_wire_height = app_config.p2p.compact_wire_height;
+                let fast_failover_height = app_config.p2p.fast_failover_height;
                 std::thread::Builder::new()
                     .name("block-producer".into())
                     .spawn(move || {
@@ -512,7 +513,12 @@ fn main() -> anyhow::Result<()> {
                         // block-times to produce (plus slack for gossip)
                         // before rotating. Generous relative to the
                         // block time so healthy leaders never trip it.
-                        let round_timeout_ms = block_time.as_millis() as u64 * 8 + 3000;
+                        // Legacy: 8 block-times + 3 s (19 s at 2 s blocks), sized when
+                        // large blocks could not propagate. Fast: 3 block-times + 2 s
+                        // (8 s), from `p2p.fast_failover_height`; recomputed per height
+                        // below so every node rotates on the same clock.
+                        let legacy_round_timeout_ms = block_time.as_millis() as u64 * 8 + 3000;
+                        let fast_round_timeout_ms = block_time.as_millis() as u64 * 3 + 2000;
                         // Poll frequently so we detect a new height (and
                         // our turn to lead) with low latency.
                         let poll = std::time::Duration::from_millis(100);
@@ -587,6 +593,11 @@ fn main() -> anyhow::Result<()> {
                                 last_block_at = std::time::Instant::now();
                             }
                             let next_height = head.saturating_add(1);
+                            let round_timeout_ms = if next_height >= fast_failover_height {
+                                fast_round_timeout_ms
+                            } else {
+                                legacy_round_timeout_ms
+                            };
 
                             // Reset failover tracking when we advance to a
                             // new height.
