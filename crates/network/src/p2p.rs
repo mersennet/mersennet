@@ -551,50 +551,8 @@ impl NetworkNode {
                                 }
                             }
                             "tx" => {
-                                if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data)
-                                    && let Ok(mut eng) = engine.lock()
-                                {
-                                    // Wallet txs carry their raw signed
-                                    // envelope: re-decode it so the true
-                                    // Ethereum (EIP-155/typed) signature is
-                                    // verified — the parsed fields alone
-                                    // can't reproduce that signing payload.
-                                    if let Some(raw_hex) = &wire.raw {
-                                        match hex::decode(raw_hex).ok().and_then(|raw| {
-                                            mersennet::crypto::decode_raw_signed_tx(&raw).ok()
-                                        }) {
-                                            Some(signed) => {
-                                                if let Err(err) = eng.submit_tx_unsigned(signed.tx)
-                                                {
-                                                    tracing::debug!(
-                                                        reason = err.code(),
-                                                        "dropped relayed raw tx"
-                                                    );
-                                                }
-                                            }
-                                            None => tracing::debug!(
-                                                "dropped relayed tx: bad raw envelope"
-                                            ),
-                                        }
-                                    } else if let Some(tx) = wire_to_tx(&wire) {
-                                        // Native-format txs must carry a valid
-                                        // signature — submit_tx verifies the
-                                        // signer matches `from`. Unsigned txs
-                                        // relayed over gossip are rejected
-                                        // (they could execute as any account).
-                                        if tx.signature.is_some() {
-                                            if let Err(err) = eng.submit_tx(tx) {
-                                                tracing::debug!(
-                                                    reason = err.code(),
-                                                    "dropped relayed tx"
-                                                );
-                                            }
-                                        } else {
-                                            tracing::debug!(
-                                                "dropped relayed unsigned tx (signatures required)"
-                                            );
-                                        }
-                                    }
+                                if let Ok(wire) = serde_json::from_slice::<WireTx>(&packet.data) {
+                                    handle_relayed_tx(&engine, &wire);
                                 }
                             }
                             "vote" => {
@@ -673,6 +631,19 @@ impl NetworkNode {
                                             if let Ok(mut eng) = engine.lock() {
                                                 eng.import_block(block);
                                             }
+                                        }
+                                        in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                        return;
+                                    }
+                                    if request.topic == "tx_push" {
+                                        // Large transaction delivered peer-to-peer
+                                        // (see broadcast_tx_with_raw): a contract
+                                        // deployment near the 24 KB code limit does
+                                        // not fit a UDP datagram once encoded.
+                                        if let Ok(wire) =
+                                            serde_json::from_slice::<WireTx>(&request.data)
+                                        {
+                                            handle_relayed_tx(&engine, &wire);
                                         }
                                         in_flight_worker.fetch_sub(1, Ordering::SeqCst);
                                         return;
@@ -915,26 +886,7 @@ impl NetworkNode {
             (packet, peers)
         };
         // Deliver directly to every known peer over the TCP sync port.
-        let pushed = std::sync::Arc::new(packet);
-        for peer in peers {
-            let pkt = pushed.clone();
-            let addr = derive_tcp_addr(&peer);
-            std::thread::Builder::new()
-                .name("block-push".into())
-                .spawn(move || {
-                    if let Ok(mut stream) = TcpSync::connect(&addr, Duration::from_secs(3)) {
-                        let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-                        let push = crate::net_transport::GossipPacket {
-                            topic: "block_push".to_string(),
-                            data: pkt.data.clone(),
-                            id: pkt.id.clone(),
-                            ttl: 0,
-                        };
-                        let _ = TcpSync::send_packet(&mut stream, &push);
-                    }
-                })
-                .ok();
-        }
+        self.push_over_tcp("block_push", packet, peers);
         Ok(())
     }
 
@@ -947,9 +899,53 @@ impl NetworkNode {
     pub fn broadcast_tx_with_raw(&self, tx: &Transaction, raw: Option<&[u8]>) -> Result<()> {
         let wire = tx_to_wire_with_raw(tx, raw);
         let data = serde_json::to_vec(&wire)?;
-        let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let packet = gossip.new_packet("tx", data, 3);
-        gossip.broadcast(&packet)
+        let (packet, peers) = {
+            let mut gossip = self.gossip.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+            let packet = gossip.new_packet("tx", data, 3);
+            let encoded = serde_json::to_vec(&packet)?.len();
+            if encoded <= Self::MAX_UDP_PACKET_BYTES {
+                return gossip.broadcast(&packet);
+            }
+            metrics::increment_counter!("mersennet_tx_push_tcp_total");
+            let peers: Vec<String> = gossip
+                .peers_snapshot()
+                .into_iter()
+                .map(|p| p.addr)
+                .collect();
+            (packet, peers)
+        };
+        // Same path as large blocks: the datagram would be dropped silently,
+        // so deliver to every known peer over the TCP sync port instead.
+        self.push_over_tcp("tx_push", packet, peers);
+        Ok(())
+    }
+
+    fn push_over_tcp(
+        &self,
+        topic: &'static str,
+        packet: crate::net_transport::GossipPacket,
+        peers: Vec<String>,
+    ) {
+        let pushed = std::sync::Arc::new(packet);
+        for peer in peers {
+            let pkt = pushed.clone();
+            let addr = derive_tcp_addr(&peer);
+            std::thread::Builder::new()
+                .name(format!("{topic}-push"))
+                .spawn(move || {
+                    if let Ok(mut stream) = TcpSync::connect(&addr, Duration::from_secs(3)) {
+                        let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+                        let push = crate::net_transport::GossipPacket {
+                            topic: topic.to_string(),
+                            data: pkt.data.clone(),
+                            id: pkt.id.clone(),
+                            ttl: 0,
+                        };
+                        let _ = TcpSync::send_packet(&mut stream, &push);
+                    }
+                })
+                .ok();
+        }
     }
 
     /// Gossip a signed BFT finality vote for `(height, block_hash)`.
@@ -987,6 +983,37 @@ impl NetworkNode {
 /// validator, record it in the engine. Recovering the signer from the
 /// signature means a forged vote (bad signature) simply fails to
 /// recover a validator address and is dropped.
+/// Admit a relayed transaction (UDP gossip or TCP `tx_push`). Wallet txs carry
+/// their raw signed envelope: re-decode it so the true Ethereum (EIP-155/typed)
+/// signature is verified; the parsed fields alone cannot reproduce that signing
+/// payload. Native-format txs must carry a valid signature (submit_tx checks the
+/// signer matches `from`); unsigned relays are rejected outright since they
+/// could execute as any account.
+fn handle_relayed_tx(engine: &Arc<Mutex<Engine>>, wire: &WireTx) {
+    let Ok(mut eng) = engine.lock() else { return };
+    if let Some(raw_hex) = &wire.raw {
+        match hex::decode(raw_hex)
+            .ok()
+            .and_then(|raw| mersennet::crypto::decode_raw_signed_tx(&raw).ok())
+        {
+            Some(signed) => {
+                if let Err(err) = eng.submit_tx_unsigned(signed.tx) {
+                    tracing::debug!(reason = err.code(), "dropped relayed raw tx");
+                }
+            }
+            None => tracing::debug!("dropped relayed tx: bad raw envelope"),
+        }
+    } else if let Some(tx) = wire_to_tx(wire) {
+        if tx.signature.is_some() {
+            if let Err(err) = eng.submit_tx(tx) {
+                tracing::debug!(reason = err.code(), "dropped relayed tx");
+            }
+        } else {
+            tracing::debug!("dropped relayed unsigned tx (signatures required)");
+        }
+    }
+}
+
 fn handle_vote(engine: &Arc<Mutex<Engine>>, wire: &WireVote) {
     let Some(block_hash) = parse_hex_b256(&wire.block_hash) else {
         return;
