@@ -93,21 +93,49 @@ if [[ "$pub_ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
     fi
 fi
 
-# Operator wallet (verified node runner)
+# Node identity (block-signing address) — what you register as a validator
+ident=$(curl -s --max-time 3 http://127.0.0.1:8545 -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"mersennet_nodeIdentity","params":[]}' 2>/dev/null | sed -n 's/.*"identity":"\(0x[0-9a-f]*\)".*/\1/p')
+
+# Operator wallet (verified node runner). Verification is automatic: the
+# network probes visible nodes every few minutes and records the operator
+# the node signs for; ask the public list whether this identity is in it.
 operator=$(python3 -c "import json; print(json.load(open('/etc/mersennet/config.json')).get('p2p',{}).get('operator_address') or '')" 2>/dev/null)
 if [[ -n "$operator" ]]; then
-    printf 'Operator     %s — verify this node at https://trade.mersennet.com/points to earn daily points\n' "$operator"
+    vstate=$(curl -s --max-time 5 https://trade.mersennet.com/api/v1/nodes/verified 2>/dev/null | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    n=next((n for n in d.get('nodes',[]) if (n.get('identity') or '').lower()=='${ident}'.lower()), None)
+    print('active' if n and n.get('active') else ('stale' if n else 'none'))
+except Exception:
+    print('?')" 2>/dev/null)
+    case "$vstate" in
+        active) printf 'Operator     %s — %s, earning %s at https://trade.mersennet.com/points\n' "$operator" "$(green 'verified node runner')" "$(green '500 points/day')" ;;
+        stale)  printf 'Operator     %s — verified, but not seen recently; check Visibility above (inbound 30303 tcp+udp)\n' "$operator" ;;
+        none)   printf 'Operator     %s — %s: automatic within ~10 minutes once the node is visible; nothing to do\n' "$operator" "$(yellow 'not verified yet')" ;;
+        *)      printf 'Operator     %s — verification status unavailable right now (trade.mersennet.com unreachable)\n' "$operator" ;;
+    esac
 else
     printf 'Operator     %s — set one to be recognised as a node runner: re-run the installer with --operator 0xYOURWALLET (or add p2p.operator_address to /etc/mersennet/config.json and restart)\n' "$(yellow 'not set')"
 fi
 
-# Node identity (block-signing address) — what you register as a validator
-ident=$(curl -s --max-time 3 http://127.0.0.1:8545 -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"mersennet_nodeIdentity","params":[]}' 2>/dev/null | sed -n 's/.*"identity":"\(0x[0-9a-f]*\)".*/\1/p')
 if [[ -n "$ident" ]]; then
     vset=$(curl -s --max-time 4 http://127.0.0.1:8545 -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"mersennet_validatorSet","params":[]}' 2>/dev/null)
     if echo "$vset" | grep -q "\"identity\":\"$ident\""; then
-        st=$(echo "$vset" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(next((v['status'] for v in d['validators'] if v['identity']=='$ident'),'?'))" 2>/dev/null)
-        printf 'Validator    %s — registered, status %s (epoch %s)\n' "$ident" "$(green "$st")" "$(echo "$vset" | sed -n 's/.*"epoch":\([0-9]*\).*/\1/p')"
+        vinfo=$(echo "$vset" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)['result']
+v=next((v for v in d['validators'] if v['identity']=='$ident'),None)
+if v:
+    blocks_left=max(0,d['nextEpochAt']-d['height'])
+    print(f\"{v['status']}|{v['proposedSlots']}|{v['missedSlots']}|{d['epoch']}|{blocks_left}|{int(v['selfStake'],16)//10**18}\")" 2>/dev/null)
+        IFS='|' read -r st prop miss ep left selfst <<< "$vinfo"
+        case "$st" in
+            active)  printf 'Validator    %s — %s · self-stake %s MRSN · epoch %s: %s blocks proposed, %s missed\n' "$ident" "$(green 'active')" "$selfst" "$ep" "$prop" "$miss" ;;
+            pending) printf 'Validator    %s — %s · joins the active set in %s blocks (~%s min)\n' "$ident" "$(yellow 'pending')" "$left" "$(( left * 2 / 60 ))" ;;
+            jailed)  printf 'Validator    %s — %s for this epoch (missed too many slots last epoch); back automatically in %s blocks\n' "$ident" "$(red 'jailed')" "$left" ;;
+            *)       printf 'Validator    %s — registered, status %s (epoch %s)\n' "$ident" "$(yellow "$st")" "$ep" ;;
+        esac
     elif echo "$vset" | grep -q '"active":true'; then
         printf 'Validator    %s — not registered; bond 1,000 MRSN at https://trade.mersennet.com/staking to start producing blocks\n' "$ident"
     else
