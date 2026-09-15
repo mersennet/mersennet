@@ -254,6 +254,9 @@ pub struct ValidatorSetConfig {
     pub jail_miss_bps: u64,
     #[serde(default = "default_jail_min_slots")]
     pub jail_min_slots: u64,
+    /// Height from which block rewards go to the operator wallet (0 = off).
+    #[serde(default)]
+    pub rewards_to_operator_height: u64,
 }
 
 fn default_epoch_blocks() -> u64 {
@@ -299,6 +302,7 @@ impl ValidatorSetConfig {
             },
             jail_miss_bps: self.jail_miss_bps,
             jail_min_slots: self.jail_min_slots,
+            rewards_to_operator_height: self.rewards_to_operator_height,
         }
     }
 }

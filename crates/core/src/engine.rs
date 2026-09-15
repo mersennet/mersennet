@@ -4133,7 +4133,18 @@ impl Engine {
             if validator_amount.is_zero() {
                 continue;
             }
-            self.evm.state.mark_dirty(reward.address);
+            // The validator's share goes to the operator wallet once
+            // `rewards_to_operator_height` is reached (the node key is an
+            // identity, not a wallet anyone wants to hold funds on); before
+            // that, and for identities without a registration, to the
+            // identity itself. Registry + height are state, so this is
+            // identical on producer and importer.
+            let recipient = self
+                .orders
+                .state
+                .staking
+                .reward_recipient(reward.address, self.block_number);
+            self.evm.state.mark_dirty(recipient);
             // Read the current account straight from the cache rather
             // than via `basic()`. `basic()` lazily loads a missing
             // address as `AccountState::NotExisting`; a following
@@ -4147,11 +4158,11 @@ impl Engine {
                 .evm
                 .db
                 .accounts
-                .get(&reward.address)
+                .get(&recipient)
                 .map(|account| account.info.clone())
                 .unwrap_or_default();
             info.balance = info.balance.saturating_add(validator_amount);
-            self.evm.db.insert_account_info(reward.address, info);
+            self.evm.db.insert_account_info(recipient, info);
         }
         Ok(())
     }
@@ -4721,6 +4732,7 @@ mod open_validator_set_tests {
             unbonding_blocks: 50,
             jail_miss_bps: 2_000,
             jail_min_slots: 2,
+            rewards_to_operator_height: 0,
         }
     }
 
@@ -4769,6 +4781,92 @@ mod open_validator_set_tests {
             last.proposer_sig = b.proposer_sig;
         }
         b
+    }
+
+    /// From `rewards_to_operator_height`, a registered validator's block
+    /// reward lands on its operator wallet; before that on the node identity.
+    /// Producer and importer agree on the state root either way.
+    #[test]
+    fn block_reward_moves_to_the_operator_wallet_at_the_configured_height() {
+        let mut p = engine();
+        let mut c = engine();
+        let mut prm = params();
+        prm.rewards_to_operator_height = 25;
+        for e in [&mut p, &mut c] {
+            e.set_validator_set_params(prm.clone());
+            // Test engines have no token economics: switch on the testnet
+            // schedule so blocks actually pay rewards.
+            e.set_token_economics(
+                U256::from(2u64).pow(U256::from(89u64)) - U256::from(1u64),
+                U256::from(2u64).pow(U256::from(61u64)) - U256::from(1u64),
+                33_550_336,
+            );
+        }
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        let stake = U256::from(5_000u64) * U256::from(MRSN);
+        for e in [&mut p, &mut c] {
+            e.fund_account(v5, U256::ZERO, 0);
+            e.fund_account(operator, U256::ZERO, 0);
+            e.orders
+                .state
+                .staking
+                .register_validator(operator, v5, stake, 0, 1)
+                .unwrap();
+        }
+        let mut identity_gain_before = U256::ZERO;
+        let mut identity_gain_after = U256::ZERO;
+        let mut operator_gain_before = U256::ZERO;
+        let mut operator_gain_after = U256::ZERO;
+        // v5 is eligible from epoch 2 (registered in epoch 0, active from 10).
+        while p.block_number < 45 {
+            let h = p.block_number;
+            let id0 = p.get_balance(v5).unwrap();
+            let op0 = p.get_balance(operator).unwrap();
+            let b = produce(&mut p, 0, &[]);
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b.clone());
+            assert_eq!(
+                c.latest_height(),
+                p.latest_height(),
+                "follower imported #{h}"
+            );
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "state roots agree at #{}",
+                b.number
+            );
+            let id_gain = p.get_balance(v5).unwrap().saturating_sub(id0);
+            let op_gain = p.get_balance(operator).unwrap().saturating_sub(op0);
+            if b.number < 25 {
+                identity_gain_before += id_gain;
+                operator_gain_before += op_gain;
+            } else {
+                identity_gain_after += id_gain;
+                operator_gain_after += op_gain;
+            }
+        }
+        assert!(
+            p.validator_addresses().contains(&v5),
+            "v5 is in the active set"
+        );
+        assert!(
+            !identity_gain_before.is_zero(),
+            "identity earned before the switch"
+        );
+        assert!(
+            operator_gain_before.is_zero(),
+            "operator earned nothing before the switch"
+        );
+        assert!(
+            identity_gain_after.is_zero(),
+            "identity earns nothing after the switch"
+        );
+        assert!(
+            !operator_gain_after.is_zero(),
+            "operator earns after the switch"
+        );
     }
 
     #[test]

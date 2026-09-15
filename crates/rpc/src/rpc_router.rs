@@ -608,6 +608,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "unbondingBlocks": p.unbonding_blocks,
                     "jailMissBps": p.jail_miss_bps,
                     "jailMinSlots": p.jail_min_slots,
+                    "rewardsToOperatorHeight": p.rewards_to_operator_height,
                 },
                 "height": height,
                 "epoch": st.current_epoch,

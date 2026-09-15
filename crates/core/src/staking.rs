@@ -103,6 +103,10 @@ pub struct ValidatorSetParams {
     /// `jail_min_slots` slots in the epoch to be judged at all.
     pub jail_miss_bps: u64,
     pub jail_min_slots: u64,
+    /// From this height, a validator's block reward is credited to the
+    /// operator wallet in its registration instead of the node identity
+    /// (0 = disabled: identity keeps receiving it). Consensus-critical.
+    pub rewards_to_operator_height: u64,
 }
 
 impl Default for ValidatorSetParams {
@@ -115,6 +119,7 @@ impl Default for ValidatorSetParams {
             unbonding_blocks: 7_200,
             jail_miss_bps: 2_000,
             jail_min_slots: 5,
+            rewards_to_operator_height: 0,
         }
     }
 }
@@ -202,6 +207,21 @@ impl StakingError {
 impl StakingState {
     pub fn set_params(&mut self, params: ValidatorSetParams) {
         self.params = params;
+    }
+
+    /// Where a validator's share of the block reward goes at `height`: the
+    /// registered operator wallet once `rewards_to_operator_height` is
+    /// reached, otherwise (and for unregistered identities) the identity.
+    pub fn reward_recipient(&self, identity: Address, height: u64) -> Address {
+        let h = self.params.rewards_to_operator_height;
+        if h == 0 || height < h {
+            return identity;
+        }
+        self.registry
+            .get(&identity)
+            .map(|r| r.operator)
+            .filter(|op| *op != Address::ZERO)
+            .unwrap_or(identity)
     }
 
     pub fn is_open_set_active(&self, height: u64) -> bool {
