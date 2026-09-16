@@ -184,4 +184,4 @@ fi
 
 echo
 echo "Explorer: https://explorer.mersennet.com   Docs: https://docs.mersennet.com/validators/run-a-node/"
-echo "This is a full node. The validator set is fixed at genesis for now, so it will not appear in the validator list."
+echo "Full node and validator in one: the node proposes and votes whenever its identity is in the active set (see the Validator line)."
