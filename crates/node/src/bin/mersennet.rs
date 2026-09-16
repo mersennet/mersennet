@@ -117,6 +117,14 @@ fn main() -> anyhow::Result<()> {
         "node identity loaded"
     );
 
+    match app_config.engine.resume_root_check.as_str() {
+        "fatal" => mersennet::engine::set_resume_root_check_fatal(true),
+        "warn" => {}
+        other => tracing::warn!(
+            value = other,
+            "engine.resume_root_check: unknown value, using \"warn\""
+        ),
+    }
     let mut engine = Engine::new_with_backend(
         app_config.engine.chain_id,
         &app_config.engine.state_path,
