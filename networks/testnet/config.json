@@ -2,7 +2,8 @@
   "engine": {
     "chain_id": 131071,
     "gas_limit_per_block": 30000000,
-    "state_path": "data/state"
+    "state_path": "data/state",
+    "resume_root_check": "warn"
   },
   "genesis": {
     "accounts": [

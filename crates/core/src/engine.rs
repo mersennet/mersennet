@@ -12,6 +12,14 @@ use crate::crypto::{self, SignedTransaction};
 /// each round on timeout, so this bounds how far a legitimately-elected leader
 /// can be from round 0 while still rejecting non-leaders.
 const MAX_LEADER_ROUND_WINDOW: u64 = 32;
+
+/// See `EngineConfig::resume_root_check`; set before the engine is built.
+static RESUME_ROOT_CHECK_FATAL: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_resume_root_check_fatal(fatal: bool) {
+    RESUME_ROOT_CHECK_FATAL.store(fatal, std::sync::atomic::Ordering::Relaxed);
+}
 use crate::errors::MersennetOrdersError;
 use crate::events::{
     BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
@@ -715,6 +723,12 @@ impl Engine {
                             header = %head.state_root,
                             "RESTORED STATE ROOT MISMATCH: persisted state does not match the head block's state root (tampered/corrupted snapshot or lineage drift)"
                         );
+                        if RESUME_ROOT_CHECK_FATAL.load(std::sync::atomic::Ordering::Relaxed) {
+                            tracing::error!(
+                                "refusing to run on state that does not match the chain (engine.resume_root_check = fatal). Community node: re-run the installer with --reset-state. Fleet: the watchdog restores a snapshot."
+                            );
+                            std::process::exit(5);
+                        }
                     } else {
                         tracing::info!(height = h, state_root = %computed, "restored state root matches the head block");
                     }

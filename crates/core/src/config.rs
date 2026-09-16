@@ -148,10 +148,20 @@ pub struct EngineConfig {
     pub fee_max_change_denominator: u64,
     #[serde(default = "default_storage_backend")]
     pub storage_backend: String,
+    /// What to do when the restored state's Merkle root does not match the
+    /// head block's state root at startup: `"warn"` (metric + error, keep
+    /// running) or `"fatal"` (exit 5 so the operator resets state / the
+    /// fleet heal restores a snapshot). Consensus-neutral; synced from the
+    /// canonical config.
+    #[serde(default = "default_resume_root_check")]
+    pub resume_root_check: String,
 }
 
 fn default_storage_backend() -> String {
     "sled".to_string()
+}
+fn default_resume_root_check() -> String {
+    "warn".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -480,6 +490,7 @@ impl Default for EngineConfig {
             fee_elasticity_multiplier: default_fee_elasticity(),
             fee_max_change_denominator: default_fee_change_denominator(),
             storage_backend: default_storage_backend(),
+            resume_root_check: default_resume_root_check(),
         }
     }
 }
