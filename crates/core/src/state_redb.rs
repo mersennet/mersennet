@@ -311,6 +311,22 @@ impl StateBackend for RedbState {
         }
 
         state.staking = decode_staking(snapshot.staking);
+        // Open validator set registry (same content sled keeps in its own tree).
+        if let Ok(meta) = read_txn.open_table(HEIGHT_META)
+            && let Some(v) = meta.get(b"validator_registry".as_slice())?
+        {
+            let (regs, active, epoch): (
+                Vec<(Vec<u8>, crate::staking::ValidatorRegistration)>,
+                Vec<Vec<u8>>,
+                u64,
+            ) = bincode::deserialize(v.value())?;
+            state.staking.registry.clear();
+            for (id, reg) in regs {
+                state.staking.registry.insert(Address::from_slice(&id), reg);
+            }
+            state.staking.active_set = active.iter().map(|a| Address::from_slice(a)).collect();
+            state.staking.current_epoch = epoch;
+        }
 
         state.collateral_assets.clear();
         for a in snapshot.collateral_assets {
@@ -459,11 +475,33 @@ impl StateBackend for RedbState {
         };
 
         let data = bincode::serialize(&snapshot)?;
+        // Open validator set registry, written in the same transaction.
+        let registry = {
+            let mut ids: Vec<&Address> = state.staking.registry.keys().collect();
+            ids.sort();
+            let regs: Vec<(Vec<u8>, crate::staking::ValidatorRegistration)> = ids
+                .iter()
+                .map(|id| (id.as_slice().to_vec(), state.staking.registry[*id].clone()))
+                .collect();
+            let active: Vec<Vec<u8>> = state
+                .staking
+                .active_set
+                .iter()
+                .map(|a| a.as_slice().to_vec())
+                .collect();
+            bincode::serialize(&(regs, active, state.staking.current_epoch))?
+        };
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(MERSENNET_ORDERS)?;
             table.remove(b"state".as_slice())?;
             table.insert(b"state".as_slice(), data.as_slice())?;
+            let mut meta = write_txn.open_table(HEIGHT_META)?;
+            if state.staking.registry.is_empty() && state.staking.active_set.is_empty() {
+                meta.remove(b"validator_registry".as_slice())?;
+            } else {
+                meta.insert(b"validator_registry".as_slice(), registry.as_slice())?;
+            }
         }
         write_txn.commit()?;
         Ok(())

@@ -1002,12 +1002,40 @@ impl Engine {
     /// rotating to the next validator so a dead leader cannot halt the
     /// chain.
     pub fn leader_for_height(&self, height: u64, round: u64) -> Option<Address> {
-        let vs = self.validator_addresses();
+        let vs = self.leader_rotation(height);
         if vs.is_empty() {
             return None;
         }
         let idx = (height.wrapping_add(round) % vs.len() as u64) as usize;
         Some(vs[idx])
+    }
+
+    /// The active set minus validators benched for the rest of the epoch
+    /// (`bench_height` reached, >= 3 leader slots missed and misses at least a
+    /// tenth of what they proposed). Derived from the registry counters every
+    /// node maintains from block data, so every node computes the same
+    /// rotation; never empties the rotation.
+    fn leader_rotation(&self, height: u64) -> Vec<Address> {
+        let vs = self.validator_addresses();
+        let st = &self.orders.state.staking;
+        let bh = st.params.bench_height;
+        if bh == 0 || height < bh || vs.len() <= 1 {
+            return vs;
+        }
+        let kept: Vec<Address> = vs.iter().copied().filter(|a| !st.is_benched(*a)).collect();
+        if kept.is_empty() { vs } else { kept }
+    }
+
+    /// Validators currently out of the leader rotation (RPC/UI).
+    pub fn benched_validators(&self, height: u64) -> Vec<Address> {
+        let st = &self.orders.state.staking;
+        if st.params.bench_height == 0 || height < st.params.bench_height {
+            return Vec::new();
+        }
+        self.validator_addresses()
+            .into_iter()
+            .filter(|a| st.is_benched(*a))
+            .collect()
     }
 
     /// Is this node the elected leader for `(height, round)`?
@@ -4796,6 +4824,7 @@ mod open_validator_set_tests {
             jail_min_slots: 2,
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
+            bench_height: 0,
         }
     }
 
@@ -4851,14 +4880,22 @@ mod open_validator_set_tests {
     /// restored, or the restarted node runs a different schedule than the
     /// network until the next boundary.
     #[test]
-    fn restart_restores_the_active_set_and_its_stakes() {
+    fn restart_restores_the_active_set_and_its_stakes_sled() {
+        restart_restores_the_active_set_and_its_stakes("sled");
+    }
+
+    #[test]
+    fn restart_restores_the_active_set_and_its_stakes_redb() {
+        restart_restores_the_active_set_and_its_stakes("redb");
+    }
+
+    fn restart_restores_the_active_set_and_its_stakes(backend: &str) {
         let dir = tempdir().unwrap();
         let path = dir.path().join("engine");
         std::fs::create_dir_all(&path).unwrap();
-        // sled: the backend production runs, and the one that persists the
-        // registry (redb is the fast test backend and does not).
+        // Both backends persist the registry and the installed set.
         let build = |path: &std::path::Path| {
-            let mut e = Engine::new_with_backend(131071, path.to_path_buf(), "sled");
+            let mut e = Engine::new_with_backend(131071, path.to_path_buf(), backend);
             for i in 1..=4u8 {
                 e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
                     .unwrap();
@@ -4915,6 +4952,121 @@ mod open_validator_set_tests {
         );
     }
 
+    /// A validator that misses three leader slots is dropped from the rotation
+    /// for the rest of the epoch: from then on the chain does not spend a
+    /// failover round on it, the producer and an importer compute the same
+    /// rotation, and the epoch boundary jails it. It comes back when the jail
+    /// ends and is benched again after three misses, not one round earlier.
+    #[test]
+    fn dead_leader_is_benched_after_three_misses() {
+        let mut p = engine();
+        let mut c = engine();
+        let mut prm = params();
+        prm.bench_height = 1;
+        prm.epoch_blocks = 40; // five validators → eight leader slots each per epoch
+        prm.jail_min_slots = 5; // more than the bench threshold: the bench must make the jail happen
+        for e in [&mut p, &mut c] {
+            e.set_validator_set_params(prm.clone());
+        }
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        // Bring both to the boundary at 40 where v5 is active. Registration
+        // happens after activation seeded the genesis validators, as in
+        // production (registering before it would leave the registry without
+        // them and the set with v5 alone).
+        while p.block_number < 40 {
+            if p.block_number == 2 {
+                for e in [&mut p, &mut c] {
+                    e.orders
+                        .state
+                        .staking
+                        .register_validator(
+                            operator,
+                            v5,
+                            U256::from(5_000u64) * U256::from(MRSN),
+                            0,
+                            2,
+                        )
+                        .unwrap();
+                }
+            }
+            let b = produce(&mut p, 0, &[]);
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b);
+        }
+        p.maybe_epoch_transition(p.block_number);
+        assert!(p.validator_addresses().contains(&v5), "v5 active from 40");
+        assert_eq!(p.validator_addresses().len(), 5, "genesis four plus v5");
+        assert!(p.benched_validators(p.block_number).is_empty());
+
+        // v5 is dead. Count the failover rounds the network spends on it.
+        let mut rounds_on_v5 = 0u64;
+        let mut benched_at = None;
+        while p.block_number < 80 {
+            let h = p.block_number;
+            let was_leader = p.leader_for_height(h, 0) == Some(v5);
+            let b = produce(&mut p, 0, &[v5]);
+            if was_leader {
+                rounds_on_v5 += 1;
+            }
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b.clone());
+            assert_eq!(
+                c.latest_height(),
+                p.latest_height(),
+                "follower imported #{h}"
+            );
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "state roots agree at #{}",
+                b.number
+            );
+            if benched_at.is_none() && p.benched_validators(p.block_number).contains(&v5) {
+                benched_at = Some(p.block_number);
+            }
+        }
+        let benched_at = benched_at.expect("v5 benched within the epoch");
+        assert_eq!(
+            p.orders.state.staking.registry[&v5].missed_slots, 3,
+            "exactly three misses, then out of the rotation"
+        );
+        assert_eq!(
+            rounds_on_v5, 3,
+            "the network spent three failover rounds on v5, not more"
+        );
+        // With five validators, three misses take at most 15 blocks; the bench
+        // happened well before the boundary at 80.
+        assert!(benched_at <= 55, "benched mid-epoch at #{benched_at}");
+        for h in benched_at..80 {
+            for r in 0..MAX_LEADER_ROUND_WINDOW {
+                assert_ne!(
+                    p.leader_for_height(h, r),
+                    Some(v5),
+                    "benched: never leader at {h}/{r}"
+                );
+                assert_eq!(
+                    p.leader_for_height(h, r),
+                    c.leader_for_height(h, r),
+                    "same rotation"
+                );
+            }
+        }
+        assert!(
+            p.validator_addresses().contains(&v5),
+            "benched, not removed: still votes"
+        );
+
+        // Boundary at 80: jailed although it saw fewer than jail_min_slots slots.
+        p.maybe_epoch_transition(p.block_number);
+        assert_eq!(
+            p.orders.state.staking.status_of(v5),
+            Some(ValidatorStatus::Jailed),
+            "boundary jails the benched validator"
+        );
+        assert!(!p.validator_addresses().contains(&v5));
+    }
+
     /// From `rewards_to_operator_height`, a registered validator's block
     /// reward lands on its operator wallet; before that on the node identity.
     /// Producer and importer agree on the state root either way.
@@ -4940,6 +5092,16 @@ mod open_validator_set_tests {
         for e in [&mut p, &mut c] {
             e.fund_account(v5, U256::ZERO, 0);
             e.fund_account(operator, U256::ZERO, 0);
+        }
+        // Register after activation (block 1) seeded the genesis validators,
+        // so the set is the genesis four plus v5 rather than v5 alone.
+        for e in [&mut p, &mut c] {
+            if e.block_number == 0 {
+                let b = produce(e, 0, &[]);
+                drop(b);
+            }
+        }
+        for e in [&mut p, &mut c] {
             e.orders
                 .state
                 .staking

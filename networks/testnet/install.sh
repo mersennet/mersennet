@@ -259,12 +259,27 @@ Done. Your node is $([[ $UPGRADE -eq 1 ]] && echo "upgraded and " || true)runnin
   journalctl -u mersennet -f          # follow logs
   sudo systemctl restart mersennet    # restart
 
-First start replays the chain from the bootnodes (typically 20-40 minutes
-depending on hardware and network), then follows live blocks. Chain data and your node key
-live in $DATA_DIR — back up $DATA_DIR/keys/node_key.json to keep your peer
-identity. The RPC listens on ${RPC_ADDR:-127.0.0.1:8545}.
+$(if [[ $UPGRADE -eq 1 ]]; then
+    echo "The node restarted on the new build and continues from where it was; mersennet-check"
+    echo "should say 'in sync' within a minute."
+else
+    echo "A fresh node starts from a state snapshot taken within the last six hours and is"
+    echo "usually in sync within a minute or two (from genesis with --from-genesis: most of a day)."
+fi)
+Chain data and your node key live in $DATA_DIR — back up $DATA_DIR/keys/node_key.json:
+it is your node identity. The RPC listens on ${RPC_ADDR:-127.0.0.1:8545}. If the node ever
+stops advancing while the network moves on, it restarts itself (log: "head has not advanced").
 
-This is a full node: it verifies and serves the chain. The validator set is
-fixed at genesis for now, so it will not appear in the validator list — see
-https://docs.mersennet.com/validators/run-a-node/#becoming-a-validator
+$(if [[ -n "$OPERATOR" ]]; then
+    echo "Operator $OPERATOR: the node is verified automatically within ~10 minutes of being"
+    echo "online (500 points/day on https://trade.mersennet.com/points). To become a validator,"
+    echo "open https://trade.mersennet.com/staking with that wallet and press 'Bond & register'"
+    echo "(1,000 MRSN self-stake; faucet at https://faucet.mersennet.com)."
+else
+    echo "This is a full node. To earn node-runner points or become a validator, re-run this"
+    echo "command with --operator 0xYOUR_WALLET (keeps everything, just sets the operator)."
+fi)
+Upgrades: re-run this same command whenever mersennet-check or the staking page says a new
+release is out — always before an announced protocol switch height.
+Guide: https://docs.mersennet.com/validators/run-a-node/
 EOF

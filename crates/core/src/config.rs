@@ -32,6 +32,59 @@ pub struct AppConfig {
     pub zk: ZkConfig,
     #[serde(default)]
     pub privacy: PrivacyConfig,
+    #[serde(default)]
+    pub watchdog: WatchdogConfig,
+}
+
+/// In-process liveness watchdog. A node whose head stops advancing while
+/// the network moves on is wedged (a stuck thread, a poisoned lock, a dead
+/// listener); exiting non-zero lets systemd (`Restart=always`) bring it back
+/// in seconds. The first outside validator sat wedged for six hours before
+/// its operator restarted it by hand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchdogConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Seconds the head may stay unchanged, while the network is known to be
+    /// ahead, before the node exits for a restart.
+    #[serde(default = "default_watchdog_stall_secs")]
+    pub stall_secs: u64,
+    /// How far ahead the network must be for "stalled" to count (blocks).
+    #[serde(default = "default_watchdog_min_gap")]
+    pub min_gap_blocks: u64,
+    /// Seconds the engine lock may be unobtainable before the node exits.
+    #[serde(default = "default_watchdog_lock_secs")]
+    pub lock_secs: u64,
+    /// Optional JSON-RPC URL used as a second opinion on the network head
+    /// (gossip alone cannot report a height when the listener itself is what
+    /// died). Empty = gossip only.
+    #[serde(default)]
+    pub reference_rpc: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_watchdog_stall_secs() -> u64 {
+    300
+}
+fn default_watchdog_min_gap() -> u64 {
+    60
+}
+fn default_watchdog_lock_secs() -> u64 {
+    90
+}
+
+impl Default for WatchdogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            stall_secs: default_watchdog_stall_secs(),
+            min_gap_blocks: default_watchdog_min_gap(),
+            lock_secs: default_watchdog_lock_secs(),
+            reference_rpc: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +313,9 @@ pub struct ValidatorSetConfig {
     /// Height from which repeat jails escalate 1, 2, 4, 8, 16, 24 epochs (0 = off).
     #[serde(default)]
     pub jail_escalation_height: u64,
+    /// Height from which a leader that missed 3 slots is benched for the rest of the epoch (0 = off).
+    #[serde(default)]
+    pub bench_height: u64,
 }
 
 fn default_epoch_blocks() -> u64 {
@@ -307,6 +363,7 @@ impl ValidatorSetConfig {
             jail_min_slots: self.jail_min_slots,
             rewards_to_operator_height: self.rewards_to_operator_height,
             jail_escalation_height: self.jail_escalation_height,
+            bench_height: self.bench_height,
         }
     }
 }

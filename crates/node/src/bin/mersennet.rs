@@ -57,6 +57,19 @@ fn notify_orders_trades(
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
 
 fn main() -> anyhow::Result<()> {
+    // `mersennet --version` prints the same string web3_clientVersion reports,
+    // so packaging and operators can identify a binary without starting it.
+    if std::env::args()
+        .skip(1)
+        .any(|a| a == "--version" || a == "-V")
+    {
+        println!(
+            "Mersennet/{}-{}",
+            env!("CARGO_PKG_VERSION"),
+            option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
+        );
+        return Ok(());
+    }
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -1007,6 +1020,99 @@ fn main() -> anyhow::Result<()> {
                                     persist(height);
                                 }
                             }
+                        }
+                    })?;
+            }
+
+            // Liveness watchdog (see WatchdogConfig). Exit codes: 3 = head stalled
+            // while the network moved on, 4 = engine lock unobtainable.
+            if app_config.watchdog.enabled {
+                let eng = engine.clone();
+                let shutdown_wd = Arc::clone(&shutdown);
+                let wd = app_config.watchdog.clone();
+                std::thread::Builder::new()
+                    .name("liveness-watchdog".into())
+                    .spawn(move || {
+                        let check_every = std::time::Duration::from_secs(30);
+                        let mut last_head: u64 = 0;
+                        let mut last_change = std::time::Instant::now();
+                        let mut lock_failing_since: Option<std::time::Instant> = None;
+                        let reference_head = |url: &str| -> Option<u64> {
+                            if url.is_empty() {
+                                return None;
+                            }
+                            let resp = ureq::post(url)
+                                .timeout(std::time::Duration::from_secs(8))
+                                .set("content-type", "application/json")
+                                .send_string(r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#)
+                                .ok()?;
+                            let body = resp.into_string().ok()?;
+                            let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+                            let hex = v.get("result")?.as_str()?;
+                            u64::from_str_radix(hex.trim_start_matches("0x"), 16).ok()
+                        };
+                        loop {
+                            if shutdown_wd.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            std::thread::sleep(check_every);
+                            // Take the engine lock without blocking forever.
+                            let mut snapshot: Option<(u64, u64)> = None;
+                            let started = std::time::Instant::now();
+                            while started.elapsed() < std::time::Duration::from_secs(10) {
+                                match eng.try_lock() {
+                                    Ok(e) => {
+                                        snapshot = Some((e.latest_height(), e.highest_observed_height()));
+                                        break;
+                                    }
+                                    Err(std::sync::TryLockError::Poisoned(_)) => {
+                                        tracing::error!("engine lock is poisoned; exiting so systemd restarts the node");
+                                        std::process::exit(4);
+                                    }
+                                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(250)),
+                                }
+                            }
+                            let Some((head, observed)) = snapshot else {
+                                let since = *lock_failing_since.get_or_insert_with(std::time::Instant::now);
+                                if since.elapsed().as_secs() >= wd.lock_secs {
+                                    tracing::error!(
+                                        held_secs = since.elapsed().as_secs(),
+                                        "engine lock unobtainable; node is wedged — exiting so systemd restarts it"
+                                    );
+                                    std::process::exit(4);
+                                }
+                                continue;
+                            };
+                            lock_failing_since = None;
+                            if head != last_head {
+                                last_head = head;
+                                last_change = std::time::Instant::now();
+                                continue;
+                            }
+                            let stalled = last_change.elapsed().as_secs();
+                            if stalled < wd.stall_secs {
+                                continue;
+                            }
+                            // Stalled. Is the network ahead? Gossip's high-water
+                            // mark first, a reference RPC as a second opinion.
+                            let network = reference_head(&wd.reference_rpc).unwrap_or(0).max(observed);
+                            if network >= head.saturating_add(wd.min_gap_blocks) {
+                                tracing::error!(
+                                    head,
+                                    network_head = network,
+                                    stalled_secs = stalled,
+                                    "head has not advanced while the network moved on — exiting so systemd restarts the node"
+                                );
+                                if let Ok(e) = eng.try_lock() {
+                                    let _ = e.flush_state();
+                                }
+                                std::process::exit(3);
+                            }
+                            tracing::warn!(
+                                head,
+                                stalled_secs = stalled,
+                                "head not advancing, but no evidence the network is ahead (network-wide halt or no peers) — not restarting"
+                            );
                         }
                     })?;
             }

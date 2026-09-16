@@ -85,9 +85,16 @@ else
 fi
 # Machine-readable manifest: mersennet-check compares its binary against
 # binary_sha256 to tell operators when an upgrade is available.
+# The sha the binary itself reports (web3_clientVersion). Usually equals the
+# bundle's commit; differs when a bundle is republished for installer/config
+# changes with the same binary, and consumers comparing node builds must use
+# this field, not "release".
+BUILD_SHA="$("$BIN" --version 2>/dev/null | sed -n 's/^Mersennet\/[0-9.]*-//p' | head -1)"
+BUILD_SHA="${BUILD_SHA:-$SHA}"
 cat > "$DIST/latest.json" <<EOF
 {
   "release": "$SHA",
+  "build_sha": "$BUILD_SHA",
   "tarball": "$NAME.tar.gz",
   "tarball_sha256": "$(cut -d' ' -f1 "$DIST/SHA256SUMS" | head -1)",
   "binary_sha256": "$BIN_SHA",
