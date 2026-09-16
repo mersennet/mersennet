@@ -57,6 +57,19 @@ fn notify_orders_trades(
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
 
 fn main() -> anyhow::Result<()> {
+    // `mersennet --version` prints the same string web3_clientVersion reports,
+    // so packaging and operators can identify a binary without starting it.
+    if std::env::args()
+        .skip(1)
+        .any(|a| a == "--version" || a == "-V")
+    {
+        println!(
+            "Mersennet/{}-{}",
+            env!("CARGO_PKG_VERSION"),
+            option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
+        );
+        return Ok(());
+    }
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
