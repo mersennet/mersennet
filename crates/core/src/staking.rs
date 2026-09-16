@@ -112,7 +112,18 @@ pub struct ValidatorSetParams {
     /// a full epoch served without being jailed). Before it, every jail is
     /// one epoch and `times_jailed` is a lifetime count. 0 = off.
     pub jail_escalation_height: u64,
+    /// From this height a validator that has missed at least `BENCH_MISSES`
+    /// leader slots in the current epoch, and whose misses are at least a
+    /// tenth of what it proposed, is taken out of the leader rotation for
+    /// the rest of the epoch (it keeps voting and its stake). A dead leader
+    /// then costs the network a few failover rounds instead of an hour of
+    /// them. Derived from the per-epoch counters every node keeps from block
+    /// data, so it is identical everywhere. 0 = off.
+    pub bench_height: u64,
 }
+
+/// Missed leader slots in an epoch before a validator is benched.
+pub const BENCH_MISSES: u64 = 3;
 
 impl Default for ValidatorSetParams {
     fn default() -> Self {
@@ -126,6 +137,7 @@ impl Default for ValidatorSetParams {
             jail_min_slots: 5,
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
+            bench_height: 0,
         }
     }
 }
@@ -231,6 +243,14 @@ impl StakingState {
             .map(|r| r.operator)
             .filter(|op| *op != Address::ZERO)
             .unwrap_or(identity)
+    }
+
+    /// Benched for the rest of the epoch (see `ValidatorSetParams::bench_height`).
+    pub fn is_benched(&self, identity: Address) -> bool {
+        self.registry
+            .get(&identity)
+            .map(|r| r.missed_slots >= BENCH_MISSES && r.missed_slots * 10 >= r.proposed_slots)
+            .unwrap_or(false)
     }
 
     pub fn is_open_set_active(&self, height: u64) -> bool {
@@ -439,7 +459,13 @@ impl StakingState {
                 continue;
             };
             let slots = r.proposed_slots + r.missed_slots;
-            if slots >= p.jail_min_slots
+            // Benching stops the misses from accumulating, so a benched
+            // validator is judged on what it had before the bench.
+            let benched = p.bench_height > 0
+                && height >= p.bench_height
+                && r.missed_slots >= BENCH_MISSES
+                && r.missed_slots * 10 >= r.proposed_slots;
+            if (slots >= p.jail_min_slots || benched)
                 && r.missed_slots * 10_000 > slots * p.jail_miss_bps
                 && !r.genesis
             {
@@ -817,6 +843,60 @@ mod tests {
             20 + 1,
             "streak restarted at one epoch"
         );
+    }
+
+    /// A validator that misses three leader slots (and has not proposed ten
+    /// times as many) is benched; a busy validator with a few misses is not.
+    /// At the boundary a benched validator is judged even when it saw fewer
+    /// than `jail_min_slots` slots, because the bench stopped the count.
+    #[test]
+    fn bench_predicate_and_boundary_jail() {
+        let mrsn = U256::from(10u64).pow(U256::from(18u64));
+        let mut s = StakingState::default();
+        let mut p = ValidatorSetParams::default();
+        p.activation_height = 10;
+        p.epoch_blocks = 10;
+        p.jail_min_slots = 5;
+        p.bench_height = 10;
+        s.set_params(p);
+        s.seed_genesis(&[(addr(1), U256::from(1_000_000u64) * mrsn)], 10);
+        let dead = addr(9);
+        let busy = addr(7);
+        for v in [dead, busy] {
+            s.register_validator(addr(8), v, U256::from(5_000u64) * mrsn, 0, 12)
+                .unwrap();
+        }
+        s.epoch_transition(20);
+        assert!(s.active_set.contains(&dead) && s.active_set.contains(&busy));
+
+        // Two misses: not yet.
+        s.record_slots(addr(1), &[dead]);
+        s.record_slots(addr(1), &[dead]);
+        assert!(!s.is_benched(dead));
+        // Third miss: benched.
+        s.record_slots(addr(1), &[dead]);
+        assert!(s.is_benched(dead));
+
+        // Busy validator: 40 proposed, 3 missed → 3*10 < 40 → stays in rotation.
+        for _ in 0..40 {
+            s.record_slots(busy, &[]);
+        }
+        for _ in 0..3 {
+            s.record_slots(addr(1), &[busy]);
+        }
+        assert!(!s.is_benched(busy));
+        // A genuinely dead one after a good start: 40 proposed then 4 misses → benched.
+        s.record_slots(addr(1), &[busy]);
+        assert!(s.is_benched(busy));
+
+        // Boundary: `dead` saw only 3 slots (< jail_min_slots 5) but was benched → jailed.
+        s.epoch_transition(30);
+        assert_eq!(s.registry[&dead].jailed_until_epoch, 4);
+        assert!(!s.active_set.contains(&dead));
+        // `busy` missed 4 of 44 slots (9%) → below jail_miss_bps → not jailed, counters reset.
+        assert_eq!(s.registry[&busy].jailed_until_epoch, 0);
+        assert_eq!(s.registry[&busy].missed_slots, 0);
+        assert!(!s.is_benched(busy), "bench clears with the epoch counters");
     }
 
     #[test]

@@ -341,6 +341,14 @@
     "jail_miss_bps": 2000,
     "jail_min_slots": 5,
     "rewards_to_operator_height": 1440000,
-    "jail_escalation_height": 1483200
+    "jail_escalation_height": 1569600,
+    "bench_height": 1569600
+  },
+  "watchdog": {
+    "enabled": true,
+    "stall_secs": 300,
+    "min_gap_blocks": 60,
+    "lock_secs": 90,
+    "reference_rpc": "https://rpc.mersennet.com"
   }
 }

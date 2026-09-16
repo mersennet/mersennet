@@ -169,6 +169,24 @@ if [[ -x /usr/local/bin/mersennet ]] && command -v sha256sum >/dev/null; then
         printf 'Binary       %s — %s (release %s)\n' "${have:0:12}" "$(green 'up to date')" "${rel:-?}"
     else
         printf 'Binary       %s — %s: release %s is out. Upgrade: curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash\n' "${have:0:12}" "$(yellow 'update available')" "${rel:-?}"
+        # Consensus switch heights come from the network's parameters (the
+        # public node runs the current release, so it knows all of them).
+        if [[ -n "${public_h:-}" ]]; then
+            pvset=$(curl -s --max-time 4 "$PUBLIC_RPC" -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"mersennet_validatorSet","params":[]}' 2>/dev/null)
+            next_switch=$(printf '%s' "$pvset" | python3 -c '
+import json, sys
+try:
+    p = json.load(sys.stdin)["result"]["params"]; head = int(sys.argv[1])
+    hs = [int(p.get(k) or 0) for k in ("rewardsToOperatorHeight", "jailEscalationHeight", "benchHeight")]
+    hs = [h for h in hs if h > head]
+    print(min(hs) if hs else "")
+except Exception:
+    print("")' "$public_h" 2>/dev/null)
+            if [[ -n "$next_switch" ]]; then
+                hours=$(( (next_switch - public_h) * 2 / 3600 ))
+                printf '             %s: a protocol switch is scheduled at block %s (~%s h). A validator on an old build forks off there; a full node stops following.\n' "$(yellow 'Upgrade before the switch')" "$next_switch" "$hours"
+            fi
+        fi
     fi
 fi
 

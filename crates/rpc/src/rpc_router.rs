@@ -564,6 +564,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
         "mersennet_validatorSet" => {
             let st = &engine.orders.state.staking;
             let height = engine.latest_height();
+            let benched = engine.benched_validators(height.saturating_add(1));
             let p = &st.params;
             let active = st.is_open_set_active(height);
             let epoch_blocks = p.epoch_blocks.max(1);
@@ -594,6 +595,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                         "missedSlots": r.missed_slots,
                         "totalProposed": r.total_proposed,
                         "timesJailed": r.times_jailed,
+                        "benched": benched.contains(&r.identity),
                     })
                 })
                 .collect();
@@ -610,6 +612,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "jailMinSlots": p.jail_min_slots,
                     "rewardsToOperatorHeight": p.rewards_to_operator_height,
                     "jailEscalationHeight": p.jail_escalation_height,
+                    "benchHeight": p.bench_height,
                 },
                 "height": height,
                 "epoch": st.current_epoch,
