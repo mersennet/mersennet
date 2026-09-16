@@ -29,6 +29,13 @@ if command -v systemctl >/dev/null 2>&1; then
         "")       printf 'Service      %s\n' "$(yellow 'not installed as a service (mersennet.service missing)')" ;;
         *)        printf 'Service      %s (%s)\n' "$(red "$state")" "systemctl status mersennet" ;;
     esac
+    # Self-restarts: the node exits when its head stops while the network
+    # moves on (or its engine lock is stuck) and systemd brings it back.
+    restarts="$(systemctl show mersennet -p NRestarts --value 2>/dev/null)"
+    if [[ "${restarts:-0}" -gt 0 ]]; then
+        last_wd="$(journalctl -u mersennet --no-pager -o short-iso 2>/dev/null | grep -E 'head has not advanced|engine lock unobtainable' | tail -1 | cut -d' ' -f1)"
+        printf 'Restarts     %s since boot%s — normal once in a while; if it repeats, send journalctl -u mersennet -n 300 via https://trade.mersennet.com/feedback\n' "$(yellow "$restarts")" "${last_wd:+ (last watchdog event $last_wd)}"
+    fi
 fi
 
 # Heights
