@@ -36,6 +36,15 @@ pub enum MersennetOrdersEvent {
         owner: Address,
         market_id: MarketId,
     },
+    AgentSet {
+        owner: Address,
+        agent: Address,
+        expires_at_block: u64,
+    },
+    AgentRevoked {
+        owner: Address,
+        agent: Address,
+    },
     Trade {
         taker: Address,
         maker: Address,
@@ -171,6 +180,8 @@ impl MersennetOrdersEvent {
             MersennetOrdersEvent::MarginParamsUpdated { .. } => "margin_params_updated",
             MersennetOrdersEvent::CollateralDeposited { .. } => "collateral_deposited",
             MersennetOrdersEvent::Liquidation { .. } => "liquidation",
+            MersennetOrdersEvent::AgentSet { .. } => "agent_set",
+            MersennetOrdersEvent::AgentRevoked { .. } => "agent_revoked",
         }
     }
 

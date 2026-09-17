@@ -184,6 +184,11 @@ pub struct MersennetOrdersConfig {
     /// RPC methods (testnet seeding convenience). MUST be false on mainnet.
     #[serde(default = "default_allow_unsigned_orders_rpc")]
     pub allow_unsigned_orders_rpc: bool,
+    /// Consensus switch: height from which agent delegation is accepted on the
+    /// CLOB precompile (`setAgent`/`revokeAgent`, orders and cancels signed by
+    /// an agent key act for the granting account). 0 = off.
+    #[serde(default)]
+    pub agent_delegation_height: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -511,6 +516,7 @@ impl Default for MersennetOrdersConfig {
             initial_margin_bps: default_mersennet_orders_initial_margin_bps(),
             maintenance_margin_bps: default_mersennet_orders_maintenance_margin_bps(),
             allow_unsigned_orders_rpc: default_allow_unsigned_orders_rpc(),
+            agent_delegation_height: 0,
         }
     }
 }

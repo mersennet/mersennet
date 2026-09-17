@@ -147,11 +147,120 @@ pub struct MersennetOrdersState {
     pub staking: crate::staking::StakingState,
     /// Registry of accepted non-native collateral tokens.
     pub collateral_assets: HashMap<Address, CollateralAsset>,
+    /// Agent keys: `agent -> grant` (owner + expiry). A transaction signed by
+    /// an agent trades *as the owner* (orders, cancels; never deposits or
+    /// withdrawals). Persisted in its own key (`agents`) so the snapshot
+    /// encoding and the state root stay unchanged until the first grant.
+    pub agents: BTreeMap<Address, AgentGrant>,
+    /// Height from which `setAgent`/`revokeAgent` are accepted and agent
+    /// resolution applies (0 = off). Set from `mersennet_orders.agent_delegation_height`.
+    pub agent_delegation_height: u64,
 }
+
+/// A trading permission granted by `owner` to an agent key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentGrant {
+    pub owner: Address,
+    /// Block height after which the grant is no longer honoured (0 = no expiry).
+    pub expires_at_block: u64,
+}
+
+/// Longest grant an owner may issue: ~90 days at 2 s blocks.
+pub const MAX_AGENT_GRANT_BLOCKS: u64 = 3_900_000;
 
 impl MersennetOrdersState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn agent_delegation_active(&self, height: u64) -> bool {
+        self.agent_delegation_height > 0 && height >= self.agent_delegation_height
+    }
+
+    /// The account a call from `caller` acts for: the owner that granted
+    /// `caller` an unexpired agent permission, otherwise `caller` itself.
+    pub fn effective_owner(&self, caller: Address, height: u64) -> Address {
+        if !self.agent_delegation_active(height) {
+            return caller;
+        }
+        match self.agents.get(&caller) {
+            Some(g) if g.expires_at_block == 0 || height <= g.expires_at_block => g.owner,
+            _ => caller,
+        }
+    }
+
+    /// Grant (or refresh) trading permission for `agent` on behalf of `owner`.
+    pub fn set_agent(
+        &mut self,
+        owner: Address,
+        agent: Address,
+        expires_at_block: u64,
+        height: u64,
+    ) -> Result<(), MersennetOrdersError> {
+        if !self.agent_delegation_active(height) {
+            return Err(MersennetOrdersError::Agent(
+                "agent delegation is not active yet",
+            ));
+        }
+        if agent == owner || agent == Address::ZERO {
+            return Err(MersennetOrdersError::Agent("invalid agent address"));
+        }
+        // No chains: an agent cannot grant, and an owner cannot itself be an agent.
+        if self.agents.contains_key(&owner) {
+            return Err(MersennetOrdersError::Agent(
+                "an agent key cannot grant agents",
+            ));
+        }
+        if let Some(existing) = self.agents.get(&agent)
+            && existing.owner != owner
+            && (existing.expires_at_block == 0 || height <= existing.expires_at_block)
+        {
+            return Err(MersennetOrdersError::Agent(
+                "agent already acts for another account",
+            ));
+        }
+        if expires_at_block != 0
+            && (expires_at_block <= height || expires_at_block > height + MAX_AGENT_GRANT_BLOCKS)
+        {
+            return Err(MersennetOrdersError::Agent(
+                "expiry must be in the future and within 90 days",
+            ));
+        }
+        self.agents.insert(
+            agent,
+            AgentGrant {
+                owner,
+                expires_at_block,
+            },
+        );
+        Ok(())
+    }
+
+    /// Revoke an agent. Only the granting owner may revoke.
+    pub fn revoke_agent(
+        &mut self,
+        owner: Address,
+        agent: Address,
+    ) -> Result<bool, MersennetOrdersError> {
+        match self.agents.get(&agent) {
+            Some(g) if g.owner == owner => {
+                self.agents.remove(&agent);
+                Ok(true)
+            }
+            Some(_) => Err(MersennetOrdersError::Agent(
+                "caller did not grant this agent",
+            )),
+            None => Ok(false),
+        }
+    }
+
+    /// Agents granted by `owner` (for RPC/UI).
+    pub fn agents_of(&self, owner: Address) -> Vec<(Address, AgentGrant)> {
+        self.agents
+            .iter()
+            .filter(|(_, g)| g.owner == owner)
+            .map(|(a, g)| (*a, *g))
+            .collect()
     }
 
     pub fn add_market(

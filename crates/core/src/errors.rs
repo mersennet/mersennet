@@ -28,6 +28,8 @@ pub enum MersennetOrdersError {
     InvalidMarketParams,
     #[error("token is not a registered collateral asset")]
     UnknownCollateralAsset,
+    #[error("agent delegation: {0}")]
+    Agent(&'static str),
 }
 
 impl MersennetOrdersError {
@@ -54,6 +56,7 @@ impl MersennetOrdersError {
             MersennetOrdersError::UnknownCollateralAsset => {
                 "token is not a registered collateral asset"
             }
+            MersennetOrdersError::Agent(msg) => msg,
         }
     }
 }

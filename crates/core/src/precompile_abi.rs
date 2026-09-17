@@ -194,6 +194,22 @@ pub fn cancel_order_selector() -> [u8; 4] {
     selector("cancelOrder(uint256)")
 }
 
+/// Agent delegation (from `mersennet_orders.agent_delegation_height`).
+/// `setAgent(agent, expiresAtBlock)`: transactions signed by `agent` place and
+/// cancel orders as the caller (never deposits/withdrawals). `0` = no expiry.
+pub fn set_agent_selector() -> [u8; 4] {
+    selector("setAgent(address,uint64)")
+}
+pub fn revoke_agent_selector() -> [u8; 4] {
+    selector("revokeAgent(address)")
+}
+/// `agentOf(agent) -> (address owner, uint64 expiresAtBlock)`; zero owner = none.
+pub fn agent_of_selector() -> [u8; 4] {
+    selector("agentOf(address)")
+}
+pub const GAS_SET_AGENT: u64 = 30_000;
+pub const GAS_AGENT_OF: u64 = 3_000;
+
 pub fn deposit_collateral_selector() -> [u8; 4] {
     selector("depositCollateral(uint256)")
 }

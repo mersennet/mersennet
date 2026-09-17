@@ -994,6 +994,7 @@ fn dispatch(
         | "mersennet_orders_cancelOrder"
         | "mersennet_orders_getOrderBook"
         | "mersennet_orders_getOpenOrders"
+        | "mersennet_orders_getAgents"
         | "mersennet_orders_setMarginParams"
         | "mersennet_orders_depositCollateral"
         | "mersennet_orders_isLiquidatable"
@@ -1548,6 +1549,19 @@ fn mersennet_orders_event_data(event: &MersennetOrdersEvent, privacy_active: boo
         MersennetOrdersEvent::Liquidation { owner, liquidated } => json!({
             "owner": hex_address(*owner),
             "liquidated": liquidated,
+        }),
+        MersennetOrdersEvent::AgentSet {
+            owner,
+            agent,
+            expires_at_block,
+        } => json!({
+            "owner": hex_address(*owner),
+            "agent": hex_address(*agent),
+            "expiresAtBlock": expires_at_block,
+        }),
+        MersennetOrdersEvent::AgentRevoked { owner, agent } => json!({
+            "owner": hex_address(*owner),
+            "agent": hex_address(*agent),
         }),
     }
 }

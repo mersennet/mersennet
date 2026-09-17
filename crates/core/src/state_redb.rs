@@ -311,6 +311,19 @@ impl StateBackend for RedbState {
         }
 
         state.staking = decode_staking(snapshot.staking);
+        state.agents.clear();
+        if let Some(raw) = table.get(b"agents".as_slice())? {
+            let agents: Vec<(Vec<u8>, Vec<u8>, u64)> = bincode::deserialize(raw.value())?;
+            for (a, o, exp) in agents {
+                state.agents.insert(
+                    Address::from_slice(&a),
+                    crate::mersennet_orders::AgentGrant {
+                        owner: Address::from_slice(&o),
+                        expires_at_block: exp,
+                    },
+                );
+            }
+        }
         // Open validator set registry (same content sled keeps in its own tree).
         if let Ok(meta) = read_txn.open_table(HEIGHT_META)
             && let Some(v) = meta.get(b"validator_registry".as_slice())?
@@ -491,11 +504,32 @@ impl StateBackend for RedbState {
                 .collect();
             bincode::serialize(&(regs, active, state.staking.current_epoch))?
         };
+        let agents_blob: Option<Vec<u8>> = if state.agents.is_empty() {
+            None
+        } else {
+            let agents: Vec<(Vec<u8>, Vec<u8>, u64)> = state
+                .agents
+                .iter()
+                .map(|(a, g)| {
+                    (
+                        a.as_slice().to_vec(),
+                        g.owner.as_slice().to_vec(),
+                        g.expires_at_block,
+                    )
+                })
+                .collect();
+            Some(bincode::serialize(&agents)?)
+        };
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(MERSENNET_ORDERS)?;
             table.remove(b"state".as_slice())?;
             table.insert(b"state".as_slice(), data.as_slice())?;
+            // Same key as sled: absent while there are no grants.
+            table.remove(b"agents".as_slice())?;
+            if let Some(blob) = &agents_blob {
+                table.insert(b"agents".as_slice(), blob.as_slice())?;
+            }
             let mut meta = write_txn.open_table(HEIGHT_META)?;
             if state.staking.registry.is_empty() && state.staking.active_set.is_empty() {
                 meta.remove(b"validator_registry".as_slice())?;
