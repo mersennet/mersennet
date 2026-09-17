@@ -214,5 +214,5 @@ if [[ -n "${datadir:-}" && -d "$datadir" ]]; then
 fi
 
 echo
-echo "Explorer: https://explorer.mersennet.com   Docs: https://docs.mersennet.com/validators/run-a-node/"
+echo "Explorer: https://explorer.mersennet.com   Docs: https://docs.mersennet.com/validators/run-a-node/   Chat: https://t.me/Mersennet"
 echo "Full node and validator in one: the node proposes and votes whenever its identity is in the active set (see the Validator line)."
