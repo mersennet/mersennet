@@ -281,5 +281,5 @@ else
 fi)
 Upgrades: re-run this same command whenever mersennet-check or the staking page says a new
 release is out — always before an announced protocol switch height.
-Guide: https://docs.mersennet.com/validators/run-a-node/
+Guide: https://docs.mersennet.com/validators/run-a-node/   Chat: https://t.me/Mersennet
 EOF
