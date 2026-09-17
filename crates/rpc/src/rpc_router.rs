@@ -390,6 +390,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                         "tickSize": hex_u256(m.tick_size),
                         "lotSize": hex_u256(m.lot_size),
                         "lastPrice": hex_u256(m.last_price),
+                        // On-chain prices are human prices × priceScale (1 = integer prices).
+                        "priceScale": engine.orders.state.price_scale(m.id),
                         "status": format!("{:?}", m.status).to_lowercase(),
                     })
                 })

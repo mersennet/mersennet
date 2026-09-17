@@ -189,6 +189,14 @@ pub struct MersennetOrdersConfig {
     /// an agent key act for the granting account). 0 = off.
     #[serde(default)]
     pub agent_delegation_height: u64,
+    /// Consensus switch: at this height every market listed in
+    /// `price_rescales` is rescaled in place (orders, positions and last price
+    /// multiplied; notional/PnL divided by the scale from then on). 0 = off.
+    #[serde(default)]
+    pub price_scale_height: u64,
+    /// `[market_id, new_scale]` pairs applied at `price_scale_height`.
+    #[serde(default)]
+    pub price_rescales: Vec<(u64, u64)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -517,6 +525,8 @@ impl Default for MersennetOrdersConfig {
             maintenance_margin_bps: default_mersennet_orders_maintenance_margin_bps(),
             allow_unsigned_orders_rpc: default_allow_unsigned_orders_rpc(),
             agent_delegation_height: 0,
+            price_scale_height: 0,
+            price_rescales: Vec::new(),
         }
     }
 }

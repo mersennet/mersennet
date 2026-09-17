@@ -5,7 +5,7 @@ use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct MarketId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -155,6 +155,12 @@ pub struct MersennetOrdersState {
     /// Height from which `setAgent`/`revokeAgent` are accepted and agent
     /// resolution applies (0 = off). Set from `mersennet_orders.agent_delegation_height`.
     pub agent_delegation_height: u64,
+    /// Per-market price scale: on-chain prices are `human_price × scale`
+    /// (default 1). Lets a $115 asset trade on $0.01 ticks (scale 100) while
+    /// notional and PnL stay in collateral units (`price × size / scale`).
+    /// Persisted in its own key (`price_scales`); absent = all 1, so the state
+    /// root is untouched until the first market is rescaled.
+    pub price_scales: BTreeMap<MarketId, u64>,
 }
 
 /// A trading permission granted by `owner` to an agent key.
@@ -252,6 +258,78 @@ impl MersennetOrdersState {
             )),
             None => Ok(false),
         }
+    }
+
+    /// On-chain prices of `market` are human prices times this (default 1).
+    pub fn price_scale(&self, market: MarketId) -> u64 {
+        self.price_scales.get(&market).copied().unwrap_or(1).max(1)
+    }
+
+    /// `price × size` expressed in collateral units (divides by the market's scale).
+    fn value_of(&self, market: MarketId, price: U256, size: U256) -> U256 {
+        price
+            .saturating_mul(size)
+            .checked_div(U256::from(self.price_scale(market)))
+            .unwrap_or(U256::ZERO)
+    }
+
+    /// Signed PnL `size × (a − b)` in collateral units (divides by the scale).
+    fn pnl_of(&self, market: MarketId, size: i128, a: U256, b: U256) -> i128 {
+        size.saturating_mul(u256_to_i128(a).saturating_sub(u256_to_i128(b)))
+            / (self.price_scale(market) as i128)
+    }
+
+    /// Change the price scale of a market in place: every resting order price,
+    /// position entry price and the last trade price is multiplied by
+    /// `new_scale / old_scale` (must be a whole number), so the human prices
+    /// and everyone's equity are unchanged while the tick becomes finer. Runs
+    /// as a consensus step at `price_scale_height` on every node; idempotent.
+    pub fn rescale_market(
+        &mut self,
+        market: MarketId,
+        new_scale: u64,
+    ) -> Result<(), MersennetOrdersError> {
+        let old = self.price_scale(market);
+        if new_scale == 0 || new_scale < old || new_scale % old != 0 {
+            return Err(MersennetOrdersError::InvalidMarketParams);
+        }
+        if !self.markets.contains_key(&market) {
+            return Err(MersennetOrdersError::UnknownMarket);
+        }
+        if new_scale == old {
+            return Ok(());
+        }
+        let factor = U256::from(new_scale / old);
+        for order in self.orders.values_mut() {
+            if order.market == market {
+                order.price = order.price.saturating_mul(factor);
+            }
+        }
+        if let Some(book) = self.books.get_mut(&market) {
+            let bids: Vec<(U256, VecDeque<OrderId>)> = book
+                .bids
+                .iter()
+                .map(|(p, q)| (p.saturating_mul(factor), q.clone()))
+                .collect();
+            let asks: Vec<(U256, VecDeque<OrderId>)> = book
+                .asks
+                .iter()
+                .map(|(p, q)| (p.saturating_mul(factor), q.clone()))
+                .collect();
+            book.bids = bids.into_iter().collect();
+            book.asks = asks.into_iter().collect();
+        }
+        for account in self.accounts.values_mut() {
+            if let Some(pos) = account.positions.get_mut(&market) {
+                // `realized_pnl` is already in collateral units: untouched.
+                pos.entry_price = pos.entry_price.saturating_mul(factor);
+            }
+        }
+        if let Some(m) = self.markets.get_mut(&market) {
+            m.last_price = m.last_price.saturating_mul(factor);
+        }
+        self.price_scales.insert(market, new_scale);
+        Ok(())
     }
 
     /// Agents granted by `owner` (for RPC/UI).
@@ -507,7 +585,7 @@ impl MersennetOrdersState {
             return Err(MersennetOrdersError::InvalidOrderFlags);
         }
 
-        self.ensure_initial_margin(owner, price, size)?;
+        self.ensure_initial_margin(owner, market, price, size)?;
 
         if post_only {
             // Reject instead of matching if any resting liquidity crosses
@@ -600,7 +678,7 @@ impl MersennetOrdersState {
                     };
                     self.apply_fill(market, buyer, seller, fill, level_price);
 
-                    let notional = level_price.saturating_mul(fill);
+                    let notional = self.value_of(market, level_price, fill);
                     let insurance_fee = notional
                         .saturating_mul(U256::from(self.insurance_contribution_rate_bps))
                         .checked_div(U256::from(10_000u64))
@@ -764,9 +842,7 @@ impl MersennetOrdersState {
             if let Some(pos) = account.positions.get(&market)
                 && pos.size != 0
             {
-                let pnl = pos.size.saturating_mul(
-                    u256_to_i128(mark).saturating_sub(u256_to_i128(pos.entry_price)),
-                );
+                let pnl = self.pnl_of(market, pos.size, mark, pos.entry_price);
                 if pnl > 0 {
                     let abs_size = pos.size.unsigned_abs();
                     candidates.push((
@@ -789,7 +865,7 @@ impl MersennetOrdersState {
             }
 
             let abs_size = position_size.unsigned_abs();
-            let position_notional = mark.saturating_mul(U256::from(abs_size));
+            let position_notional = self.value_of(market, mark, U256::from(abs_size));
             let close_amount = min_u256(remaining, position_notional);
             remaining = remaining.saturating_sub(close_amount);
 
@@ -838,7 +914,7 @@ impl MersennetOrdersState {
         let equity = self.account_equity(account);
         let mark = self.mark_price(market, U256::ZERO);
         let abs_size = abs_i128_to_u256(new_position_size);
-        let notional = mark.saturating_mul(abs_size);
+        let notional = self.value_of(market, mark, abs_size);
         let required = notional
             .saturating_mul(U256::from(self.initial_margin_bps))
             .checked_div(U256::from(10_000u64))
@@ -872,9 +948,7 @@ impl MersennetOrdersState {
                 .saturating_add(u256_to_i128(self.token_margin_value(owner)));
             for (market_id, position) in &account.positions {
                 let mark = self.mark_price(*market_id, position.entry_price);
-                let pnl = position.size.saturating_mul(
-                    u256_to_i128(mark).saturating_sub(u256_to_i128(position.entry_price)),
-                );
+                let pnl = self.pnl_of(*market_id, position.size, mark, position.entry_price);
                 simulated_equity = simulated_equity.saturating_add(pnl);
             }
             simulated_equity
@@ -982,6 +1056,7 @@ impl MersennetOrdersState {
         }
         let fill_i128 = u256_to_i128(size);
 
+        let scale = self.price_scale(market) as i128;
         Self::update_position_vwap(
             self.accounts
                 .entry(buyer)
@@ -991,6 +1066,7 @@ impl MersennetOrdersState {
                 .or_default(),
             fill_i128,
             price,
+            scale,
         );
 
         Self::update_position_vwap(
@@ -1002,10 +1078,11 @@ impl MersennetOrdersState {
                 .or_default(),
             -fill_i128,
             price,
+            scale,
         );
     }
 
-    fn update_position_vwap(pos: &mut Position, delta: i128, price: U256) {
+    fn update_position_vwap(pos: &mut Position, delta: i128, price: U256, scale: i128) {
         let old_size = pos.size;
         let same_direction = (old_size >= 0 && delta > 0) || (old_size < 0 && delta < 0);
 
@@ -1030,14 +1107,16 @@ impl MersennetOrdersState {
                 let sign: i128 = if old_size > 0 { 1 } else { -1 };
                 let pnl = sign
                     * (abs_delta as i128)
-                    * (u256_to_i128(price) - u256_to_i128(pos.entry_price));
+                    * (u256_to_i128(price) - u256_to_i128(pos.entry_price))
+                    / scale.max(1);
                 pos.realized_pnl = pos.realized_pnl.saturating_add(pnl);
                 pos.size = old_size.saturating_add(delta);
             } else {
                 let sign: i128 = if old_size > 0 { 1 } else { -1 };
                 let pnl = sign
                     * (abs_old as i128)
-                    * (u256_to_i128(price) - u256_to_i128(pos.entry_price));
+                    * (u256_to_i128(price) - u256_to_i128(pos.entry_price))
+                    / scale.max(1);
                 pos.realized_pnl = pos.realized_pnl.saturating_add(pnl);
                 pos.size = old_size.saturating_add(delta);
                 pos.entry_price = price;
@@ -1131,13 +1210,14 @@ impl MersennetOrdersState {
     fn ensure_initial_margin(
         &self,
         owner: Address,
+        market: MarketId,
         price: U256,
         size: U256,
     ) -> Result<(), MersennetOrdersError> {
         if self.initial_margin_bps == 0 {
             return Ok(());
         }
-        let notional = price.saturating_mul(size);
+        let notional = self.value_of(market, price, size);
         let required = notional
             .saturating_mul(U256::from(self.initial_margin_bps))
             .checked_div(U256::from(10_000u64))
@@ -1162,9 +1242,7 @@ impl MersennetOrdersState {
             .saturating_add(u256_to_i128(self.token_margin_value(owner)));
         for (market_id, position) in &account.positions {
             let mark = self.mark_price(*market_id, position.entry_price);
-            let pnl = position.size.saturating_mul(
-                u256_to_i128(mark).saturating_sub(u256_to_i128(position.entry_price)),
-            );
+            let pnl = self.pnl_of(*market_id, position.size, mark, position.entry_price);
             equity = equity.saturating_add(pnl);
         }
         equity
@@ -1181,7 +1259,7 @@ impl MersennetOrdersState {
         for (market_id, position) in &account.positions {
             let mark = self.mark_price(*market_id, position.entry_price);
             let size_abs = abs_i128_to_u256(position.size);
-            let notional = mark.saturating_mul(size_abs);
+            let notional = self.value_of(*market_id, mark, size_abs);
             let required = notional
                 .saturating_mul(U256::from(self.maintenance_margin_bps))
                 .checked_div(U256::from(10_000u64))
