@@ -140,6 +140,11 @@ fn main() -> anyhow::Result<()> {
         app_config.mersennet_orders.maintenance_margin_bps,
     );
     engine.set_allow_unsigned_orders_rpc(app_config.mersennet_orders.allow_unsigned_orders_rpc);
+    engine.set_agent_delegation_height(app_config.mersennet_orders.agent_delegation_height);
+    engine.set_price_rescale(
+        app_config.mersennet_orders.price_scale_height,
+        app_config.mersennet_orders.price_rescales.clone(),
+    );
     let bridge_limit = if app_config.bridge.max_queue_len == 0 {
         None
     } else {

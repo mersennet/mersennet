@@ -521,15 +521,27 @@ fn mersennet_orders_precompile(
     }
 
     let sel = [input[0], input[1], input[2], input[3]];
+    let height = evmctx.env.block.number.saturating_to::<u64>();
+
+    // Agent delegation: a transaction signed by an agent key trades as the
+    // account that granted it. Only trading calls resolve through the grant;
+    // collateral moves, grants and market listing stay with the real signer.
+    let trader = with_orders(|state| state.effective_owner(caller, height))?;
 
     if sel == place_order_selector() {
-        handle_place_order(input, gas_limit, caller)
+        handle_place_order(input, gas_limit, trader)
     } else if sel == place_order_ext_selector() {
-        handle_place_order_ext(input, gas_limit, caller)
+        handle_place_order_ext(input, gas_limit, trader)
     } else if sel == create_market_selector() {
         handle_create_market(input, gas_limit, caller, evmctx)
     } else if sel == cancel_order_selector() {
-        handle_cancel_order(input, gas_limit, caller)
+        handle_cancel_order(input, gas_limit, trader)
+    } else if sel == set_agent_selector() {
+        handle_set_agent(input, gas_limit, caller, height)
+    } else if sel == revoke_agent_selector() {
+        handle_revoke_agent(input, gas_limit, caller)
+    } else if sel == agent_of_selector() {
+        handle_agent_of(input, gas_limit)
     } else if sel == deposit_collateral_selector() {
         handle_deposit_collateral(input, gas_limit, caller, evmctx)
     } else if sel == withdraw_collateral_selector() {
@@ -541,9 +553,9 @@ fn mersennet_orders_precompile(
     } else if sel == get_collateral_multi_selector() {
         handle_get_collateral_multi(input, gas_limit)
     } else if sel == get_position_selector() {
-        handle_get_position(input, gas_limit, caller)
+        handle_get_position(input, gas_limit, trader)
     } else if sel == get_collateral_selector() {
-        handle_get_collateral(input, gas_limit, caller)
+        handle_get_collateral(input, gas_limit, trader)
     } else if sel == is_liquidatable_selector() {
         handle_is_liquidatable(input, gas_limit)
     } else if sel == get_best_bid_ask_selector() {
@@ -826,6 +838,71 @@ fn handle_cancel_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precom
         GAS_CANCEL_ORDER,
         Bytes::from(encode_bool(success).to_vec()),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// setAgent(address agent, uint64 expiresAtBlock) -> (bool)
+// revokeAgent(address agent) -> (bool revoked)
+// agentOf(address agent) -> (address owner, uint64 expiresAtBlock)
+// ---------------------------------------------------------------------------
+
+fn handle_set_agent(
+    input: &Bytes,
+    gas_limit: u64,
+    caller: Address,
+    height: u64,
+) -> PrecompileResult {
+    check_gas(gas_limit, GAS_SET_AGENT)?;
+    let agent_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing agent"))?;
+    let exp_w =
+        read_word(input, 1).ok_or_else(|| PrecompileError::other("missing expiresAtBlock"))?;
+    let agent = decode_address(agent_w);
+    let expires = decode_u64(exp_w);
+    with_orders(|state| state.set_agent(caller, agent, expires, height))?
+        .map_err(|e| PrecompileError::other(e.to_string()))?;
+    record_orders_event(MersennetOrdersEvent::AgentSet {
+        owner: caller,
+        agent,
+        expires_at_block: expires,
+    });
+    Ok(PrecompileOutput::new(
+        GAS_SET_AGENT,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
+}
+
+fn handle_revoke_agent(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_SET_AGENT)?;
+    let agent_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing agent"))?;
+    let agent = decode_address(agent_w);
+    let revoked = with_orders(|state| state.revoke_agent(caller, agent))?
+        .map_err(|e| PrecompileError::other(e.to_string()))?;
+    if revoked {
+        record_orders_event(MersennetOrdersEvent::AgentRevoked {
+            owner: caller,
+            agent,
+        });
+    }
+    Ok(PrecompileOutput::new(
+        GAS_SET_AGENT,
+        Bytes::from(encode_bool(revoked).to_vec()),
+    ))
+}
+
+fn handle_agent_of(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+    check_gas(gas_limit, GAS_AGENT_OF)?;
+    let agent_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing agent"))?;
+    let agent = decode_address(agent_w);
+    let grant = with_orders(|state| state.agents.get(&agent).copied())?;
+    let (owner, exp) = grant
+        .map(|g| (g.owner, g.expires_at_block))
+        .unwrap_or((Address::ZERO, 0));
+    let mut out = Vec::with_capacity(64);
+    let mut w = [0u8; 32];
+    w[12..].copy_from_slice(owner.as_slice());
+    out.extend_from_slice(&w);
+    out.extend_from_slice(&encode_u256(U256::from(exp)));
+    Ok(PrecompileOutput::new(GAS_AGENT_OF, Bytes::from(out)))
 }
 
 // ---------------------------------------------------------------------------

@@ -211,6 +211,31 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
+        "mersennet_orders_getAgents" => {
+            // Agent delegation: the grants an account has issued, plus the
+            // switch state so clients know whether agent-signed orders resolve.
+            let owner = parse_owner_param(params)?;
+            let height = engine.latest_height();
+            let switch = engine.orders.state.agent_delegation_height;
+            let agents: Vec<serde_json::Value> = engine
+                .mersennet_orders_agents_of(owner)
+                .into_iter()
+                .map(|(agent, g)| {
+                    serde_json::json!({
+                        "agent": format!("0x{}", hex::encode(agent.as_slice())),
+                        "expiresAtBlock": g.expires_at_block,
+                        "expired": g.expires_at_block != 0 && height > g.expires_at_block,
+                    })
+                })
+                .collect();
+            Ok(serde_json::json!({
+                "owner": format!("0x{}", hex::encode(owner.as_slice())),
+                "agentDelegationHeight": switch,
+                "active": switch > 0 && height >= switch,
+                "height": height,
+                "agents": agents,
+            }))
+        }
         "mersennet_orders_getOpenOrders" => {
             require_transparent_mersennet_orders_enabled(engine)?;
             let owner = parse_owner_param(params)?;
@@ -365,6 +390,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                         "tickSize": hex_u256(m.tick_size),
                         "lotSize": hex_u256(m.lot_size),
                         "lastPrice": hex_u256(m.last_price),
+                        // On-chain prices are human prices × priceScale (1 = integer prices).
+                        "priceScale": engine.orders.state.price_scale(m.id),
                         "status": format!("{:?}", m.status).to_lowercase(),
                     })
                 })
@@ -1235,6 +1262,19 @@ fn mersennet_orders_event_to_value(event: &MersennetOrdersEvent, privacy_active:
             "owner": hex_address(*owner),
             "liquidated": liquidated,
         }),
+        MersennetOrdersEvent::AgentSet {
+            owner,
+            agent,
+            expires_at_block,
+        } => json!({
+            "owner": hex_address(*owner),
+            "agent": hex_address(*agent),
+            "expiresAtBlock": expires_at_block,
+        }),
+        MersennetOrdersEvent::AgentRevoked { owner, agent } => json!({
+            "owner": hex_address(*owner),
+            "agent": hex_address(*agent),
+        }),
     }
 }
 
@@ -1281,6 +1321,7 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::DuplicateMarket => -32020,
         MersennetOrdersError::InvalidMarketParams => -32021,
         MersennetOrdersError::UnknownCollateralAsset => -32022,
+        MersennetOrdersError::Agent(_) => -32023,
     };
     RpcError::new(code, err.message())
 }

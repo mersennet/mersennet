@@ -331,7 +331,23 @@
   "mersennet_orders": {
     "allow_unsigned_orders_rpc": false,
     "initial_margin_bps": 0,
-    "maintenance_margin_bps": 0
+    "maintenance_margin_bps": 0,
+    "agent_delegation_height": 1569600,
+    "price_scale_height": 1569600,
+    "price_rescales": [
+      [
+        1,
+        100
+      ],
+      [
+        4,
+        100
+      ],
+      [
+        5,
+        100
+      ]
+    ]
   },
   "validator_set": {
     "activation_height": 1348200,

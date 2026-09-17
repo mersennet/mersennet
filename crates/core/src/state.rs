@@ -597,6 +597,28 @@ impl PersistentState {
         state.staking = decode_staking(snapshot.staking);
         // The open-set registry lives in its own tree (see commit_validator_registry).
         self.load_validator_registry(&mut state.staking)?;
+        state.price_scales.clear();
+        if let Some(raw) = self.mersennet_orders.get("price_scales")? {
+            let scales: Vec<(u64, u64)> = bincode::deserialize(&raw)?;
+            for (m, sc) in scales {
+                state
+                    .price_scales
+                    .insert(crate::mersennet_orders::MarketId(m), sc);
+            }
+        }
+        state.agents.clear();
+        if let Some(raw) = self.mersennet_orders.get("agents")? {
+            let agents: Vec<(Vec<u8>, Vec<u8>, u64)> = bincode::deserialize(&raw)?;
+            for (a, o, exp) in agents {
+                state.agents.insert(
+                    Address::from_slice(&a),
+                    crate::mersennet_orders::AgentGrant {
+                        owner: Address::from_slice(&o),
+                        expires_at_block: exp,
+                    },
+                );
+            }
+        }
 
         state.collateral_assets.clear();
         for a in snapshot.collateral_assets {
@@ -751,6 +773,37 @@ impl PersistentState {
 
         let data = bincode::serialize(&snapshot)?;
         self.mersennet_orders.insert("state", data)?;
+        // Agent grants live in their own key so the snapshot bytes (and the
+        // state root) are untouched until the first grant exists.
+        // Per-market price scales: same convention (absent while all are 1).
+        if state.price_scales.is_empty() {
+            self.mersennet_orders.remove("price_scales")?;
+        } else {
+            let scales: Vec<(u64, u64)> = state
+                .price_scales
+                .iter()
+                .map(|(m, sc)| (m.0, *sc))
+                .collect();
+            self.mersennet_orders
+                .insert("price_scales", bincode::serialize(&scales)?)?;
+        }
+        if state.agents.is_empty() {
+            self.mersennet_orders.remove("agents")?;
+        } else {
+            let agents: Vec<(Vec<u8>, Vec<u8>, u64)> = state
+                .agents
+                .iter()
+                .map(|(a, g)| {
+                    (
+                        a.as_slice().to_vec(),
+                        g.owner.as_slice().to_vec(),
+                        g.expires_at_block,
+                    )
+                })
+                .collect();
+            self.mersennet_orders
+                .insert("agents", bincode::serialize(&agents)?)?;
+        }
         self.db.flush()?;
         self.commit_validator_registry(&state.staking)?;
         Ok(())

@@ -582,6 +582,9 @@ pub struct Engine {
     /// fork off a stale height), it must sync first. This is the guard that
     /// stops a restarted/lagging validator from re-forking itself.
     highest_observed_height: u64,
+    /// See `set_price_rescale`.
+    price_scale_height: u64,
+    price_rescales: Vec<(u64, u64)>,
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
@@ -800,6 +803,8 @@ impl Engine {
             code_publication_registry: CodePublicationRegistry::default(),
             import_buffer: std::collections::BTreeMap::new(),
             highest_observed_height: 0,
+            price_scale_height: 0,
+            price_rescales: Vec::new(),
             last_block_applied_at: None,
             fork_detected_at: None,
             checkpoints: std::collections::VecDeque::new(),
@@ -1613,6 +1618,45 @@ impl Engine {
     }
 
     #[allow(dead_code)]
+    /// Consensus switch for agent delegation on the CLOB precompile (0 = off).
+    pub fn set_agent_delegation_height(&mut self, height: u64) {
+        self.orders.state.agent_delegation_height = height;
+    }
+
+    /// Consensus switch for in-place market rescaling (0 = off).
+    pub fn set_price_rescale(&mut self, height: u64, rescales: Vec<(u64, u64)>) {
+        self.price_scale_height = height;
+        self.price_rescales = rescales;
+    }
+
+    /// At exactly `price_scale_height`, before the block's transactions, apply
+    /// the configured rescales. Deterministic from state + config, idempotent
+    /// (a market already at the target scale is a no-op), so producer and
+    /// importers agree and a restart mid-height cannot double-apply.
+    fn maybe_price_rescale(&mut self, height: u64) {
+        if self.price_scale_height == 0 || height != self.price_scale_height {
+            return;
+        }
+        for (market, scale) in self.price_rescales.clone() {
+            match self
+                .orders
+                .state
+                .rescale_market(crate::mersennet_orders::MarketId(market), scale)
+            {
+                Ok(()) => tracing::info!(height, market, scale, "market price scale switched"),
+                Err(e) => tracing::warn!(height, market, scale, %e, "market price rescale skipped"),
+            }
+        }
+    }
+
+    /// Agent grants issued by `owner` (RPC view).
+    pub fn mersennet_orders_agents_of(
+        &self,
+        owner: Address,
+    ) -> Vec<(Address, crate::mersennet_orders::AgentGrant)> {
+        self.orders.state.agents_of(owner)
+    }
+
     pub fn mersennet_orders_set_margin_params(&mut self, initial_bps: u64, maintenance_bps: u64) {
         self.orders
             .state
@@ -1872,6 +1916,7 @@ impl Engine {
         }
         self.checkpoint_before(self.block_number);
         self.maybe_epoch_transition(self.block_number);
+        self.maybe_price_rescale(self.block_number);
         if let Some(me) = self.local_validator {
             self.record_leader_slots(self.block_number, me);
         }
@@ -1924,6 +1969,8 @@ impl Engine {
         let mut nonce_cache: HashMap<Address, u64> = HashMap::new();
         let mut progressed = true;
 
+        #[cfg(test)]
+        let _ctx_serial = precompile_test_lock();
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -2846,6 +2893,7 @@ impl Engine {
         // the leader schedule. Idempotent, so a rejected block re-imported
         // later does not apply it twice.
         self.maybe_epoch_transition(block.number);
+        self.maybe_price_rescale(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
         // `block.proposer`, that address must be a current validator, and it
@@ -2891,6 +2939,8 @@ impl Engine {
         // Match the producer's per-tx execution environment.
         self.base_fee = block.base_fee;
 
+        #[cfg(test)]
+        let _ctx_serial = precompile_test_lock();
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -3284,6 +3334,8 @@ impl Engine {
             None => TxKind::Create,
         };
 
+        #[cfg(test)]
+        let _ctx_serial = precompile_test_lock();
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
         precompiles::set_mersennet_orders_context(shared_orders);
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
@@ -3402,6 +3454,8 @@ impl Engine {
         env.tx.data = data;
         env.tx.transact_to = TxKind::Call(to);
 
+        #[cfg(test)]
+        let _ctx_serial = precompile_test_lock();
         let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
         precompiles::set_mersennet_orders_context(shared_orders);
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
@@ -4811,6 +4865,19 @@ mod reorg_tests {
     }
 }
 
+/// Precompile calls run through a process-wide context that the engine
+/// installs per block (one engine per process in production). Under `cargo
+/// test` many engines run on parallel threads, so each block execution / call
+/// holds this lock from installing the context until it is cleared. Never
+/// taken by tests directly (a std mutex is not reentrant).
+#[cfg(test)]
+pub(crate) fn precompile_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
 #[cfg(test)]
 mod open_validator_set_tests {
     use super::*;
@@ -5420,5 +5487,503 @@ mod open_validator_set_tests {
             ),
             Err(crate::staking::StakingError::NotActive)
         );
+    }
+}
+
+#[cfg(test)]
+mod agent_delegation_tests {
+    use super::*;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine() -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut e = Engine::new_with_backend(131071, sub, "redb");
+        std::mem::forget(dir);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        e
+    }
+    fn produce(e: &mut Engine) {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        e.set_local_validator(leader);
+        e.execute_block().expect("produce");
+    }
+    fn call(e: &mut Engine, from: Address, nonce: u64, data: Vec<u8>) {
+        e.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            value: U256::ZERO,
+            data: Bytes::from(data),
+            gas_limit: 300_000,
+            gas_price: U256::from(1u64),
+            nonce,
+            chain_id: Some(e.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+        produce(e);
+    }
+    fn set_agent_calldata(agent: Address, expires: u64) -> Vec<u8> {
+        let mut d = crate::precompile_abi::set_agent_selector().to_vec();
+        let mut w = [0u8; 32];
+        w[12..].copy_from_slice(agent.as_slice());
+        d.extend_from_slice(&w);
+        d.extend_from_slice(&U256::from(expires).to_be_bytes::<32>());
+        d
+    }
+    fn revoke_agent_calldata(agent: Address) -> Vec<u8> {
+        let mut d = crate::precompile_abi::revoke_agent_selector().to_vec();
+        let mut w = [0u8; 32];
+        w[12..].copy_from_slice(agent.as_slice());
+        d.extend_from_slice(&w);
+        d
+    }
+
+    /// An agent's orders and cancels act for the granting account; its
+    /// deposits stay its own; nothing resolves before the switch height, after
+    /// expiry, or after revocation.
+    #[test]
+    fn agent_trades_for_the_owner_but_never_moves_its_collateral() {
+        let mut e = engine();
+        let owner = addr(9);
+        let agent = addr(8);
+        let ten_k = U256::from(10_000u64) * U256::from(MRSN);
+        e.fund_account(owner, ten_k, 0);
+        e.fund_account(agent, ten_k, 0);
+        e.mersennet_orders_add_market("TST".to_string(), U256::from(1u64), U256::from(1u64));
+        let market = 1u64;
+
+        // Switch not reached: setAgent is rejected (state unchanged).
+        e.set_agent_delegation_height(5);
+        call(&mut e, owner, 0, set_agent_calldata(agent, 0));
+        assert!(
+            e.orders.state.agents.is_empty(),
+            "no grant before the switch"
+        );
+        // Owner deposits collateral; the agent is a stranger to that account.
+        call(
+            &mut e,
+            owner,
+            1,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(5_000u64)),
+        );
+        while e.block_number < 5 {
+            produce(&mut e);
+        }
+
+        // Grant, expiring at block 40.
+        call(&mut e, owner, 2, set_agent_calldata(agent, 40));
+        assert_eq!(e.orders.state.agents[&agent].owner, owner);
+
+        // Agent places a resting bid: the order belongs to the owner.
+        call(
+            &mut e,
+            agent,
+            0,
+            crate::precompile_abi::encode_place_order(
+                market,
+                true,
+                U256::from(100u64),
+                U256::from(3u64),
+                0,
+            ),
+        );
+        let owners_orders = e.mersennet_orders_open_orders(owner);
+        assert_eq!(owners_orders.len(), 1, "order placed for the owner");
+        assert!(
+            e.mersennet_orders_open_orders(agent).is_empty(),
+            "nothing on the agent's own account"
+        );
+        let order_id = owners_orders[0].id.0;
+
+        // Agent deposit: lands on the AGENT's account, never the owner's.
+        let owner_col_before = e
+            .orders
+            .state
+            .accounts
+            .get(&owner)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        call(
+            &mut e,
+            agent,
+            1,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(7u64)),
+        );
+        let owner_col_after = e
+            .orders
+            .state
+            .accounts
+            .get(&owner)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        assert_eq!(
+            owner_col_before, owner_col_after,
+            "agent deposit must not touch the owner"
+        );
+        assert_eq!(
+            e.orders
+                .state
+                .accounts
+                .get(&agent)
+                .map(|a| a.collateral)
+                .unwrap_or(U256::ZERO),
+            U256::from(7u64)
+        );
+
+        // Agent cancels the owner's order.
+        call(
+            &mut e,
+            agent,
+            2,
+            crate::precompile_abi::encode_cancel_order(order_id),
+        );
+        assert!(
+            e.mersennet_orders_open_orders(owner).is_empty(),
+            "cancelled through the agent"
+        );
+
+        // An agent key cannot itself grant agents.
+        call(&mut e, agent, 3, set_agent_calldata(addr(7), 0));
+        assert!(!e.orders.state.agents.contains_key(&addr(7)));
+
+        // Revoked: the agent's next order is its own (and fails margin — it has 7 units).
+        call(&mut e, owner, 3, revoke_agent_calldata(agent));
+        assert!(!e.orders.state.agents.contains_key(&agent));
+        call(
+            &mut e,
+            agent,
+            4,
+            crate::precompile_abi::encode_place_order(
+                market,
+                true,
+                U256::from(100u64),
+                U256::from(3u64),
+                0,
+            ),
+        );
+        assert!(
+            e.mersennet_orders_open_orders(owner).is_empty(),
+            "no longer acts for the owner"
+        );
+
+        // Re-grant with a short expiry, then let it lapse.
+        let h = e.block_number;
+        call(&mut e, owner, 4, set_agent_calldata(agent, h + 2));
+        while e.block_number <= h + 3 {
+            produce(&mut e);
+        }
+        call(
+            &mut e,
+            agent,
+            5,
+            crate::precompile_abi::encode_place_order(
+                market,
+                true,
+                U256::from(100u64),
+                U256::from(3u64),
+                0,
+            ),
+        );
+        assert!(
+            e.mersennet_orders_open_orders(owner).is_empty(),
+            "expired grant does not resolve"
+        );
+    }
+
+    /// Grants survive a restart on both storage backends and leave the state
+    /// root untouched while there are none.
+    #[test]
+    fn agent_grants_persist_and_are_root_neutral_when_empty() {
+        for backend in ["sled", "redb"] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("engine");
+            std::fs::create_dir_all(&path).unwrap();
+            let build = |p: &std::path::Path| {
+                let mut e = Engine::new_with_backend(131071, p.to_path_buf(), backend);
+                for i in 1..=4u8 {
+                    e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                        .unwrap();
+                }
+                e.set_agent_delegation_height(1);
+                e
+            };
+            let mut e = build(&path);
+            let owner = addr(9);
+            let agent = addr(8);
+            e.fund_account(owner, U256::from(10u64) * U256::from(MRSN), 0);
+            produce(&mut e);
+            let root_before = e.evm.state.compute_state_root();
+            e.evm.state.flush().unwrap();
+            // Empty grants: a commit does not add a key to the state.
+            assert_eq!(
+                e.evm.state.compute_state_root(),
+                root_before,
+                "{backend}: no agents, same root"
+            );
+            call(&mut e, owner, 0, set_agent_calldata(agent, 0));
+            assert_eq!(e.orders.state.agents[&agent].owner, owner);
+            e.evm.state.flush().unwrap();
+            drop(e); // release the sled lock before reopening
+            let reopened = build(&path);
+            assert_eq!(
+                reopened.orders.state.agents.get(&agent).map(|g| g.owner),
+                Some(owner),
+                "{backend}: grant restored"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod price_scale_tests {
+    use super::*;
+    use crate::mersennet_orders::MarketId;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine_at(path: &std::path::Path, backend: &str) -> Engine {
+        let mut e = Engine::new_with_backend(131071, path.to_path_buf(), backend);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        e.set_price_rescale(12, vec![(1, 100)]);
+        e
+    }
+    /// Produce as the elected leader and sign like the node does, so a
+    /// follower's `import_block` authenticates the proposer.
+    fn produce(e: &mut Engine) -> Block {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        let k = (1u8..=4)
+            .map(key)
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .expect("leader key");
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        let (r, s_, v) = crate::crypto::sign_block_proposal(b.number, b.hash, &k);
+        b.proposer_sig = Some((r, s_, v));
+        if let Some(last) = e.chain.last_mut()
+            && last.number == b.number
+        {
+            *last = b.clone();
+        }
+        b
+    }
+    fn call(e: &mut Engine, from: Address, nonce: u64, data: Vec<u8>) {
+        e.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            value: U256::ZERO,
+            data: Bytes::from(data),
+            gas_limit: 300_000,
+            gas_price: U256::from(1u64),
+            nonce,
+            chain_id: Some(e.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+    }
+
+    /// At the switch height every price of the market is multiplied, and
+    /// nothing a user can observe changes: entry prices in human terms, the
+    /// shape of the book, equity, and the PnL of the next fill. A follower
+    /// importing the producer's blocks computes the same roots across the
+    /// switch, and the scale survives a restart on both backends.
+    #[test]
+    fn rescale_at_the_switch_keeps_human_prices_and_equity() {
+        for backend in ["sled", "redb"] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("p");
+            std::fs::create_dir_all(&path).unwrap();
+            let mut p = engine_at(&path, backend);
+            let cdir = tempdir().unwrap();
+            let cpath = cdir.path().join("c");
+            std::fs::create_dir_all(&cpath).unwrap();
+            let mut c = engine_at(&cpath, backend);
+            let alice = addr(9);
+            let bob = addr(8);
+            for e in [&mut p, &mut c] {
+                e.fund_account(alice, U256::from(10_000u64) * U256::from(MRSN), 0);
+                e.fund_account(bob, U256::from(10_000u64) * U256::from(MRSN), 0);
+                e.mersennet_orders_add_market(
+                    "MRSN".to_string(),
+                    U256::from(1u64),
+                    U256::from(1u64),
+                );
+            }
+            let m = MarketId(1);
+            // Deposit, then Alice buys 4 from Bob at 115 and Bob rests an ask at 117.
+            call(
+                &mut p,
+                alice,
+                0,
+                crate::precompile_abi::encode_deposit_collateral(U256::from(100_000u64)),
+            );
+            call(
+                &mut p,
+                bob,
+                0,
+                crate::precompile_abi::encode_deposit_collateral(U256::from(100_000u64)),
+            );
+            call(
+                &mut p,
+                bob,
+                1,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(115u64),
+                    U256::from(4u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                alice,
+                1,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(115u64),
+                    U256::from(4u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                bob,
+                2,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(117u64),
+                    U256::from(2u64),
+                    0,
+                ),
+            );
+            let mut blocks = Vec::new();
+            while p.block_number < 12 {
+                blocks.push(produce(&mut p));
+            }
+            // Height 12 has not been produced yet: still scale 1.
+            assert_eq!(p.orders.state.price_scale(m), 1);
+            let pos_before = p.orders.state.accounts[&alice].positions[&m].clone();
+            assert_eq!(pos_before.size, 4);
+            assert_eq!(pos_before.entry_price, U256::from(115u64));
+            let book_before = p.mersennet_orders_order_book(m).unwrap();
+
+            // Block 12: the switch. Bob's realized PnL on a later close must be in
+            // collateral units, not ×100.
+            blocks.push(produce(&mut p)); // block 12 → rescale applied before its txs
+            assert_eq!(
+                p.orders.state.price_scale(m),
+                100,
+                "{backend}: scale switched at 12"
+            );
+            let pos_after = p.orders.state.accounts[&alice].positions[&m].clone();
+            assert_eq!(pos_after.size, 4);
+            assert_eq!(
+                pos_after.entry_price,
+                U256::from(11_500u64),
+                "{backend}: entry price ×100"
+            );
+            let book_after = p.mersennet_orders_order_book(m).unwrap();
+            assert_eq!(book_after.asks.len(), book_before.asks.len());
+            assert_eq!(p.orders.state.markets[&m].last_price, U256::from(11_500u64));
+
+            // Bob bids 116.00 (below his own resting 117.00 ask, so no self-match); Alice sells her 4 into it.
+            call(
+                &mut p,
+                bob,
+                3,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(11_600u64),
+                    U256::from(4u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                alice,
+                2,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(11_600u64),
+                    U256::from(4u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            let pos_closed = &p.orders.state.accounts[&alice].positions[&m];
+            assert_eq!(pos_closed.size, 0);
+            // 4 × (116 − 115) = 4 collateral units — not 400.
+            assert_eq!(
+                pos_closed.realized_pnl, 4,
+                "{backend}: realized PnL in collateral units"
+            );
+
+            // Follower imports everything and agrees on every root, including across the switch.
+            for b in &blocks {
+                c.import_block(b.clone());
+                assert_eq!(
+                    c.latest_height(),
+                    b.number,
+                    "{backend}: imported #{}",
+                    b.number
+                );
+            }
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "{backend}: roots agree after the switch"
+            );
+            assert_eq!(c.orders.state.price_scale(m), 100);
+
+            // Restart: the scale is restored.
+            p.evm.state.flush().unwrap();
+            drop(p);
+            let reopened = engine_at(&path, backend);
+            assert_eq!(
+                reopened.orders.state.price_scale(m),
+                100,
+                "{backend}: scale persisted"
+            );
+            assert_eq!(
+                reopened.orders.state.accounts[&bob].positions[&m].size, 0,
+                "{backend}: bob sold 4 at 115 and bought 4 at 116 — flat"
+            );
+        }
     }
 }
