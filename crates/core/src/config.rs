@@ -787,3 +787,46 @@ fn default_p2p_listen() -> String {
 fn default_block_time_ms() -> u64 {
     1000
 }
+
+#[cfg(test)]
+mod canonical_config_tests {
+    use super::*;
+
+    /// The canonical testnet config must parse into `AppConfig` and carry
+    /// coherent consensus switches: every rescale names a positive scale and
+    /// the switch heights are epoch-aligned when the open set is active.
+    #[test]
+    fn canonical_testnet_config_parses_and_switches_are_coherent() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../networks/testnet/config.json"
+        );
+        let cfg = load_config(path).expect("canonical config parses");
+        assert_eq!(cfg.engine.chain_id, 131071);
+        let o = &cfg.mersennet_orders;
+        if o.price_scale_height > 0 {
+            assert!(
+                !o.price_rescales.is_empty(),
+                "a price switch must list markets"
+            );
+            for (m, sc) in &o.price_rescales {
+                assert!(*m > 0 && *sc > 1, "rescale {m} -> {sc}");
+            }
+        }
+        let vs = &cfg.validator_set;
+        for (name, h) in [
+            ("agent_delegation_height", o.agent_delegation_height),
+            ("price_scale_height", o.price_scale_height),
+            ("bench_height", vs.bench_height),
+            ("jail_escalation_height", vs.jail_escalation_height),
+        ] {
+            if h > 0 && vs.epoch_blocks > 0 {
+                assert_eq!(
+                    h % vs.epoch_blocks,
+                    0,
+                    "{name} should sit on an epoch boundary"
+                );
+            }
+        }
+    }
+}
