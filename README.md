@@ -38,7 +38,7 @@ privacy layer, built in Rust.
 - Snapshot export/import with TCP chunked sync + hash verification
 - Structured JSON-RPC + WebSocket subscriptions, metrics, health endpoint
 - Node identity + peer-store persistence
-- HotStuff-2 consensus with slashing and unbonding
+- Leader-gated BFT consensus with slashing and unbonding (HotStuff-2 pipeline implemented as the upgrade path)
 
 ### Privacy testnet (7920, `feat/zk-privacy`)
 
