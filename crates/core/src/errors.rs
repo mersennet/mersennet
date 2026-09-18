@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum MersennetOrdersError {
     #[error("unknown market")]
     UnknownMarket,
+    #[error("account is not liquidatable")]
+    NotLiquidatable,
     #[error("size must be > 0")]
     InvalidSize,
     #[error("fok not fillable")]
@@ -36,6 +38,7 @@ impl MersennetOrdersError {
     pub fn message(&self) -> &'static str {
         match self {
             MersennetOrdersError::UnknownMarket => "unknown market",
+            MersennetOrdersError::NotLiquidatable => "account is not liquidatable",
             MersennetOrdersError::InvalidSize => "size must be > 0",
             MersennetOrdersError::FokNotFillable => "fok not fillable",
             MersennetOrdersError::InsufficientCollateral => {

@@ -211,6 +211,17 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
+        "mersennet_orders_getLiquidatable" => {
+            // Keeper feed: accounts below maintenance margin at the head.
+            let list: Vec<String> = engine
+                .orders
+                .state
+                .liquidatable_accounts()
+                .into_iter()
+                .map(|a| format!("0x{}", hex::encode(a.as_slice())))
+                .collect();
+            Ok(json!({ "height": engine.latest_height(), "accounts": list }))
+        }
         "mersennet_orders_getProtocol" => {
             // Every CLOB consensus switch and live parameter in one call, so
             // clients (terminal, bots, explorer) never hard-code heights.
@@ -1364,6 +1375,7 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::InvalidMarketParams => -32021,
         MersennetOrdersError::UnknownCollateralAsset => -32022,
         MersennetOrdersError::Agent(_) => -32023,
+        MersennetOrdersError::NotLiquidatable => -32024,
     };
     RpcError::new(code, err.message())
 }
