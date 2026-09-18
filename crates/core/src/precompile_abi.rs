@@ -94,6 +94,8 @@ pub const GAS_WITHDRAW_COLLATERAL: u64 = 25_000;
 pub const GAS_GET_POSITION: u64 = 5_000;
 pub const GAS_GET_COLLATERAL: u64 = 3_000;
 pub const GAS_IS_LIQUIDATABLE: u64 = 10_000;
+/// Keeper-callable force close: cancels, sweeps every position, settles.
+pub const GAS_LIQUIDATE: u64 = 150_000;
 pub const GAS_GET_BEST_BID_ASK: u64 = 5_000;
 pub const GAS_CREATE_MARKET: u64 = 500_000;
 
@@ -228,6 +230,10 @@ pub fn get_collateral_selector() -> [u8; 4] {
 
 pub fn is_liquidatable_selector() -> [u8; 4] {
     selector("isLiquidatable(address)")
+}
+
+pub fn liquidate_selector() -> [u8; 4] {
+    selector("liquidate(address)")
 }
 
 pub fn get_best_bid_ask_selector() -> [u8; 4] {

@@ -8,6 +8,21 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct MarketId(pub u64);
 
+/// Fee taken from a liquidated account's remaining collateral, in basis points
+/// of the closed notional; half goes to the keeper, half to the insurance fund.
+pub const LIQUIDATION_FEE_BPS: u64 = 100;
+
+/// What a `liquidate(address)` call did.
+#[derive(Debug, Default, Clone)]
+pub struct LiquidationOutcome {
+    pub cancelled_orders: Vec<(OrderId, MarketId)>,
+    pub trades: Vec<Trade>,
+    pub closed_notional: U256,
+    pub covered_by_insurance: U256,
+    pub keeper_reward: U256,
+    pub fully_closed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OrderId(pub u64);
 
@@ -177,6 +192,9 @@ pub struct MersennetOrdersState {
     /// Resting orders cancelled by self-trade prevention during the current
     /// call (drained by the precompile to emit cancel events). Not persisted.
     pub self_trade_cancels: Vec<OrderId>,
+    /// Account being force-closed by `liquidate_on_book` (margin checks are
+    /// bypassed for its closing sweeps). Never persisted.
+    pub liquidating: Option<Address>,
     /// Per-market price scale: on-chain prices are `human_price × scale`
     /// (default 1). Lets a $115 asset trade on $0.01 ticks (scale 100) while
     /// notional and PnL stay in collateral units (`price × size / scale`).
@@ -1006,6 +1024,21 @@ impl MersennetOrdersState {
         if self.maintenance_margin_bps == 0 {
             return true;
         }
+        // A fill that shrinks the position (or a liquidation close) must
+        // always go through, however deep under water the account is —
+        // otherwise a loser could never reduce risk. Only growing exposure
+        // needs initial margin.
+        let current = self
+            .accounts
+            .get(&account)
+            .and_then(|a| a.positions.get(&market))
+            .map(|p| p.size)
+            .unwrap_or(0);
+        if self.liquidating == Some(account)
+            || new_position_size.unsigned_abs() <= current.unsigned_abs()
+        {
+            return true;
+        }
         let equity = self.account_equity(account);
         let mark = self.mark_price(market, U256::ZERO);
         let abs_size = abs_i128_to_u256(new_position_size);
@@ -1015,6 +1048,137 @@ impl MersennetOrdersState {
             .checked_div(U256::from(10_000u64))
             .unwrap_or(U256::MAX);
         equity >= u256_to_i128(required)
+    }
+
+    /// Every account below its maintenance margin right now (keeper feed).
+    pub fn liquidatable_accounts(&self) -> Vec<Address> {
+        if self.maintenance_margin_bps == 0 {
+            return Vec::new();
+        }
+        let mut out: Vec<Address> = self
+            .accounts
+            .iter()
+            .filter(|(_, a)| a.positions.values().any(|p| p.size != 0))
+            .map(|(addr, _)| *addr)
+            .filter(|addr| self.is_liquidatable(*addr))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Liquidate `account` on the book (settlement era). Cancels its resting
+    /// orders, then closes every position with an IOC sweep at any price;
+    /// each fill settles PnL into the account's collateral like a normal
+    /// trade. A loss the collateral cannot cover is paid by the insurance
+    /// fund, the rest stays as bad debt. From what collateral remains, a fee
+    /// of `LIQUIDATION_FEE_BPS` of the closed notional is split between the
+    /// keeper (`liquidator`) and the insurance fund. Positions the book
+    /// could not absorb stay open (still liquidatable; the keeper retries).
+    pub fn liquidate_on_book(
+        &mut self,
+        account: Address,
+        liquidator: Address,
+    ) -> Result<LiquidationOutcome, MersennetOrdersError> {
+        if !self.settlement_active(self.current_height) || self.maintenance_margin_bps == 0 {
+            return Err(MersennetOrdersError::NotLiquidatable);
+        }
+        if !self.is_liquidatable(account) {
+            return Err(MersennetOrdersError::NotLiquidatable);
+        }
+        let bad_debt_before = self.bad_debt;
+        let mut outcome = LiquidationOutcome::default();
+        // Resting orders first: they would otherwise be hit by the sweep (STP)
+        // or keep tying up margin.
+        let open_orders = self
+            .accounts
+            .get(&account)
+            .map(|a| a.open_orders.clone())
+            .unwrap_or_default();
+        for order_id in open_orders {
+            if let Some(order) = self.cancel_order(order_id) {
+                outcome.cancelled_orders.push((order_id, order.market));
+            }
+        }
+        let positions: Vec<(MarketId, i128)> = self
+            .accounts
+            .get(&account)
+            .map(|a| {
+                a.positions
+                    .iter()
+                    .filter(|(_, p)| p.size != 0)
+                    .map(|(m, p)| (*m, p.size))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.liquidating = Some(account);
+        for (market, size) in positions {
+            let (side, price) = if size > 0 {
+                (Side::Sell, U256::ONE)
+            } else {
+                (Side::Buy, U256::MAX)
+            };
+            let sweep = self.submit_order_ext(
+                account,
+                market,
+                side,
+                price,
+                U256::from(size.unsigned_abs()),
+                TimeInForce::Ioc,
+                false,
+                0,
+            );
+            if let Ok(o) = sweep {
+                for t in &o.trades {
+                    outcome.closed_notional = outcome
+                        .closed_notional
+                        .saturating_add(self.value_of(market, t.price, t.size));
+                }
+                outcome.trades.extend(o.trades);
+            }
+        }
+        self.liquidating = None;
+        // Insurance fund covers what the loser's collateral could not.
+        let new_bad_debt = self.bad_debt.saturating_sub(bad_debt_before);
+        if !new_bad_debt.is_zero() {
+            let covered = min_u256(self.insurance_fund, new_bad_debt);
+            self.insurance_fund -= covered;
+            self.bad_debt -= covered;
+            outcome.covered_by_insurance = covered;
+        }
+        // Liquidation fee from the remaining collateral: half to the keeper,
+        // half to the insurance fund.
+        let remaining = self
+            .accounts
+            .get(&account)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        let fee = min_u256(
+            remaining,
+            outcome
+                .closed_notional
+                .saturating_mul(U256::from(LIQUIDATION_FEE_BPS))
+                / U256::from(10_000u64),
+        );
+        if !fee.is_zero() {
+            let to_keeper = fee / U256::from(2u64);
+            let to_fund = fee - to_keeper;
+            if let Some(a) = self.accounts.get_mut(&account) {
+                a.collateral -= fee;
+            }
+            if liquidator != account && liquidator != Address::ZERO {
+                self.accounts.entry(liquidator).or_default().collateral += to_keeper;
+                outcome.keeper_reward = to_keeper;
+                self.insurance_fund += to_fund;
+            } else {
+                self.insurance_fund += fee;
+            }
+        }
+        outcome.fully_closed = self
+            .accounts
+            .get(&account)
+            .map(|a| a.positions.values().all(|p| p.size == 0))
+            .unwrap_or(true);
+        Ok(outcome)
     }
 
     pub fn insurance_fund_balance(&self) -> U256 {
@@ -1322,7 +1486,7 @@ impl MersennetOrdersState {
         price: U256,
         size: U256,
     ) -> Result<(), MersennetOrdersError> {
-        if self.initial_margin_bps == 0 {
+        if self.initial_margin_bps == 0 || self.liquidating == Some(owner) {
             return Ok(());
         }
         let notional = self.value_of(market, price, size);

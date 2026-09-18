@@ -6720,3 +6720,364 @@ mod settlement_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod liquidation_tests {
+    use super::*;
+    use crate::mersennet_orders::MarketId;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine() -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut e = Engine::new_with_backend(131071, sub, "redb");
+        std::mem::forget(dir);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        // Settlement from block 1: MRSN units, 10% initial, 5% maintenance.
+        e.set_settlement_params(1, 1000, 500);
+        e
+    }
+    fn produce(e: &mut Engine) {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        e.set_local_validator(leader);
+        e.execute_block().expect("produce");
+    }
+    fn call(e: &mut Engine, from: Address, nonce: u64, data: Vec<u8>) {
+        e.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            value: U256::ZERO,
+            data: Bytes::from(data),
+            gas_limit: 600_000,
+            gas_price: U256::from(1u64),
+            nonce,
+            chain_id: Some(e.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+        produce(e);
+    }
+    fn col(e: &Engine, a: Address) -> U256 {
+        e.orders
+            .state
+            .accounts
+            .get(&a)
+            .map(|x| x.collateral)
+            .unwrap_or(U256::ZERO)
+    }
+    fn liquidate_calldata(account: Address) -> Vec<u8> {
+        let mut d = crate::precompile_abi::liquidate_selector().to_vec();
+        let mut w = [0u8; 32];
+        w[12..].copy_from_slice(account.as_slice());
+        d.extend_from_slice(&w);
+        d
+    }
+
+    /// Alice runs 20 long @ 100 on 300 collateral (6.7x). The mark falls to
+    /// 88: equity 60 < maintenance 88 → liquidatable. A keeper's `liquidate`
+    /// sweeps her position into bob's bid at 90 (−200 → 100 collateral left),
+    /// takes the 1% fee on 1,800 notional (18: 9 keeper, 9 fund), and the
+    /// position is gone. Bob's side settles +200 (zero-sum). A healthy
+    /// account cannot be liquidated (returns false, nothing changes), and an
+    /// under-water account can still reduce its own position.
+    #[test]
+    fn keeper_liquidation_closes_on_the_book_and_pays_the_fee() {
+        let mut e = engine();
+        let alice = addr(9);
+        let bob = addr(8);
+        let keeper = addr(7);
+        for a in [alice, bob, keeper] {
+            e.fund_account(a, U256::from(5_000u64) * U256::from(MRSN), 0);
+        }
+        e.mersennet_orders_add_market("MRSN".to_string(), U256::from(1u64), U256::from(1u64));
+        let m = MarketId(1);
+        produce(&mut e); // block 1: settlement switch (nothing to migrate)
+        assert_eq!(e.orders.state.maintenance_margin_bps, 500);
+
+        call(
+            &mut e,
+            alice,
+            0,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(300u64)),
+        );
+        call(
+            &mut e,
+            bob,
+            0,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(3_000u64)),
+        );
+        // Bob sells 20 @ 100 to alice.
+        call(
+            &mut e,
+            bob,
+            1,
+            crate::precompile_abi::encode_place_order(
+                1,
+                false,
+                U256::from(100u64),
+                U256::from(20u64),
+                0,
+            ),
+        );
+        call(
+            &mut e,
+            alice,
+            1,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(100u64),
+                U256::from(20u64),
+                0,
+            ),
+        );
+        assert_eq!(e.orders.state.accounts[&alice].positions[&m].size, 20);
+
+        // Healthy: a keeper call returns false and changes nothing.
+        call(&mut e, keeper, 0, liquidate_calldata(alice));
+        assert_eq!(
+            e.orders.state.accounts[&alice].positions[&m].size, 20,
+            "healthy account untouched"
+        );
+        assert!(e.orders.state.liquidatable_accounts().is_empty());
+
+        // Mark falls to 88 (bob and the keeper print 1 @ 88).
+        call(
+            &mut e,
+            bob,
+            2,
+            crate::precompile_abi::encode_place_order(
+                1,
+                false,
+                U256::from(88u64),
+                U256::from(1u64),
+                0,
+            ),
+        );
+        call(
+            &mut e,
+            keeper,
+            1,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(1_000u64)),
+        );
+        call(
+            &mut e,
+            keeper,
+            2,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(88u64),
+                U256::from(1u64),
+                0,
+            ),
+        );
+        assert_eq!(e.orders.state.markets[&m].last_price, U256::from(88u64));
+        assert!(
+            e.orders.state.is_liquidatable(alice),
+            "equity 60 < maintenance 88"
+        );
+        assert_eq!(e.orders.state.liquidatable_accounts(), vec![alice]);
+
+        // Under water, alice can still reduce: she sells 2 @ 88 into the keeper's bid.
+        call(
+            &mut e,
+            keeper,
+            3,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(88u64),
+                U256::from(2u64),
+                0,
+            ),
+        );
+        call(
+            &mut e,
+            alice,
+            2,
+            crate::precompile_abi::encode_place_order(
+                1,
+                false,
+                U256::from(88u64),
+                U256::from(2u64),
+                0,
+            ),
+        );
+        assert_eq!(
+            e.orders.state.accounts[&alice].positions[&m].size, 18,
+            "reducing fill allowed under water"
+        );
+        assert_eq!(
+            col(&e, alice),
+            U256::from(276u64),
+            "2 × (88 − 100) = −24 settled"
+        );
+
+        // Bob bids 18 @ 90; the keeper liquidates alice.
+        call(
+            &mut e,
+            bob,
+            3,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(90u64),
+                U256::from(18u64),
+                0,
+            ),
+        );
+        let bob_before = col(&e, bob);
+        let fund_before = e.orders.state.insurance_fund;
+        let keeper_before = col(&e, keeper);
+        call(&mut e, keeper, 4, liquidate_calldata(alice));
+        assert_eq!(
+            e.orders.state.accounts[&alice].positions[&m].size, 0,
+            "position closed on the book"
+        );
+        // 18 × (90 − 100) = −180 → 96 left; fee 1% of 1,620 = 16 → 80 left.
+        assert_eq!(col(&e, alice), U256::from(80u64), "loss settled, fee taken");
+        assert_eq!(
+            col(&e, keeper) - keeper_before,
+            U256::from(8u64),
+            "keeper earns half the fee"
+        );
+        assert_eq!(
+            e.orders.state.insurance_fund - fund_before,
+            U256::from(8u64),
+            "fund earns half the fee"
+        );
+        // Bob is short 21 at a VWAP entry of 99 (20 @ 100 + 1 @ 88): closing 18 @ 90 earns 18 × 9 = 162.
+        assert_eq!(
+            col(&e, bob) - bob_before,
+            U256::from(162u64),
+            "bob's side settles the mirror image"
+        );
+        assert!(!e.orders.state.is_liquidatable(alice));
+        assert!(e.orders.state.accounts[&alice].open_orders.is_empty());
+        assert_eq!(e.orders.state.bad_debt, U256::ZERO);
+    }
+
+    /// When the loss exceeds the collateral, the insurance fund pays the
+    /// shortfall and only what it cannot cover stays as bad debt.
+    #[test]
+    fn insurance_fund_absorbs_the_shortfall_first() {
+        let mut e = engine();
+        let alice = addr(9);
+        let bob = addr(8);
+        let keeper = addr(7);
+        for a in [alice, bob, keeper] {
+            e.fund_account(a, U256::from(5_000u64) * U256::from(MRSN), 0);
+        }
+        e.mersennet_orders_add_market("MRSN".to_string(), U256::from(1u64), U256::from(1u64));
+        let m = MarketId(1);
+        produce(&mut e);
+        e.orders.state.insurance_fund = U256::from(50u64);
+        call(
+            &mut e,
+            alice,
+            0,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(200u64)),
+        );
+        call(
+            &mut e,
+            bob,
+            0,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(3_000u64)),
+        );
+        call(
+            &mut e,
+            bob,
+            1,
+            crate::precompile_abi::encode_place_order(
+                1,
+                false,
+                U256::from(100u64),
+                U256::from(20u64),
+                0,
+            ),
+        );
+        call(
+            &mut e,
+            alice,
+            1,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(100u64),
+                U256::from(20u64),
+                0,
+            ),
+        );
+        // Gap down: only a bid at 85 is left → closing 20 loses 300 against 200 collateral.
+        call(
+            &mut e,
+            bob,
+            2,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(85u64),
+                U256::from(20u64),
+                0,
+            ),
+        );
+        call(
+            &mut e,
+            keeper,
+            0,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(100u64)),
+        );
+        call(
+            &mut e,
+            keeper,
+            1,
+            crate::precompile_abi::encode_place_order(
+                1,
+                false,
+                U256::from(86u64),
+                U256::from(1u64),
+                0,
+            ),
+        );
+        call(
+            &mut e,
+            bob,
+            3,
+            crate::precompile_abi::encode_place_order(
+                1,
+                true,
+                U256::from(86u64),
+                U256::from(1u64),
+                0,
+            ),
+        ); // last price 86 → alice equity 200 − 280 < 0
+        assert!(e.orders.state.is_liquidatable(alice));
+        call(&mut e, keeper, 2, liquidate_calldata(alice));
+        assert_eq!(e.orders.state.accounts[&alice].positions[&m].size, 0);
+        assert_eq!(col(&e, alice), U256::ZERO, "collateral wiped");
+        // Shortfall 100: the fund had 50 → 0; 50 remains as bad debt; no fee (nothing left).
+        assert_eq!(e.orders.state.insurance_fund, U256::ZERO);
+        assert_eq!(e.orders.state.bad_debt, U256::from(50u64));
+        assert_eq!(
+            col(&e, keeper),
+            U256::from(100u64),
+            "no fee when the account has nothing left"
+        );
+    }
+}

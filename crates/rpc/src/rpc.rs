@@ -996,6 +996,7 @@ fn dispatch(
         | "mersennet_orders_getOpenOrders"
         | "mersennet_orders_getAgents"
         | "mersennet_orders_getProtocol"
+        | "mersennet_orders_getLiquidatable"
         | "mersennet_orders_setMarginParams"
         | "mersennet_orders_depositCollateral"
         | "mersennet_orders_isLiquidatable"

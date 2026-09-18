@@ -623,6 +623,8 @@ fn mersennet_orders_precompile(
         handle_get_collateral(input, gas_limit, trader)
     } else if sel == is_liquidatable_selector() {
         handle_is_liquidatable(input, gas_limit)
+    } else if sel == liquidate_selector() {
+        handle_liquidate(input, gas_limit, caller)
     } else if sel == get_best_bid_ask_selector() {
         handle_get_best_bid_ask(input, gas_limit)
     } else {
@@ -1313,6 +1315,47 @@ fn handle_get_collateral(_input: &Bytes, gas_limit: u64, caller: Address) -> Pre
 // ---------------------------------------------------------------------------
 // isLiquidatable(address account) -> (bool)
 // ---------------------------------------------------------------------------
+
+/// `liquidate(address account) -> bool`. Anyone may call; the keeper that
+/// does earns half of the liquidation fee into its own collateral. Returns
+/// false (no revert) when the account is not below maintenance margin.
+fn handle_liquidate(input: &Bytes, gas_limit: u64, caller: Address) -> PrecompileResult {
+    check_gas(gas_limit, GAS_LIQUIDATE)?;
+    let acct_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing account"))?;
+    let account = decode_address(acct_w);
+    let outcome = with_orders(|state| state.liquidate_on_book(account, caller))?;
+    let Ok(outcome) = outcome else {
+        return Ok(PrecompileOutput::new(
+            GAS_LIQUIDATE,
+            Bytes::from(encode_bool(false).to_vec()),
+        ));
+    };
+    for (order_id, market_id) in &outcome.cancelled_orders {
+        record_orders_event(MersennetOrdersEvent::OrderCancelled {
+            order_id: *order_id,
+            owner: account,
+            market_id: *market_id,
+        });
+    }
+    for trade in &outcome.trades {
+        record_orders_event(MersennetOrdersEvent::Trade {
+            taker: trade.taker,
+            maker: trade.maker,
+            market_id: trade.market,
+            side: trade.side,
+            price: trade.price,
+            size: trade.size,
+        });
+    }
+    record_orders_event(MersennetOrdersEvent::Liquidation {
+        owner: account,
+        liquidated: outcome.fully_closed,
+    });
+    Ok(PrecompileOutput::new(
+        GAS_LIQUIDATE,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
+}
 
 fn handle_is_liquidatable(input: &Bytes, gas_limit: u64) -> PrecompileResult {
     check_gas(gas_limit, GAS_IS_LIQUIDATABLE)?;

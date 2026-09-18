@@ -351,7 +351,7 @@
     "frame_caller_height": 1605600,
     "settlement_height": 1605600,
     "settlement_initial_margin_bps": 1000,
-    "settlement_maintenance_margin_bps": 0
+    "settlement_maintenance_margin_bps": 500
   },
   "validator_set": {
     "activation_height": 1348200,
