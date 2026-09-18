@@ -1623,6 +1623,11 @@ impl Engine {
         self.orders.state.agent_delegation_height = height;
     }
 
+    /// Consensus switch: precompiles authorise on the call frame's caller (0 = off).
+    pub fn set_frame_caller_height(&mut self, height: u64) {
+        precompiles::set_frame_caller_height(height);
+    }
+
     /// Consensus switch for in-place market rescaling (0 = off).
     pub fn set_price_rescale(&mut self, height: u64, rescales: Vec<(u64, u64)>) {
         self.price_scale_height = height;
@@ -5985,5 +5990,182 @@ mod price_scale_tests {
                 "{backend}: bob sold 4 at 115 and bought 4 at 116 — flat"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod frame_caller_tests {
+    use super::*;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine() -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut e = Engine::new_with_backend(131071, sub, "redb");
+        std::mem::forget(dir);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        e
+    }
+    fn produce(e: &mut Engine) {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        e.set_local_validator(leader);
+        e.execute_block().expect("produce");
+    }
+    fn tx(e: &mut Engine, from: Address, to: Option<Address>, nonce: u64, data: Vec<u8>) {
+        e.submit_tx_unsigned(Transaction {
+            from,
+            to,
+            value: U256::ZERO,
+            data: Bytes::from(data),
+            gas_limit: 400_000,
+            gas_price: U256::from(1u64),
+            nonce,
+            chain_id: Some(e.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+        produce(e);
+    }
+
+    /// A contract that forwards its calldata to the orders precompile with
+    /// CALL and returns whatever comes back (success flag ignored):
+    ///   CALLDATACOPY(0,0,cds); CALL(gas, 0x100, 0, 0, cds, 0, 0); POP;
+    ///   RETURNDATACOPY(0,0,rds); RETURN(0, rds)
+    const FORWARDER_RUNTIME: &str =
+        "3660006000376000600036600060006101005af1503d600060003e3d6000f3";
+    fn forwarder_deploy_code() -> Vec<u8> {
+        let runtime = hex::decode(FORWARDER_RUNTIME).unwrap();
+        assert_eq!(runtime.len(), 31);
+        // PUSH1 len DUP1 PUSH1 11 PUSH1 0 CODECOPY PUSH1 0 RETURN  (11 bytes)
+        let mut init = vec![
+            0x60,
+            runtime.len() as u8,
+            0x80,
+            0x60,
+            0x0b,
+            0x60,
+            0x00,
+            0x39,
+            0x60,
+            0x00,
+            0xf3,
+        ];
+        init.extend_from_slice(&runtime);
+        init
+    }
+
+    /// Before the switch a contract calling the precompile acts as the
+    /// transaction origin (legacy); from the switch it acts as itself.
+    #[test]
+    fn contracts_act_as_themselves_from_the_frame_caller_switch() {
+        let mut e = engine();
+        let user = addr(9);
+        e.fund_account(user, U256::from(10u64) * U256::from(MRSN), 0);
+        e.mersennet_orders_add_market("TST".to_string(), U256::from(1u64), U256::from(1u64));
+        // The forwarder lands at user.create(0); give it a balance before it exists.
+        let proxy = user.create(0);
+        e.fund_account(proxy, U256::from(1u64) * U256::from(MRSN), 0);
+        tx(&mut e, user, None, 0, forwarder_deploy_code());
+        assert!(!e.get_code(proxy).unwrap().is_empty(), "forwarder deployed");
+        let proxy_bal0 = e.get_balance(proxy).unwrap();
+
+        // Switch at block 6. Blocks 1..=5 are legacy.
+        e.set_frame_caller_height(6);
+        let deposit = crate::precompile_abi::encode_deposit_collateral(U256::from(500u64));
+
+        // Legacy: the deposit routed through the contract debits and credits the USER.
+        let user_bal0 = e.get_balance(user).unwrap();
+        tx(&mut e, user, Some(proxy), 1, deposit.clone());
+        let user_col = e
+            .orders
+            .state
+            .accounts
+            .get(&user)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        assert_eq!(
+            user_col,
+            U256::from(500u64),
+            "legacy: the origin's account is credited"
+        );
+        assert!(
+            e.orders.state.accounts.get(&proxy).is_none(),
+            "legacy: the contract has no account"
+        );
+        assert_eq!(
+            e.get_balance(proxy).unwrap(),
+            proxy_bal0,
+            "legacy: the contract's balance is untouched"
+        );
+        assert!(user_bal0 - e.get_balance(user).unwrap() >= U256::from(500u64));
+
+        while e.block_number < 6 {
+            produce(&mut e);
+        }
+
+        // Switch: the same call credits the CONTRACT and debits its own balance.
+        tx(&mut e, user, Some(proxy), 2, deposit);
+        let proxy_col = e
+            .orders
+            .state
+            .accounts
+            .get(&proxy)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        assert_eq!(
+            proxy_col,
+            U256::from(500u64),
+            "switch: the contract owns the account"
+        );
+        assert_eq!(
+            e.get_balance(proxy).unwrap(),
+            proxy_bal0 - U256::from(500u64),
+            "switch: escrowed from the contract"
+        );
+        let user_col_after = e
+            .orders
+            .state
+            .accounts
+            .get(&user)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        assert_eq!(
+            user_col_after,
+            U256::from(500u64),
+            "switch: the user's account is not touched by the contract"
+        );
+
+        // A direct transaction still acts as its signer.
+        tx(
+            &mut e,
+            user,
+            Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            3,
+            crate::precompile_abi::encode_deposit_collateral(U256::from(7u64)),
+        );
+        let user_col_direct = e
+            .orders
+            .state
+            .accounts
+            .get(&user)
+            .map(|a| a.collateral)
+            .unwrap_or(U256::ZERO);
+        assert_eq!(user_col_direct, U256::from(507u64));
+        assert_eq!(e.mersennet_orders_open_orders(proxy).len(), 0);
     }
 }

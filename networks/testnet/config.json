@@ -347,7 +347,8 @@
         5,
         100
       ]
-    ]
+    ],
+    "frame_caller_height": 1605600
   },
   "validator_set": {
     "activation_height": 1348200,
