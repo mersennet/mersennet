@@ -311,6 +311,11 @@ impl StateBackend for RedbState {
         }
 
         state.staking = decode_staking(snapshot.staking);
+        state.bad_debt = match table.get(b"bad_debt".as_slice())? {
+            Some(raw) if raw.value().len() == 32 => U256::from_be_slice(raw.value()),
+            _ => U256::ZERO,
+        };
+        state.units_migrated = table.get(b"units_migrated".as_slice())?.is_some();
         state.price_scales.clear();
         if let Some(raw) = table.get(b"price_scales".as_slice())? {
             let scales: Vec<(u64, u64)> = bincode::deserialize(raw.value())?;
@@ -552,6 +557,17 @@ impl StateBackend for RedbState {
             table.remove(b"price_scales".as_slice())?;
             if let Some(blob) = &scales_blob {
                 table.insert(b"price_scales".as_slice(), blob.as_slice())?;
+            }
+            table.remove(b"bad_debt".as_slice())?;
+            if !state.bad_debt.is_zero() {
+                table.insert(
+                    b"bad_debt".as_slice(),
+                    state.bad_debt.to_be_bytes::<32>().as_slice(),
+                )?;
+            }
+            table.remove(b"units_migrated".as_slice())?;
+            if state.units_migrated {
+                table.insert(b"units_migrated".as_slice(), [1u8].as_slice())?;
             }
             let mut meta = write_txn.open_table(HEIGHT_META)?;
             if state.staking.registry.is_empty() && state.staking.active_set.is_empty() {

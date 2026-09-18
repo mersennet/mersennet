@@ -155,6 +155,28 @@ pub struct MersennetOrdersState {
     /// Height from which `setAgent`/`revokeAgent` are accepted and agent
     /// resolution applies (0 = off). Set from `mersennet_orders.agent_delegation_height`.
     pub agent_delegation_height: u64,
+    /// Settlement switch (`mersennet_orders.settlement_height`, 0 = off). From
+    /// this height: one collateral unit is **one MRSN** (deposits escrow
+    /// `amount × 1e18` wei, withdrawals pay the same), realized PnL is
+    /// **settled into collateral** at every fill (zero-sum between the two
+    /// sides; a loss beyond an account's collateral is booked as `bad_debt`),
+    /// and the margin parameters below apply. Balances that existed before
+    /// the switch are divided by 1e18 once (they were wei-backed units).
+    pub settlement_height: u64,
+    pub settlement_initial_margin_bps: u64,
+    pub settlement_maintenance_margin_bps: u64,
+    /// Height of the block being executed (set by the engine before each block
+    /// and each eth_call); the switches above are judged against it.
+    pub current_height: u64,
+    /// Losses that could not be covered by the loser's collateral (units).
+    /// Persisted in its own key; absent while zero.
+    pub bad_debt: U256,
+    /// Whether the one-time unit migration at `settlement_height` has run.
+    /// Persisted in its own key; absent while false.
+    pub units_migrated: bool,
+    /// Resting orders cancelled by self-trade prevention during the current
+    /// call (drained by the precompile to emit cancel events). Not persisted.
+    pub self_trade_cancels: Vec<OrderId>,
     /// Per-market price scale: on-chain prices are `human_price × scale`
     /// (default 1). Lets a $115 asset trade on $0.01 ticks (scale 100) while
     /// notional and PnL stay in collateral units (`price × size / scale`).
@@ -257,6 +279,64 @@ impl MersennetOrdersState {
                 "caller did not grant this agent",
             )),
             None => Ok(false),
+        }
+    }
+
+    /// True from the settlement switch (MRSN collateral units, PnL settlement, margin).
+    pub fn settlement_active(&self, height: u64) -> bool {
+        self.settlement_height > 0 && height >= self.settlement_height
+    }
+
+    /// Wei moved per collateral unit at `height`: 1e18 from the settlement switch, 1 before.
+    pub fn wei_per_unit(&self, height: u64) -> U256 {
+        if self.settlement_active(height) {
+            U256::from(1_000_000_000_000_000_000u128)
+        } else {
+            U256::ONE
+        }
+    }
+
+    /// One-time migration at the settlement switch: balances were wei-backed
+    /// units and become MRSN units (÷1e18, floor; the dust stays in the
+    /// escrow). Realized PnL and the insurance fund follow. Idempotent.
+    pub fn migrate_units_to_mrsn(&mut self) -> bool {
+        if self.units_migrated {
+            return false;
+        }
+        let wei = U256::from(1_000_000_000_000_000_000u128);
+        for account in self.accounts.values_mut() {
+            account.collateral = account.collateral / wei;
+            for pos in account.positions.values_mut() {
+                pos.realized_pnl /= 1_000_000_000_000_000_000i128;
+            }
+        }
+        self.insurance_fund /= wei;
+        self.set_margin_params(
+            self.settlement_initial_margin_bps,
+            self.settlement_maintenance_margin_bps,
+        );
+        self.units_migrated = true;
+        true
+    }
+
+    /// Credit or debit realized PnL to an account's collateral. A loss the
+    /// collateral cannot cover zeroes it and is recorded as bad debt.
+    fn settle_pnl(&mut self, owner: Address, pnl: i128) {
+        if pnl == 0 {
+            return;
+        }
+        let account = self.accounts.entry(owner).or_default();
+        if pnl > 0 {
+            account.collateral = account.collateral.saturating_add(U256::from(pnl as u128));
+        } else {
+            let loss = U256::from(pnl.unsigned_abs());
+            if account.collateral >= loss {
+                account.collateral -= loss;
+            } else {
+                let uncovered = loss - account.collateral;
+                account.collateral = U256::ZERO;
+                self.bad_debt = self.bad_debt.saturating_add(uncovered);
+            }
         }
     }
 
@@ -645,6 +725,21 @@ impl MersennetOrdersState {
                         let fill = min_u256(remaining, maker_order.size);
                         (maker_order.owner, fill)
                     };
+
+                    // Self-trade prevention (from the settlement switch): a
+                    // taker never fills its own resting order — the resting
+                    // order is cancelled and matching continues. Without this
+                    // an account could print volume against itself.
+                    if maker_owner == owner && self.settlement_active(self.current_height) {
+                        if let Some(removed) = queue.remove(idx) {
+                            self.orders.remove(&removed);
+                            if let Some(account) = self.accounts.get_mut(&owner) {
+                                account.open_orders.retain(|id| *id != removed);
+                            }
+                            self.self_trade_cancels.push(removed);
+                        }
+                        continue;
+                    }
 
                     let taker_new_size = self.projected_position_size(owner, market, side, fill);
                     let maker_side = match side {
@@ -1057,7 +1152,7 @@ impl MersennetOrdersState {
         let fill_i128 = u256_to_i128(size);
 
         let scale = self.price_scale(market) as i128;
-        Self::update_position_vwap(
+        let buyer_pnl = Self::update_position_vwap(
             self.accounts
                 .entry(buyer)
                 .or_default()
@@ -1069,7 +1164,7 @@ impl MersennetOrdersState {
             scale,
         );
 
-        Self::update_position_vwap(
+        let seller_pnl = Self::update_position_vwap(
             self.accounts
                 .entry(seller)
                 .or_default()
@@ -1080,9 +1175,19 @@ impl MersennetOrdersState {
             price,
             scale,
         );
+
+        // From the settlement switch a closed (or reduced) position pays or
+        // receives its realized PnL in collateral. Zero-sum across the two
+        // sides except when a loser's collateral runs out (bad debt).
+        if self.settlement_active(self.current_height) {
+            self.settle_pnl(buyer, buyer_pnl);
+            self.settle_pnl(seller, seller_pnl);
+        }
     }
 
-    fn update_position_vwap(pos: &mut Position, delta: i128, price: U256, scale: i128) {
+    /// Apply a fill of `delta` at `price` to a position; returns the realized
+    /// PnL (collateral units) of the part that closed, 0 when nothing closed.
+    fn update_position_vwap(pos: &mut Position, delta: i128, price: U256, scale: i128) -> i128 {
         let old_size = pos.size;
         let same_direction = (old_size >= 0 && delta > 0) || (old_size < 0 && delta < 0);
 
@@ -1099,6 +1204,7 @@ impl MersennetOrdersState {
                     .unwrap_or(price);
             }
             pos.size = old_size.saturating_add(delta);
+            0
         } else {
             let abs_old = old_size.unsigned_abs();
             let abs_delta = delta.unsigned_abs();
@@ -1111,6 +1217,7 @@ impl MersennetOrdersState {
                     / scale.max(1);
                 pos.realized_pnl = pos.realized_pnl.saturating_add(pnl);
                 pos.size = old_size.saturating_add(delta);
+                pnl
             } else {
                 let sign: i128 = if old_size > 0 { 1 } else { -1 };
                 let pnl = sign
@@ -1120,6 +1227,7 @@ impl MersennetOrdersState {
                 pos.realized_pnl = pos.realized_pnl.saturating_add(pnl);
                 pos.size = old_size.saturating_add(delta);
                 pos.entry_price = price;
+                pnl
             }
         }
     }

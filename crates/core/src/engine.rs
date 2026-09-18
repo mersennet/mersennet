@@ -1623,6 +1623,44 @@ impl Engine {
         self.orders.state.agent_delegation_height = height;
     }
 
+    /// Height of the in-place market rescale (0 = none configured).
+    pub fn price_scale_height(&self) -> u64 {
+        self.price_scale_height
+    }
+
+    /// Settlement switch: MRSN collateral units, PnL settled to collateral,
+    /// margin parameters — from `height` (0 = off).
+    pub fn set_settlement_params(&mut self, height: u64, initial_bps: u64, maintenance_bps: u64) {
+        self.orders.state.settlement_height = height;
+        self.orders.state.settlement_initial_margin_bps = initial_bps;
+        self.orders.state.settlement_maintenance_margin_bps = maintenance_bps;
+        // A node restarting after the switch must not fall back to the
+        // pre-switch margin parameters from `mersennet_orders.*_margin_bps`.
+        if self.orders.state.units_migrated {
+            self.orders
+                .state
+                .set_margin_params(initial_bps, maintenance_bps);
+        }
+    }
+
+    /// At `settlement_height`, before the block's transactions: divide the
+    /// wei-backed balances by 1e18 once and arm the margin parameters.
+    /// Idempotent through the persisted `units_migrated` flag.
+    fn maybe_settlement_switch(&mut self, height: u64) {
+        let switch = self.orders.state.settlement_height;
+        if switch == 0 || height < switch || self.orders.state.units_migrated {
+            return;
+        }
+        if self.orders.state.migrate_units_to_mrsn() {
+            tracing::info!(
+                height,
+                initial_margin_bps = self.orders.state.initial_margin_bps,
+                maintenance_margin_bps = self.orders.state.maintenance_margin_bps,
+                "settlement switch: collateral units are now MRSN, realized PnL settles to collateral"
+            );
+        }
+    }
+
     /// Consensus switch: precompiles authorise on the call frame's caller (0 = off).
     pub fn set_frame_caller_height(&mut self, height: u64) {
         precompiles::set_frame_caller_height(height);
@@ -1922,6 +1960,7 @@ impl Engine {
         self.checkpoint_before(self.block_number);
         self.maybe_epoch_transition(self.block_number);
         self.maybe_price_rescale(self.block_number);
+        self.maybe_settlement_switch(self.block_number);
         if let Some(me) = self.local_validator {
             self.record_leader_slots(self.block_number, me);
         }
@@ -1976,6 +2015,7 @@ impl Engine {
 
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
+        self.orders.state.current_height = self.block_number;
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -2899,6 +2939,7 @@ impl Engine {
         // later does not apply it twice.
         self.maybe_epoch_transition(block.number);
         self.maybe_price_rescale(block.number);
+        self.maybe_settlement_switch(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
         // `block.proposer`, that address must be a current validator, and it
@@ -2946,6 +2987,7 @@ impl Engine {
 
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
+        self.orders.state.current_height = block.number;
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -3341,7 +3383,11 @@ impl Engine {
 
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
-        let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
+        let shared_orders = Arc::new(Mutex::new({
+            let mut st = self.orders.state.clone();
+            st.current_height = self.block_number;
+            st
+        }));
         precompiles::set_mersennet_orders_context(shared_orders);
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
@@ -3461,7 +3507,11 @@ impl Engine {
 
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
-        let shared_orders = Arc::new(Mutex::new(self.orders.state.clone()));
+        let shared_orders = Arc::new(Mutex::new({
+            let mut st = self.orders.state.clone();
+            st.current_height = self.block_number;
+            st
+        }));
         precompiles::set_mersennet_orders_context(shared_orders);
         precompiles::set_transparent_mersennet_orders_enabled(!self.privacy_mode_activated);
 
@@ -6167,5 +6217,506 @@ mod frame_caller_tests {
             .unwrap_or(U256::ZERO);
         assert_eq!(user_col_direct, U256::from(507u64));
         assert_eq!(e.mersennet_orders_open_orders(proxy).len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod settlement_tests {
+    use super::*;
+    use crate::mersennet_orders::MarketId;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine_at(path: &std::path::Path, backend: &str) -> Engine {
+        let mut e = Engine::new_with_backend(131071, path.to_path_buf(), backend);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        // Switch at block 10: MRSN units, settlement, 10x initial margin.
+        e.set_settlement_params(10, 1000, 0);
+        e
+    }
+    fn produce(e: &mut Engine) -> Block {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        let k = (1u8..=4)
+            .map(key)
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .expect("leader key");
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        let (r, s_, v) = crate::crypto::sign_block_proposal(b.number, b.hash, &k);
+        b.proposer_sig = Some((r, s_, v));
+        if let Some(last) = e.chain.last_mut()
+            && last.number == b.number
+        {
+            *last = b.clone();
+        }
+        b
+    }
+    fn call(e: &mut Engine, from: Address, nonce: u64, data: Vec<u8>) {
+        e.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE),
+            value: U256::ZERO,
+            data: Bytes::from(data),
+            gas_limit: 300_000,
+            gas_price: U256::from(1u64),
+            nonce,
+            chain_id: Some(e.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+    }
+    fn col(e: &Engine, a: Address) -> U256 {
+        e.orders
+            .state
+            .accounts
+            .get(&a)
+            .map(|x| x.collateral)
+            .unwrap_or(U256::ZERO)
+    }
+
+    /// Before the switch a unit is a wei and PnL never reaches collateral.
+    /// From the switch: deposits escrow 1e18 wei per unit, old balances are
+    /// divided by 1e18 once, a closed position pays its PnL into collateral
+    /// (zero-sum), a loss beyond collateral becomes bad debt, withdrawals pay
+    /// 1e18 wei per unit, and a 10x-leverage order is refused. A follower
+    /// importing the producer's blocks agrees on every root; the migration
+    /// flag and bad debt survive a restart on both backends.
+    #[test]
+    fn settlement_switch_units_pnl_margin_and_agreement() {
+        for backend in ["sled", "redb"] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("p");
+            std::fs::create_dir_all(&path).unwrap();
+            let cdir = tempdir().unwrap();
+            let cpath = cdir.path().join("c");
+            std::fs::create_dir_all(&cpath).unwrap();
+            let mut p = engine_at(&path, backend);
+            let mut c = engine_at(&cpath, backend);
+            let alice = addr(9);
+            let bob = addr(8);
+            let escrow = crate::precompile_abi::MERSENNET_ORDERS_PRECOMPILE;
+            for e in [&mut p, &mut c] {
+                e.fund_account(alice, U256::from(1_000u64) * U256::from(MRSN), 0);
+                e.fund_account(bob, U256::from(1_000u64) * U256::from(MRSN), 0);
+                e.mersennet_orders_add_market(
+                    "MRSN".to_string(),
+                    U256::from(1u64),
+                    U256::from(1u64),
+                );
+            }
+            let m = MarketId(1);
+            let mut blocks = Vec::new();
+
+            // Legacy: alice deposits 3e18 "units" (= 3 MRSN of wei), bob 2e18.
+            call(
+                &mut p,
+                alice,
+                0,
+                crate::precompile_abi::encode_deposit_collateral(
+                    U256::from(3u64) * U256::from(MRSN),
+                ),
+            );
+            call(
+                &mut p,
+                bob,
+                0,
+                crate::precompile_abi::encode_deposit_collateral(
+                    U256::from(2u64) * U256::from(MRSN),
+                ),
+            );
+            blocks.push(produce(&mut p));
+            assert_eq!(
+                col(&p, alice),
+                U256::from(3u64) * U256::from(MRSN),
+                "{backend}: legacy units are wei"
+            );
+            assert_eq!(
+                p.get_balance(escrow).unwrap(),
+                U256::from(5u64) * U256::from(MRSN)
+            );
+            // Legacy fill: bob sells 2 @ 100 to alice, alice closes at 110 → nothing settles.
+            call(
+                &mut p,
+                bob,
+                1,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(100u64),
+                    U256::from(2u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                alice,
+                1,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(100u64),
+                    U256::from(2u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            call(
+                &mut p,
+                bob,
+                2,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(110u64),
+                    U256::from(2u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                alice,
+                2,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(110u64),
+                    U256::from(2u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            assert_eq!(
+                col(&p, alice),
+                U256::from(3u64) * U256::from(MRSN),
+                "{backend}: legacy: PnL not settled"
+            );
+            assert_eq!(
+                p.orders.state.accounts[&alice].positions[&m].realized_pnl,
+                20
+            );
+            while p.block_number < 10 {
+                blocks.push(produce(&mut p));
+            }
+            assert!(!p.orders.state.units_migrated);
+
+            // Block 10: the switch. Balances ÷1e18 → alice 3, bob 2; PnL history ÷1e18 → 0.
+            blocks.push(produce(&mut p));
+            assert!(
+                p.orders.state.units_migrated,
+                "{backend}: migrated at the switch"
+            );
+            assert_eq!(col(&p, alice), U256::from(3u64));
+            assert_eq!(col(&p, bob), U256::from(2u64));
+            assert_eq!(
+                p.orders.state.accounts[&alice].positions[&m].realized_pnl,
+                0
+            );
+            assert_eq!(
+                p.orders.state.initial_margin_bps, 1000,
+                "{backend}: margin armed"
+            );
+            // Escrow still holds the 5e18 wei that back 5 units.
+            assert_eq!(
+                p.get_balance(escrow).unwrap(),
+                U256::from(5u64) * U256::from(MRSN)
+            );
+
+            // Deposit 300 MRSN each → 300 units, 300e18 wei escrowed per account.
+            let alice_bal = p.get_balance(alice).unwrap();
+            call(
+                &mut p,
+                alice,
+                3,
+                crate::precompile_abi::encode_deposit_collateral(U256::from(300u64)),
+            );
+            call(
+                &mut p,
+                bob,
+                3,
+                crate::precompile_abi::encode_deposit_collateral(U256::from(300u64)),
+            );
+            blocks.push(produce(&mut p));
+            assert_eq!(col(&p, alice), U256::from(303u64), "{backend}: MRSN units");
+            assert_eq!(col(&p, bob), U256::from(302u64));
+            assert!(
+                alice_bal - p.get_balance(alice).unwrap() >= U256::from(300u64) * U256::from(MRSN),
+                "{backend}: 1e18 wei per unit escrowed"
+            );
+            assert_eq!(
+                p.get_balance(escrow).unwrap(),
+                U256::from(605u64) * U256::from(MRSN)
+            );
+
+            // 10x initial margin: 303 units allow at most 3,030 notional.
+            call(
+                &mut p,
+                bob,
+                4,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(100u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            ); // 1,000 → needs 100 ≤ 302
+            call(
+                &mut p,
+                alice,
+                4,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(100u64),
+                    U256::from(40u64),
+                    0,
+                ),
+            ); // 4,000 → needs 400 > 303 → refused
+            blocks.push(produce(&mut p));
+            assert_eq!(
+                p.orders.state.accounts[&alice]
+                    .positions
+                    .get(&m)
+                    .map(|x| x.size)
+                    .unwrap_or(0),
+                0,
+                "{backend}: over-leveraged order refused"
+            );
+            call(
+                &mut p,
+                alice,
+                5,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(100u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            ); // 1,000 → fills bob's 10
+            blocks.push(produce(&mut p));
+            assert_eq!(p.orders.state.accounts[&alice].positions[&m].size, 10);
+            assert_eq!(p.orders.state.accounts[&bob].positions[&m].size, -10);
+
+            // Alice closes 10 @ 105 into bob's bid: +50 for alice, −50 for bob, zero-sum.
+            call(
+                &mut p,
+                bob,
+                5,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(105u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                alice,
+                6,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(105u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            assert_eq!(
+                col(&p, alice),
+                U256::from(353u64),
+                "{backend}: winner credited (alice realized {} · bob col {} · current_height {} · settlement_height {} · alice pos {:?})",
+                p.orders.state.accounts[&alice].positions[&m].realized_pnl,
+                col(&p, bob),
+                p.orders.state.current_height,
+                p.orders.state.settlement_height,
+                p.orders.state.accounts[&alice].positions[&m].size
+            );
+            assert_eq!(col(&p, bob), U256::from(252u64), "{backend}: loser debited");
+            assert_eq!(p.orders.state.accounts[&bob].positions[&m].size, 0);
+            assert_eq!(p.orders.state.bad_debt, U256::ZERO);
+
+            // Bob shorts 10 @ 100 again to alice; the market runs to 200 and bob buys
+            // back: his 1,000 loss exceeds 252 units → 0 collateral, 748 bad debt.
+            call(
+                &mut p,
+                bob,
+                6,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(100u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            );
+            call(
+                &mut p,
+                alice,
+                7,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(100u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            assert_eq!(p.orders.state.accounts[&bob].positions[&m].size, -10);
+            call(
+                &mut p,
+                alice,
+                8,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(200u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            ); // resting ask
+            call(
+                &mut p,
+                bob,
+                7,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(200u64),
+                    U256::from(10u64),
+                    0,
+                ),
+            ); // 2,000 → needs 200 ≤ 252
+            blocks.push(produce(&mut p));
+            assert_eq!(col(&p, bob), U256::ZERO, "{backend}: loss wipes bob");
+            assert_eq!(
+                p.orders.state.bad_debt,
+                U256::from(748u64),
+                "{backend}: uncovered loss booked"
+            );
+            assert_eq!(
+                col(&p, alice),
+                U256::from(353u64 + 1000u64),
+                "{backend}: alice's gain is credited in full"
+            );
+
+            // Self-trade prevention: alice rests an ask 5 @ 300 then bids 5 @ 300 —
+            // her ask is cancelled, the bid rests, no fill, position unchanged.
+            let pos_before = p.orders.state.accounts[&alice].positions[&m].size;
+            call(
+                &mut p,
+                alice,
+                9,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    false,
+                    U256::from(300u64),
+                    U256::from(5u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            call(
+                &mut p,
+                alice,
+                10,
+                crate::precompile_abi::encode_place_order(
+                    1,
+                    true,
+                    U256::from(300u64),
+                    U256::from(5u64),
+                    0,
+                ),
+            );
+            blocks.push(produce(&mut p));
+            let open: Vec<_> = p.mersennet_orders_open_orders(alice);
+            assert_eq!(
+                open.len(),
+                1,
+                "{backend}: the resting ask was cancelled, the bid rests"
+            );
+            assert!(matches!(open[0].side, crate::mersennet_orders::Side::Buy));
+            assert_eq!(
+                p.orders.state.accounts[&alice].positions[&m].size, pos_before,
+                "{backend}: no self fill"
+            );
+            call(
+                &mut p,
+                alice,
+                11,
+                crate::precompile_abi::encode_cancel_order(open[0].id.0),
+            );
+            blocks.push(produce(&mut p));
+
+            // Withdraw 100 units → 100e18 wei back.
+            let before = p.get_balance(alice).unwrap();
+            call(
+                &mut p,
+                alice,
+                12,
+                crate::precompile_abi::encode_withdraw_collateral(U256::from(100u64)),
+            );
+            blocks.push(produce(&mut p));
+            assert_eq!(col(&p, alice), U256::from(1_253u64));
+            assert!(
+                p.get_balance(alice).unwrap() - before > U256::from(99u64) * U256::from(MRSN),
+                "{backend}: 1e18 wei per unit paid"
+            );
+
+            // Follower agreement across the switch.
+            for b in &blocks {
+                c.import_block(b.clone());
+                assert_eq!(
+                    c.latest_height(),
+                    b.number,
+                    "{backend}: imported #{}",
+                    b.number
+                );
+            }
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "{backend}: roots agree"
+            );
+            assert!(c.orders.state.units_migrated);
+            assert_eq!(c.orders.state.bad_debt, U256::from(748u64));
+
+            // Restart: migration flag, bad debt and margin survive.
+            p.evm.state.flush().unwrap();
+            drop(p);
+            let reopened = engine_at(&path, backend);
+            assert!(
+                reopened.orders.state.units_migrated,
+                "{backend}: flag persisted"
+            );
+            assert_eq!(
+                reopened.orders.state.bad_debt,
+                U256::from(748u64),
+                "{backend}: bad debt persisted"
+            );
+            assert_eq!(
+                reopened.orders.state.initial_margin_bps, 1000,
+                "{backend}: margin re-armed on restart"
+            );
+        }
     }
 }
