@@ -211,6 +211,43 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 None => Ok(Value::Null),
             }
         }
+        "mersennet_orders_getProtocol" => {
+            // Every CLOB consensus switch and live parameter in one call, so
+            // clients (terminal, bots, explorer) never hard-code heights.
+            let st = &engine.orders.state;
+            let height = engine.latest_height();
+            let frame_caller = mersennet::precompiles::frame_caller_height();
+            let markets: Vec<Value> = st
+                .markets
+                .values()
+                .map(|m| {
+                    json!({
+                        "id": m.id.0, "symbol": m.symbol, "priceScale": st.price_scale(m.id),
+                    })
+                })
+                .collect();
+            Ok(json!({
+                "height": height,
+                "switches": {
+                    "agentDelegationHeight": st.agent_delegation_height,
+                    "frameCallerHeight": frame_caller,
+                    "priceScaleHeight": engine.price_scale_height(),
+                    "settlementHeight": st.settlement_height,
+                },
+                "agentDelegationActive": st.agent_delegation_active(height),
+                "frameCallerActive": frame_caller > 0 && height >= frame_caller,
+                "settlementActive": st.settlement_active(height),
+                // Collateral: wei per unit at the head (1 before settlement, 1e18 after).
+                "weiPerCollateralUnit": hex_u256(st.wei_per_unit(height)),
+                "initialMarginBps": st.initial_margin_bps,
+                "maintenanceMarginBps": st.maintenance_margin_bps,
+                "settlementInitialMarginBps": st.settlement_initial_margin_bps,
+                "settlementMaintenanceMarginBps": st.settlement_maintenance_margin_bps,
+                "insuranceFund": hex_u256(st.insurance_fund),
+                "badDebt": hex_u256(st.bad_debt),
+                "markets": markets,
+            }))
+        }
         "mersennet_orders_getAgents" => {
             // Agent delegation: the grants an account has issued, plus the
             // switch state so clients know whether agent-signed orders resolve.

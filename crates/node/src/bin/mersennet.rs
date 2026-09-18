@@ -146,6 +146,13 @@ fn main() -> anyhow::Result<()> {
         app_config.mersennet_orders.price_rescales.clone(),
     );
     engine.set_frame_caller_height(app_config.mersennet_orders.frame_caller_height);
+    engine.set_settlement_params(
+        app_config.mersennet_orders.settlement_height,
+        app_config.mersennet_orders.settlement_initial_margin_bps,
+        app_config
+            .mersennet_orders
+            .settlement_maintenance_margin_bps,
+    );
     let bridge_limit = if app_config.bridge.max_queue_len == 0 {
         None
     } else {

@@ -597,6 +597,11 @@ impl PersistentState {
         state.staking = decode_staking(snapshot.staking);
         // The open-set registry lives in its own tree (see commit_validator_registry).
         self.load_validator_registry(&mut state.staking)?;
+        state.bad_debt = match self.mersennet_orders.get("bad_debt")? {
+            Some(raw) if raw.len() == 32 => U256::from_be_slice(&raw),
+            _ => U256::ZERO,
+        };
+        state.units_migrated = self.mersennet_orders.get("units_migrated")?.is_some();
         state.price_scales.clear();
         if let Some(raw) = self.mersennet_orders.get("price_scales")? {
             let scales: Vec<(u64, u64)> = bincode::deserialize(&raw)?;
@@ -775,6 +780,18 @@ impl PersistentState {
         self.mersennet_orders.insert("state", data)?;
         // Agent grants live in their own key so the snapshot bytes (and the
         // state root) are untouched until the first grant exists.
+        // Settlement bookkeeping: absent while zero / false.
+        if state.bad_debt.is_zero() {
+            self.mersennet_orders.remove("bad_debt")?;
+        } else {
+            self.mersennet_orders
+                .insert("bad_debt", state.bad_debt.to_be_bytes::<32>().to_vec())?;
+        }
+        if state.units_migrated {
+            self.mersennet_orders.insert("units_migrated", vec![1u8])?;
+        } else {
+            self.mersennet_orders.remove("units_migrated")?;
+        }
         // Per-market price scales: same convention (absent while all are 1).
         if state.price_scales.is_empty() {
             self.mersennet_orders.remove("price_scales")?;

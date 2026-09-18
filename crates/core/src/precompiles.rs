@@ -698,6 +698,15 @@ fn handle_place_order(input: &Bytes, gas_limit: u64, caller: Address) -> Precomp
             size: trade.size,
         });
     }
+    // Resting orders of the same account that the taker would have hit are
+    // cancelled by self-trade prevention; tell indexers like any cancel.
+    for cancelled_id in with_orders(|state| std::mem::take(&mut state.self_trade_cancels))? {
+        record_orders_event(MersennetOrdersEvent::OrderCancelled {
+            order_id: cancelled_id,
+            owner: caller,
+            market_id,
+        });
+    }
 
     let order_id_val = outcome
         .order_id
@@ -779,6 +788,15 @@ fn handle_place_order_ext(input: &Bytes, gas_limit: u64, caller: Address) -> Pre
             side: trade.side,
             price: trade.price,
             size: trade.size,
+        });
+    }
+    // Resting orders of the same account that the taker would have hit are
+    // cancelled by self-trade prevention; tell indexers like any cancel.
+    for cancelled_id in with_orders(|state| std::mem::take(&mut state.self_trade_cancels))? {
+        record_orders_event(MersennetOrdersEvent::OrderCancelled {
+            order_id: cancelled_id,
+            owner: caller,
+            market_id,
         });
     }
 
@@ -984,18 +1002,19 @@ fn handle_deposit_collateral(
 
     let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
     let amount = decode_u256(amt_w);
+    // One collateral unit = 1 MRSN from the settlement switch (1 wei before).
+    let height = evmctx.env.block.number.saturating_to::<u64>();
+    let wei_per_unit = with_orders(|state| state.wei_per_unit(height))?;
+    let wei = amount
+        .checked_mul(wei_per_unit)
+        .ok_or_else(|| PrecompileError::other("collateral amount too large"))?;
 
-    // Escrow `amount` native MRSN from the caller into this precompile's address
+    // Escrow the native MRSN from the caller into this precompile's address
     // FIRST (journaled — a frame revert undoes it). Only on success do we credit
     // the orders-side collateral, so the two ledgers never desync.
     match evmctx
         .journaled_state
-        .transfer(
-            &caller,
-            &MERSENNET_ORDERS_PRECOMPILE,
-            amount,
-            &mut evmctx.db,
-        )
+        .transfer(&caller, &MERSENNET_ORDERS_PRECOMPILE, wei, &mut evmctx.db)
         .map_err(|_| PrecompileError::other("collateral deposit: state error"))?
     {
         None => {}
@@ -1032,6 +1051,12 @@ fn handle_withdraw_collateral(
 
     let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
     let amount = decode_u256(amt_w);
+    // One collateral unit = 1 MRSN from the settlement switch (1 wei before).
+    let height = evmctx.env.block.number.saturating_to::<u64>();
+    let wei_per_unit = with_orders(|state| state.wei_per_unit(height))?;
+    let wei = amount
+        .checked_mul(wei_per_unit)
+        .ok_or_else(|| PrecompileError::other("collateral amount too large"))?;
 
     // Validate + decrement orders-side collateral first; it only succeeds if the
     // account stays above maintenance margin, and leaves collateral untouched on
@@ -1049,12 +1074,7 @@ fn handle_withdraw_collateral(
     // decrement back so the two ledgers stay consistent.
     match evmctx
         .journaled_state
-        .transfer(
-            &MERSENNET_ORDERS_PRECOMPILE,
-            &caller,
-            amount,
-            &mut evmctx.db,
-        )
+        .transfer(&MERSENNET_ORDERS_PRECOMPILE, &caller, wei, &mut evmctx.db)
         .map_err(|_| PrecompileError::other("collateral withdrawal: state error"))?
     {
         None => Ok(PrecompileOutput::new(

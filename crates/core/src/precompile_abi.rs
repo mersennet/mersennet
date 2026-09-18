@@ -408,3 +408,10 @@ pub fn encode_deposit_collateral(amount: U256) -> Vec<u8> {
     out.extend_from_slice(&encode_u256(amount));
     out
 }
+
+pub fn encode_withdraw_collateral(amount: U256) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 32);
+    out.extend_from_slice(&withdraw_collateral_selector());
+    out.extend_from_slice(&encode_u256(amount));
+    out
+}

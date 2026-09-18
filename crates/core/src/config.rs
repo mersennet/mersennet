@@ -203,6 +203,17 @@ pub struct MersennetOrdersConfig {
     /// and a contract cannot act on the account of the user calling it. 0 = off.
     #[serde(default)]
     pub frame_caller_height: u64,
+    /// Consensus switch: from this height one collateral unit is one MRSN
+    /// (deposits escrow amount × 1e18 wei), realized PnL settles into
+    /// collateral at every fill, and the margin parameters below replace
+    /// `initial_margin_bps` / `maintenance_margin_bps`. Pre-switch balances
+    /// (wei-backed units) are divided by 1e18 once at the switch. 0 = off.
+    #[serde(default)]
+    pub settlement_height: u64,
+    #[serde(default)]
+    pub settlement_initial_margin_bps: u64,
+    #[serde(default)]
+    pub settlement_maintenance_margin_bps: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -534,6 +545,9 @@ impl Default for MersennetOrdersConfig {
             price_scale_height: 0,
             price_rescales: Vec::new(),
             frame_caller_height: 0,
+            settlement_height: 0,
+            settlement_initial_margin_bps: 0,
+            settlement_maintenance_margin_bps: 0,
         }
     }
 }
@@ -825,6 +839,7 @@ mod canonical_config_tests {
             ("agent_delegation_height", o.agent_delegation_height),
             ("price_scale_height", o.price_scale_height),
             ("frame_caller_height", o.frame_caller_height),
+            ("settlement_height", o.settlement_height),
             ("bench_height", vs.bench_height),
             ("jail_escalation_height", vs.jail_escalation_height),
         ] {
