@@ -228,10 +228,15 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     })
                 })
                 .collect();
+            let frame_caller = mersennet::precompiles::frame_caller_height();
             Ok(serde_json::json!({
                 "owner": format!("0x{}", hex::encode(owner.as_slice())),
                 "agentDelegationHeight": switch,
                 "active": switch > 0 && height >= switch,
+                // From this height contracts calling the CLOB act as themselves
+                // (msg.sender), not as the transaction origin.
+                "frameCallerHeight": frame_caller,
+                "frameCallerActive": frame_caller > 0 && height >= frame_caller,
                 "height": height,
                 "agents": agents,
             }))

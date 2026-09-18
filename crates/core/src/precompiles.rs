@@ -1,5 +1,6 @@
+use std::cell::Cell;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use once_cell::sync::Lazy;
@@ -19,6 +20,54 @@ use crate::mersennet_orders::{MarketId, MersennetOrdersState, OrderId, Side, Tim
 use crate::precompile_abi::*;
 use crate::shielded_evm::{ShieldedEnvelope, ShieldedEvm};
 use crate::zk_proofs::StateTransitionProof;
+
+// ---------------------------------------------------------------------------
+// Call-frame identity for the stateful precompiles.
+//
+// revm hands a context precompile the transaction environment only, so the
+// orders and staking precompiles historically authorised on `env.tx.caller`
+// — the transaction ORIGIN. A contract calling the precompile therefore acted
+// as whoever sent the transaction: contracts could not own CLOB accounts, and
+// any contract a user interacted with could place orders (or, once agent
+// delegation is live, grant an agent) on the user's account. From
+// `frame_caller_height` the precompiles authorise on the immediate caller of
+// the call frame (`msg.sender`) and check the frame's value, like a contract
+// would. The frame is recorded by a wrapper around the EVM's `call` handler,
+// which runs for the top-level call too (caller = origin there, so direct
+// transactions behave exactly as before).
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+struct FrameInfo {
+    caller: Address,
+    value: U256,
+}
+
+thread_local! {
+    static CURRENT_FRAME: Cell<Option<FrameInfo>> = const { Cell::new(None) };
+}
+
+/// Consensus switch: 0 = origin semantics everywhere (legacy).
+static FRAME_CALLER_HEIGHT: AtomicU64 = AtomicU64::new(0);
+
+pub fn set_frame_caller_height(height: u64) {
+    FRAME_CALLER_HEIGHT.store(height, Ordering::SeqCst);
+}
+
+pub fn frame_caller_height() -> u64 {
+    FRAME_CALLER_HEIGHT.load(Ordering::SeqCst)
+}
+
+/// `(caller, value)` the stateful precompiles authorise on at `height`.
+fn precompile_principal(evmctx: &InnerEvmContext<InMemoryDB>, height: u64) -> (Address, U256) {
+    let switch = frame_caller_height();
+    if switch > 0 && height >= switch {
+        if let Some(f) = CURRENT_FRAME.with(|c| c.get()) {
+            return (f.caller, f.value);
+        }
+    }
+    (evmctx.env.tx.caller, evmctx.env.tx.value)
+}
 
 // ---------------------------------------------------------------------------
 // Global MersennetOrders context — set before block execution, cleared after.
@@ -135,6 +184,22 @@ impl ContextStatefulPrecompileMut<InMemoryDB> for StakingPrecompile {
 
 #[allow(clippy::arc_with_non_send_sync)]
 pub fn register_mersennet_orders_precompile(handler: &mut EvmHandler<'_, (), InMemoryDB>) {
+    // Record the frame about to run so a precompile invoked by it knows its
+    // immediate caller. Precompiles execute synchronously inside
+    // `make_call_frame`, so set-before / clear-after is exact; a call that
+    // opens a real frame instead clears it, and the next CALL sets it again.
+    let prev_call = handler.execution.call.clone();
+    handler.execution.call = Arc::new(move |ctx, inputs| {
+        CURRENT_FRAME.with(|c| {
+            c.set(Some(FrameInfo {
+                caller: inputs.caller,
+                value: inputs.value.get(),
+            }))
+        });
+        let out = prev_call(ctx, inputs);
+        CURRENT_FRAME.with(|c| c.set(None));
+        out
+    });
     let prev_load = handler.pre_execution.load_precompiles.clone();
     handler.pre_execution.load_precompiles = Arc::new(move || {
         let mut precompiles = prev_load();
@@ -508,12 +573,13 @@ fn mersennet_orders_precompile(
         return Err(PrecompileError::other("input too short for function selector").into());
     }
 
-    let caller = evmctx.env.tx.caller;
+    let height = evmctx.env.block.number.saturating_to::<u64>();
+    let (caller, call_value) = precompile_principal(evmctx, height);
 
     // Non-payable: the deposit amount is taken from calldata and debited
     // explicitly, so any attached value would be escrowed without crediting
     // anyone. Reject it (the frame revert returns the value to the caller).
-    if evmctx.env.tx.value != U256::ZERO {
+    if call_value != U256::ZERO {
         return Err(PrecompileError::other(
             "MersennetOrders precompile is non-payable; send value 0 (the deposit amount is in calldata)",
         )
@@ -521,7 +587,6 @@ fn mersennet_orders_precompile(
     }
 
     let sel = [input[0], input[1], input[2], input[3]];
-    let height = evmctx.env.block.number.saturating_to::<u64>();
 
     // Agent delegation: a transaction signed by an agent key trades as the
     // account that granted it. Only trading calls resolve through the grant;
@@ -1284,14 +1349,14 @@ fn staking_precompile(
     if input.len() < 4 {
         return Err(PrecompileError::other("input too short for function selector").into());
     }
-    let caller = evmctx.env.tx.caller;
-    if evmctx.env.tx.value != U256::ZERO {
+    let current_block = evmctx.env.block.number.saturating_to::<u64>();
+    let (caller, call_value) = precompile_principal(evmctx, current_block);
+    if call_value != U256::ZERO {
         return Err(PrecompileError::other(
             "staking precompile is non-payable; the amount is in calldata",
         )
         .into());
     }
-    let current_block = evmctx.env.block.number.saturating_to::<u64>();
     let sel = [input[0], input[1], input[2], input[3]];
 
     if sel == delegate_selector() {

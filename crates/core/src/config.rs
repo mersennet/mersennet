@@ -197,6 +197,12 @@ pub struct MersennetOrdersConfig {
     /// `[market_id, new_scale]` pairs applied at `price_scale_height`.
     #[serde(default)]
     pub price_rescales: Vec<(u64, u64)>,
+    /// Consensus switch: from this height the CLOB and staking precompiles
+    /// authorise on the immediate caller of the call frame (`msg.sender`)
+    /// instead of the transaction origin, so contracts own their own accounts
+    /// and a contract cannot act on the account of the user calling it. 0 = off.
+    #[serde(default)]
+    pub frame_caller_height: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -527,6 +533,7 @@ impl Default for MersennetOrdersConfig {
             agent_delegation_height: 0,
             price_scale_height: 0,
             price_rescales: Vec::new(),
+            frame_caller_height: 0,
         }
     }
 }
@@ -817,6 +824,7 @@ mod canonical_config_tests {
         for (name, h) in [
             ("agent_delegation_height", o.agent_delegation_height),
             ("price_scale_height", o.price_scale_height),
+            ("frame_caller_height", o.frame_caller_height),
             ("bench_height", vs.bench_height),
             ("jail_escalation_height", vs.jail_escalation_height),
         ] {
