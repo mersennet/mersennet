@@ -84,7 +84,7 @@ else
     peers_hex="$(rpc "$LOCAL_RPC" net_peerCount)"
     peers="$(hex2dec "$peers_hex")"
     if [[ -n "$peers" ]]; then
-        if (( peers > 0 )); then printf 'Peers        %s\n' "$(green "$peers")"; else printf 'Peers        %s (P2P not connected yet — outbound UDP+TCP 30303 must be allowed)\n' "$(red 0)"; fi
+        if (( peers > 0 )); then printf 'Peers        %s (P2P connections: validators, public RPC nodes and other full nodes — not the validator count)\n' "$(green "$peers")"; else printf 'Peers        %s (P2P not connected yet — outbound UDP+TCP 30303 must be allowed)\n' "$(red 0)"; fi
     fi
     chain_hex="$(rpc "$LOCAL_RPC" eth_chainId)"
     chain="$(hex2dec "$chain_hex")"

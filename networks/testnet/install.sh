@@ -161,6 +161,11 @@ if [[ -n "$RPC_ADDR" ]]; then
     echo "==> Exposing JSON-RPC on $RPC_ADDR (was 127.0.0.1:8545)"
     sed -i "s#\"addr\": \"127.0.0.1:8545\"#\"addr\": \"$RPC_ADDR\"#" /etc/mersennet/config.json
 fi
+# Operator already recorded by an earlier install (kept across upgrades): the
+# closing message must not tell such an operator to run the command again.
+EXISTING_OPERATOR="$(python3 -c 'import json,sys
+try: print((json.load(open(sys.argv[1])).get("p2p", {}) or {}).get("operator_address") or "")
+except Exception: print("")' /etc/mersennet/config.json 2>/dev/null || true)"
 if [[ -n "$OPERATOR" ]]; then
     if [[ "$OPERATOR" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
         echo "==> Recording operator wallet $OPERATOR (p2p.operator_address)"
@@ -275,6 +280,9 @@ $(if [[ -n "$OPERATOR" ]]; then
     echo "online (500 points/day on https://trade.mersennet.com/points). To become a validator,"
     echo "open https://trade.mersennet.com/staking with that wallet and press 'Bond & register'"
     echo "(1,000 MRSN self-stake; faucet at https://faucet.mersennet.com)."
+elif [[ -n "$EXISTING_OPERATOR" ]]; then
+    echo "Operator wallet $EXISTING_OPERATOR kept from your previous install — node-runner points,"
+    echo "verification and validator registration keep working; nothing else to do."
 else
     echo "This is a full node. To earn node-runner points or become a validator, re-run this"
     echo "command with --operator 0xYOUR_WALLET (keeps everything, just sets the operator)."
