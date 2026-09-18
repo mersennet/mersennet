@@ -638,9 +638,10 @@ fn dispatch(
                 require_transparent_tx_metadata_access_enabled(&engine)
                     .map_err(|err| (id.clone(), err))?;
             }
-            let block = engine.block_by_number(number);
+            // In-memory window first, on-disk block store for older heights.
+            let block = engine.get_block(number);
             match block {
-                Some(block) => serde_json::to_value(block_to_dto(block, include_txs))
+                Some(block) => serde_json::to_value(block_to_dto(&block, include_txs))
                     .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
                 None => Value::Null,
             }
@@ -670,10 +671,10 @@ fn dispatch(
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             require_transparent_tx_metadata_access_enabled(&engine)
                 .map_err(|err| (id.clone(), err))?;
-            let result = find_transaction(&engine, tx_hash);
+            let result = engine.find_transaction_located(tx_hash);
             match result {
-                Some((tx, block, idx)) => serde_json::to_value(tx_to_dto_with_block(
-                    tx,
+                Some((block, idx)) => serde_json::to_value(tx_to_dto_with_block(
+                    &block.transactions[idx as usize],
                     hex_b256(block.hash),
                     hex_u64(block.number),
                     idx,
@@ -732,6 +733,16 @@ fn dispatch(
             }
             let filter = parse_log_filter(params, engine, id.clone())
                 .map_err(|(id, message)| (id, rpc_error_invalid_params(message)))?;
+            if filter.to_block >= filter.from_block
+                && filter.to_block - filter.from_block >= MAX_LOG_RANGE_BLOCKS
+            {
+                return Err((
+                    id.clone(),
+                    rpc_error_invalid_params(format!(
+                        "block range too large: at most {MAX_LOG_RANGE_BLOCKS} blocks per eth_getLogs call (page fromBlock/toBlock)"
+                    )),
+                ));
+            }
             let engine = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
@@ -761,8 +772,8 @@ fn dispatch(
                 require_transparent_tx_metadata_access_enabled(&engine)
                     .map_err(|err| (id.clone(), err))?;
             }
-            match engine.block_by_hash(hash) {
-                Some(block) => serde_json::to_value(block_to_dto(block, include_txs))
+            match engine.get_block_by_hash(hash) {
+                Some(block) => serde_json::to_value(block_to_dto(&block, include_txs))
                     .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?,
                 None => Value::Null,
             }
@@ -1293,25 +1304,11 @@ fn parse_filter_topics(value: Option<Vec<Value>>) -> Result<Vec<TopicFilter>, Rp
 }
 
 fn find_receipt(engine: &mut Engine, hash: B256) -> Option<ReceiptDto> {
-    for block in &engine.chain {
-        for (index, (tx, receipt)) in block.transactions.iter().zip(&block.receipts).enumerate() {
-            if tx_hash(tx) == hash {
-                return Some(receipt_to_dto(block, tx, receipt, index as u64, hash));
-            }
-        }
-    }
-    None
-}
-
-fn find_transaction(engine: &Engine, hash: B256) -> Option<(&Transaction, &Block, u64)> {
-    for block in &engine.chain {
-        for (index, tx) in block.transactions.iter().enumerate() {
-            if tx_hash(tx) == hash {
-                return Some((tx, block, index as u64));
-            }
-        }
-    }
-    None
+    // In-memory window, then the persisted history index + block store.
+    let (block, index) = engine.find_transaction_located(hash)?;
+    let tx = block.transactions.get(index as usize)?;
+    let receipt = block.receipts.get(index as usize)?;
+    Some(receipt_to_dto(&block, tx, receipt, index, hash))
 }
 
 fn block_to_dto(block: &Block, include_txs: bool) -> BlockDto {
@@ -1656,12 +1653,16 @@ fn log_to_dto(
     }
 }
 
+/// Largest `fromBlock..=toBlock` span `eth_getLogs` serves in one call
+/// (about 70 minutes of blocks). Blocks outside the in-memory window are read
+/// from disk while the engine lock is held, so the cap bounds that hold time;
+/// callers page longer histories (public Ethereum providers cap similarly).
+pub const MAX_LOG_RANGE_BLOCKS: u64 = 2_000;
+
 fn collect_logs(engine: &Engine, filter: &LogFilter) -> Vec<LogDto> {
     let mut logs = Vec::new();
-    for block in &engine.chain {
-        if block.number < filter.from_block || block.number > filter.to_block {
-            continue;
-        }
+    // Blocks outside the in-memory window come from the on-disk store.
+    for block in engine.blocks_in_range(filter.from_block, filter.to_block) {
         for (tx_index, (tx, receipt)) in block.transactions.iter().zip(&block.receipts).enumerate()
         {
             let tx_hash = tx_hash(tx);
@@ -1673,7 +1674,7 @@ fn collect_logs(engine: &Engine, filter: &LogFilter) -> Vec<LogDto> {
                     continue;
                 }
                 logs.push(log_to_dto(
-                    block,
+                    &block,
                     tx_hash,
                     tx_index as u64,
                     log_index as u64,
@@ -1838,6 +1839,146 @@ mod tests {
         let engine = Arc::new(Mutex::new(Engine::new_with_state(1, temp_dir.path())));
         let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
         (temp_dir, engine, filters)
+    }
+
+    #[test]
+    fn history_is_served_from_disk_once_the_window_moves_on() {
+        // Blocks, transactions, receipts and logs older than the in-memory
+        // window (2,048 blocks on a live node) must still be answerable —
+        // wallets poll receipts by hash and explorers/indexers page history.
+        let temp_dir = TempDir::new().expect("temp dir");
+        let mut eng = Engine::new_with_state(1, temp_dir.path());
+        let from = Address::from_slice(&[0x11; 20]);
+        let to = Address::from_slice(&[0x22; 20]);
+        eng.fund_account(from, U256::from(10_000_000u64), 0);
+        eng.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(to),
+            value: U256::from(1u64),
+            data: Bytes::new(),
+            gas_limit: 21_000,
+            gas_price: U256::from(1u64),
+            nonce: 0,
+            chain_id: Some(1),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+        let old_block = eng.execute_block().expect("block executed");
+        let hash = tx_hash(&old_block.transactions[0]);
+        for _ in 0..3 {
+            eng.execute_block().expect("block executed");
+        }
+        // Simulate the window trim: only the tip stays in memory.
+        let keep = eng.chain.len() - 1;
+        eng.chain.drain(0..keep);
+        assert!(eng.block_by_number(old_block.number).is_none());
+
+        let engine = Arc::new(Mutex::new(eng));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+        // dispatch() returns the serialized JSON-RPC response; pull `result`.
+        let result = |out: String| -> Value {
+            let v: Value = serde_json::from_str(&out).expect("json");
+            v["result"].clone()
+        };
+
+        let by_number = result(
+            dispatch(
+                test_request(
+                    "eth_getBlockByNumber",
+                    json!([hex_u64(old_block.number), true]),
+                ),
+                &engine,
+                &filters,
+            )
+            .expect("block by number from disk"),
+        );
+        assert_eq!(by_number["hash"], Value::from(hex_b256(old_block.hash)));
+        assert_eq!(
+            by_number["transactions"].as_array().map(|a| a.len()),
+            Some(1)
+        );
+
+        let by_hash = result(
+            dispatch(
+                test_request(
+                    "eth_getBlockByHash",
+                    json!([hex_b256(old_block.hash), false]),
+                ),
+                &engine,
+                &filters,
+            )
+            .expect("block by hash via the history index"),
+        );
+        assert_eq!(by_hash["number"], Value::from(hex_u64(old_block.number)));
+
+        let tx = result(
+            dispatch(
+                test_request("eth_getTransactionByHash", json!([hex_b256(hash)])),
+                &engine,
+                &filters,
+            )
+            .expect("tx by hash via the history index"),
+        );
+        assert_eq!(tx["blockNumber"], Value::from(hex_u64(old_block.number)));
+        assert_eq!(tx["transactionIndex"], Value::from("0x0"));
+
+        let receipt = result(
+            dispatch(
+                test_request("eth_getTransactionReceipt", json!([hex_b256(hash)])),
+                &engine,
+                &filters,
+            )
+            .expect("receipt via the history index"),
+        );
+        assert_eq!(receipt["transactionHash"], Value::from(hex_b256(hash)));
+        assert_eq!(
+            receipt["blockNumber"],
+            Value::from(hex_u64(old_block.number))
+        );
+
+        // Logs over a range that starts before the window.
+        let logs = result(
+            dispatch(
+                test_request(
+                    "eth_getLogs",
+                    json!([{ "fromBlock": "0x0", "toBlock": "latest" }]),
+                ),
+                &engine,
+                &filters,
+            )
+            .expect("logs over disk + window"),
+        );
+        assert!(logs.is_array());
+
+        // Oversized ranges are refused with a clear message instead of a scan.
+        let too_big = dispatch(
+            test_request(
+                "eth_getLogs",
+                json!([{ "fromBlock": "0x0", "toBlock": hex_u64(MAX_LOG_RANGE_BLOCKS + 5) }]),
+            ),
+            &engine,
+            &filters,
+        )
+        .expect_err("range cap");
+        assert_eq!(too_big.1.code, -32602);
+        assert!(too_big.1.message.contains("block range too large"));
+
+        // Unknown hashes are null, not errors.
+        let missing = result(
+            dispatch(
+                test_request(
+                    "eth_getTransactionReceipt",
+                    json!([hex_b256(B256::repeat_byte(0x99))]),
+                ),
+                &engine,
+                &filters,
+            )
+            .expect("null for unknown"),
+        );
+        assert!(missing.is_null());
     }
 
     #[test]
@@ -2102,25 +2243,9 @@ mod tests {
 }
 
 fn tx_hash(tx: &Transaction) -> B256 {
-    // Prefer the canonical hash captured at decode time (keccak256 of the
-    // raw RLP envelope) so MetaMask/ethers-submitted txs are found by the
-    // exact hash the wallet computed.
-    if let Some(h) = tx.hash {
-        return h;
-    }
-    let mut payload = Vec::new();
-    payload.extend_from_slice(tx.from.as_slice());
-    payload.push(if tx.to.is_some() { 1 } else { 0 });
-    if let Some(to) = tx.to {
-        payload.extend_from_slice(to.as_slice());
-    }
-    payload.extend_from_slice(&tx.value.to_be_bytes::<32>());
-    payload.extend_from_slice(&tx.gas_price.to_be_bytes::<32>());
-    payload.extend_from_slice(&tx.gas_limit.to_be_bytes());
-    payload.extend_from_slice(&tx.nonce.to_be_bytes());
-    payload.extend_from_slice(tx.data.as_ref());
-    payload.extend_from_slice(&tx.chain_id.unwrap_or_default().to_be_bytes());
-    revm::primitives::keccak256(payload)
+    // The wallet-visible hash (keccak of the raw RLP for eth_sendRawTransaction
+    // txs); the history index in the state backends is keyed by the same value.
+    tx.canonical_hash()
 }
 
 fn parse_hex_u64(input: &str) -> Result<u64, RpcInputError> {

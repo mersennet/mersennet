@@ -1045,6 +1045,50 @@ fn main() -> anyhow::Result<()> {
                     })?;
             }
 
+            // History-index backfill: blocks stored by releases before the
+            // index existed become addressable by hash (eth_getBlockByHash,
+            // eth_getTransactionByHash/Receipt) — newest first, 256 blocks per
+            // engine-lock acquisition, a short pause between steps so
+            // consensus work is never starved. Idempotent; resumes across
+            // restarts from the persisted floor and finishes at genesis.
+            {
+                let eng = engine.clone();
+                let shutdown_hi = Arc::clone(&shutdown);
+                std::thread::Builder::new()
+                    .name("history-index".into())
+                    .spawn(move || {
+                        // Let the node finish startup/sync before touching disk.
+                        std::thread::sleep(std::time::Duration::from_secs(20));
+                        let mut logged_at: u64 = u64::MAX;
+                        loop {
+                            if shutdown_hi.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            let step = match eng.lock() {
+                                Ok(e) => e.backfill_history_index_step(256),
+                                Err(_) => break,
+                            };
+                            match step {
+                                Ok(Some(floor)) => {
+                                    if logged_at == u64::MAX || logged_at.saturating_sub(floor) >= 100_000 {
+                                        tracing::info!(indexed_down_to = floor, "history index backfill");
+                                        logged_at = floor;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(15));
+                                }
+                                Ok(None) => {
+                                    tracing::info!("history index complete: every block is addressable by hash");
+                                    break;
+                                }
+                                Err(err) => {
+                                    tracing::warn!(error = %err, "history index backfill step failed; retrying");
+                                    std::thread::sleep(std::time::Duration::from_secs(5));
+                                }
+                            }
+                        }
+                    })?;
+            }
+
             // Liveness watchdog (see WatchdogConfig). Exit codes: 3 = head stalled
             // while the network moved on, 4 = engine lock unobtainable.
             if app_config.watchdog.enabled {

@@ -41,6 +41,28 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn load_block(&self, number: u64) -> Result<Option<Block>>;
     fn load_blocks_range(&self, from: u64, to: u64) -> Result<Vec<Block>>;
 
+    /// History index (block hash → height, tx hash → height + index) so the
+    /// RPC can serve `eth_getBlockByHash`, `eth_getTransactionByHash` and
+    /// `eth_getTransactionReceipt` for blocks outside the in-memory window.
+    /// `store_block` writes it for new blocks; `index_block` is the backfill
+    /// path for blocks stored before the index existed.
+    fn index_block(&self, _block: &Block) -> Result<()> {
+        Ok(())
+    }
+    fn block_number_by_hash(&self, _hash: B256) -> Result<Option<u64>> {
+        Ok(None)
+    }
+    fn tx_location(&self, _hash: B256) -> Result<Option<(u64, u32)>> {
+        Ok(None)
+    }
+    /// Lowest height known to be indexed (`None`: backfill not started).
+    fn history_index_floor(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
+    fn set_history_index_floor(&self, _height: u64) -> Result<()> {
+        Ok(())
+    }
+
     fn record_height(&self, height: u64, state_root: B256) -> Result<()>;
     /// Durability marker around a block commit (account state, orders,
     /// height, block are separate writes). Set before the first write and

@@ -160,6 +160,8 @@ pub struct PersistentState {
     bridge_orders_to_evm: sled::Tree,
     bridge_evm_to_orders: sled::Tree,
     blocks: sled::Tree,
+    /// `b` + block hash → height (8 BE); `t` + tx hash → height (8 BE) + index (4 BE).
+    history_index: sled::Tree,
     pruning: sled::Tree,
     height_meta: sled::Tree,
     dirty_accounts: Mutex<HashSet<Address>>,
@@ -319,6 +321,7 @@ impl PersistentState {
         let bridge_orders_to_evm = db.open_tree("bridge_orders_to_evm")?;
         let bridge_evm_to_orders = db.open_tree("bridge_evm_to_orders")?;
         let blocks = db.open_tree("blocks")?;
+        let history_index = db.open_tree("history_index")?;
         let pruning = db.open_tree("pruning")?;
         let height_meta = db.open_tree("height_meta")?;
         Ok(Self {
@@ -330,6 +333,7 @@ impl PersistentState {
             bridge_orders_to_evm,
             bridge_evm_to_orders,
             blocks,
+            history_index,
             pruning,
             height_meta,
             dirty_accounts: Mutex::new(HashSet::new()),
@@ -972,7 +976,55 @@ impl PersistentState {
     pub fn store_block(&self, block: &Block) -> Result<()> {
         let data = serde_json::to_vec(block)?;
         self.blocks.insert(block.number.to_be_bytes(), data)?;
+        self.write_history_index(block)?;
         self.db.flush()?;
+        Ok(())
+    }
+
+    fn write_history_index(&self, block: &Block) -> Result<()> {
+        let mut batch = sled::Batch::default();
+        batch.insert(
+            history_block_key(block.hash).to_vec(),
+            block.number.to_be_bytes().to_vec(),
+        );
+        for (index, tx) in block.transactions.iter().enumerate() {
+            batch.insert(
+                history_tx_key(tx.canonical_hash()).to_vec(),
+                history_tx_value(block.number, index as u32).to_vec(),
+            );
+        }
+        self.history_index.apply_batch(batch)?;
+        Ok(())
+    }
+
+    pub fn index_block(&self, block: &Block) -> Result<()> {
+        self.write_history_index(block)
+    }
+
+    pub fn block_number_by_hash(&self, hash: B256) -> Result<Option<u64>> {
+        Ok(self
+            .history_index
+            .get(history_block_key(hash))?
+            .and_then(|v| decode_be_u64(&v)))
+    }
+
+    pub fn tx_location(&self, hash: B256) -> Result<Option<(u64, u32)>> {
+        Ok(self
+            .history_index
+            .get(history_tx_key(hash))?
+            .and_then(|v| decode_tx_location(&v)))
+    }
+
+    pub fn history_index_floor(&self) -> Result<Option<u64>> {
+        Ok(self
+            .height_meta
+            .get("history_index_floor")?
+            .and_then(|v| decode_be_u64(&v)))
+    }
+
+    pub fn set_history_index_floor(&self, height: u64) -> Result<()> {
+        self.height_meta
+            .insert("history_index_floor", &height.to_be_bytes())?;
         Ok(())
     }
 
@@ -1416,6 +1468,26 @@ impl crate::state_trait::StateBackend for PersistentState {
         PersistentState::load_blocks_range(self, from, to)
     }
 
+    fn index_block(&self, block: &crate::engine::Block) -> Result<()> {
+        PersistentState::index_block(self, block)
+    }
+
+    fn block_number_by_hash(&self, hash: B256) -> Result<Option<u64>> {
+        PersistentState::block_number_by_hash(self, hash)
+    }
+
+    fn tx_location(&self, hash: B256) -> Result<Option<(u64, u32)>> {
+        PersistentState::tx_location(self, hash)
+    }
+
+    fn history_index_floor(&self) -> Result<Option<u64>> {
+        PersistentState::history_index_floor(self)
+    }
+
+    fn set_history_index_floor(&self, height: u64) -> Result<()> {
+        PersistentState::set_history_index_floor(self, height)
+    }
+
     fn record_height(&self, height: u64, state_root: B256) -> Result<()> {
         PersistentState::record_height(self, height, state_root)
     }
@@ -1511,4 +1583,36 @@ mod validator_registry_persistence_tests {
         assert_eq!(loaded.staking.active_set, vec![id]);
         assert_eq!(loaded.staking.current_epoch, 3);
     }
+}
+
+/// History-index key/value encoding shared by the sled and redb backends.
+pub(crate) fn history_block_key(hash: B256) -> [u8; 33] {
+    let mut k = [0u8; 33];
+    k[0] = b'b';
+    k[1..].copy_from_slice(hash.as_slice());
+    k
+}
+pub(crate) fn history_tx_key(hash: B256) -> [u8; 33] {
+    let mut k = [0u8; 33];
+    k[0] = b't';
+    k[1..].copy_from_slice(hash.as_slice());
+    k
+}
+pub(crate) fn history_tx_value(number: u64, index: u32) -> [u8; 12] {
+    let mut v = [0u8; 12];
+    v[..8].copy_from_slice(&number.to_be_bytes());
+    v[8..].copy_from_slice(&index.to_be_bytes());
+    v
+}
+pub(crate) fn decode_be_u64(v: &[u8]) -> Option<u64> {
+    (v.len() == 8).then(|| u64::from_be_bytes(v.try_into().unwrap()))
+}
+pub(crate) fn decode_tx_location(v: &[u8]) -> Option<(u64, u32)> {
+    if v.len() != 12 {
+        return None;
+    }
+    Some((
+        u64::from_be_bytes(v[..8].try_into().unwrap()),
+        u32::from_be_bytes(v[8..].try_into().unwrap()),
+    ))
 }

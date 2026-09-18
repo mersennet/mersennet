@@ -141,6 +141,33 @@ pub struct Transaction {
     pub hash: Option<B256>,
 }
 
+impl Transaction {
+    /// The hash a wallet or explorer uses to look this transaction up: the
+    /// keccak of the raw RLP envelope when the tx arrived through
+    /// `eth_sendRawTransaction`, otherwise a deterministic digest of the
+    /// fields (internally built txs). The RPC serves `eth_getTransactionByHash`
+    /// / `eth_getTransactionReceipt` by this value and the state backends
+    /// index blocks by it.
+    pub fn canonical_hash(&self) -> B256 {
+        if let Some(h) = self.hash {
+            return h;
+        }
+        let mut payload = Vec::new();
+        payload.extend_from_slice(self.from.as_slice());
+        payload.push(if self.to.is_some() { 1 } else { 0 });
+        if let Some(to) = self.to {
+            payload.extend_from_slice(to.as_slice());
+        }
+        payload.extend_from_slice(&self.value.to_be_bytes::<32>());
+        payload.extend_from_slice(&self.gas_price.to_be_bytes::<32>());
+        payload.extend_from_slice(&self.gas_limit.to_be_bytes());
+        payload.extend_from_slice(&self.nonce.to_be_bytes());
+        payload.extend_from_slice(self.data.as_ref());
+        payload.extend_from_slice(&self.chain_id.unwrap_or_default().to_be_bytes());
+        revm::primitives::keccak256(payload)
+    }
+}
+
 impl Default for Transaction {
     fn default() -> Self {
         Self {
@@ -1435,6 +1462,106 @@ impl Engine {
             return Some(b.clone());
         }
         self.evm.state.load_block(number).ok().flatten()
+    }
+
+    /// Block by hash: the in-memory window first, then the persisted
+    /// history index (hash → height) and the on-disk block store.
+    pub fn get_block_by_hash(&self, hash: B256) -> Option<Block> {
+        if let Some(b) = self.chain.iter().find(|block| block.hash == hash) {
+            return Some(b.clone());
+        }
+        let number = self.evm.state.block_number_by_hash(hash).ok().flatten()?;
+        self.get_block(number).filter(|b| b.hash == hash)
+    }
+
+    /// Transaction by canonical hash with its block and index: the in-memory
+    /// window first, then the persisted history index (tx hash → height,
+    /// index) and the on-disk block store.
+    pub fn find_transaction_located(&self, hash: B256) -> Option<(Block, u64)> {
+        for block in &self.chain {
+            if let Some(i) = block
+                .transactions
+                .iter()
+                .position(|tx| tx.canonical_hash() == hash)
+            {
+                return Some((block.clone(), i as u64));
+            }
+        }
+        let (number, index) = self.evm.state.tx_location(hash).ok().flatten()?;
+        let block = self.get_block(number)?;
+        let index = block
+            .transactions
+            .get(index as usize)
+            .filter(|tx| tx.canonical_hash() == hash)
+            .map(|_| index as u64)
+            .or_else(|| {
+                block
+                    .transactions
+                    .iter()
+                    .position(|tx| tx.canonical_hash() == hash)
+                    .map(|i| i as u64)
+            })?;
+        Some((block, index))
+    }
+
+    /// Every block in `from..=to` (inclusive, clamped to the tip), from the
+    /// in-memory window when present and the on-disk store otherwise. Callers
+    /// cap the range (`eth_getLogs` allows 10,000 blocks per query).
+    pub fn blocks_in_range(&self, from: u64, to: u64) -> Vec<Block> {
+        let tip = self.latest_height();
+        let to = to.min(tip);
+        if from > to {
+            return Vec::new();
+        }
+        let window_start = self.chain.first().map(|b| b.number).unwrap_or(u64::MAX);
+        let mut out = Vec::with_capacity((to - from + 1) as usize);
+        if from < window_start {
+            let disk_to = to.min(window_start.saturating_sub(1));
+            if let Ok(blocks) = self.evm.state.load_blocks_range(from, disk_to) {
+                out.extend(blocks);
+            }
+        }
+        out.extend(
+            self.chain
+                .iter()
+                .filter(|b| b.number >= from && b.number <= to)
+                .cloned(),
+        );
+        out
+    }
+
+    /// Lowest height whose blocks are known to be in the history index.
+    /// `None` until the first backfill step records it.
+    pub fn history_index_floor(&self) -> Option<u64> {
+        self.evm.state.history_index_floor().ok().flatten()
+    }
+
+    /// One step of the history-index backfill: index up to `batch` blocks
+    /// below the current floor (blocks stored by releases before the index
+    /// existed), walking downwards so recent history becomes addressable
+    /// first. Returns the new floor, or `None` once genesis is indexed. Cheap
+    /// enough to run under the engine lock between consensus work.
+    pub fn backfill_history_index_step(&self, batch: u64) -> Result<Option<u64>> {
+        let floor = match self.evm.state.history_index_floor()? {
+            Some(f) => f,
+            None => {
+                // Blocks from this height on are indexed as they are stored
+                // (store_block writes the index); everything below is not.
+                let start = self.latest_height().saturating_add(1);
+                self.evm.state.set_history_index_floor(start)?;
+                start
+            }
+        };
+        if floor == 0 {
+            return Ok(None);
+        }
+        let low = floor.saturating_sub(batch);
+        let blocks = self.evm.state.load_blocks_range(low, floor - 1)?;
+        for block in &blocks {
+            self.evm.state.index_block(block)?;
+        }
+        self.evm.state.set_history_index_floor(low)?;
+        Ok(if low == 0 { None } else { Some(low) })
     }
 
     /// Cap the in-memory chain to a recent window. Older blocks remain on
@@ -5542,6 +5669,185 @@ mod open_validator_set_tests {
             ),
             Err(crate::staking::StakingError::NotActive)
         );
+    }
+}
+
+#[cfg(test)]
+mod history_index_tests {
+    use super::*;
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine(backend: &str) -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut e = Engine::new_with_backend(131071, sub, backend);
+        std::mem::forget(dir);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        e.fund_account(addr(9), U256::from(1_000u64) * U256::from(MRSN), 0);
+        e
+    }
+    fn produce(e: &mut Engine) {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        e.set_local_validator(leader);
+        e.execute_block().expect("produce");
+    }
+    /// A plain transfer from addr(9) so the block carries a transaction.
+    fn transfer(e: &mut Engine, nonce: u64) {
+        e.submit_tx_unsigned(Transaction {
+            from: addr(9),
+            to: Some(addr(7)),
+            value: U256::from(MRSN),
+            data: Bytes::new(),
+            gas_limit: 50_000,
+            gas_price: U256::from(1u64),
+            nonce,
+            chain_id: Some(e.chain_id),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+        })
+        .expect("tx accepted");
+    }
+
+    #[test]
+    fn hash_lookups_survive_the_in_memory_window() {
+        for backend in ["sled", "redb"] {
+            let mut e = engine(backend);
+            // Six blocks, a transfer in every other one.
+            for n in 0..6u64 {
+                if n % 2 == 0 {
+                    transfer(&mut e, n / 2);
+                }
+                produce(&mut e);
+            }
+            let old = e.chain[1].clone();
+            let tx = old.transactions.first().cloned().unwrap_or_else(|| {
+                e.chain[2]
+                    .transactions
+                    .first()
+                    .cloned()
+                    .expect("a block with a tx")
+            });
+            let tx_block = e
+                .chain
+                .iter()
+                .find(|b| {
+                    b.transactions
+                        .iter()
+                        .any(|t| t.canonical_hash() == tx.canonical_hash())
+                })
+                .cloned()
+                .unwrap();
+
+            // Everything is in memory: lookups work and agree with the window.
+            assert_eq!(
+                e.get_block_by_hash(old.hash).map(|b| b.number),
+                Some(old.number),
+                "{backend}"
+            );
+            let (b, idx) = e
+                .find_transaction_located(tx.canonical_hash())
+                .expect("tx in memory");
+            assert_eq!((b.number, idx), (tx_block.number, 0));
+
+            // Drop everything but the last block from the window; the
+            // history index + block store must still answer.
+            let keep = e.chain.len() - 1;
+            e.chain.drain(0..keep);
+            assert!(e.block_by_hash(old.hash).is_none(), "window really trimmed");
+            assert_eq!(
+                e.get_block_by_hash(old.hash).map(|b| b.hash),
+                Some(old.hash),
+                "{backend}: block by hash from disk"
+            );
+            let (b, idx) = e
+                .find_transaction_located(tx.canonical_hash())
+                .expect("tx via history index");
+            assert_eq!(
+                (b.number, idx),
+                (tx_block.number, 0),
+                "{backend}: tx location from disk"
+            );
+            assert_eq!(
+                b.receipts.len(),
+                b.transactions.len(),
+                "{backend}: receipts travel with the block"
+            );
+            assert!(e.get_block_by_hash(B256::repeat_byte(0xAB)).is_none());
+            assert!(
+                e.find_transaction_located(B256::repeat_byte(0xCD))
+                    .is_none()
+            );
+
+            // Ranges mix the on-disk store and the window.
+            let range = e.blocks_in_range(1, e.latest_height());
+            let numbers: Vec<u64> = range.iter().map(|b| b.number).collect();
+            assert_eq!(
+                numbers,
+                (1..=e.latest_height()).collect::<Vec<_>>(),
+                "{backend}: full range"
+            );
+            assert!(e.blocks_in_range(5, 2).is_empty());
+        }
+    }
+
+    #[test]
+    fn backfill_walks_from_the_tip_to_genesis_and_is_idempotent() {
+        for backend in ["sled", "redb"] {
+            let mut e = engine(backend);
+            for n in 0..10u64 {
+                if n % 3 == 0 {
+                    transfer(&mut e, n / 3);
+                }
+                produce(&mut e);
+            }
+            let tip = e.latest_height();
+            assert!(
+                e.history_index_floor().is_none(),
+                "{backend}: no floor before the first step"
+            );
+            // First step records the floor at tip+1 and indexes one batch below it.
+            let after_first = e.backfill_history_index_step(4).unwrap();
+            assert_eq!(after_first, Some(tip + 1 - 4), "{backend}");
+            assert_eq!(e.history_index_floor(), Some(tip + 1 - 4));
+            // Keep stepping until genesis is indexed.
+            let mut steps = 0;
+            while e.backfill_history_index_step(4).unwrap().is_some() {
+                steps += 1;
+                assert!(steps < 100, "{backend}: backfill must terminate");
+            }
+            assert_eq!(
+                e.history_index_floor(),
+                Some(0),
+                "{backend}: floor reaches genesis"
+            );
+            // Done: further steps are no-ops that report completion.
+            assert_eq!(e.backfill_history_index_step(4).unwrap(), None);
+            // And every block is addressable by hash after trimming the window.
+            let hashes: Vec<(u64, B256)> = e.chain.iter().map(|b| (b.number, b.hash)).collect();
+            let keep = e.chain.len() - 1;
+            e.chain.drain(0..keep);
+            for (n, h) in hashes {
+                assert_eq!(
+                    e.get_block_by_hash(h).map(|b| b.number),
+                    Some(n),
+                    "{backend}: block {n}"
+                );
+            }
+        }
     }
 }
 

@@ -16,9 +16,10 @@ use crate::mersennet_orders::{
 use crate::state::{
     AccountRecord, AccountRecordV2, BridgeQueueRecord, CollateralAssetRecord, MarketRecord,
     MerkleTree, MersennetOrdersSnapshot, OrderBookRecord, OrderRecord, PositionRecord,
-    SnapshotMeta, SnapshotRecord, StateProof, bytes_to_u256, decode_bridge_queue,
-    decode_market_status, decode_side, decode_staking, decode_tif, encode_bridge_queue,
-    encode_market_status, encode_side, encode_staking, encode_tif,
+    SnapshotMeta, SnapshotRecord, StateProof, bytes_to_u256, decode_be_u64, decode_bridge_queue,
+    decode_market_status, decode_side, decode_staking, decode_tif, decode_tx_location,
+    encode_bridge_queue, encode_market_status, encode_side, encode_staking, encode_tif,
+    history_block_key, history_tx_key, history_tx_value,
 };
 use crate::state_trait::StateBackend;
 
@@ -28,6 +29,8 @@ const MERSENNET_ORDERS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("me
 const BRIDGE_OTE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("bridge_orders_to_evm");
 const BRIDGE_ETO: TableDefinition<&[u8], &[u8]> = TableDefinition::new("bridge_evm_to_orders");
 const BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("blocks");
+/// `b` + block hash → height (8 BE); `t` + tx hash → height (8 BE) + index (4 BE).
+const HISTORY_INDEX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("history_index");
 const PRUNING: TableDefinition<&[u8], &[u8]> = TableDefinition::new("pruning");
 const HEIGHT_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("height_meta");
 
@@ -57,6 +60,7 @@ impl RedbState {
             let _ = write_txn.open_table(BRIDGE_OTE)?;
             let _ = write_txn.open_table(BRIDGE_ETO)?;
             let _ = write_txn.open_table(BLOCKS)?;
+            let _ = write_txn.open_table(HISTORY_INDEX)?;
             let _ = write_txn.open_table(PRUNING)?;
             let _ = write_txn.open_table(HEIGHT_META)?;
             write_txn.commit()?;
@@ -155,6 +159,22 @@ impl RedbState {
             }
         }
         items
+    }
+}
+
+impl RedbState {
+    fn write_history_index(index: &mut redb::Table<'_, &[u8], &[u8]>, block: &Block) -> Result<()> {
+        index.insert(
+            history_block_key(block.hash).as_slice(),
+            block.number.to_be_bytes().as_slice(),
+        )?;
+        for (i, tx) in block.transactions.iter().enumerate() {
+            index.insert(
+                history_tx_key(tx.canonical_hash()).as_slice(),
+                history_tx_value(block.number, i as u32).as_slice(),
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -656,6 +676,55 @@ impl StateBackend for RedbState {
         {
             let mut table = write_txn.open_table(BLOCKS)?;
             table.insert(block.number.to_be_bytes().as_slice(), data.as_slice())?;
+            let mut index = write_txn.open_table(HISTORY_INDEX)?;
+            Self::write_history_index(&mut index, block)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn index_block(&self, block: &Block) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut index = write_txn.open_table(HISTORY_INDEX)?;
+            Self::write_history_index(&mut index, block)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn block_number_by_hash(&self, hash: B256) -> Result<Option<u64>> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HISTORY_INDEX)?;
+        Ok(table
+            .get(history_block_key(hash).as_slice())?
+            .and_then(|v| decode_be_u64(v.value())))
+    }
+
+    fn tx_location(&self, hash: B256) -> Result<Option<(u64, u32)>> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HISTORY_INDEX)?;
+        Ok(table
+            .get(history_tx_key(hash).as_slice())?
+            .and_then(|v| decode_tx_location(v.value())))
+    }
+
+    fn history_index_floor(&self) -> Result<Option<u64>> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HEIGHT_META)?;
+        Ok(table
+            .get(b"history_index_floor".as_slice())?
+            .and_then(|v| decode_be_u64(v.value())))
+    }
+
+    fn set_history_index_floor(&self, height: u64) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(HEIGHT_META)?;
+            table.insert(
+                b"history_index_floor".as_slice(),
+                height.to_be_bytes().as_slice(),
+            )?;
         }
         write_txn.commit()?;
         Ok(())
