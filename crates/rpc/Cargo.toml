@@ -3,6 +3,7 @@ name = "mersennet-rpc"
 version = "0.7.0"
 authors = ["Rodolfo Cova @rodaemonic"]
 edition = "2024"
+license = "BUSL-1.1"
 
 [features]
 default = []

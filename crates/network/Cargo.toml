@@ -3,6 +3,7 @@ name = "mersennet-network"
 version = "0.7.0"
 authors = ["Rodolfo Cova @rodaemonic"]
 edition = "2024"
+license = "BUSL-1.1"
 
 [dependencies]
 mersennet = { path = "../core" }
