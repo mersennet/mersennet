@@ -256,4 +256,24 @@ lives in its own repository under [github.com/mersennet](https://github.com/mers
 
 ## License
 
-Proprietary — MersennetNumbers Labs
+**Source-available under the [Business Source License 1.1](LICENSE)**, Licensor:
+Mersennet Foundation.
+
+In plain words:
+
+- You may **read, audit, build, modify and redistribute** the code, and use it
+  for development and testing without restriction.
+- You may **run it in production as a node, validator, indexer or client of a
+  Mersennet network** — the networks whose genesis and chain id the Foundation
+  publishes at [mersennet.com](https://mersennet.com). This is what validators
+  and integrators need, and it is free.
+- You may **not** operate or distribute it (or a derivative) as part of another
+  blockchain network without a commercial license — ask
+  [licensing@mersennet.com](mailto:licensing@mersennet.com).
+- On **2030-09-30** every 0.7.x release converts to the **Apache License 2.0**
+  automatically. Each later major version carries its own change date.
+
+Dependencies keep their own licenses (MIT/Apache-2.0/BSD; no GPL-only crates).
+Contributions require the [CLA](CLA.md) so the Foundation can honour the
+change date and grant commercial licenses. "Mersennet" and the logo are
+trademarks of the Mersennet Foundation and are not licensed by the BSL.
