@@ -13,3 +13,9 @@ resolver = "2"
 version = "0.7.0"
 authors = ["Rodolfo Cova @rodaemonic", "Arturo Cantera @xcantera"]
 edition = "2024"
+# Source-available: Business Source License 1.1, converting to Apache-2.0 on
+# 2030-09-30. Running a Mersennet-network node is permitted; other networks
+# need a commercial license (licensing@mersennet.com). See LICENSE.
+license = "BUSL-1.1"
+repository = "https://github.com/mersennet/mersennet"
+homepage = "https://mersennet.com"

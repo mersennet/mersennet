@@ -6,6 +6,16 @@ conventions, review policy, and the workflow for the in-progress
 
 ---
 
+## License and CLA
+
+The node is source-available under the Business Source License 1.1 (see
+[LICENSE](LICENSE) and the plain-words summary in the README). To keep the
+change date and commercial licensing workable, every contribution must be
+covered by the [Contributor License Agreement](CLA.md): the first pull request
+from a new contributor gets a comment from the CLA bot; replying with the
+sentence it asks for signs it. Contributions are licensed to the Foundation and
+to everyone else under the same BSL terms as the rest of the repository.
+
 ## Branching model
 
 Mersennet uses a **trunk-based** model with one long-lived integration branch

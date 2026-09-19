@@ -2,6 +2,7 @@
 name = "mersennet-state-transition-host"
 version = "0.1.0"
 edition = "2024"
+license = "BUSL-1.1"
 
 [workspace]
 
