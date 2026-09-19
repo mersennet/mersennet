@@ -160,15 +160,16 @@ programs/                       — SP1 RISC-V zkVM (built outside the workspace
 ├── state-transition/                 — state-transition program
 └── state-transition-host/            — host runner (mock / real-SP1 / network)
 
-deploy/                         — Hetzner VPS testnet deployment (systemd + scripts)
+networks/testnet/               — Public testnet genesis/config, the one-line installer, release packaging
 testnet/                        — Dockerized testnets
 ├── configs/privacy/                  — 7-validator 5-of-7 configs
 ├── docker-compose.testnet.yml        — transparent testnet stack (131071)
 ├── docker-compose.privacy.yml        — privacy testnet stack (7920)
 └── scripts/                          — bootstrap, load, chaos
-mainnet/                        — Mainnet genesis (8191), compose stack, launch checklist
-monitoring/                     — Prometheus + Grafana dashboards
+mainnet/                        — Mainnet genesis (8191) and validator requirements
 scripts/ci/, scripts/zk/        — CI helpers (privacy-grep) + ZK prover adapters
+
+Fleet deployment, monitoring and runbooks live in a separate private ops repository.
 ```
 
 ## Branch policy

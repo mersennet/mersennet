@@ -180,7 +180,7 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - privacy-grafana-data:/var/lib/grafana
-      - ../deploy/monitoring/grafana-privacy-dashboard.json:/var/lib/grafana/dashboards/privacy.json:ro
+      - ./monitoring/grafana-privacy-dashboard.json:/var/lib/grafana/dashboards/privacy.json:ro
     networks:
       - privacy-testnet
     depends_on:
