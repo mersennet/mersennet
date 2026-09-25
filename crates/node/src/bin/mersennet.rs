@@ -54,6 +54,36 @@ fn notify_orders_trades(
 
 /// Engine handle for the signal handler, so a termination signal can wait
 /// for the current block commit before the process exits.
+const USAGE: &str = "\
+Mersennet node
+
+Usage: mersennet --config <config.json> [--mode full|validator] [--rpc] [options]
+
+  --config <path>            node configuration (networks/testnet/config.json layout)
+  --mode <full|validator>    full: follow the chain and serve RPC (default with --config)
+                             validator: also produce and vote (needs a registered identity)
+  --validator                same as --mode validator
+  --rpc                      enable the JSON-RPC server
+  --rpc-addr <host:port>     JSON-RPC listen address (overrides the config)
+  --state <dir>              state directory (overrides engine.state_path)
+  --node-key-path <file>     node identity key (overrides p2p.node_key_path)
+  --peer-store-path <file>   persisted peer list (overrides p2p.peer_store_path)
+  --mempool-max <n>          mempool size (overrides mempool.max_total)
+  --mempool-per-sender <n>   per-sender in-flight cap (overrides mempool.max_per_sender)
+  --mempool-bump-bps <bps>   replacement fee bump (overrides mempool.bump_bps)
+  --snapshot-listen <addr>   serve state snapshots to peers on this address
+  --snapshot-fetch <addr>    restore state from a peer's snapshot server, then exit
+  --snapshot-out <dir>       where --snapshot-fetch writes the restored state
+  --snapshot-chunk-size <n>  snapshot transfer chunk size (bytes)
+  --snapshot-max-bytes <n>   refuse snapshots larger than this
+  --devnet                   run the local devnet demo in the current directory (development only)
+  -V, --version              print the build id (Mersennet/<version>-<sha>) and exit
+  -h, --help                 this text
+
+Operators: install with  curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash
+Guide: https://docs.mersennet.com/validators/run-a-node/
+";
+
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
 /// Set by the producer from just before `execute_block` until the block has
 /// been broadcast. The shutdown handler waits for it to clear: a block that is
@@ -75,6 +105,10 @@ fn main() -> anyhow::Result<()> {
             env!("CARGO_PKG_VERSION"),
             option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
         );
+        return Ok(());
+    }
+    if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
+        print!("{USAGE}");
         return Ok(());
     }
     // initialize structured tracing from env and install Prometheus metrics
@@ -1428,6 +1462,10 @@ struct CliConfig {
     rpc_enabled: bool,
     rpc_addr: Option<String>,
     mode: NodeMode,
+    /// `--mode`, `--devnet` or `--validator` was given; without one, `--config`
+    /// means a full node (the devnet demo used to be the silent default and
+    /// wrote state dirs into whatever directory an operator ran the binary from).
+    mode_explicit: bool,
     snapshot_listen: Option<String>,
     snapshot_fetch: Option<String>,
     snapshot_out: Option<String>,
@@ -1447,6 +1485,7 @@ fn read_cli_config() -> CliConfig {
         rpc_enabled: false,
         rpc_addr: None,
         mode: NodeMode::Devnet,
+        mode_explicit: false,
         snapshot_listen: None,
         snapshot_fetch: None,
         snapshot_out: None,
@@ -1501,13 +1540,16 @@ fn read_cli_config() -> CliConfig {
             "--mode" => {
                 if let Some(value) = args.next() {
                     config.mode = parse_mode(&value);
+                    config.mode_explicit = true;
                 }
             }
             "--devnet" => {
                 config.mode = NodeMode::Devnet;
+                config.mode_explicit = true;
             }
             "--validator" => {
                 config.mode = NodeMode::Validator;
+                config.mode_explicit = true;
             }
             "--snapshot-listen" => {
                 if let Some(value) = args.next() {
@@ -1548,7 +1590,24 @@ fn read_cli_config() -> CliConfig {
                     config.peer_store_path = Some(value);
                 }
             }
-            _ => {}
+            other => {
+                eprintln!("mersennet: unknown argument '{other}'\n\n{USAGE}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if !config.mode_explicit {
+        // The snapshot endpoints are tools in their own right (state dir from
+        // --state or the default); everything else needs a configuration file.
+        let tool = config.snapshot_fetch.is_some() || config.snapshot_listen.is_some();
+        if config.config_path.is_some() || tool {
+            config.mode = NodeMode::Full;
+        } else {
+            eprintln!(
+                "mersennet: no --config given. A node needs its configuration file; \
+                 the local devnet demo runs only with an explicit --devnet.\n\n{USAGE}"
+            );
+            std::process::exit(2);
         }
     }
 
