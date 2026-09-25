@@ -485,6 +485,56 @@ pub fn generate_keypair() -> (SigningKey, Address) {
     (signing_key, address)
 }
 
+/// EIP-191 personal-sign digest of `message`.
+pub fn eip191_digest(message: &[u8]) -> B256 {
+    let mut prefixed = format!("\x19Ethereum Signed Message:\n{}", message.len()).into_bytes();
+    prefixed.extend_from_slice(message);
+    keccak256(&prefixed)
+}
+
+/// Recover the signer of an EIP-191 signature (65 bytes: r ‖ s ‖ v, v ∈ {0,1,27,28}).
+pub fn recover_eip191(message: &[u8], sig: &[u8]) -> Result<Address> {
+    if sig.len() != 65 {
+        bail!("signature must be 65 bytes");
+    }
+    let v = sig[64];
+    let recid = RecoveryId::try_from(if v >= 27 { v - 27 } else { v })
+        .map_err(|e| anyhow!("invalid recovery id: {e}"))?;
+    let signature =
+        Signature::from_slice(&sig[..64]).map_err(|e| anyhow!("invalid signature: {e}"))?;
+    let key =
+        VerifyingKey::recover_from_prehash(eip191_digest(message).as_slice(), &signature, recid)
+            .map_err(|e| anyhow!("recovery failed: {e}"))?;
+    Ok(public_key_to_address(&key))
+}
+
+/// The statement a node key signs to let `operator` register it as a
+/// validator. Static per (operator, identity), so a node can hand it out
+/// freely (whoami) — it authorises nothing but that binding.
+pub fn validator_registration_message(operator: Address, identity: Address) -> String {
+    format!(
+        "Mersennet validator registration v1\noperator: 0x{}\nidentity: 0x{}",
+        hex::encode(operator.as_slice()),
+        hex::encode(identity.as_slice())
+    )
+}
+
+/// Sign the registration statement with the node key (65-byte EIP-191 signature).
+pub fn sign_validator_registration(
+    operator: Address,
+    identity: Address,
+    key: &SigningKey,
+) -> Vec<u8> {
+    let msg = validator_registration_message(operator, identity);
+    let digest = eip191_digest(msg.as_bytes());
+    let (sig, recid): (Signature, RecoveryId) = key
+        .sign_prehash(digest.as_slice())
+        .expect("registration signing failed");
+    let mut out = sig.to_bytes().to_vec();
+    out.push(27 + recid.to_byte());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,54 +699,4 @@ mod tests {
         let recovered = recover_signer(&decoded).expect("shielded recover");
         assert_eq!(recovered, addr);
     }
-}
-
-/// EIP-191 personal-sign digest of `message`.
-pub fn eip191_digest(message: &[u8]) -> B256 {
-    let mut prefixed = format!("\x19Ethereum Signed Message:\n{}", message.len()).into_bytes();
-    prefixed.extend_from_slice(message);
-    keccak256(&prefixed)
-}
-
-/// Recover the signer of an EIP-191 signature (65 bytes: r ‖ s ‖ v, v ∈ {0,1,27,28}).
-pub fn recover_eip191(message: &[u8], sig: &[u8]) -> Result<Address> {
-    if sig.len() != 65 {
-        bail!("signature must be 65 bytes");
-    }
-    let v = sig[64];
-    let recid = RecoveryId::try_from(if v >= 27 { v - 27 } else { v })
-        .map_err(|e| anyhow!("invalid recovery id: {e}"))?;
-    let signature =
-        Signature::from_slice(&sig[..64]).map_err(|e| anyhow!("invalid signature: {e}"))?;
-    let key =
-        VerifyingKey::recover_from_prehash(eip191_digest(message).as_slice(), &signature, recid)
-            .map_err(|e| anyhow!("recovery failed: {e}"))?;
-    Ok(public_key_to_address(&key))
-}
-
-/// The statement a node key signs to let `operator` register it as a
-/// validator. Static per (operator, identity), so a node can hand it out
-/// freely (whoami) — it authorises nothing but that binding.
-pub fn validator_registration_message(operator: Address, identity: Address) -> String {
-    format!(
-        "Mersennet validator registration v1\noperator: 0x{}\nidentity: 0x{}",
-        hex::encode(operator.as_slice()),
-        hex::encode(identity.as_slice())
-    )
-}
-
-/// Sign the registration statement with the node key (65-byte EIP-191 signature).
-pub fn sign_validator_registration(
-    operator: Address,
-    identity: Address,
-    key: &SigningKey,
-) -> Vec<u8> {
-    let msg = validator_registration_message(operator, identity);
-    let digest = eip191_digest(msg.as_bytes());
-    let (sig, recid): (Signature, RecoveryId) = key
-        .sign_prehash(digest.as_slice())
-        .expect("registration signing failed");
-    let mut out = sig.to_bytes().to_vec();
-    out.push(27 + recid.to_byte());
-    out
 }

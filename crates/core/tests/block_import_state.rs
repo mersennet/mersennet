@@ -198,3 +198,158 @@ fn duplicate_import_is_ignored() {
         U256::from(1_000u64)
     );
 }
+
+/// Remove the block record at `height` from a closed state store, leaving
+/// `latest_height` untouched — the on-disk shape a hard kill between
+/// `record_height` and `store_block` produces (no marker on redb; on sled the
+/// interrupted-commit marker normally catches it, so the marker is not set
+/// here to exercise the resume path itself).
+fn drop_block_record(dir: &std::path::Path, backend: &str, height: u64) {
+    match backend {
+        "sled" => {
+            let db = sled::open(dir).expect("open sled");
+            let blocks = db.open_tree("blocks").expect("blocks tree");
+            blocks.remove(height.to_be_bytes()).expect("remove");
+            db.flush().expect("flush");
+        }
+        "redb" => {
+            use redb::TableDefinition;
+            const BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("blocks");
+            let db = redb::Database::open(dir.join("mersennet.redb")).expect("open redb");
+            let txn = db.begin_write().expect("write txn");
+            {
+                let mut table = txn.open_table(BLOCKS).expect("blocks table");
+                table
+                    .remove(height.to_be_bytes().as_slice())
+                    .expect("remove");
+            }
+            txn.commit().expect("commit");
+        }
+        other => panic!("unknown backend {other}"),
+    }
+}
+
+/// Field report (f67d812): "persisted_height=487, next_block=488, then
+/// FORK DETECTED at 488 (parent hash mismatch) forever, also after restarts".
+/// The state was committed at 487 but the block record for 487 was missing,
+/// so the in-memory head was 486, block 488 could never chain onto it, and
+/// block 487 arriving from a peer was refused as "already applied". The node
+/// must (a) say so at resume and (b) accept the missing head from block-sync
+/// without re-executing it, then continue normally.
+#[test]
+fn resume_with_missing_head_block_record_heals_from_block_sync() {
+    for backend in ["sled", "redb"] {
+        let alice = Address::from_slice(&[0x31; 20]);
+        let bob = Address::from_slice(&[0x32; 20]);
+        let dir = tempdir().expect("temp dir");
+
+        // Produce three blocks; each commits state and stores its record.
+        let (produced, bob_after_3) = {
+            let mut engine = Engine::new_with_backend(131_071, dir.path(), backend);
+            engine.fund_account(alice, U256::from(5_000_000u64), 0);
+            let mut produced = Vec::new();
+            for nonce in 0..3u64 {
+                engine
+                    .transfer(
+                        alice,
+                        bob,
+                        U256::from(1_000u64),
+                        21_000,
+                        U256::from(1u64),
+                        nonce,
+                    )
+                    .expect("transfer");
+                produced.push(engine.execute_block().expect("block"));
+            }
+            assert_eq!(produced[2].number, 3);
+            (produced, engine.get_balance(bob).expect("bob"))
+        };
+        let b3 = produced[2].clone();
+
+        // The crash shape: latest_height = 3, no record for block 3.
+        drop_block_record(dir.path(), backend, 3);
+
+        let mut reopened = Engine::new_with_backend(131_071, dir.path(), backend);
+        assert_eq!(
+            reopened.block_number, 4,
+            "[{backend}] state is committed at 3, so 4 is next"
+        );
+        assert_eq!(
+            reopened.latest_height(),
+            2,
+            "[{backend}] the on-disk head is 2 (record for 3 missing)"
+        );
+        assert_eq!(
+            reopened.get_balance(bob).expect("bob"),
+            bob_after_3,
+            "[{backend}] the committed state already includes block 3"
+        );
+
+        // A wrong block for the gap is refused (nothing changes)…
+        let mut wrong = b3.clone();
+        wrong.parent_hash = revm::primitives::B256::repeat_byte(0xAA);
+        reopened.import_block(wrong);
+        assert_eq!(
+            reopened.latest_height(),
+            2,
+            "[{backend}] a block that does not chain onto the head is not slotted in"
+        );
+
+        // …the real block 3 from a peer fills the gap without re-execution.
+        reopened.import_block(b3.clone());
+        assert_eq!(
+            reopened.latest_height(),
+            3,
+            "[{backend}] the missing head record is filled"
+        );
+        assert_eq!(reopened.block_number, 4);
+        assert_eq!(
+            reopened.get_balance(bob).expect("bob"),
+            bob_after_3,
+            "[{backend}] filling the record must not re-apply block 3"
+        );
+        assert_eq!(
+            reopened.get_block(3).map(|b| b.hash),
+            Some(b3.hash),
+            "[{backend}] the record is on disk again"
+        );
+
+        // And block 4, produced by a peer that holds the identical history
+        // (imported, not re-produced: block hashes carry the wall-clock
+        // timestamp), applies as usual.
+        let b4 = {
+            let peer_dir = tempdir().expect("peer dir");
+            let mut peer = Engine::new_with_backend(131_071, peer_dir.path(), backend);
+            peer.fund_account(alice, U256::from(5_000_000u64), 0);
+            for b in &produced {
+                peer.import_block(b.clone());
+            }
+            assert_eq!(
+                peer.latest_height(),
+                3,
+                "[{backend}] peer holds the same three blocks"
+            );
+            peer.transfer(
+                alice,
+                bob,
+                U256::from(1_000u64),
+                21_000,
+                U256::from(1u64),
+                3,
+            )
+            .expect("transfer");
+            peer.execute_block().expect("block 4")
+        };
+        reopened.import_block(b4);
+        assert_eq!(
+            reopened.latest_height(),
+            4,
+            "[{backend}] block 4 chains onto the filled head"
+        );
+        assert_eq!(
+            reopened.get_balance(bob).expect("bob"),
+            bob_after_3 + U256::from(1_000u64),
+            "[{backend}] block 4 executed once"
+        );
+    }
+}

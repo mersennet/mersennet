@@ -769,11 +769,13 @@ mod tests {
     fn repeat_jails_escalate_and_a_clean_epoch_resets() {
         let mrsn = U256::from(10u64).pow(U256::from(18u64));
         let mut s = StakingState::default();
-        let mut p = ValidatorSetParams::default();
-        p.activation_height = 10;
-        p.epoch_blocks = 10;
-        p.jail_min_slots = 2;
-        p.jail_escalation_height = 100;
+        let p = ValidatorSetParams {
+            activation_height: 10,
+            epoch_blocks: 10,
+            jail_min_slots: 2,
+            jail_escalation_height: 100,
+            ..ValidatorSetParams::default()
+        };
         s.set_params(p);
         let genesis = [
             (addr(1), U256::from(1_000_000u64) * mrsn),
@@ -853,11 +855,13 @@ mod tests {
     fn bench_predicate_and_boundary_jail() {
         let mrsn = U256::from(10u64).pow(U256::from(18u64));
         let mut s = StakingState::default();
-        let mut p = ValidatorSetParams::default();
-        p.activation_height = 10;
-        p.epoch_blocks = 10;
-        p.jail_min_slots = 5;
-        p.bench_height = 10;
+        let p = ValidatorSetParams {
+            activation_height: 10,
+            epoch_blocks: 10,
+            jail_min_slots: 5,
+            bench_height: 10,
+            ..ValidatorSetParams::default()
+        };
         s.set_params(p);
         s.seed_genesis(&[(addr(1), U256::from(1_000_000u64) * mrsn)], 10);
         let dead = addr(9);

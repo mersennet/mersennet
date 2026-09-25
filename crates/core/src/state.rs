@@ -1531,6 +1531,38 @@ impl crate::state_trait::StateBackend for PersistentState {
     }
 }
 
+/// History-index key/value encoding shared by the sled and redb backends.
+pub(crate) fn history_block_key(hash: B256) -> [u8; 33] {
+    let mut k = [0u8; 33];
+    k[0] = b'b';
+    k[1..].copy_from_slice(hash.as_slice());
+    k
+}
+pub(crate) fn history_tx_key(hash: B256) -> [u8; 33] {
+    let mut k = [0u8; 33];
+    k[0] = b't';
+    k[1..].copy_from_slice(hash.as_slice());
+    k
+}
+pub(crate) fn history_tx_value(number: u64, index: u32) -> [u8; 12] {
+    let mut v = [0u8; 12];
+    v[..8].copy_from_slice(&number.to_be_bytes());
+    v[8..].copy_from_slice(&index.to_be_bytes());
+    v
+}
+pub(crate) fn decode_be_u64(v: &[u8]) -> Option<u64> {
+    (v.len() == 8).then(|| u64::from_be_bytes(v.try_into().unwrap()))
+}
+pub(crate) fn decode_tx_location(v: &[u8]) -> Option<(u64, u32)> {
+    if v.len() != 12 {
+        return None;
+    }
+    Some((
+        u64::from_be_bytes(v[..8].try_into().unwrap()),
+        u32::from_be_bytes(v[8..].try_into().unwrap()),
+    ))
+}
+
 #[cfg(test)]
 mod validator_registry_persistence_tests {
     use super::*;
@@ -1550,8 +1582,10 @@ mod validator_registry_persistence_tests {
             "no registry keys while the set is closed"
         );
 
-        let mut params = ValidatorSetParams::default();
-        params.activation_height = 1;
+        let params = ValidatorSetParams {
+            activation_height: 1,
+            ..ValidatorSetParams::default()
+        };
         orders.staking.set_params(params);
         let op = Address::from_slice(&[1u8; 20]);
         let id = Address::from_slice(&[2u8; 20]);
@@ -1583,36 +1617,4 @@ mod validator_registry_persistence_tests {
         assert_eq!(loaded.staking.active_set, vec![id]);
         assert_eq!(loaded.staking.current_epoch, 3);
     }
-}
-
-/// History-index key/value encoding shared by the sled and redb backends.
-pub(crate) fn history_block_key(hash: B256) -> [u8; 33] {
-    let mut k = [0u8; 33];
-    k[0] = b'b';
-    k[1..].copy_from_slice(hash.as_slice());
-    k
-}
-pub(crate) fn history_tx_key(hash: B256) -> [u8; 33] {
-    let mut k = [0u8; 33];
-    k[0] = b't';
-    k[1..].copy_from_slice(hash.as_slice());
-    k
-}
-pub(crate) fn history_tx_value(number: u64, index: u32) -> [u8; 12] {
-    let mut v = [0u8; 12];
-    v[..8].copy_from_slice(&number.to_be_bytes());
-    v[8..].copy_from_slice(&index.to_be_bytes());
-    v
-}
-pub(crate) fn decode_be_u64(v: &[u8]) -> Option<u64> {
-    (v.len() == 8).then(|| u64::from_be_bytes(v.try_into().unwrap()))
-}
-pub(crate) fn decode_tx_location(v: &[u8]) -> Option<(u64, u32)> {
-    if v.len() != 12 {
-        return None;
-    }
-    Some((
-        u64::from_be_bytes(v[..8].try_into().unwrap()),
-        u32::from_be_bytes(v[8..].try_into().unwrap()),
-    ))
 }

@@ -323,7 +323,7 @@ impl MersennetOrdersState {
         }
         let wei = U256::from(1_000_000_000_000_000_000u128);
         for account in self.accounts.values_mut() {
-            account.collateral = account.collateral / wei;
+            account.collateral /= wei;
             for pos in account.positions.values_mut() {
                 pos.realized_pnl /= 1_000_000_000_000_000_000i128;
             }
@@ -388,7 +388,7 @@ impl MersennetOrdersState {
         new_scale: u64,
     ) -> Result<(), MersennetOrdersError> {
         let old = self.price_scale(market);
-        if new_scale == 0 || new_scale < old || new_scale % old != 0 {
+        if new_scale == 0 || new_scale < old || !new_scale.is_multiple_of(old) {
             return Err(MersennetOrdersError::InvalidMarketParams);
         }
         if !self.markets.contains_key(&market) {

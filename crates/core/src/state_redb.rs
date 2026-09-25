@@ -34,6 +34,13 @@ const HISTORY_INDEX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("histo
 const PRUNING: TableDefinition<&[u8], &[u8]> = TableDefinition::new("pruning");
 const HEIGHT_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("height_meta");
 
+/// On-disk shape of the open validator set: (registrations by identity, active set, epoch).
+type PersistedValidatorRegistry = (
+    Vec<(Vec<u8>, crate::staking::ValidatorRegistration)>,
+    Vec<Vec<u8>>,
+    u64,
+);
+
 pub struct RedbState {
     db: Database,
     dirty_accounts: Mutex<HashSet<Address>>,
@@ -49,6 +56,10 @@ impl std::fmt::Debug for RedbState {
 
 impl RedbState {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        // sled creates its directory; redb does not. A fresh node configured
+        // with `engine.storage_backend = "redb"` used to panic here with
+        // "No such file or directory" (release f67d812).
+        std::fs::create_dir_all(path.as_ref())?;
         let db_path = path.as_ref().join("mersennet.redb");
         let db = Database::create(&db_path)?;
 
@@ -362,11 +373,8 @@ impl StateBackend for RedbState {
         if let Ok(meta) = read_txn.open_table(HEIGHT_META)
             && let Some(v) = meta.get(b"validator_registry".as_slice())?
         {
-            let (regs, active, epoch): (
-                Vec<(Vec<u8>, crate::staking::ValidatorRegistration)>,
-                Vec<Vec<u8>>,
-                u64,
-            ) = bincode::deserialize(v.value())?;
+            let (regs, active, epoch): PersistedValidatorRegistry =
+                bincode::deserialize(v.value())?;
             state.staking.registry.clear();
             for (id, reg) in regs {
                 state.staking.registry.insert(Address::from_slice(&id), reg);
@@ -763,6 +771,52 @@ impl StateBackend for RedbState {
         }
         write_txn.commit()?;
         Ok(())
+    }
+
+    // Interrupted-commit marker, mirroring the sled backend. `commit_state`
+    // writes accounts, orders and `latest_height` in separate transactions,
+    // and `store_block` follows in another: a hard kill in between leaves
+    // `latest_height` ahead of the account writes or of the block record.
+    // Without the marker the redb backend resumed from that state silently
+    // and wedged on the next block (persisted h, block h missing → every
+    // block h+1 fails the parent check; seen in the field on f67d812).
+    fn begin_commit(&self, height: u64) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut meta_table = write_txn.open_table(HEIGHT_META)?;
+            meta_table.insert(
+                b"commit_in_progress".as_slice(),
+                height.to_be_bytes().as_slice(),
+            )?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn end_commit(&self) -> Result<()> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut meta_table = write_txn.open_table(HEIGHT_META)?;
+            meta_table.remove(b"commit_in_progress".as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn interrupted_commit(&self) -> Result<Option<u64>> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(HEIGHT_META) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        match table.get(b"commit_in_progress".as_slice())? {
+            Some(value) if value.value().len() == 8 => {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(value.value());
+                Ok(Some(u64::from_be_bytes(buf)))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn save_consensus_set(&self, set: &[(Address, U256)]) -> Result<()> {

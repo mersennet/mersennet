@@ -640,6 +640,19 @@ impl Engine {
         backend: &str,
     ) -> Self {
         let path_buf = path.as_ref().to_path_buf();
+        // Both backends live in the same directory (sled: `db`, `conf`, `blobs/`;
+        // redb: `mersennet.redb`), and the published snapshots are sled. A node
+        // switched to redb on top of a restored snapshot silently ignores it
+        // and replays from genesis (hours); say so.
+        if backend == "redb"
+            && path_buf.join("db").exists()
+            && !path_buf.join("mersennet.redb").exists()
+        {
+            tracing::warn!(
+                path = %path_buf.display(),
+                "storage backend is redb but the state directory holds a sled database (the format of the published snapshots); redb starts EMPTY here and will replay the chain from genesis. To use the snapshot, set engine.storage_backend = \"sled\" (the public testnet default)."
+            );
+        }
         let state: Box<dyn StateBackend> = match backend {
             "redb" => {
                 tracing::info!("initializing redb storage backend (ACID, pure-Rust)");
@@ -734,6 +747,26 @@ impl Engine {
                     restored_blocks = blocks.len(),
                     "resuming chain from persisted height"
                 );
+                // The state is committed at `h`, so `h+1` is the next block to
+                // execute — but the chain head we compare parents against is
+                // whatever block record is on disk. If the record for `h`
+                // itself is missing (a hard kill between `record_height` and
+                // `store_block`; on redb nothing marked it), the head is `h-1`
+                // and every block `h+1` fails the parent check while block `h`
+                // is refused as "already applied": a permanent wedge (seen in
+                // the field as persisted_height=487 / FORK DETECTED height=488).
+                // `import_block` fills exactly that gap from block-sync without
+                // re-executing; announce it so the operator knows what the
+                // node is doing.
+                let head_on_disk = blocks.last().map(|b| b.number);
+                if head_on_disk != Some(h) {
+                    metrics::increment_counter!("mersennet_resume_head_block_missing_total");
+                    tracing::warn!(
+                        persisted_height = h,
+                        head_block_on_disk = head_on_disk.unwrap_or(0),
+                        "block record at the persisted height is missing (interrupted write); state is at {h} — the block will be fetched from a peer and slotted in without re-execution",
+                    );
+                }
                 // Integrity check for restored state (snapshots, heals): the
                 // persisted state's Merkle root must equal the state root the
                 // head block commits to. Since 2026-09-13 every producer's
@@ -2930,6 +2963,44 @@ impl Engine {
         // `is_behind_network`).
         if block.number > self.highest_observed_height {
             self.highest_observed_height = block.number;
+        }
+        // Already applied — with one exception. If the state is committed at
+        // `block_number - 1` but the block record for that height is missing
+        // (see the resume check in `new_with_backend`), this block IS the
+        // missing head: it must chain onto the head we hold and commit to the
+        // state root we have. Slot it in without executing (the state already
+        // includes it), which un-wedges the node on the next sync round.
+        if block.number + 1 == self.block_number && self.latest_height() + 1 == block.number {
+            let parent_ok = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO)
+                == block.parent_hash
+                || (self.chain.is_empty() && block.parent_hash == B256::ZERO);
+            let committed_root = self.evm.state.compute_state_root();
+            let root_ok = block.state_root == B256::ZERO || block.state_root == committed_root;
+            if parent_ok && root_ok {
+                if let Err(err) = self.evm.state.store_block(&block) {
+                    tracing::error!(height = block.number, %err, "failed to store the missing head block");
+                    return;
+                }
+                metrics::increment_counter!("mersennet_resume_head_block_filled_total");
+                tracing::info!(
+                    height = block.number,
+                    block_hash = %block.hash,
+                    "filled the missing head block record from a peer; resuming normal import"
+                );
+                self.chain.push(block);
+                self.trim_chain_window();
+                self.fork_detected_at = None;
+            } else {
+                tracing::error!(
+                    height = block.number,
+                    parent_ok,
+                    root_ok,
+                    committed_root = %committed_root,
+                    block_root = %block.state_root,
+                    "the block offered for the missing head does not match the committed state; re-run the installer with --reset-state"
+                );
+            }
+            return;
         }
         // Already applied: if it is a *different* block for a recent height,
         // keep it — finality may pick it over ours (see reorg_to_finalized).
@@ -5158,7 +5229,7 @@ mod open_validator_set_tests {
         std::fs::create_dir_all(&path).unwrap();
         // Both backends persist the registry and the installed set.
         let build = |path: &std::path::Path| {
-            let mut e = Engine::new_with_backend(131071, path.to_path_buf(), backend);
+            let mut e = Engine::new_with_backend(131071, path, backend);
             for i in 1..=4u8 {
                 e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
                     .unwrap();
@@ -5436,7 +5507,7 @@ mod open_validator_set_tests {
 
         // Drives one height on both nodes: state mutations first (same height
         // on both, like a tx in that block would), then produce and import.
-        let mut step = |p: &mut Engine, c: &mut Engine, skip: &[Address]| {
+        let step = |p: &mut Engine, c: &mut Engine, skip: &[Address]| {
             let h = p.block_number;
             if h == 2 {
                 for e in [&mut *p, &mut *c] {
@@ -5533,7 +5604,7 @@ mod open_validator_set_tests {
             step(&mut p, &mut c, &[]);
         }
         assert!(
-            p.orders.state.staking.registry.get(&v5).is_none(),
+            !p.orders.state.staking.registry.contains_key(&v5),
             "removed at the epoch boundary"
         );
         assert_eq!(p.consensus.validators().len(), 4);
@@ -5656,8 +5727,10 @@ mod open_validator_set_tests {
         );
         assert!(st.rotate_identity(op, addr(5), addr(6)).is_ok());
         // Before activation nothing can register.
-        let mut off = ValidatorSetParams::default();
-        off.activation_height = 0;
+        let off = ValidatorSetParams {
+            activation_height: 0,
+            ..ValidatorSetParams::default()
+        };
         st.set_params(off);
         assert_eq!(
             st.register_validator(
@@ -6076,7 +6149,7 @@ mod agent_delegation_tests {
             let path = dir.path().join("engine");
             std::fs::create_dir_all(&path).unwrap();
             let build = |p: &std::path::Path| {
-                let mut e = Engine::new_with_backend(131071, p.to_path_buf(), backend);
+                let mut e = Engine::new_with_backend(131071, p, backend);
                 for i in 1..=4u8 {
                     e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
                         .unwrap();
@@ -6126,7 +6199,7 @@ mod price_scale_tests {
         crate::crypto::address_from_signing_key(&key(i))
     }
     fn engine_at(path: &std::path::Path, backend: &str) -> Engine {
-        let mut e = Engine::new_with_backend(131071, path.to_path_buf(), backend);
+        let mut e = Engine::new_with_backend(131071, path, backend);
         for i in 1..=4u8 {
             e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
                 .unwrap();
@@ -6460,7 +6533,7 @@ mod frame_caller_tests {
             "legacy: the origin's account is credited"
         );
         assert!(
-            e.orders.state.accounts.get(&proxy).is_none(),
+            !e.orders.state.accounts.contains_key(&proxy),
             "legacy: the contract has no account"
         );
         assert_eq!(
@@ -6541,7 +6614,7 @@ mod settlement_tests {
         crate::crypto::address_from_signing_key(&key(i))
     }
     fn engine_at(path: &std::path::Path, backend: &str) -> Engine {
-        let mut e = Engine::new_with_backend(131071, path.to_path_buf(), backend);
+        let mut e = Engine::new_with_backend(131071, path, backend);
         for i in 1..=4u8 {
             e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
                 .unwrap();
