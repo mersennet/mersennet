@@ -55,6 +55,13 @@ fn notify_orders_trades(
 /// Engine handle for the signal handler, so a termination signal can wait
 /// for the current block commit before the process exits.
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
+/// Set by the producer from just before `execute_block` until the block has
+/// been broadcast. The shutdown handler waits for it to clear: a block that is
+/// committed locally but never reaches peers becomes an orphaned head, and on
+/// restart every block at the next height fails the parent check until the
+/// watchdog restores a snapshot (validator 1 on the 25 Sep roll: benched for
+/// the rest of the epoch).
+static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
 
 fn main() -> anyhow::Result<()> {
     // `mersennet --version` prints the same string web3_clientVersion reports,
@@ -96,10 +103,26 @@ fn main() -> anyhow::Result<()> {
                     if let Err(err) = guard.flush_state() {
                         tracing::warn!(%err, "state flush on shutdown failed");
                     }
-                    info!("state committed; exiting");
+                    info!("state committed");
                 }
                 Err(_) => info!("engine lock poisoned; exiting"),
             }
+        }
+        // A block we just produced must reach the network before we go, or
+        // it is finalized by nobody and we restart on an orphaned head.
+        let mut waited = std::time::Duration::ZERO;
+        while BROADCAST_PENDING.load(Ordering::SeqCst) && waited < std::time::Duration::from_secs(3)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            waited += std::time::Duration::from_millis(50);
+        }
+        if !waited.is_zero() {
+            info!(
+                waited_ms = waited.as_millis() as u64,
+                "in-flight block broadcast finished; exiting"
+            );
+        } else {
+            info!("exiting");
         }
         std::process::exit(0);
     })?;
@@ -777,7 +800,13 @@ fn main() -> anyhow::Result<()> {
                                 {
                                     continue;
                                 }
+                                // Shutting down: do not start a block we cannot
+                                // shepherd to finality (see BROADCAST_PENDING).
+                                if shutdown_producer.load(Ordering::SeqCst) {
+                                    break;
+                                }
                                 let _ = my_addr;
+                                BROADCAST_PENDING.store(true, Ordering::SeqCst);
                                 match e.execute_block() {
                                     Ok(mut b) => {
                                         ws::set_privacy_mode_activated(e.privacy_mode_activated());
@@ -805,6 +834,7 @@ fn main() -> anyhow::Result<()> {
                                     }
                                     Err(err) => {
                                         tracing::warn!(%err, "block production error");
+                                        BROADCAST_PENDING.store(false, Ordering::SeqCst);
                                         continue;
                                     }
                                 }
@@ -930,6 +960,7 @@ fn main() -> anyhow::Result<()> {
                             if let Err(err) = net.broadcast_block(&block) {
                                 tracing::warn!(%err, "block broadcast error");
                             }
+                            BROADCAST_PENDING.store(false, Ordering::SeqCst);
                             if block.number % 100 == 0 {
                                 info!(
                                     height = block.number,
