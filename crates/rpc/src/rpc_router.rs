@@ -389,12 +389,14 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .iter()
                 .map(|v| {
                     let pool = staking.pools.get(&v.address);
+                    let delegated = pool.map(|p| p.delegated_total).unwrap_or_default();
+                    // `v.stake` is the voting weight (self-bonded + delegated);
+                    // the self-bonded part is what "selfStake" promises.
                     json!({
                         "address": hex_address(v.address),
-                        "selfStake": hex_u256(v.stake),
-                        "delegatedTotal": hex_u256(
-                            pool.map(|p| p.delegated_total).unwrap_or_default()
-                        ),
+                        "selfStake": hex_u256(v.stake.saturating_sub(delegated)),
+                        "votingStake": hex_u256(v.stake),
+                        "delegatedTotal": hex_u256(delegated),
                         "commissionBps": pool.map(|p| p.commission_bps).unwrap_or_default(),
                     })
                 })

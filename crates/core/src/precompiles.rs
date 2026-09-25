@@ -61,10 +61,11 @@ pub fn frame_caller_height() -> u64 {
 /// `(caller, value)` the stateful precompiles authorise on at `height`.
 fn precompile_principal(evmctx: &InnerEvmContext<InMemoryDB>, height: u64) -> (Address, U256) {
     let switch = frame_caller_height();
-    if switch > 0 && height >= switch {
-        if let Some(f) = CURRENT_FRAME.with(|c| c.get()) {
-            return (f.caller, f.value);
-        }
+    if switch > 0
+        && height >= switch
+        && let Some(f) = CURRENT_FRAME.with(|c| c.get())
+    {
+        return (f.caller, f.value);
     }
     (evmctx.env.tx.caller, evmctx.env.tx.value)
 }

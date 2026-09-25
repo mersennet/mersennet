@@ -2,6 +2,14 @@ name: CI
 
 on: [push, pull_request]
 
+# One run per branch at a time; a newer push cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
@@ -92,15 +100,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  audit:
-    name: cargo audit (RustSec advisories)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   fmt:
     name: cargo fmt --check
     runs-on: ubuntu-latest
@@ -115,16 +114,17 @@ jobs:
   # cargo-audit — advisory DB scan.
   # ────────────────────────────────────────────────────────────────
   audit:
-    name: cargo audit
+    name: cargo audit (RustSec advisories)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+      checks: write
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
-      - name: cargo audit
-        run: cargo audit
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # ────────────────────────────────────────────────────────────────
   # K3 — Coverage. cargo-llvm-cov over the default-feature workspace,
@@ -132,6 +132,8 @@ jobs:
   # ────────────────────────────────────────────────────────────────
   coverage:
     name: cargo llvm-cov
+    # ~30 of the ~60 runner-minutes per push: main only (every merge still measures it).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
