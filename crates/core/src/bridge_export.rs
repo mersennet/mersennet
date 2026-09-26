@@ -33,7 +33,7 @@ pub const BRIDGE_PUBLIC_INPUT_COUNT: usize = 9;
 pub const GROTH16_SELECTOR_LEN: usize = 4;
 
 /// Number of 32-byte words in a Groth16 proof (`uint256[8]`: A.x, A.y,
-/// B.x[0], B.x[1], B.y[0], B.y[1], C.x, C.y).
+/// `B.x[0]`, `B.x[1]`, `B.y[0]`, `B.y[1]`, C.x, C.y).
 pub const GROTH16_PROOF_WORDS: usize = 8;
 
 /// Error returned when a Groth16 proof blob does not match the expected
