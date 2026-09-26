@@ -497,6 +497,12 @@ pub struct Engine {
     pub spec_id: SpecId,
     pub consensus: ConsensusEngine,
     pub fee_max_change_denominator: u64,
+    /// Fee floor + split (consensus switch `fee_floor_height`, 0 = off).
+    pub fee_floor_height: u64,
+    pub min_base_fee: U256,
+    pub fee_treasury_bps: u64,
+    pub fee_proposer_bps: u64,
+    pub fee_treasury: Option<Address>,
     pub fee_elasticity_multiplier: u64,
     pub fee_target_gas: u64,
     pub evm: EvmEngine,
@@ -814,6 +820,11 @@ impl Engine {
                 hotstuff2: None,
             },
             fee_max_change_denominator: 8,
+            fee_floor_height: 0,
+            min_base_fee: U256::ZERO,
+            fee_treasury_bps: 0,
+            fee_proposer_bps: 0,
+            fee_treasury: None,
             fee_elasticity_multiplier: 2,
             fee_target_gas: 15_000_000,
             evm: EvmEngine { state, db },
@@ -1621,6 +1632,91 @@ impl Engine {
         self.fee_target_gas = gas_limit_per_block / self.fee_elasticity_multiplier;
     }
 
+    /// Fee floor and split from `fee_floor_height` (0 = off). `treasury_bps`
+    /// and `proposer_bps` are shares of the base fee a block collects; the
+    /// rest is burned.
+    pub fn set_fee_floor_params(
+        &mut self,
+        fee_floor_height: u64,
+        min_base_fee_wei: u64,
+        treasury_bps: u64,
+        proposer_bps: u64,
+        treasury: Option<Address>,
+    ) {
+        self.fee_floor_height = fee_floor_height;
+        self.min_base_fee = U256::from(min_base_fee_wei);
+        self.fee_treasury_bps = treasury_bps.min(10_000);
+        self.fee_proposer_bps = proposer_bps.min(10_000 - self.fee_treasury_bps);
+        self.fee_treasury = treasury;
+    }
+
+    /// The base fee floor in force at `height` (zero before the switch).
+    pub fn base_fee_floor_at(&self, height: u64) -> U256 {
+        if self.fee_floor_height > 0 && height >= self.fee_floor_height {
+            self.min_base_fee
+        } else {
+            U256::ZERO
+        }
+    }
+
+    /// Split of the base fee collected by a block at `height`:
+    /// `(treasury, proposer, burned)` in wei. Zero before the switch except
+    /// the burn, which is everything (revm's default).
+    pub fn fee_split(&self, height: u64, base_fee: U256, gas_used: u64) -> (U256, U256, U256) {
+        let collected = base_fee.saturating_mul(U256::from(gas_used));
+        if !(self.fee_floor_height > 0 && height >= self.fee_floor_height) {
+            return (U256::ZERO, U256::ZERO, collected);
+        }
+        let share = |bps: u64| collected.saturating_mul(U256::from(bps)) / U256::from(10_000u64);
+        let treasury = if self.fee_treasury.is_some() {
+            share(self.fee_treasury_bps)
+        } else {
+            U256::ZERO
+        };
+        let proposer = share(self.fee_proposer_bps);
+        (
+            treasury,
+            proposer,
+            collected.saturating_sub(treasury).saturating_sub(proposer),
+        )
+    }
+
+    /// Credit the treasury and proposer shares of the base fee a block
+    /// collected. revm burned the whole base fee during execution (it debits
+    /// senders and credits nobody), so this re-mints the two shares onto
+    /// their recipients; the remainder stays burned. Runs identically on
+    /// the producer and every importer — same height, base fee, gas and
+    /// registry — so the state roots agree.
+    fn apply_fee_split(&mut self, height: u64, base_fee: U256, gas_used: u64, proposer: Address) {
+        let (treasury_share, proposer_share, _burned) = self.fee_split(height, base_fee, gas_used);
+        if let Some(treasury) = self.fee_treasury {
+            self.credit_balance(treasury, treasury_share);
+        }
+        if !proposer_share.is_zero() {
+            let recipient = self.orders.state.staking.reward_recipient(proposer, height);
+            self.credit_balance(recipient, proposer_share);
+        }
+    }
+
+    /// Add `amount` to `recipient` outside transaction execution (rewards,
+    /// fee shares). Writes straight into the cache entry: a recipient that
+    /// was only ever *read* before (an RPC balance query loads a missing
+    /// address as `AccountState::NotExisting`) must become an existing
+    /// account, or `basic()` keeps answering "no account" and the commit
+    /// skips it — the credit would be invisible on this node only, and its
+    /// state root would part from the network's.
+    fn credit_balance(&mut self, recipient: Address, amount: U256) {
+        if amount.is_zero() {
+            return;
+        }
+        self.evm.state.mark_dirty(recipient);
+        let account = self.evm.db.accounts.entry(recipient).or_default();
+        if account.account_state == revm::db::AccountState::NotExisting {
+            account.account_state = revm::db::AccountState::Touched;
+        }
+        account.info.balance = account.info.balance.saturating_add(amount);
+    }
+
     pub fn set_unbonding_period(&mut self, period: u64) {
         self.consensus.set_unbonding_period(period);
     }
@@ -1822,6 +1918,10 @@ impl Engine {
     }
 
     /// Consensus switch: precompiles authorise on the call frame's caller (0 = off).
+    pub fn set_revert_reasons_height(&mut self, height: u64) {
+        precompiles::set_revert_reasons_height(height);
+    }
+
     pub fn set_frame_caller_height(&mut self, height: u64) {
         precompiles::set_frame_caller_height(height);
     }
@@ -2086,12 +2186,22 @@ impl Engine {
             .map_err(|_| TxRejection::DatabaseError)?
             .unwrap_or_default();
 
+        // Under the consensus floor a transaction can never become
+        // includable (the base fee will not drop below it), so refuse it now
+        // instead of parking it in the queued tier forever.
+        let floor = self.base_fee_floor_at(self.block_number);
+        if !floor.is_zero() && tx.gas_price < floor {
+            metrics::increment_counter!("tx_rejected_under_fee_floor_total");
+            return Err(TxRejection::GasPriceTooLow);
+        }
         match self
             .mempool
             .validate(&tx, self.base_fee, account.nonce, account.balance)
         {
             Ok(()) => {}
             Err(TxRejection::FutureNonce) => {}
+            // Above the floor but under today's base fee: queued until the
+            // base fee comes down (EIP-1559 semantics), as before.
             Err(TxRejection::GasPriceTooLow) => {}
             Err(e) => return Err(e),
         }
@@ -2121,6 +2231,9 @@ impl Engine {
         self.maybe_epoch_transition(self.block_number);
         self.maybe_price_rescale(self.block_number);
         self.maybe_settlement_switch(self.block_number);
+        // Fee floor: from the switch the base fee never sits below the floor
+        // (covers the switch block itself and a restart from a checkpoint).
+        self.base_fee = self.base_fee.max(self.base_fee_floor_at(self.block_number));
         if let Some(me) = self.local_validator {
             self.record_leader_slots(self.block_number, me);
         }
@@ -2392,6 +2505,12 @@ impl Engine {
         let burned_reward = consensus.burned_reward;
 
         self.apply_rewards(&rewards)?;
+        self.apply_fee_split(
+            self.block_number,
+            self.base_fee,
+            gas_used,
+            consensus.proposer,
+        );
 
         self.evm.state.begin_commit(self.block_number)?;
         let state_root = self.evm.state.commit_state(
@@ -2544,7 +2663,9 @@ impl Engine {
         {
             use crate::formal_verification::BlockReport;
             let supply_after = self.sum_all_balances();
-            let gas_burned = self.base_fee.saturating_mul(U256::from(gas_used));
+            // The treasury/proposer shares of the base fee are re-minted by
+            // `apply_fee_split`; only the remainder leaves the supply.
+            let gas_burned = self.fee_split(self.block_number, self.base_fee, gas_used).2;
             let report = BlockReport {
                 height: block.number,
                 balances_before: HashMap::from([(Address::ZERO, supply_before)]),
@@ -2614,6 +2735,7 @@ impl Engine {
     /// the batch is small or conflicts are detected.
     pub fn execute_block_parallel(&mut self) -> Result<Block> {
         let start = Instant::now();
+        self.base_fee = self.base_fee.max(self.base_fee_floor_at(self.block_number));
 
         // Phase 1: Collect transactions from mempool (same priority logic as execute_block)
         let mut estimated_gas = 0u64;
@@ -2800,6 +2922,12 @@ impl Engine {
         let burned_reward = consensus.burned_reward;
 
         self.apply_rewards(&rewards)?;
+        self.apply_fee_split(
+            self.block_number,
+            self.base_fee,
+            gas_used,
+            consensus.proposer,
+        );
 
         self.evm.state.begin_commit(self.block_number)?;
         let state_root = self.evm.state.commit_state(
@@ -3180,6 +3308,17 @@ impl Engine {
         }
         self.record_leader_slots(block.number, block.proposer);
 
+        // Fee floor: a block priced below the consensus floor is invalid from
+        // the switch, whoever proposed it.
+        let floor = self.base_fee_floor_at(block.number);
+        if block.base_fee < floor {
+            anyhow::bail!(
+                "block {} declares base fee {} below the consensus floor {}",
+                block.number,
+                block.base_fee,
+                floor
+            );
+        }
         // Match the producer's per-tx execution environment.
         self.base_fee = block.base_fee;
 
@@ -3260,6 +3399,7 @@ impl Engine {
 
         // Re-credit the proposer/validator rewards the producer applied.
         self.apply_rewards(&block.rewards)?;
+        self.apply_fee_split(block.number, block.base_fee, block.gas_used, block.proposer);
 
         // Committing the full state to disk every block dominates import
         // time during deep catch-up (execution takes milliseconds; the
@@ -4525,20 +4665,7 @@ impl Engine {
                     .on_reward(reward.address, reward.amount, self_stake)
             };
             if !delegator_cut.is_zero() {
-                self.evm
-                    .state
-                    .mark_dirty(crate::precompile_abi::STAKING_PRECOMPILE);
-                let mut escrow = self
-                    .evm
-                    .db
-                    .accounts
-                    .get(&crate::precompile_abi::STAKING_PRECOMPILE)
-                    .map(|account| account.info.clone())
-                    .unwrap_or_default();
-                escrow.balance = escrow.balance.saturating_add(delegator_cut);
-                self.evm
-                    .db
-                    .insert_account_info(crate::precompile_abi::STAKING_PRECOMPILE, escrow);
+                self.credit_balance(crate::precompile_abi::STAKING_PRECOMPILE, delegator_cut);
             }
             let validator_amount = reward.amount.saturating_sub(delegator_cut);
             if validator_amount.is_zero() {
@@ -4555,30 +4682,20 @@ impl Engine {
                 .state
                 .staking
                 .reward_recipient(reward.address, self.block_number);
-            self.evm.state.mark_dirty(recipient);
-            // Read the current account straight from the cache rather
-            // than via `basic()`. `basic()` lazily loads a missing
-            // address as `AccountState::NotExisting`; a following
-            // `insert_account_info` only overwrites `.info` and leaves
-            // that state, so `basic()`/`get_balance` would then report
-            // zero and each block would clobber (not accumulate) the
-            // credit. Genesis-funded validators already sit in a normal
-            // state, so this is behaviorally identical for them and
-            // does not change the state root.
-            let mut info = self
-                .evm
-                .db
-                .accounts
-                .get(&recipient)
-                .map(|account| account.info.clone())
-                .unwrap_or_default();
-            info.balance = info.balance.saturating_add(validator_amount);
-            self.evm.db.insert_account_info(recipient, info);
+            // See `credit_balance`: a recipient first seen through an RPC
+            // balance query is cached as `NotExisting`; the credit must make
+            // it exist or this node's state root parts from the network's.
+            self.credit_balance(recipient, validator_amount);
         }
         Ok(())
     }
 
     fn next_base_fee(&self, gas_used: u64) -> U256 {
+        let floor = self.base_fee_floor_at(self.block_number.saturating_add(1));
+        self.next_base_fee_unfloored(gas_used).max(floor)
+    }
+
+    fn next_base_fee_unfloored(&self, gas_used: u64) -> U256 {
         let target = self.fee_target_gas.max(1);
         if gas_used == target {
             return self.base_fee;

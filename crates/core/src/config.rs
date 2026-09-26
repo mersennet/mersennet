@@ -146,6 +146,28 @@ pub struct EngineConfig {
     pub fee_elasticity_multiplier: u64,
     #[serde(default = "default_fee_change_denominator")]
     pub fee_max_change_denominator: u64,
+    /// Consensus switch for the fee floor and the fee split below. 0 = off:
+    /// the base fee may fall to 1 wei and everything it collects is burned.
+    #[serde(default)]
+    pub fee_floor_height: u64,
+    /// From `fee_floor_height` the base fee never falls below this many wei
+    /// (the EIP-1559 adjustment still moves it up with usage). At 1 wei one
+    /// account put 530k reverting transactions a day on the chain for free.
+    #[serde(default)]
+    pub min_base_fee_wei: u64,
+    /// From `fee_floor_height`: share (bps) of the base fee collected by a
+    /// block that is credited to `fee_treasury_address`.
+    #[serde(default)]
+    pub fee_treasury_bps: u64,
+    /// From `fee_floor_height`: share (bps) of the base fee credited to the
+    /// block's proposer (its reward recipient). What neither share takes is
+    /// burned, as before.
+    #[serde(default)]
+    pub fee_proposer_bps: u64,
+    /// Recipient of the treasury share (hex address). Required when
+    /// `fee_treasury_bps` > 0.
+    #[serde(default)]
+    pub fee_treasury_address: Option<String>,
     #[serde(default = "default_storage_backend")]
     pub storage_backend: String,
     /// What to do when the restored state's Merkle root does not match the
@@ -203,6 +225,14 @@ pub struct MersennetOrdersConfig {
     /// and a contract cannot act on the account of the user calling it. 0 = off.
     #[serde(default)]
     pub frame_caller_height: u64,
+    /// Consensus switch: from this height a business error in the CLOB or
+    /// staking precompile (insufficient collateral, unknown market, not the
+    /// order's owner, …) is a proper EVM revert — `Error(string)` output the
+    /// caller can read, and only the call's base gas is charged — instead of
+    /// a precompile halt that returned nothing and burned the whole gas limit
+    /// (300k per refused order; 530k of them a day on 20–25 Sep). 0 = off.
+    #[serde(default)]
+    pub revert_reasons_height: u64,
     /// Consensus switch: from this height one collateral unit is one MRSN
     /// (deposits escrow amount × 1e18 wei), realized PnL settles into
     /// collateral at every fill, and the margin parameters below replace
@@ -519,6 +549,11 @@ impl Default for EngineConfig {
             gas_limit_per_block: default_gas_limit(),
             fee_elasticity_multiplier: default_fee_elasticity(),
             fee_max_change_denominator: default_fee_change_denominator(),
+            fee_floor_height: 0,
+            min_base_fee_wei: 0,
+            fee_treasury_bps: 0,
+            fee_proposer_bps: 0,
+            fee_treasury_address: None,
             storage_backend: default_storage_backend(),
             resume_root_check: default_resume_root_check(),
         }
@@ -545,6 +580,7 @@ impl Default for MersennetOrdersConfig {
             price_scale_height: 0,
             price_rescales: Vec::new(),
             frame_caller_height: 0,
+            revert_reasons_height: 0,
             settlement_height: 0,
             settlement_initial_margin_bps: 0,
             settlement_maintenance_margin_bps: 0,
@@ -839,6 +875,8 @@ mod canonical_config_tests {
             ("agent_delegation_height", o.agent_delegation_height),
             ("price_scale_height", o.price_scale_height),
             ("frame_caller_height", o.frame_caller_height),
+            ("revert_reasons_height", o.revert_reasons_height),
+            ("fee_floor_height", cfg.engine.fee_floor_height),
             ("settlement_height", o.settlement_height),
             ("bench_height", vs.bench_height),
             ("jail_escalation_height", vs.jail_escalation_height),
@@ -850,6 +888,20 @@ mod canonical_config_tests {
                     "{name} should sit on an epoch boundary"
                 );
             }
+        }
+        let e = &cfg.engine;
+        assert!(
+            e.fee_treasury_bps + e.fee_proposer_bps <= 10_000,
+            "fee_treasury_bps + fee_proposer_bps must not exceed 10000"
+        );
+        if e.fee_treasury_bps > 0 {
+            let addr = e.fee_treasury_address.as_deref().unwrap_or("");
+            assert!(
+                addr.len() == 42
+                    && addr.starts_with("0x")
+                    && addr[2..].chars().all(|c| c.is_ascii_hexdigit()),
+                "fee_treasury_address must be a 0x-prefixed 20-byte hex address when fee_treasury_bps > 0"
+            );
         }
     }
 }

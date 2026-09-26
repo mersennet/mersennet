@@ -203,6 +203,7 @@ fn main() -> anyhow::Result<()> {
         app_config.mersennet_orders.price_rescales.clone(),
     );
     engine.set_frame_caller_height(app_config.mersennet_orders.frame_caller_height);
+    engine.set_revert_reasons_height(app_config.mersennet_orders.revert_reasons_height);
     engine.set_settlement_params(
         app_config.mersennet_orders.settlement_height,
         app_config.mersennet_orders.settlement_initial_margin_bps,
@@ -284,6 +285,16 @@ fn main() -> anyhow::Result<()> {
         app_config.engine.gas_limit_per_block,
         app_config.engine.fee_elasticity_multiplier,
         app_config.engine.fee_max_change_denominator,
+    );
+    engine.set_fee_floor_params(
+        app_config.engine.fee_floor_height,
+        app_config.engine.min_base_fee_wei,
+        app_config.engine.fee_treasury_bps,
+        app_config.engine.fee_proposer_bps,
+        app_config.engine.fee_treasury_address.as_deref().map(|a| {
+            a.parse::<Address>()
+                .expect("engine.fee_treasury_address is not a valid address")
+        }),
     );
     engine.set_round_timeout_ms(app_config.slashing.round_timeout_ms);
     engine.set_validator_set_params(app_config.validator_set.to_params());
@@ -1373,6 +1384,16 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
         config.engine.gas_limit_per_block,
         config.engine.fee_elasticity_multiplier,
         config.engine.fee_max_change_denominator,
+    );
+    engine.set_fee_floor_params(
+        config.engine.fee_floor_height,
+        config.engine.min_base_fee_wei,
+        config.engine.fee_treasury_bps,
+        config.engine.fee_proposer_bps,
+        config.engine.fee_treasury_address.as_deref().map(|a| {
+            a.parse::<Address>()
+                .expect("engine.fee_treasury_address is not a valid address")
+        }),
     );
     engine.set_round_timeout_ms(config.slashing.round_timeout_ms);
     engine.set_slashing_bps(config.slashing.double_sign_bps, config.slashing.timeout_bps);

@@ -228,6 +228,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
             let st = &engine.orders.state;
             let height = engine.latest_height();
             let frame_caller = mersennet::precompiles::frame_caller_height();
+            let revert_reasons = mersennet::precompiles::revert_reasons_height();
             let markets: Vec<Value> = st
                 .markets
                 .values()
@@ -244,9 +245,11 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "frameCallerHeight": frame_caller,
                     "priceScaleHeight": engine.price_scale_height(),
                     "settlementHeight": st.settlement_height,
+                    "revertReasonsHeight": revert_reasons,
                 },
                 "agentDelegationActive": st.agent_delegation_active(height),
                 "frameCallerActive": frame_caller > 0 && height >= frame_caller,
+                "revertReasonsActive": mersennet::precompiles::revert_reasons_active(height),
                 "settlementActive": st.settlement_active(height),
                 // Collateral: wei per unit at the head (1 before settlement, 1e18 after).
                 "weiPerCollateralUnit": hex_u256(st.wei_per_unit(height)),
