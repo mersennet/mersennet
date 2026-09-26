@@ -94,7 +94,7 @@ impl Fr {
     /// Convert from arbitrary 32 bytes (little-endian), reducing modulo
     /// `r`. The reduction is exact for any 256-bit input: the value is
     /// placed in the low half of a 512-bit accumulator and reduced via
-    /// [`reduce_wide`] (binary long division). This is the same routine
+    /// `reduce_wide` (binary long division). This is the same routine
     /// the multiplier uses, so encodings round-trip correctly.
     pub fn from_bytes_reduce(bytes: &[u8; 32]) -> Self {
         let limbs = [

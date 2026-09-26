@@ -13,12 +13,12 @@
 //! Configuration: Poseidon2 over BN254, width `t = 4`, capacity 1,
 //! rate 3, `RF = 8` full rounds, `RP = 56` partial rounds, `x^5`
 //! S-box. The round constants and internal-matrix diagonal live in
-//! [`crate::poseidon2_constants`], transcribed verbatim from the ACVM
+//! `crate::poseidon2_constants`, transcribed verbatim from the ACVM
 //! reference.
 //!
-//! Parity is locked by [`tests::permutation_matches_acvm_smoke_vector`]
+//! Parity is locked by `tests::permutation_matches_acvm_smoke_vector`
 //! (the ACVM smoke-test vector) and
-//! [`tests::hash_matches_nargo_vector`] (a value produced by running
+//! `tests::hash_matches_nargo_vector` (a value produced by running
 //! `Poseidon2::hash` through `nargo execute`). Any change that
 //! perturbs the hash trips these tests.
 
