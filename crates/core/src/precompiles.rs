@@ -6,12 +6,15 @@ use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
 use revm::db::InMemoryDB;
 use revm::handler::register::EvmHandler;
+use revm::interpreter::{Gas, InstructionResult};
 use revm::precompile::Precompile;
 use revm::primitives::{
     Address, B256, Bytes, Env, KECCAK_EMPTY, PrecompileError, PrecompileErrors, PrecompileOutput,
     PrecompileResult, U256, keccak256,
 };
-use revm::{ContextPrecompile, ContextStatefulPrecompileMut, InnerEvmContext};
+use revm::{
+    ContextPrecompile, ContextStatefulPrecompileMut, FrameOrResult, FrameResult, InnerEvmContext,
+};
 
 use crate::code_publication::CodePublicationRegistry;
 use crate::errors::MersennetOrdersError;
@@ -56,6 +59,81 @@ pub fn set_frame_caller_height(height: u64) {
 
 pub fn frame_caller_height() -> u64 {
     FRAME_CALLER_HEIGHT.load(Ordering::SeqCst)
+}
+
+// ---------------------------------------------------------------------------
+// Business errors as reverts.
+//
+// revm turns a precompile `Err` into `InstructionResult::PrecompileError`: a
+// halt with empty output that consumes the whole gas limit. For the CLOB and
+// staking precompiles that meant a refused order ("insufficient collateral",
+// "unknown market", "not the order's owner", …) burned 300k gas and told the
+// caller nothing — neither a wallet nor `eth_call` could show a reason. From
+// `revert_reasons_height` the wrapper around the EVM's `call` handler rewrites
+// such an outcome into an ordinary revert: `Error(string)` output with the
+// precompile's message, and only the call's base gas charged — the rest is
+// returned to the caller exactly as a Solidity `require` would.
+//
+// The message travels through a thread-local because revm drops the error
+// payload on its way to the frame result; the precompile stashes it right
+// before returning `Err`, the wrapper takes it right after. Fatal errors
+// (poisoned context) keep their fatal semantics.
+// ---------------------------------------------------------------------------
+
+/// Consensus switch: 0 = legacy halts (no reason, all gas burned).
+static REVERT_REASONS_HEIGHT: AtomicU64 = AtomicU64::new(0);
+
+pub fn set_revert_reasons_height(height: u64) {
+    REVERT_REASONS_HEIGHT.store(height, Ordering::SeqCst);
+}
+
+pub fn revert_reasons_height() -> u64 {
+    REVERT_REASONS_HEIGHT.load(Ordering::SeqCst)
+}
+
+pub fn revert_reasons_active(height: u64) -> bool {
+    let switch = revert_reasons_height();
+    switch > 0 && height >= switch
+}
+
+/// Gas a reverted stateful-precompile call is charged from the switch: the
+/// base cost of the cheapest mutating call. Deterministic and independent of
+/// how far the call got before the check that refused it.
+pub const GAS_PRECOMPILE_REVERT: u64 = GAS_CANCEL_ORDER;
+
+thread_local! {
+    static LAST_BUSINESS_ERROR_TEXT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run a stateful precompile and remember the message of a business error so
+/// the call wrapper can turn the halt into a reasoned revert.
+fn with_business_error<F: FnOnce() -> PrecompileResult>(f: F) -> PrecompileResult {
+    LAST_BUSINESS_ERROR_TEXT.with(|c| *c.borrow_mut() = None);
+    let out = f();
+    if let Err(PrecompileErrors::Error(e)) = &out {
+        let msg = match e {
+            PrecompileError::Other(m) => m.clone(),
+            other => format!("{other:?}"),
+        };
+        LAST_BUSINESS_ERROR_TEXT.with(|c| *c.borrow_mut() = Some(msg));
+    }
+    out
+}
+
+fn take_business_error() -> Option<String> {
+    LAST_BUSINESS_ERROR_TEXT.with(|c| c.borrow_mut().take())
+}
+
+/// ABI-encode `Error(string)` (selector 0x08c379a0) the way Solidity does.
+pub fn encode_error_string(msg: &str) -> Bytes {
+    let bytes = msg.as_bytes();
+    let mut out = Vec::with_capacity(4 + 64 + bytes.len().div_ceil(32) * 32);
+    out.extend_from_slice(&[0x08, 0xc3, 0x79, 0xa0]);
+    out.extend_from_slice(&encode_u256(U256::from(32u64)));
+    out.extend_from_slice(&encode_u256(U256::from(bytes.len() as u64)));
+    out.extend_from_slice(bytes);
+    out.resize(4 + 64 + bytes.len().div_ceil(32) * 32, 0);
+    Bytes::from(out)
 }
 
 /// `(caller, value)` the stateful precompiles authorise on at `height`.
@@ -162,7 +240,7 @@ impl ContextStatefulPrecompileMut<InMemoryDB> for MersennetOrdersPrecompile {
         gas_limit: u64,
         evmctx: &mut InnerEvmContext<InMemoryDB>,
     ) -> PrecompileResult {
-        mersennet_orders_precompile(bytes, gas_limit, evmctx)
+        with_business_error(|| mersennet_orders_precompile(bytes, gas_limit, evmctx))
     }
 }
 
@@ -179,7 +257,7 @@ impl ContextStatefulPrecompileMut<InMemoryDB> for StakingPrecompile {
         gas_limit: u64,
         evmctx: &mut InnerEvmContext<InMemoryDB>,
     ) -> PrecompileResult {
-        staking_precompile(bytes, gas_limit, evmctx)
+        with_business_error(|| staking_precompile(bytes, gas_limit, evmctx))
     }
 }
 
@@ -197,8 +275,26 @@ pub fn register_mersennet_orders_precompile(handler: &mut EvmHandler<'_, (), InM
                 value: inputs.value.get(),
             }))
         });
-        let out = prev_call(ctx, inputs);
+        let target = inputs.target_address;
+        let gas_limit = inputs.gas_limit;
+        let height = ctx.evm.env.block.number.saturating_to::<u64>();
+        let mut out = prev_call(ctx, inputs);
         CURRENT_FRAME.with(|c| c.set(None));
+        // A refused CLOB/staking call becomes a reasoned revert from the switch.
+        if (target == MERSENNET_ORDERS_PRECOMPILE || target == STAKING_PRECOMPILE)
+            && revert_reasons_active(height)
+            && let Ok(FrameOrResult::Result(FrameResult::Call(outcome))) = &mut out
+            && outcome.result.result == InstructionResult::PrecompileError
+            && let Some(msg) = take_business_error()
+        {
+            let mut gas = Gas::new(gas_limit);
+            let _ = gas.record_cost(GAS_PRECOMPILE_REVERT.min(gas_limit)); // <= limit by construction
+            outcome.result.result = InstructionResult::Revert;
+            outcome.result.output = encode_error_string(&msg);
+            outcome.result.gas = gas;
+        } else {
+            take_business_error();
+        }
         out
     });
     let prev_load = handler.pre_execution.load_precompiles.clone();

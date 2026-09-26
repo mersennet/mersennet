@@ -3,7 +3,12 @@
     "chain_id": 131071,
     "gas_limit_per_block": 30000000,
     "state_path": "data/state",
-    "resume_root_check": "warn"
+    "resume_root_check": "warn",
+    "fee_floor_height": 1969200,
+    "min_base_fee_wei": 1000000000,
+    "fee_treasury_bps": 5000,
+    "fee_proposer_bps": 2500,
+    "fee_treasury_address": "0xacACE2b290334e45f2db8Bd819BB4b6868477777"
   },
   "genesis": {
     "accounts": [
@@ -349,6 +354,7 @@
       ]
     ],
     "frame_caller_height": 1605600,
+    "revert_reasons_height": 1969200,
     "settlement_height": 1605600,
     "settlement_initial_margin_bps": 1000,
     "settlement_maintenance_margin_bps": 500
