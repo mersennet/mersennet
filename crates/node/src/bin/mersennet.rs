@@ -54,7 +54,44 @@ fn notify_orders_trades(
 
 /// Engine handle for the signal handler, so a termination signal can wait
 /// for the current block commit before the process exits.
+const USAGE: &str = "\
+Mersennet node
+
+Usage: mersennet --config <config.json> [--mode full|validator] [--rpc] [options]
+
+  --config <path>            node configuration (networks/testnet/config.json layout)
+  --mode <full|validator>    full: follow the chain and serve RPC (default with --config)
+                             validator: also produce and vote (needs a registered identity)
+  --validator                same as --mode validator
+  --rpc                      enable the JSON-RPC server
+  --rpc-addr <host:port>     JSON-RPC listen address (overrides the config)
+  --state <dir>              state directory (overrides engine.state_path)
+  --node-key-path <file>     node identity key (overrides p2p.node_key_path)
+  --peer-store-path <file>   persisted peer list (overrides p2p.peer_store_path)
+  --mempool-max <n>          mempool size (overrides mempool.max_total)
+  --mempool-per-sender <n>   per-sender in-flight cap (overrides mempool.max_per_sender)
+  --mempool-bump-bps <bps>   replacement fee bump (overrides mempool.bump_bps)
+  --snapshot-listen <addr>   serve state snapshots to peers on this address
+  --snapshot-fetch <addr>    restore state from a peer's snapshot server, then exit
+  --snapshot-out <dir>       where --snapshot-fetch writes the restored state
+  --snapshot-chunk-size <n>  snapshot transfer chunk size (bytes)
+  --snapshot-max-bytes <n>   refuse snapshots larger than this
+  --devnet                   run the local devnet demo in the current directory (development only)
+  -V, --version              print the build id (Mersennet/<version>-<sha>) and exit
+  -h, --help                 this text
+
+Operators: install with  curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash
+Guide: https://docs.mersennet.com/validators/run-a-node/
+";
+
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
+/// Set by the producer from just before `execute_block` until the block has
+/// been broadcast. The shutdown handler waits for it to clear: a block that is
+/// committed locally but never reaches peers becomes an orphaned head, and on
+/// restart every block at the next height fails the parent check until the
+/// watchdog restores a snapshot (validator 1 on the 25 Sep roll: benched for
+/// the rest of the epoch).
+static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
 
 fn main() -> anyhow::Result<()> {
     // `mersennet --version` prints the same string web3_clientVersion reports,
@@ -68,6 +105,10 @@ fn main() -> anyhow::Result<()> {
             env!("CARGO_PKG_VERSION"),
             option_env!("MERSENNET_GIT_SHA").unwrap_or("dev")
         );
+        return Ok(());
+    }
+    if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
+        print!("{USAGE}");
         return Ok(());
     }
     // initialize structured tracing from env and install Prometheus metrics
@@ -96,10 +137,26 @@ fn main() -> anyhow::Result<()> {
                     if let Err(err) = guard.flush_state() {
                         tracing::warn!(%err, "state flush on shutdown failed");
                     }
-                    info!("state committed; exiting");
+                    info!("state committed");
                 }
                 Err(_) => info!("engine lock poisoned; exiting"),
             }
+        }
+        // A block we just produced must reach the network before we go, or
+        // it is finalized by nobody and we restart on an orphaned head.
+        let mut waited = std::time::Duration::ZERO;
+        while BROADCAST_PENDING.load(Ordering::SeqCst) && waited < std::time::Duration::from_secs(3)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            waited += std::time::Duration::from_millis(50);
+        }
+        if !waited.is_zero() {
+            info!(
+                waited_ms = waited.as_millis() as u64,
+                "in-flight block broadcast finished; exiting"
+            );
+        } else {
+            info!("exiting");
         }
         std::process::exit(0);
     })?;
@@ -777,7 +834,13 @@ fn main() -> anyhow::Result<()> {
                                 {
                                     continue;
                                 }
+                                // Shutting down: do not start a block we cannot
+                                // shepherd to finality (see BROADCAST_PENDING).
+                                if shutdown_producer.load(Ordering::SeqCst) {
+                                    break;
+                                }
                                 let _ = my_addr;
+                                BROADCAST_PENDING.store(true, Ordering::SeqCst);
                                 match e.execute_block() {
                                     Ok(mut b) => {
                                         ws::set_privacy_mode_activated(e.privacy_mode_activated());
@@ -805,6 +868,7 @@ fn main() -> anyhow::Result<()> {
                                     }
                                     Err(err) => {
                                         tracing::warn!(%err, "block production error");
+                                        BROADCAST_PENDING.store(false, Ordering::SeqCst);
                                         continue;
                                     }
                                 }
@@ -930,6 +994,7 @@ fn main() -> anyhow::Result<()> {
                             if let Err(err) = net.broadcast_block(&block) {
                                 tracing::warn!(%err, "block broadcast error");
                             }
+                            BROADCAST_PENDING.store(false, Ordering::SeqCst);
                             if block.number % 100 == 0 {
                                 info!(
                                     height = block.number,
@@ -1397,6 +1462,10 @@ struct CliConfig {
     rpc_enabled: bool,
     rpc_addr: Option<String>,
     mode: NodeMode,
+    /// `--mode`, `--devnet` or `--validator` was given; without one, `--config`
+    /// means a full node (the devnet demo used to be the silent default and
+    /// wrote state dirs into whatever directory an operator ran the binary from).
+    mode_explicit: bool,
     snapshot_listen: Option<String>,
     snapshot_fetch: Option<String>,
     snapshot_out: Option<String>,
@@ -1416,6 +1485,7 @@ fn read_cli_config() -> CliConfig {
         rpc_enabled: false,
         rpc_addr: None,
         mode: NodeMode::Devnet,
+        mode_explicit: false,
         snapshot_listen: None,
         snapshot_fetch: None,
         snapshot_out: None,
@@ -1470,13 +1540,16 @@ fn read_cli_config() -> CliConfig {
             "--mode" => {
                 if let Some(value) = args.next() {
                     config.mode = parse_mode(&value);
+                    config.mode_explicit = true;
                 }
             }
             "--devnet" => {
                 config.mode = NodeMode::Devnet;
+                config.mode_explicit = true;
             }
             "--validator" => {
                 config.mode = NodeMode::Validator;
+                config.mode_explicit = true;
             }
             "--snapshot-listen" => {
                 if let Some(value) = args.next() {
@@ -1517,7 +1590,24 @@ fn read_cli_config() -> CliConfig {
                     config.peer_store_path = Some(value);
                 }
             }
-            _ => {}
+            other => {
+                eprintln!("mersennet: unknown argument '{other}'\n\n{USAGE}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if !config.mode_explicit {
+        // The snapshot endpoints are tools in their own right (state dir from
+        // --state or the default); everything else needs a configuration file.
+        let tool = config.snapshot_fetch.is_some() || config.snapshot_listen.is_some();
+        if config.config_path.is_some() || tool {
+            config.mode = NodeMode::Full;
+        } else {
+            eprintln!(
+                "mersennet: no --config given. A node needs its configuration file; \
+                 the local devnet demo runs only with an explicit --devnet.\n\n{USAGE}"
+            );
+            std::process::exit(2);
         }
     }
 
