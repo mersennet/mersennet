@@ -24,7 +24,7 @@
 //! - `BlsThreshold::generate_share` (test/SDK helper) ✅ takes a
 //!   validator's secret share and emits a `DecryptionShare`.
 //! - Distributed key generation (DKG) is **deferred** to the
-//!   consensus-layer module ([`crates/core/src/dkg.rs`], Workstream
+//!   consensus-layer module (`crates/core/src/dkg.rs`, Workstream
 //!   D4). For the standalone unit tests in this module, the secret
 //!   key + Shamir shares are produced inside the test via
 //!   `BlsThreshold::new_with_simulated_dkg`.

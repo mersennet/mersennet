@@ -23,7 +23,7 @@
 //!   workspace to compile and test without pulling in arkworks.
 //!
 //! - **With `--features prover`.** Real BN254 arithmetic via
-//!   [`ark-bn254`] + [`ark-ec`]. Hiding + binding under DLP on BN254
+//!   `ark-bn254` + `ark-ec`. Hiding + binding under DLP on BN254
 //!   G1, which is the same security assumption used by the Aztec
 //!   side. The generator set is derived deterministically from
 //!   `"MersennetChain-Pedersen-v0"` + index using a try-and-increment

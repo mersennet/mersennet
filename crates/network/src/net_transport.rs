@@ -499,7 +499,7 @@ impl UdpGossip {
                 heard: self.last_heard.contains_key(p),
             })
             .collect();
-        out.sort_by(|a, b| b.first_seen_secs.cmp(&a.first_seen_secs));
+        out.sort_by_key(|p| std::cmp::Reverse(p.first_seen_secs));
         out
     }
 

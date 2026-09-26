@@ -115,7 +115,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "listen": "0.0.0.0:9090",
                 "peers": peers,
                 "block_time_ms": 1000,
-                "node_key_path": format!("/data/node_key.json"),
+                "node_key_path": "/data/node_key.json",
                 "peer_store_path": "/data/peers.json"
             },
             "slashing": {
