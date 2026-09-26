@@ -1,7 +1,7 @@
 //! Distributed key generation (DKG) for the threshold-encrypted
 //! mempool (Workstream D4).
 //!
-//! See [`crates/core/src/dkg.rs`] body below for the full protocol
+//! See `crates/core/src/dkg.rs` body below for the full protocol
 //! description. This file is the in-engine wiring; the underlying
 //! group arithmetic lives in [`mersennet_zkp::bls_threshold`] behind the
 //! `prover` feature.

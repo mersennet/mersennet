@@ -3081,7 +3081,7 @@ impl Engine {
     }
 
     /// Ingest a gossiped block. Blocks are buffered and applied
-    /// strictly in ascending-height order via [`Engine::apply_imported_block`],
+    /// strictly in ascending-height order via `Engine::apply_imported_block`,
     /// which re-executes the block's transactions so non-producing
     /// nodes converge on the same state as the producer. Out-of-order
     /// or duplicate deliveries are tolerated.

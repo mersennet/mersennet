@@ -31,7 +31,7 @@
 //!    EVM tables can be read out account-by-account.
 //! 3. For each EOA with positive transparent balance, compute the
 //!    shielded migration note via
-//!    [`mersennet::shielded_evm::derive_migration_*`] and insert
+//!    `mersennet::shielded_evm::derive_migration_*` and insert
 //!    it into a fresh `ShieldedState`.
 //! 4. Re-encode the snapshot with `shielded` populated and stamp
 //!    the activation height + chain ID.
