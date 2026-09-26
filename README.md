@@ -8,7 +8,7 @@ privacy layer, built in Rust.
 |---|---|---|---|
 | **Public testnet** | `131071` (Mersenne prime 2^17 − 1, default chain ID) | Transparent EVM + CLOB | Live |
 | **Privacy testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
-| **Mersennet mainnet** | `8191` (Mersenne prime 2^13 − 1) | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 1B max supply, 10 MRSN/block initial reward | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
+| **Mersennet mainnet** | `8191` (Mersenne prime 2^13 − 1) | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 2⁸⁹ − 1 wei ≈ 618.97M MRSN cap, 2⁶¹ − 1 wei ≈ 2.31 MRSN/block initial reward (halving epochs) | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork
 > introduces shielded accounts, ZK-proved risk checks, sealed-bid
