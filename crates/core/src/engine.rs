@@ -4445,8 +4445,10 @@ impl Engine {
     fn u256_from_bytes(value: U256Bytes) -> U256 {
         let limbs = value
             .0
-            .chunks_exact(8)
-            .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|chunk| u64::from_le_bytes(*chunk))
             .collect::<Vec<_>>();
         U256::from_limbs([limbs[0], limbs[1], limbs[2], limbs[3]])
     }

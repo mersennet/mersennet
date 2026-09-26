@@ -98,10 +98,12 @@ pub fn decode_groth16_proof(
     }
     let mut words = [[0u8; 32]; GROTH16_PROOF_WORDS];
     for (index, chunk) in proof_bytes[GROTH16_SELECTOR_LEN..]
-        .chunks_exact(32)
+        .as_chunks::<32>()
+        .0
+        .iter()
         .enumerate()
     {
-        words[index].copy_from_slice(chunk);
+        words[index] = *chunk;
     }
     Ok(words)
 }
