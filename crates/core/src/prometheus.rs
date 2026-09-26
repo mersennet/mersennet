@@ -22,7 +22,7 @@ pub fn handle() -> Option<&'static PrometheusHandle> {
 }
 
 /// Central registry that pre-describes every Prometheus metric used by Mersennet
-/// Chain.  Calling [`register_all`] is idempotent and emits `describe_*` calls
+/// Chain.  Calling `register_all` is idempotent and emits `describe_*` calls
 /// so that the `/metrics` endpoint always includes HELP / TYPE lines even
 /// before the first sample is recorded.
 pub struct MetricsRegistry;

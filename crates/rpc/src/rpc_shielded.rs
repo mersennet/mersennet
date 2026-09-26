@@ -3,7 +3,7 @@
 //! These are dispatched from
 //! [`crate::rpc_router::route`](super::rpc_router) when the method
 //! name matches one of the shielded-method strings in
-//! [`is_shielded_method`].
+//! `is_shielded_method`.
 //!
 //! ## Wire format
 //!
