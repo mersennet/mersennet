@@ -15,6 +15,16 @@ use tiny_http::{Header, Method, Request, Response, Server};
 
 const DEFAULT_PORT: u16 = 8080;
 const RATE_LIMIT_HOURS: u64 = 1;
+/// Native drips one IP may take in 24 h, whatever the addresses. The hourly
+/// address+IP window alone was farmable by rotating addresses from one host
+/// (and every farmed MRSN turns into trading points). Three a day leaves a
+/// shared office/NAT usable and caps a single host at ~3,000 MRSN/day.
+const IP_DAILY_CAP: usize = 3;
+const DAY: Duration = Duration::from_secs(24 * 3600);
+/// Cloudflare Turnstile. Set TURNSTILE_SECRET (+ TURNSTILE_SITE_KEY for the
+/// page) in the service environment to require a passed challenge on every
+/// drip; unset = no challenge (current behaviour).
+const TURNSTILE_VERIFY_URL: &str = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 // 1,000 MRSN (the validator bond / trading collateral) plus 1 MRSN for gas: the
 // staking precompile pulls the bond from the balance after gas, so a wallet
 // holding exactly 1,000 could never bond 1,000.
@@ -29,11 +39,82 @@ const MAX_BODY_BYTES: u64 = 16 * 1024;
 const WORKER_THREADS: usize = 8;
 /// Shared, purgeable rate-limit ledger: composite key -> last grant time.
 type RateLedger = Mutex<HashMap<String, Instant>>;
+/// Per-key grant timestamps inside a rolling window (the IP daily cap).
+type CountLedger = Mutex<HashMap<String, Vec<Instant>>>;
 
-/// `/health` reports "low" below this so an operator gets warned before the
-/// faucet drains (≈50 native drips of 1000 MRSN).
+/// Turnstile settings from the environment; `None` = challenge disabled.
+struct Turnstile {
+    secret: String,
+    site_key: Option<String>,
+}
+fn turnstile_from_env() -> Option<Turnstile> {
+    let secret = std::env::var("TURNSTILE_SECRET")
+        .ok()
+        .filter(|s| !s.trim().is_empty())?;
+    let site_key = std::env::var("TURNSTILE_SITE_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+    Some(Turnstile { secret, site_key })
+}
+
+/// Server-side check of a Turnstile token (siteverify). A network failure
+/// counts as a failed challenge: the faucet stays closed rather than open.
+fn turnstile_passes(ts: &Turnstile, token: Option<&str>, ip: &str) -> bool {
+    let token = match token.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => t,
+        None => return false,
+    };
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(8))
+        .build();
+    let resp = agent.post(TURNSTILE_VERIFY_URL).send_form(&[
+        ("secret", ts.secret.as_str()),
+        ("response", token),
+        ("remoteip", ip),
+    ]);
+    let body = match resp
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.into_string().map_err(|e| e.to_string()))
+    {
+        Ok(body) => body,
+        Err(e) => {
+            eprintln!("turnstile: siteverify failed: {e}");
+            return false;
+        }
+    };
+    serde_json::from_str::<Value>(&body)
+        .ok()
+        .and_then(|v| v.get("success").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+/// Allow at most `cap` grants for `key` inside the trailing `window`; stamps
+/// the grant on success. Entries fall out of the map as they age.
+fn count_cap_grant(
+    ledger: &CountLedger,
+    key: &str,
+    window: Duration,
+    cap: usize,
+) -> Result<(), ()> {
+    let mut map = ledger.lock().map_err(|_| ())?;
+    let now = Instant::now();
+    map.retain(|_, v| {
+        v.retain(|t| now.duration_since(*t) < window);
+        !v.is_empty()
+    });
+    let entry = map.entry(key.to_string()).or_default();
+    if entry.len() >= cap {
+        return Err(());
+    }
+    entry.push(now);
+    Ok(())
+}
+
+/// `/health` reports "low" below this so an operator gets warned while there
+/// is still runway: 500,000 MRSN ≈ 500 drips ≈ a busy day (was 50,000 — fifty
+/// drips, an hour's notice at launch traffic). Top-up: deploy/faucet-topup.md.
 fn low_balance_threshold() -> U256 {
-    U256::from(50_000u64) * U256::from(10u64).pow(U256::from(18))
+    U256::from(500_000u64) * U256::from(10u64).pow(U256::from(18))
 }
 const TOKEN_AMOUNT_6: U256 = U256::from_limbs([10_000_000_000u64, 0, 0, 0]); // 10,000 @ 6 decimals
 const TOKEN_AMOUNT_18: U256 = U256::from_limbs([1_864_712_049_423_024_128u64, 542u64, 0, 0]); // 10,000 @ 18 decimals (1e22)
@@ -47,12 +128,18 @@ const MOCK_DAI: &str = "0x27942c2cee3e0e02377d01bfe6e74cefc9a9fd45";
 #[derive(Debug, Deserialize)]
 struct FaucetRequest {
     address: String,
+    /// Turnstile response token from the page's widget (required when the
+    /// service runs with TURNSTILE_SECRET).
+    #[serde(default, rename = "turnstileToken", alias = "cf-turnstile-response")]
+    turnstile_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ClaimTokenRequest {
     address: String,
     token: String,
+    #[serde(default, rename = "turnstileToken", alias = "cf-turnstile-response")]
+    turnstile_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -156,6 +243,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let faucet_address = mersennet::crypto::address_from_signing_key(&faucet_key);
     let chain_id = fetch_chain_id(&rpc_url)?;
     let rate_limit: Arc<RateLedger> = Arc::new(Mutex::new(HashMap::new()));
+    let daily_ip: Arc<CountLedger> = Arc::new(Mutex::new(HashMap::new()));
+    let turnstile: Arc<Option<Turnstile>> = Arc::new(turnstile_from_env());
+    match turnstile.as_ref() {
+        Some(t) => println!(
+            "Turnstile: on (site key {})",
+            if t.site_key.is_some() {
+                "set"
+            } else {
+                "MISSING — the page cannot render the widget"
+            }
+        ),
+        None => println!(
+            "Turnstile: off (set TURNSTILE_SECRET and TURNSTILE_SITE_KEY to require a challenge)"
+        ),
+    }
+    println!(
+        "Limits: 1 drip per address per {RATE_LIMIT_HOURS} h, {IP_DAILY_CAP} drips per IP per 24 h"
+    );
     // Locally tracked next nonce for the faucet account. Re-reading "latest"
     // alone races when multiple txs (drip + token claims) are still unmined, so
     // we hand out strictly increasing nonces via reserve_nonces().
@@ -180,6 +285,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rpc_url = rpc_url.clone();
         let faucet_key = faucet_key.clone();
         let rate_limit = Arc::clone(&rate_limit);
+        let daily_ip = Arc::clone(&daily_ip);
+        let turnstile = Arc::clone(&turnstile);
         let nonce_state = Arc::clone(&nonce_state);
         handles.push(std::thread::spawn(move || {
             while let Ok(request) = server.recv() {
@@ -189,6 +296,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &faucet_key,
                     chain_id,
                     &rate_limit,
+                    &daily_ip,
+                    turnstile.as_ref().as_ref(),
                     &nonce_state,
                 );
             }
@@ -201,16 +310,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_request(
     mut request: Request,
     rpc_url: &str,
     faucet_key: &SigningKey,
     chain_id: u64,
     rate_limit: &RateLedger,
+    daily_ip: &CountLedger,
+    turnstile: Option<&Turnstile>,
     nonce_state: &Mutex<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let url = request.url().to_string();
     let ip = client_ip(&request);
+
+    // What the page needs to render itself: the Turnstile site key (null =
+    // no challenge) and the limits it should explain to the user.
+    if request.method() == &Method::Get && url == "/config" {
+        let body = json!({
+            "turnstileSiteKey": turnstile.and_then(|t| t.site_key.clone()),
+            "dripMrsn": 1001,
+            "addressWindowHours": RATE_LIMIT_HOURS,
+            "ipDailyCap": IP_DAILY_CAP,
+        })
+        .to_string();
+        let response = Response::from_string(body)
+            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+            .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap());
+        request.respond(response)?;
+        return Ok(());
+    }
 
     if request.method() == &Method::Get && (url == "/" || url == "/faucet") {
         let html = include_str!("faucet.html");
@@ -227,6 +356,9 @@ fn handle_request(
                 "status": if bal >= low_balance_threshold() { "ok" } else { "low" },
                 "faucetAddress": format!("0x{}", hex::encode(faucet_address.as_slice())),
                 "faucetBalanceWei": bal.to_string(),
+                "dripsLeft": (bal / (U256::from(1001u64) * U256::from(10u64).pow(U256::from(18)))).to_string(),
+                "turnstile": turnstile.is_some(),
+                "ipDailyCap": IP_DAILY_CAP,
             }),
             // RPC unreachable: report degraded rather than a bare "ok".
             Err(e) => json!({ "status": "degraded", "error": e.to_string() }),
@@ -262,6 +394,16 @@ fn handle_request(
             }
         };
 
+        if let Some(ts) = turnstile
+            && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
+        {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("challenge failed — reload the page and try again"),
+            ))?;
+            return Ok(());
+        }
+
         let addr_key = format!("native:{}", hex::encode(address.as_slice()));
         let ip_key = format!("native-ip:{}", ip);
         let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
@@ -271,6 +413,16 @@ fn handle_request(
                 &FaucetResponse::err(format!(
                     "rate limited: 1 native drip per address and per IP per {} hour(s)",
                     RATE_LIMIT_HOURS
+                )),
+            ))?;
+            return Ok(());
+        }
+        if count_cap_grant(daily_ip, &format!("native-ip-day:{ip}"), DAY, IP_DAILY_CAP).is_err() {
+            request.respond(json_response(
+                429,
+                &FaucetResponse::err(format!(
+                    "rate limited: {IP_DAILY_CAP} native drips per IP per 24 hours — that is {} MRSN a day, plenty for testing",
+                    IP_DAILY_CAP * 1001
                 )),
             ))?;
             return Ok(());
@@ -322,6 +474,15 @@ fn handle_request(
                 return Ok(());
             }
         };
+        if let Some(ts) = turnstile
+            && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
+        {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("challenge failed — reload the page and try again"),
+            ))?;
+            return Ok(());
+        }
         let token = req.token.to_lowercase();
         let addr_norm = req.address.trim().to_lowercase();
         let addr_key = format!("token:{}:{}", token, addr_norm);
