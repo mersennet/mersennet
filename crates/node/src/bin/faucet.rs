@@ -876,9 +876,34 @@ mod tests {
     }
 
     #[test]
-    fn low_balance_threshold_is_50k_ether() {
-        let expected = U256::from(50_000u64) * U256::from(10u64).pow(U256::from(18));
+    fn low_balance_threshold_is_500k_ether() {
+        let expected = U256::from(500_000u64) * U256::from(10u64).pow(U256::from(18));
         assert_eq!(low_balance_threshold(), expected);
-        assert_eq!(expected.to_string(), "50000000000000000000000");
+        assert_eq!(expected.to_string(), "500000000000000000000000");
+    }
+
+    #[test]
+    fn daily_cap_allows_cap_then_refuses_until_window_passes() {
+        let ledger: CountLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_millis(80);
+        for _ in 0..IP_DAILY_CAP {
+            assert!(count_cap_grant(&ledger, "ip:1", window, IP_DAILY_CAP).is_ok());
+        }
+        assert!(count_cap_grant(&ledger, "ip:1", window, IP_DAILY_CAP).is_err());
+        // Another IP is independent.
+        assert!(count_cap_grant(&ledger, "ip:2", window, IP_DAILY_CAP).is_ok());
+        std::thread::sleep(Duration::from_millis(100));
+        // Old grants aged out — allowed again.
+        assert!(count_cap_grant(&ledger, "ip:1", window, IP_DAILY_CAP).is_ok());
+    }
+
+    #[test]
+    fn turnstile_without_token_fails_closed() {
+        let ts = Turnstile {
+            secret: "x".into(),
+            site_key: None,
+        };
+        assert!(!turnstile_passes(&ts, None, "1.2.3.4"));
+        assert!(!turnstile_passes(&ts, Some("   "), "1.2.3.4"));
     }
 }

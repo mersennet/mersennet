@@ -311,9 +311,25 @@ pub struct SnapshotMeta {
     pub state_root: B256,
 }
 
+/// sled's page-cache budget when a caller does not say (tests, tools): the
+/// same 512 MiB the node config defaults to. See `EngineConfig::state_cache_bytes`.
+pub const DEFAULT_STATE_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+
 impl PersistentState {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let db = sled::open(path)?;
+        Self::open_with_cache(path, DEFAULT_STATE_CACHE_BYTES)
+    }
+
+    /// Open (or create) the state store with an explicit sled cache budget.
+    /// sled's `cache_capacity` is approximate: expect the process to settle
+    /// at roughly two to three times this figure. Values under 64 MiB are
+    /// raised to that floor — below it sled thrashes on every block.
+    pub fn open_with_cache(path: impl AsRef<Path>, cache_bytes: u64) -> Result<Self> {
+        let cache_bytes = cache_bytes.max(64 * 1024 * 1024);
+        let db = sled::Config::new()
+            .path(path)
+            .cache_capacity(cache_bytes)
+            .open()?;
         let accounts = db.open_tree("accounts")?;
         let storage = db.open_tree("storage")?;
         let mersennet_orders = db.open_tree("mersennet_orders")?;
@@ -1568,6 +1584,21 @@ mod validator_registry_persistence_tests {
     use super::*;
     use crate::mersennet_orders::MersennetOrdersState;
     use crate::staking::ValidatorSetParams;
+
+    #[test]
+    fn open_with_small_cache_clamps_and_works() {
+        let dir = tempfile::tempdir().expect("tmp");
+        // 1 byte is raised to the 64 MiB floor; the store must still work.
+        let st = PersistentState::open_with_cache(dir.path(), 1).expect("open");
+        st.db.insert(b"probe", b"value").expect("write");
+        st.db.flush().expect("flush");
+        drop(st);
+        let st2 = PersistentState::open_with_cache(dir.path(), 128 * 1024 * 1024).expect("reopen");
+        assert_eq!(
+            st2.db.get(b"probe").expect("read").as_deref(),
+            Some(&b"value"[..])
+        );
+    }
 
     #[test]
     fn registry_round_trips_through_sled_and_is_absent_from_root_when_empty() {

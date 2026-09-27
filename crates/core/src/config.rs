@@ -170,6 +170,14 @@ pub struct EngineConfig {
     pub fee_treasury_address: Option<String>,
     #[serde(default = "default_storage_backend")]
     pub storage_backend: String,
+    /// Page-cache budget for the sled state store, in bytes (default 512 MiB;
+    /// sled's own default is 1 GiB). Consensus-neutral. sled counts this
+    /// budget approximately and the process settles at roughly 2–3× it plus
+    /// the chain window, so a 4 GB validator wants 512 MiB or less; the
+    /// default sled figure took the fleet to ~3 GB RSS and into the OOM
+    /// killer (Sep 2026). More cache = fewer disk reads on RPC-heavy nodes.
+    #[serde(default = "default_state_cache_bytes")]
+    pub state_cache_bytes: u64,
     /// What to do when the restored state's Merkle root does not match the
     /// head block's state root at startup: `"warn"` (metric + error, keep
     /// running) or `"fatal"` (exit 5 so the operator resets state / the
@@ -181,6 +189,10 @@ pub struct EngineConfig {
 
 fn default_storage_backend() -> String {
     "sled".to_string()
+}
+pub const MIN_STATE_CACHE_BYTES: u64 = 64 * 1024 * 1024;
+fn default_state_cache_bytes() -> u64 {
+    512 * 1024 * 1024
 }
 fn default_resume_root_check() -> String {
     "warn".to_string()
@@ -546,6 +558,7 @@ impl Default for EngineConfig {
         Self {
             chain_id: default_chain_id(),
             state_path: default_state_path(),
+            state_cache_bytes: default_state_cache_bytes(),
             gas_limit_per_block: default_gas_limit(),
             fee_elasticity_multiplier: default_fee_elasticity(),
             fee_max_change_denominator: default_fee_change_denominator(),
@@ -890,6 +903,10 @@ mod canonical_config_tests {
             }
         }
         let e = &cfg.engine;
+        assert!(
+            e.state_cache_bytes >= MIN_STATE_CACHE_BYTES,
+            "engine.state_cache_bytes must be at least 64 MiB"
+        );
         assert!(
             e.fee_treasury_bps + e.fee_proposer_bps <= 10_000,
             "fee_treasury_bps + fee_proposer_bps must not exceed 10000"

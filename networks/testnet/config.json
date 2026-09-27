@@ -3,6 +3,7 @@
     "chain_id": 131071,
     "gas_limit_per_block": 30000000,
     "state_path": "data/state",
+    "state_cache_bytes": 536870912,
     "resume_root_check": "warn",
     "fee_floor_height": 1969200,
     "min_base_fee_wei": 1000000000,

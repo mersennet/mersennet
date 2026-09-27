@@ -645,6 +645,22 @@ impl Engine {
         path: impl AsRef<std::path::Path>,
         backend: &str,
     ) -> Self {
+        Self::new_with_backend_and_cache(
+            chain_id,
+            path,
+            backend,
+            crate::state::DEFAULT_STATE_CACHE_BYTES,
+        )
+    }
+
+    /// `new_with_backend` with an explicit sled page-cache budget
+    /// (`engine.state_cache_bytes`); ignored by the redb backend.
+    pub fn new_with_backend_and_cache(
+        chain_id: u64,
+        path: impl AsRef<std::path::Path>,
+        backend: &str,
+        state_cache_bytes: u64,
+    ) -> Self {
         let path_buf = path.as_ref().to_path_buf();
         // Both backends live in the same directory (sled: `db`, `conf`, `blobs/`;
         // redb: `mersennet.redb`), and the published snapshots are sled. A node
@@ -665,8 +681,14 @@ impl Engine {
                 Box::new(RedbState::open(&path_buf).expect("redb state DB open"))
             }
             _ => {
-                tracing::info!("initializing sled storage backend");
-                Box::new(PersistentState::open(&path_buf).expect("sled state DB open"))
+                tracing::info!(
+                    cache_mib = state_cache_bytes / (1024 * 1024),
+                    "initializing sled storage backend"
+                );
+                Box::new(
+                    PersistentState::open_with_cache(&path_buf, state_cache_bytes)
+                        .expect("sled state DB open"),
+                )
             }
         };
 
