@@ -33,7 +33,7 @@ RUST_LOG=info mersennet --config config.json --mode full --rpc
 
 ## Snapshot bootstrap
 
-Fresh installs start from the latest published state snapshot (`http://46.225.30.187:8088/latest.json`, tar+zstd of `data/state`, ~1 GB, SHA-256 in the manifest) and then sync only the tail: minutes instead of the ~20 hours a genesis replay takes at current transaction density. `--from-genesis` opts out. Snapshots are produced on the public node every 6 hours by `deploy/mersennet-snapshot.sh` (`PUBLISH=1`) and served by Caddy on port 8088 (plain HTTP by IP because Cloudflare caps proxied downloads at 100 MB). Upgrades never touch existing data.
+Fresh installs start from the latest published state snapshot (`http://46.225.30.187:8088/latest.json`, tar+zstd of `data/state`, ~2.5 GB, SHA-256 in the manifest) and then sync only the tail: minutes instead of the ~20 hours a genesis replay takes at current transaction density. `--from-genesis` opts out. Snapshots are taken every 6 hours (02/08/14/20 UTC) by `deploy/mersennet-snapshot.sh` (`PUBLISH=1`) from the **app-1 full node** — since 27 Sep 2026; before that the public RPC node took them and stopped for ~45 s each time. The public node runs `mersennet-snapshot.sh pull` every 10 minutes, which mirrors the tarball + manifest from app-1 (SHA-256 verified), unpacks it as `snap-<height>/` for the validators' heal-pull and serves it from Caddy on port 8088 (plain HTTP by IP because Cloudflare caps proxied downloads at 100 MB). Upgrades never touch existing data.
 
 ## Publishing a new bundle
 
