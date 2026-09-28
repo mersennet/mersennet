@@ -25,6 +25,12 @@ const DAY: Duration = Duration::from_secs(24 * 3600);
 /// page) in the service environment to require a passed challenge on every
 /// drip; unset = no challenge (current behaviour).
 const TURNSTILE_VERIFY_URL: &str = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+/// Requests without a challenge token (scripts, CI) are still served when the
+/// challenge is on, at a script-sized allowance: this many native drips per
+/// address and per IP per 24 h. The page, behind the widget, keeps 1/hour and
+/// IP_DAILY_CAP/day. Enough for a pipeline that funds a wallet once a day;
+/// useless for farming — which needs the page and its challenge.
+const API_DAILY_CAP: usize = 1;
 // 1,000 MRSN (the validator bond / trading collateral) plus 1 MRSN for gas: the
 // staking precompile pulls the bond from the balance after gas, so a wallet
 // holding exactly 1,000 could never bond 1,000.
@@ -293,7 +299,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     }
     println!(
-        "Limits: 1 drip per address per {RATE_LIMIT_HOURS} h, {IP_DAILY_CAP} drips per IP per 24 h"
+        "Limits: 1 drip per address per {RATE_LIMIT_HOURS} h, {IP_DAILY_CAP} drips per IP per 24 h; scripts without a challenge token: {API_DAILY_CAP} per address and per IP per 24 h"
     );
     // Locally tracked next nonce for the faucet account. Re-reading "latest"
     // alone races when multiple txs (drip + token claims) are still unmined, so
@@ -366,6 +372,7 @@ fn handle_request(
             "dripMrsn": 1001,
             "addressWindowHours": RATE_LIMIT_HOURS,
             "ipDailyCap": IP_DAILY_CAP,
+            "scriptDailyCap": API_DAILY_CAP,
         })
         .to_string();
         let response = Response::from_string(body)
@@ -432,6 +439,28 @@ fn handle_request(
         let ip_key = format!("native-ip:{}", ip);
         let day_key = format!("native-ip-day:{ip}");
         let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
+        let has_token = req
+            .turnstile_token
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|t| !t.is_empty());
+        // Script mode: challenge on, no token supplied → the daily allowance
+        // instead of a 403 (a bare curl still works, once a day).
+        let script_mode = turnstile.is_some() && !has_token;
+        let api_addr_key = format!("api-addr-day:{}", hex::encode(address.as_slice()));
+        let api_ip_key = format!("api-ip-day:{ip}");
+        if script_mode
+            && (count_cap_check(daily_ip, &api_addr_key, DAY, API_DAILY_CAP).is_err()
+                || count_cap_check(daily_ip, &api_ip_key, DAY, API_DAILY_CAP).is_err())
+        {
+            request.respond(json_response(
+                429,
+                &FaucetResponse::err(format!(
+                    "rate limited: without the page's verification a script may take {API_DAILY_CAP} drip per address and per IP per 24 hours (the page allows 1 per hour, {IP_DAILY_CAP} a day)"
+                )),
+            ))?;
+            return Ok(());
+        }
         // 1. Would the limits allow it? (read-only — nothing is stamped yet)
         if rate_limit_check(rate_limit, &[addr_key.clone(), ip_key.clone()], window).is_err() {
             request.respond(json_response(
@@ -453,8 +482,10 @@ fn handle_request(
             ))?;
             return Ok(());
         }
-        // 2. Challenge (a token is single-use; only checked once the limits allow a drip)
-        if let Some(ts) = turnstile
+        // 2. Challenge (page mode only; a token is single-use, so it is checked
+        //    once the limits allow a drip)
+        if !script_mode
+            && let Some(ts) = turnstile
             && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
         {
             request.respond(json_response(
@@ -466,6 +497,9 @@ fn handle_request(
         // 3. Stamp the grant (a concurrent request may have won the race → 429)
         if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err()
             || count_cap_grant(daily_ip, &day_key, DAY, IP_DAILY_CAP).is_err()
+            || (script_mode
+                && (count_cap_grant(daily_ip, &api_addr_key, DAY, API_DAILY_CAP).is_err()
+                    || count_cap_grant(daily_ip, &api_ip_key, DAY, API_DAILY_CAP).is_err()))
         {
             request.respond(json_response(429, &FaucetResponse::err("rate limited")))?;
             return Ok(());
@@ -521,18 +555,36 @@ fn handle_request(
         let addr_norm = req.address.trim().to_lowercase();
         let addr_key = format!("token:{}:{}", token, addr_norm);
         let ip_key = format!("token-ip:{}:{}", token, ip);
-        let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
+        let has_token = req
+            .turnstile_token
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|t| !t.is_empty());
+        let script_mode = turnstile.is_some() && !has_token;
+        // Page: one claim per token per address/IP per hour. Script: per day.
+        let window = if script_mode {
+            DAY
+        } else {
+            Duration::from_secs(RATE_LIMIT_HOURS * 3600)
+        };
         if rate_limit_check(rate_limit, &[addr_key.clone(), ip_key.clone()], window).is_err() {
             request.respond(json_response(
                 429,
-                &FaucetResponse::err(format!(
-                    "rate limited: 1 {} claim per address and per IP per {} hour(s)",
-                    token, RATE_LIMIT_HOURS
-                )),
+                &FaucetResponse::err(if script_mode {
+                    format!(
+                        "rate limited: without the page's verification a script may claim {token} once per address and per IP per 24 hours"
+                    )
+                } else {
+                    format!(
+                        "rate limited: 1 {} claim per address and per IP per {} hour(s)",
+                        token, RATE_LIMIT_HOURS
+                    )
+                }),
             ))?;
             return Ok(());
         }
-        if let Some(ts) = turnstile
+        if !script_mode
+            && let Some(ts) = turnstile
             && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
         {
             request.respond(json_response(
