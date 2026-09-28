@@ -88,6 +88,40 @@ fn turnstile_passes(ts: &Turnstile, token: Option<&str>, ip: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Read-only: would `keys` pass the window right now? Nothing is stamped, so a
+/// request that later fails the challenge leaves the slot free.
+fn rate_limit_check(ledger: &RateLedger, keys: &[String], window: Duration) -> Result<(), ()> {
+    let map = ledger.lock().map_err(|_| ())?;
+    let now = Instant::now();
+    if keys
+        .iter()
+        .any(|k| map.get(k).is_some_and(|t| now.duration_since(*t) < window))
+    {
+        return Err(());
+    }
+    Ok(())
+}
+
+/// Read-only counterpart of `count_cap_grant`.
+fn count_cap_check(
+    ledger: &CountLedger,
+    key: &str,
+    window: Duration,
+    cap: usize,
+) -> Result<(), ()> {
+    let map = ledger.lock().map_err(|_| ())?;
+    let now = Instant::now();
+    let n = map
+        .get(key)
+        .map(|v| {
+            v.iter()
+                .filter(|t| now.duration_since(**t) < window)
+                .count()
+        })
+        .unwrap_or(0);
+    if n >= cap { Err(()) } else { Ok(()) }
+}
+
 /// Allow at most `cap` grants for `key` inside the trailing `window`; stamps
 /// the grant on success. Entries fall out of the map as they age.
 fn count_cap_grant(
@@ -394,20 +428,12 @@ fn handle_request(
             }
         };
 
-        if let Some(ts) = turnstile
-            && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
-        {
-            request.respond(json_response(
-                403,
-                &FaucetResponse::err("challenge failed — reload the page and try again"),
-            ))?;
-            return Ok(());
-        }
-
         let addr_key = format!("native:{}", hex::encode(address.as_slice()));
         let ip_key = format!("native-ip:{}", ip);
+        let day_key = format!("native-ip-day:{ip}");
         let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
-        if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err() {
+        // 1. Would the limits allow it? (read-only — nothing is stamped yet)
+        if rate_limit_check(rate_limit, &[addr_key.clone(), ip_key.clone()], window).is_err() {
             request.respond(json_response(
                 429,
                 &FaucetResponse::err(format!(
@@ -417,7 +443,7 @@ fn handle_request(
             ))?;
             return Ok(());
         }
-        if count_cap_grant(daily_ip, &format!("native-ip-day:{ip}"), DAY, IP_DAILY_CAP).is_err() {
+        if count_cap_check(daily_ip, &day_key, DAY, IP_DAILY_CAP).is_err() {
             request.respond(json_response(
                 429,
                 &FaucetResponse::err(format!(
@@ -425,6 +451,23 @@ fn handle_request(
                     IP_DAILY_CAP * 1001
                 )),
             ))?;
+            return Ok(());
+        }
+        // 2. Challenge (a token is single-use; only checked once the limits allow a drip)
+        if let Some(ts) = turnstile
+            && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
+        {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("challenge failed — reload the page and try again"),
+            ))?;
+            return Ok(());
+        }
+        // 3. Stamp the grant (a concurrent request may have won the race → 429)
+        if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err()
+            || count_cap_grant(daily_ip, &day_key, DAY, IP_DAILY_CAP).is_err()
+        {
+            request.respond(json_response(429, &FaucetResponse::err("rate limited")))?;
             return Ok(());
         }
 
@@ -474,6 +517,21 @@ fn handle_request(
                 return Ok(());
             }
         };
+        let token = req.token.to_lowercase();
+        let addr_norm = req.address.trim().to_lowercase();
+        let addr_key = format!("token:{}:{}", token, addr_norm);
+        let ip_key = format!("token-ip:{}:{}", token, ip);
+        let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
+        if rate_limit_check(rate_limit, &[addr_key.clone(), ip_key.clone()], window).is_err() {
+            request.respond(json_response(
+                429,
+                &FaucetResponse::err(format!(
+                    "rate limited: 1 {} claim per address and per IP per {} hour(s)",
+                    token, RATE_LIMIT_HOURS
+                )),
+            ))?;
+            return Ok(());
+        }
         if let Some(ts) = turnstile
             && !turnstile_passes(ts, req.turnstile_token.as_deref(), &ip)
         {
@@ -483,19 +541,8 @@ fn handle_request(
             ))?;
             return Ok(());
         }
-        let token = req.token.to_lowercase();
-        let addr_norm = req.address.trim().to_lowercase();
-        let addr_key = format!("token:{}:{}", token, addr_norm);
-        let ip_key = format!("token-ip:{}:{}", token, ip);
-        let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
         if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err() {
-            request.respond(json_response(
-                429,
-                &FaucetResponse::err(format!(
-                    "rate limited: 1 {} claim per address and per IP per {} hour(s)",
-                    token, RATE_LIMIT_HOURS
-                )),
-            ))?;
+            request.respond(json_response(429, &FaucetResponse::err("rate limited")))?;
             return Ok(());
         }
 
@@ -895,6 +942,24 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         // Old grants aged out — allowed again.
         assert!(count_cap_grant(&ledger, "ip:1", window, IP_DAILY_CAP).is_ok());
+    }
+
+    #[test]
+    fn check_does_not_stamp_but_grant_does() {
+        let ledger: RateLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_secs(60);
+        let keys = vec!["native:probe".to_string()];
+        // A failed challenge after a passing check must leave the slot free.
+        assert!(rate_limit_check(&ledger, &keys, window).is_ok());
+        assert!(rate_limit_check(&ledger, &keys, window).is_ok());
+        assert!(rate_limit_grant(&ledger, &keys, window).is_ok());
+        assert!(rate_limit_check(&ledger, &keys, window).is_err());
+        let daily: CountLedger = Mutex::new(HashMap::new());
+        for _ in 0..IP_DAILY_CAP {
+            assert!(count_cap_check(&daily, "ip", window, IP_DAILY_CAP).is_ok());
+            assert!(count_cap_grant(&daily, "ip", window, IP_DAILY_CAP).is_ok());
+        }
+        assert!(count_cap_check(&daily, "ip", window, IP_DAILY_CAP).is_err());
     }
 
     #[test]
