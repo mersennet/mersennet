@@ -336,6 +336,15 @@ impl Mempool {
         self.pending.keys().copied().collect()
     }
 
+    /// Canonical hashes of every transaction the pool holds, in any tier.
+    pub fn tx_hashes(&self) -> std::collections::HashSet<revm::primitives::B256> {
+        [&self.pending, &self.queued, &self.base_fee_pool]
+            .iter()
+            .flat_map(|pool| pool.values().flat_map(|q| q.values()))
+            .filter_map(|tx| tx.hash)
+            .collect()
+    }
+
     /// Highest nonce currently queued (pending or base-fee) for a sender,
     /// across both pools. Used to assign the next nonce for
     /// server-submitted CLOB txs so rapid-fire orders don't collide.

@@ -486,6 +486,8 @@ struct StateCheckpoint {
 /// How many recent heights can be rolled back. Finality normally lands
 /// within the same block interval, so 1 would do; 16 covers a slow round.
 const REORG_DEPTH: usize = 16;
+/// Raw envelopes kept for relaying before the cache drops those of mined txs.
+const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
 
 #[derive(Debug)]
 pub struct Engine {
@@ -3545,9 +3547,16 @@ impl Engine {
     /// relay can gossip it verbatim. Ethereum-format signatures only verify
     /// against the raw RLP signing payload, which peers cannot rebuild from
     /// parsed fields — relaying the envelope keeps the tx self-authenticating.
+    ///
+    /// When the cache fills up, only the envelopes of transactions that have
+    /// left the pool are dropped. The relay re-gossips a pending transaction
+    /// until it is mined, and without its envelope every retry fails the
+    /// peers' signature check, stranding the sender's next nonce until this
+    /// node restarts. Bounded by the pool's own size.
     pub fn cache_raw_tx(&mut self, hash: B256, raw: Vec<u8>) {
-        if self.raw_tx_cache.len() >= 8192 {
-            self.raw_tx_cache.clear();
+        if self.raw_tx_cache.len() >= RAW_TX_CACHE_SOFT_CAP {
+            let live = self.mempool.tx_hashes();
+            self.raw_tx_cache.retain(|h, _| live.contains(h));
         }
         self.raw_tx_cache.insert(hash, raw);
     }
@@ -5065,6 +5074,46 @@ mod reorg_tests {
             last.proposer_sig = b.proposer_sig;
         }
         b
+    }
+
+    /// A full raw-envelope cache drops only the envelopes of transactions that
+    /// left the pool, so the relay can still re-gossip every pending one.
+    #[test]
+    fn raw_envelopes_of_pending_txs_survive_a_full_cache() {
+        let mut e = with_validators(engine());
+        let alice = Address::from_slice(&[0x11; 20]);
+        e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        let h = B256::from([0xAB; 32]);
+        e.submit_tx_unsigned(Transaction {
+            from: alice,
+            to: Some(Address::from_slice(&[0x22; 20])),
+            value: U256::from(1u64),
+            data: Bytes::new(),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            nonce: 0,
+            chain_id: Some(131071),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: Some(h),
+        })
+        .unwrap();
+        e.cache_raw_tx(h, vec![1, 2, 3]);
+        for i in 0..(RAW_TX_CACHE_SOFT_CAP as u64 + 10) {
+            let mut k = [0u8; 32];
+            k[..8].copy_from_slice(&i.to_be_bytes());
+            e.cache_raw_tx(B256::from(k), vec![0]);
+        }
+        assert_eq!(
+            e.raw_tx_for(&h),
+            Some(vec![1, 2, 3]),
+            "pending tx keeps its envelope"
+        );
+        assert!(
+            e.raw_tx_cache.len() <= RAW_TX_CACHE_SOFT_CAP,
+            "still bounded"
+        );
     }
 
     /// With the fee floor on, the producer and an importer end every block in
