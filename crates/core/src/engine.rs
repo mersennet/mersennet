@@ -5300,6 +5300,8 @@ mod open_validator_set_tests {
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
             bench_height: 0,
+            max_validators_height: 0,
+            max_validators_after: 0,
         }
     }
 
@@ -5425,6 +5427,43 @@ mod open_validator_set_tests {
             got, expected,
             "restored set and stakes match what was installed"
         );
+    }
+
+    /// The consensus set follows the cap switch on a produced chain: five
+    /// slots until the first boundary at or after `max_validators_height`,
+    /// six from there, so the newcomer with the smaller stake waits until then.
+    #[test]
+    fn consensus_set_grows_at_the_cap_switch() {
+        let mut p = engine();
+        p.set_validator_set_params(ValidatorSetParams {
+            max_validators: 5,
+            max_validators_height: 25,
+            max_validators_after: 6,
+            ..params()
+        });
+        let operator = Address::from_slice(&[0x55; 20]);
+        while p.block_number < 23 {
+            if p.block_number == 2 {
+                for i in 5..=6u8 {
+                    let stake = U256::from(5_000u64 + u64::from(i)) * U256::from(MRSN);
+                    p.orders
+                        .state
+                        .staking
+                        .register_validator(operator, addr(i), stake, 0, 2)
+                        .unwrap();
+                }
+            }
+            produce(&mut p, 0, &[]);
+        }
+        let set = p.validator_addresses();
+        assert_eq!(set.len(), 5, "boundaries 10 and 20 are before the switch");
+        assert!(set.contains(&addr(6)) && !set.contains(&addr(5)));
+        while p.block_number < 33 {
+            produce(&mut p, 0, &[]);
+        }
+        let set = p.validator_addresses();
+        assert_eq!(set.len(), 6, "boundary 30 is the first at or after 25");
+        assert!(set.contains(&addr(5)));
     }
 
     /// A validator that misses three leader slots is dropped from the rotation

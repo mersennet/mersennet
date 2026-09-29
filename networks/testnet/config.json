@@ -365,6 +365,8 @@
     "epoch_blocks": 1800,
     "min_self_stake_mrsn": 1000,
     "max_validators": 12,
+    "max_validators_height": 2127600,
+    "max_validators_after": 50,
     "unbonding_blocks": 7200,
     "jail_miss_bps": 2000,
     "jail_min_slots": 5,

@@ -308,6 +308,8 @@ fn main() -> anyhow::Result<()> {
             epoch_blocks = app_config.validator_set.epoch_blocks,
             min_self_stake_mrsn = app_config.validator_set.min_self_stake_mrsn,
             max_validators = app_config.validator_set.max_validators,
+            max_validators_height = app_config.validator_set.max_validators_height,
+            max_validators_after = app_config.validator_set.max_validators_after,
             "open validator set configured"
         );
     }
