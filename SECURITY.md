@@ -16,6 +16,14 @@ hostname publishes the same contact at `/.well-known/security.txt`.
 - Coordinated disclosure: we ask for up to 90 days before publication for
   consensus-affecting issues, less for everything else.
 
+## Bug bounty (testnet)
+
+Valid reports earn testnet points by severity: **Critical 50,000 · High 20,000 ·
+Medium 5,000 · Low 1,000**. Scope, examples and rules:
+[docs.mersennet.com/getting-started/points/#bug-bounty](https://docs.mersennet.com/getting-started/points/#bug-bounty).
+The first report of an issue earns the points; demonstrate, do not exploit.
+Points have no monetary value.
+
 Supported: the current signed release published at
 [mersennet.com/downloads](https://mersennet.com/downloads/). Older builds are
 not patched; upgrading is the one-line installer.
