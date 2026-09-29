@@ -129,13 +129,14 @@ fn count_cap_check(
 }
 
 /// Allow at most `cap` grants for `key` inside the trailing `window`; stamps
-/// the grant on success. Entries fall out of the map as they age.
+/// the grant on success and returns the stamp. Entries fall out of the map as
+/// they age.
 fn count_cap_grant(
     ledger: &CountLedger,
     key: &str,
     window: Duration,
     cap: usize,
-) -> Result<(), ()> {
+) -> Result<Instant, ()> {
     let mut map = ledger.lock().map_err(|_| ())?;
     let now = Instant::now();
     map.retain(|_, v| {
@@ -147,7 +148,85 @@ fn count_cap_grant(
         return Err(());
     }
     entry.push(now);
-    Ok(())
+    Ok(now)
+}
+
+/// The slots one request has taken, so a request that fails after its grant
+/// (a lost race, or a drip the node did not accept) hands them back: a
+/// failure on our side must not use up the caller's hour or day.
+struct Grant<'a> {
+    windows: &'a RateLedger,
+    caps: &'a CountLedger,
+    window_stamps: Vec<(String, Instant)>,
+    cap_stamps: Vec<(String, Instant)>,
+}
+
+impl<'a> Grant<'a> {
+    fn new(windows: &'a RateLedger, caps: &'a CountLedger) -> Self {
+        Self {
+            windows,
+            caps,
+            window_stamps: Vec::new(),
+            cap_stamps: Vec::new(),
+        }
+    }
+
+    fn window(&mut self, keys: &[String], window: Duration) -> bool {
+        match rate_limit_grant(self.windows, keys, window) {
+            Ok(t) => {
+                self.window_stamps
+                    .extend(keys.iter().map(|k| (k.clone(), t)));
+                true
+            }
+            Err(()) => false,
+        }
+    }
+
+    fn cap(&mut self, key: &str, window: Duration, cap: usize) -> bool {
+        match count_cap_grant(self.caps, key, window, cap) {
+            Ok(t) => {
+                self.cap_stamps.push((key.to_string(), t));
+                true
+            }
+            Err(()) => false,
+        }
+    }
+
+    /// Remove exactly the stamps this grant wrote.
+    fn release(self) {
+        if let Ok(mut map) = self.windows.lock() {
+            for (k, t) in &self.window_stamps {
+                if map.get(k) == Some(t) {
+                    map.remove(k);
+                }
+            }
+        }
+        if let Ok(mut map) = self.caps.lock() {
+            for (k, t) in &self.cap_stamps {
+                if let Some(v) = map.get_mut(k) {
+                    if let Some(i) = v.iter().rposition(|s| s == t) {
+                        v.remove(i);
+                    }
+                    if v.is_empty() {
+                        map.remove(k);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// What the caller reads when a drip or claim (`what`) could not be sent. The
+/// node's own error goes to the log; the slots were handed back, so retrying
+/// is fine.
+fn send_failure_message(what: &str, err: &str) -> String {
+    if err.contains("insufficient balance") {
+        "the faucet is being refilled — try again in a few minutes (this attempt did not count toward your limits)".to_string()
+    } else {
+        format!(
+            "the network did not accept the {what} — try again in a minute (this attempt did not count toward your limits)"
+        )
+    }
 }
 
 /// `/health` reports "low" below this so an operator gets warned while there
@@ -239,10 +318,10 @@ fn client_ip(request: &Request) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Grant if every key is outside the window, then stamp all keys with now.
-/// Returns Err(()) if any key is still rate-limited. Opportunistically purges
-/// entries older than 2× the window so the map can't grow without bound.
-fn rate_limit_grant(ledger: &RateLedger, keys: &[String], window: Duration) -> Result<(), ()> {
+/// Grant if every key is outside the window, then stamp all keys with now
+/// (returned). Err(()) if any key is still rate-limited. Opportunistically
+/// purges entries older than 2× the window so the map can't grow without bound.
+fn rate_limit_grant(ledger: &RateLedger, keys: &[String], window: Duration) -> Result<Instant, ()> {
     let mut map = ledger.lock().map_err(|_| ())?;
     let now = Instant::now();
     map.retain(|_, t| now.duration_since(*t) < window * 2);
@@ -255,7 +334,7 @@ fn rate_limit_grant(ledger: &RateLedger, keys: &[String], window: Duration) -> R
     for k in keys {
         map.insert(k.clone(), now);
     }
-    Ok(())
+    Ok(now)
 }
 
 fn json_response(status: u16, resp: &FaucetResponse) -> Response<std::io::Cursor<Vec<u8>>> {
@@ -301,10 +380,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "Limits: 1 drip per address per {RATE_LIMIT_HOURS} h, {IP_DAILY_CAP} drips per IP per 24 h; scripts without a challenge token: {API_DAILY_CAP} per address and per IP per 24 h"
     );
-    // Locally tracked next nonce for the faucet account. Re-reading "latest"
-    // alone races when multiple txs (drip + token claims) are still unmined, so
-    // we hand out strictly increasing nonces via reserve_nonces().
-    let nonce_state: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    let nonce_state: Arc<Mutex<NonceState>> = Arc::new(Mutex::new(NonceState::new()));
 
     let server = Arc::new(
         Server::http(format!("0.0.0.0:{}", port)).map_err(|e| format!("failed to bind: {}", e))?,
@@ -359,7 +435,7 @@ fn handle_request(
     rate_limit: &RateLedger,
     daily_ip: &CountLedger,
     turnstile: Option<&Turnstile>,
-    nonce_state: &Mutex<u64>,
+    nonce_state: &Mutex<NonceState>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let url = request.url().to_string();
     let ip = client_ip(&request);
@@ -495,19 +571,34 @@ fn handle_request(
             return Ok(());
         }
         // 3. Stamp the grant (a concurrent request may have won the race → 429)
-        if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err()
-            || count_cap_grant(daily_ip, &day_key, DAY, IP_DAILY_CAP).is_err()
-            || (script_mode
-                && (count_cap_grant(daily_ip, &api_addr_key, DAY, API_DAILY_CAP).is_err()
-                    || count_cap_grant(daily_ip, &api_ip_key, DAY, API_DAILY_CAP).is_err()))
-        {
+        let mut grant = Grant::new(rate_limit, daily_ip);
+        let granted = grant.window(&[addr_key, ip_key], window)
+            && grant.cap(&day_key, DAY, IP_DAILY_CAP)
+            && (!script_mode
+                || (grant.cap(&api_addr_key, DAY, API_DAILY_CAP)
+                    && grant.cap(&api_ip_key, DAY, API_DAILY_CAP)));
+        if !granted {
+            grant.release();
             request.respond(json_response(429, &FaucetResponse::err("rate limited")))?;
             return Ok(());
         }
 
         let faucet_address = mersennet::crypto::address_from_signing_key(faucet_key);
-        let nonce = reserve_nonces(nonce_state, rpc_url, &faucet_address, 1)?;
-        let gas_price = fetch_gas_price(rpc_url)?;
+        let prepared = fetch_gas_price(rpc_url).and_then(|gas_price| {
+            reserve_nonces(nonce_state, rpc_url, &faucet_address, 1).map(|n| (n, gas_price))
+        });
+        let (nonce, gas_price) = match prepared {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("drip: could not prepare the transaction: {e}");
+                grant.release();
+                request.respond(json_response(
+                    503,
+                    &FaucetResponse::err(send_failure_message("drip", &e.to_string())),
+                ))?;
+                return Ok(());
+            }
+        };
 
         let tx = Transaction {
             from: faucet_address,
@@ -530,7 +621,15 @@ fn handle_request(
 
         match send_raw_transaction(rpc_url, &raw_hex) {
             Ok(tx_hash) => request.respond(json_response(200, &FaucetResponse::ok(tx_hash)))?,
-            Err(e) => request.respond(json_response(500, &FaucetResponse::err(e.to_string())))?,
+            Err(e) => {
+                eprintln!("drip: node refused the transaction: {e}");
+                release_nonces(nonce_state, nonce, 1);
+                grant.release();
+                request.respond(json_response(
+                    503,
+                    &FaucetResponse::err(send_failure_message("drip", &e.to_string())),
+                ))?
+            }
         }
         return Ok(());
     }
@@ -552,6 +651,17 @@ fn handle_request(
             }
         };
         let token = req.token.to_lowercase();
+        if !matches!(token.as_str(), "usdc" | "usdt" | "dai")
+            || parse_address(&req.address).is_err()
+        {
+            request.respond(json_response(
+                400,
+                &FaucetResponse::err(
+                    "expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}",
+                ),
+            ))?;
+            return Ok(());
+        }
         let addr_norm = req.address.trim().to_lowercase();
         let addr_key = format!("token:{}:{}", token, addr_norm);
         let ip_key = format!("token-ip:{}:{}", token, ip);
@@ -593,13 +703,17 @@ fn handle_request(
             ))?;
             return Ok(());
         }
-        if rate_limit_grant(rate_limit, &[addr_key, ip_key], window).is_err() {
+        let mut grant = Grant::new(rate_limit, daily_ip);
+        if !grant.window(&[addr_key, ip_key], window) {
             request.respond(json_response(429, &FaucetResponse::err("rate limited")))?;
             return Ok(());
         }
 
         let resp = handle_claim_token(&req, rpc_url, faucet_key, chain_id, nonce_state);
-        let status = if resp.success { 200 } else { 500 };
+        let status = if resp.success { 200 } else { 503 };
+        if !resp.success {
+            grant.release();
+        }
         request.respond(json_response(status, &resp))?;
         return Ok(());
     }
@@ -681,20 +795,77 @@ fn fetch_balance(rpc_url: &str, address: &Address) -> Result<U256, Box<dyn std::
     Ok(U256::from_str_radix(hex_str.trim_start_matches("0x"), 16)?)
 }
 
-/// Reserve `count` consecutive nonces for the faucet account, returning the
-/// first. Uses `max(locally tracked, chain "latest")` so it self-heals after
-/// restarts/failures while staying ahead of still-unmined txs.
+/// If the chain's count for the faucet account has not moved for this long
+/// while drips are in flight, they are not coming (the node restarted and
+/// lost its pool, or they were priced under a fee floor that activated
+/// meanwhile): hand out the chain's count again, so the next drip replaces
+/// the missing transaction instead of queueing behind it until a restart.
+const NONCE_STALL: Duration = Duration::from_secs(30);
+
+/// Nonces for the faucet account. Re-reading the chain's count alone races
+/// when several drips/claims are still unmined, so nonces are handed out from
+/// here, strictly increasing, and checked against the chain on every reserve.
+struct NonceState {
+    next: u64,
+    chain: u64,
+    /// When the chain's count last moved, or nothing was in flight.
+    waiting_since: Instant,
+}
+
+impl NonceState {
+    fn new() -> Self {
+        Self {
+            next: 0,
+            chain: 0,
+            waiting_since: Instant::now(),
+        }
+    }
+
+    /// Reserve `count` consecutive nonces, given the chain's count now.
+    fn reserve(&mut self, chain: u64, count: u64, now: Instant) -> u64 {
+        if chain != self.chain || self.next <= chain {
+            self.chain = chain;
+            self.waiting_since = now;
+        } else if now.duration_since(self.waiting_since) >= NONCE_STALL {
+            eprintln!(
+                "nonce: the chain's count sat at {chain} for {} s with {} transaction(s) in flight; resending from {chain}",
+                now.duration_since(self.waiting_since).as_secs(),
+                self.next - chain
+            );
+            self.next = chain;
+            self.waiting_since = now;
+        }
+        let start = self.next.max(chain);
+        self.next = start + count;
+        start
+    }
+
+    /// Hand back nonces for transactions the node refused, when nothing was
+    /// reserved after them; otherwise every later drip would wait behind the
+    /// gap. If a "refused" transaction landed after all, reservations move
+    /// past it once it is in a block.
+    fn release(&mut self, start: u64, count: u64) {
+        if self.next == start + count {
+            self.next = start;
+        }
+    }
+}
+
 fn reserve_nonces(
-    state: &Mutex<u64>,
+    state: &Mutex<NonceState>,
     rpc_url: &str,
     address: &Address,
     count: u64,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let chain = fetch_nonce(rpc_url, address)?;
     let mut g = state.lock().map_err(|_| "nonce lock poisoned")?;
-    let start = (*g).max(chain);
-    *g = start + count;
-    Ok(start)
+    Ok(g.reserve(chain, count, Instant::now()))
+}
+
+fn release_nonces(state: &Mutex<NonceState>, start: u64, count: u64) {
+    if let Ok(mut g) = state.lock() {
+        g.release(start, count);
+    }
 }
 
 fn fetch_gas_price(rpc_url: &str) -> Result<U256, Box<dyn std::error::Error>> {
@@ -716,7 +887,7 @@ fn handle_claim_token(
     rpc_url: &str,
     faucet_key: &SigningKey,
     chain_id: u64,
-    nonce_state: &Mutex<u64>,
+    nonce_state: &Mutex<NonceState>,
 ) -> FaucetResponse {
     let user_address = match parse_address(&req.address) {
         Ok(a) => a,
@@ -740,27 +911,19 @@ fn handle_claim_token(
     };
 
     let faucet_address = mersennet::crypto::address_from_signing_key(faucet_key);
+    let refused = |step: &str, e: &dyn std::fmt::Display| {
+        eprintln!("claim {}: {step}: {e}", req.token);
+        FaucetResponse::err(send_failure_message("claim", &e.to_string()))
+    };
     let gas_price = match fetch_gas_price(rpc_url) {
         Ok(p) => p,
-        Err(e) => {
-            return FaucetResponse {
-                success: false,
-                tx_hash: None,
-                error: Some(e.to_string()),
-            };
-        }
+        Err(e) => return refused("gas price", &e),
     };
     // Reserve two consecutive nonces (mint + transfer) so rapid back-to-back
     // claims can't collide on the shared faucet account.
     let nonce = match reserve_nonces(nonce_state, rpc_url, &faucet_address, 2) {
         Ok(n) => n,
-        Err(e) => {
-            return FaucetResponse {
-                success: false,
-                tx_hash: None,
-                error: Some(e.to_string()),
-            };
-        }
+        Err(e) => return refused("nonce", &e),
     };
 
     // Step 1: Call faucet() on the token contract (mints to faucet address)
@@ -781,11 +944,8 @@ fn handle_claim_token(
     let signed_mint = sign_transaction(&mint_tx, faucet_key);
     let raw_mint = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_mint)));
     if let Err(e) = send_raw_transaction(rpc_url, &raw_mint) {
-        return FaucetResponse {
-            success: false,
-            tx_hash: None,
-            error: Some(format!("mint failed: {}", e)),
-        };
+        release_nonces(nonce_state, nonce, 2);
+        return refused("mint", &e);
     }
 
     // Step 2: Transfer tokens to user
@@ -812,11 +972,10 @@ fn handle_claim_token(
             tx_hash: Some(tx_hash),
             error: None,
         },
-        Err(e) => FaucetResponse {
-            success: false,
-            tx_hash: None,
-            error: Some(format!("transfer failed: {}", e)),
-        },
+        Err(e) => {
+            release_nonces(nonce_state, nonce + 1, 1);
+            refused("transfer", &e)
+        }
     }
 }
 
@@ -1022,5 +1181,115 @@ mod tests {
         };
         assert!(!turnstile_passes(&ts, None, "1.2.3.4"));
         assert!(!turnstile_passes(&ts, Some("   "), "1.2.3.4"));
+    }
+
+    #[test]
+    fn released_grant_gives_every_slot_back() {
+        let windows: RateLedger = Mutex::new(HashMap::new());
+        let caps: CountLedger = Mutex::new(HashMap::new());
+        let hour = Duration::from_secs(3600);
+        let keys = vec!["native:r".to_string(), "native-ip:5.5.5.5".to_string()];
+        // A drip the node refused: the caller keeps their hour and their day.
+        let mut grant = Grant::new(&windows, &caps);
+        assert!(grant.window(&keys, hour) && grant.cap("day:5.5.5.5", DAY, 1));
+        assert!(rate_limit_check(&windows, &keys, hour).is_err());
+        assert!(count_cap_check(&caps, "day:5.5.5.5", DAY, 1).is_err());
+        grant.release();
+        assert!(rate_limit_check(&windows, &keys, hour).is_ok());
+        assert!(count_cap_check(&caps, "day:5.5.5.5", DAY, 1).is_ok());
+        // A drip that went out keeps its stamps.
+        let mut kept = Grant::new(&windows, &caps);
+        assert!(kept.window(&keys, hour) && kept.cap("day:5.5.5.5", DAY, 1));
+        assert!(rate_limit_check(&windows, &keys, hour).is_err());
+        assert!(count_cap_check(&caps, "day:5.5.5.5", DAY, 1).is_err());
+    }
+
+    #[test]
+    fn release_removes_only_its_own_daily_stamp() {
+        let windows: RateLedger = Mutex::new(HashMap::new());
+        let caps: CountLedger = Mutex::new(HashMap::new());
+        let mut first = Grant::new(&windows, &caps);
+        let mut second = Grant::new(&windows, &caps);
+        assert!(first.cap("day:ip", DAY, 3) && second.cap("day:ip", DAY, 3));
+        second.release();
+        // One drip still counts: two more fit under a cap of three, not three.
+        assert!(count_cap_grant(&caps, "day:ip", DAY, 3).is_ok());
+        assert!(count_cap_grant(&caps, "day:ip", DAY, 3).is_ok());
+        assert!(count_cap_grant(&caps, "day:ip", DAY, 3).is_err());
+    }
+
+    #[test]
+    fn a_lost_race_releases_the_stamps_already_taken() {
+        let windows: RateLedger = Mutex::new(HashMap::new());
+        let caps: CountLedger = Mutex::new(HashMap::new());
+        let hour = Duration::from_secs(3600);
+        // The IP's day is already full, so the address window stamped first
+        // has to come back when the day cap refuses.
+        assert!(count_cap_grant(&caps, "day:full", DAY, 1).is_ok());
+        let keys = vec!["native:late".to_string()];
+        let mut grant = Grant::new(&windows, &caps);
+        assert!(grant.window(&keys, hour));
+        assert!(!grant.cap("day:full", DAY, 1));
+        grant.release();
+        assert!(rate_limit_check(&windows, &keys, hour).is_ok());
+    }
+
+    #[test]
+    fn refused_nonce_is_reused_unless_a_later_one_was_reserved() {
+        let t = Instant::now();
+        let mut s = NonceState::new();
+        // Nonce 7 refused by the node: 7 is handed out again.
+        assert_eq!(s.reserve(7, 1, t), 7);
+        s.release(7, 1);
+        assert_eq!(s.reserve(7, 1, t), 7);
+        // Nonce 8 refused after 9 was already reserved: rewinding would reuse 9.
+        assert_eq!(s.reserve(7, 1, t), 8);
+        assert_eq!(s.reserve(7, 1, t), 9);
+        s.release(8, 1);
+        assert_eq!(s.reserve(7, 1, t), 10);
+        // A token claim refused at the mint gives both nonces back.
+        assert_eq!(s.reserve(7, 2, t), 11);
+        s.release(11, 2);
+        assert_eq!(s.reserve(7, 1, t), 11);
+    }
+
+    #[test]
+    fn stalled_nonces_are_resent_from_the_chain_count() {
+        let t0 = Instant::now();
+        let s = |secs| t0 + Duration::from_secs(secs);
+        let mut n = NonceState::new();
+        assert_eq!(n.reserve(5, 1, s(0)), 5);
+        // 5 not mined yet a second later: queue behind it.
+        assert_eq!(n.reserve(5, 1, s(1)), 6);
+        // The chain moved to 6: normal progress.
+        assert_eq!(n.reserve(6, 1, s(20)), 7);
+        // Nothing mined for 30 s with 6 and 7 in flight: they are gone.
+        assert_eq!(n.reserve(6, 1, s(51)), 6);
+        assert_eq!(n.reserve(6, 1, s(52)), 7);
+    }
+
+    #[test]
+    fn a_quiet_hour_is_not_a_stall() {
+        let t0 = Instant::now();
+        let s = |secs| t0 + Duration::from_secs(secs);
+        let mut n = NonceState::new();
+        assert_eq!(n.reserve(9, 1, s(0)), 9);
+        // 9 mined; the next drip comes an hour later, then another right after.
+        assert_eq!(n.reserve(10, 1, s(3600)), 10);
+        assert_eq!(n.reserve(10, 1, s(3601)), 11);
+        // Chain unchanged since 10 was sent, but only for 25 s: still in flight.
+        assert_eq!(n.reserve(10, 1, s(3625)), 12);
+    }
+
+    #[test]
+    fn empty_faucet_reads_as_refilling() {
+        let empty = send_failure_message(
+            "drip",
+            "RPC error: {\"code\":-32005,\"data\":{\"reason\":\"insufficient_balance\"},\"message\":\"tx rejected: insufficient balance for gas + value\"}",
+        );
+        assert!(empty.starts_with("the faucet is being refilled"));
+        let other = send_failure_message("claim", "connection refused");
+        assert!(other.starts_with("the network did not accept the claim"));
+        assert!(empty.contains("did not count") && other.contains("did not count"));
     }
 }
