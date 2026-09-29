@@ -2518,6 +2518,14 @@ impl Engine {
             self.consensus.record_offense(evidence.validator);
         }
         let mut consensus = self.consensus.finalize(prelim_hash, self.block_number);
+        // `finalize` names the winner of a weighted priority lottery, not the
+        // leader the rotation elected — the node stamps its own address on
+        // the block after production. Use that address for everything this
+        // block credits, or the proposer's fee share lands on another account
+        // on this node only and its state parts from every importer's.
+        if let Some(me) = self.local_validator {
+            consensus.proposer = me;
+        }
         let finalized = finality_rounds.iter().any(|round| round.finalized);
         consensus.finalized = finalized;
         let unbonded = self.consensus.process_unbonding(self.block_number);
@@ -2935,6 +2943,14 @@ impl Engine {
             self.consensus.record_offense(evidence.validator);
         }
         let mut consensus = self.consensus.finalize(prelim_hash, self.block_number);
+        // `finalize` names the winner of a weighted priority lottery, not the
+        // leader the rotation elected — the node stamps its own address on
+        // the block after production. Use that address for everything this
+        // block credits, or the proposer's fee share lands on another account
+        // on this node only and its state parts from every importer's.
+        if let Some(me) = self.local_validator {
+            consensus.proposer = me;
+        }
         let finalized = finality_rounds.iter().any(|round| round.finalized);
         consensus.finalized = finalized;
         let unbonded = self.consensus.process_unbonding(self.block_number);
@@ -5049,6 +5065,58 @@ mod reorg_tests {
             last.proposer_sig = b.proposer_sig;
         }
         b
+    }
+
+    /// With the fee floor on, the producer and an importer end every block in
+    /// the same state: the proposer's share of the base fee goes to the
+    /// validator that led the height on both, including failover rounds
+    /// (the weighted lottery in `consensus.proposer()` is not the leader).
+    #[test]
+    fn producer_and_importer_agree_on_the_fee_split() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let bob = Address::from_slice(&[0x22; 20]);
+        let treasury = Address::from_slice(&[0x77; 20]);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.set_fee_floor_params(1, 1_000_000_000, 5_000, 2_500, Some(treasury));
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        for (nonce, round) in [0u64, 1, 0, 2, 3, 1, 0, 2].into_iter().enumerate() {
+            p.transfer(
+                alice,
+                bob,
+                U256::from(1_000u64),
+                21_000,
+                U256::from(2_000_000_000u64),
+                nonce as u64,
+            )
+            .unwrap();
+            let block = produce_as_leader(&mut p, round);
+            assert!(
+                block.gas_used > 0,
+                "block {} collects a base fee",
+                block.number
+            );
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number, "imported {}", block.number);
+            assert_eq!(
+                a.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "block {} (round {round}): importer and producer differ",
+                block.number
+            );
+            assert_eq!(
+                a.get_balance(block.proposer).unwrap(),
+                p.get_balance(block.proposer).unwrap(),
+                "proposer share of block {}",
+                block.number
+            );
+        }
+        assert!(
+            !p.get_balance(treasury).unwrap().is_zero(),
+            "the treasury was paid"
+        );
     }
 
     /// Two nodes produce different blocks at height 1 (different coinbase).
