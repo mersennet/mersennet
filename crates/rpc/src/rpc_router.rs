@@ -702,7 +702,10 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "activationHeight": p.activation_height,
                     "epochBlocks": p.epoch_blocks,
                     "minSelfStake": format!("0x{:x}", p.min_self_stake),
-                    "maxValidators": p.max_validators,
+                    // The cap the current epoch was formed with.
+                    "maxValidators": p.max_validators_at(st.epoch_start(height)),
+                    "maxValidatorsHeight": p.max_validators_height,
+                    "maxValidatorsAfter": p.max_validators_after,
                     "unbondingBlocks": p.unbonding_blocks,
                     "jailMissBps": p.jail_miss_bps,
                     "jailMinSlots": p.jail_min_slots,

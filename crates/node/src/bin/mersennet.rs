@@ -182,10 +182,11 @@ fn main() -> anyhow::Result<()> {
             "engine.resume_root_check: unknown value, using \"warn\""
         ),
     }
-    let mut engine = Engine::new_with_backend(
+    let mut engine = Engine::new_with_backend_and_cache(
         app_config.engine.chain_id,
         &app_config.engine.state_path,
         &app_config.engine.storage_backend,
+        app_config.engine.state_cache_bytes,
     );
     engine.set_mempool_limits(
         app_config.mempool.max_total,
@@ -307,6 +308,8 @@ fn main() -> anyhow::Result<()> {
             epoch_blocks = app_config.validator_set.epoch_blocks,
             min_self_stake_mrsn = app_config.validator_set.min_self_stake_mrsn,
             max_validators = app_config.validator_set.max_validators,
+            max_validators_height = app_config.validator_set.max_validators_height,
+            max_validators_after = app_config.validator_set.max_validators_after,
             "open validator set configured"
         );
     }

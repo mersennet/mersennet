@@ -120,6 +120,26 @@ pub struct ValidatorSetParams {
     /// them. Derived from the per-epoch counters every node keeps from block
     /// data, so it is identical everywhere. 0 = off.
     pub bench_height: u64,
+    /// From this height the active set holds up to `max_validators_after`
+    /// validators instead of `max_validators`. Like every change to the set
+    /// it lands at an epoch boundary: the first transition at or after this
+    /// height. Consensus-critical. 0 = off.
+    pub max_validators_height: u64,
+    pub max_validators_after: usize,
+}
+
+impl ValidatorSetParams {
+    /// Active-set cap for the epoch whose first block is `height`.
+    pub fn max_validators_at(&self, height: u64) -> usize {
+        if self.max_validators_height > 0
+            && height >= self.max_validators_height
+            && self.max_validators_after > 0
+        {
+            self.max_validators_after
+        } else {
+            self.max_validators
+        }
+    }
 }
 
 /// Missed leader slots in an epoch before a validator is benched.
@@ -138,6 +158,8 @@ impl Default for ValidatorSetParams {
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
             bench_height: 0,
+            max_validators_height: 0,
+            max_validators_after: 0,
         }
     }
 }
@@ -537,7 +559,7 @@ impl StakingState {
         eligible.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         let mut active: Vec<Address> = eligible
             .into_iter()
-            .take(p.max_validators.max(1))
+            .take(p.max_validators_at(height).max(1))
             .map(|(a, _)| a)
             .collect();
         active.sort();
@@ -845,6 +867,56 @@ mod tests {
             20 + 1,
             "streak restarted at one epoch"
         );
+    }
+
+    /// The set is capped at `max_validators` until the first epoch boundary
+    /// at or after `max_validators_height`, then at `max_validators_after`;
+    /// stake still decides who is in.
+    #[test]
+    fn active_set_cap_grows_at_the_first_boundary_after_its_height() {
+        let mrsn = U256::from(10u64).pow(U256::from(18u64));
+        let mut s = StakingState::default();
+        s.set_params(ValidatorSetParams {
+            activation_height: 10,
+            epoch_blocks: 10,
+            max_validators: 3,
+            max_validators_height: 45,
+            max_validators_after: 5,
+            ..ValidatorSetParams::default()
+        });
+        let genesis = [
+            (addr(1), U256::from(1_000_000u64) * mrsn),
+            (addr(2), U256::from(1_000_000u64) * mrsn),
+        ];
+        s.seed_genesis(&genesis, 10);
+        for n in 3..=7u8 {
+            let stake = U256::from(1_000u64 + u64::from(n)) * mrsn;
+            s.register_validator(addr(100 + n), addr(n), stake, 0, 12)
+                .unwrap();
+        }
+        let set = |s: &StakingState| {
+            let mut v: Vec<u8> = s.active_set.iter().map(|a| a.0[0]).collect();
+            v.sort();
+            v
+        };
+
+        s.epoch_transition(20);
+        assert_eq!(
+            set(&s),
+            vec![1, 2, 7],
+            "cap 3: genesis and the largest stake"
+        );
+        s.epoch_transition(40);
+        assert_eq!(set(&s), vec![1, 2, 7], "40 is before the height: still 3");
+        assert_eq!(s.params.max_validators_at(44), 3);
+        s.epoch_transition(50);
+        assert_eq!(
+            set(&s),
+            vec![1, 2, 5, 6, 7],
+            "first boundary after 45: cap 5"
+        );
+        s.epoch_transition(60);
+        assert_eq!(set(&s).len(), 5, "and it stays");
     }
 
     /// A validator that misses three leader slots (and has not proposed ten

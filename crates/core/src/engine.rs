@@ -486,6 +486,8 @@ struct StateCheckpoint {
 /// How many recent heights can be rolled back. Finality normally lands
 /// within the same block interval, so 1 would do; 16 covers a slow round.
 const REORG_DEPTH: usize = 16;
+/// Raw envelopes kept for relaying before the cache drops those of mined txs.
+const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
 
 #[derive(Debug)]
 pub struct Engine {
@@ -645,6 +647,22 @@ impl Engine {
         path: impl AsRef<std::path::Path>,
         backend: &str,
     ) -> Self {
+        Self::new_with_backend_and_cache(
+            chain_id,
+            path,
+            backend,
+            crate::state::DEFAULT_STATE_CACHE_BYTES,
+        )
+    }
+
+    /// `new_with_backend` with an explicit sled page-cache budget
+    /// (`engine.state_cache_bytes`); ignored by the redb backend.
+    pub fn new_with_backend_and_cache(
+        chain_id: u64,
+        path: impl AsRef<std::path::Path>,
+        backend: &str,
+        state_cache_bytes: u64,
+    ) -> Self {
         let path_buf = path.as_ref().to_path_buf();
         // Both backends live in the same directory (sled: `db`, `conf`, `blobs/`;
         // redb: `mersennet.redb`), and the published snapshots are sled. A node
@@ -665,8 +683,14 @@ impl Engine {
                 Box::new(RedbState::open(&path_buf).expect("redb state DB open"))
             }
             _ => {
-                tracing::info!("initializing sled storage backend");
-                Box::new(PersistentState::open(&path_buf).expect("sled state DB open"))
+                tracing::info!(
+                    cache_mib = state_cache_bytes / (1024 * 1024),
+                    "initializing sled storage backend"
+                );
+                Box::new(
+                    PersistentState::open_with_cache(&path_buf, state_cache_bytes)
+                        .expect("sled state DB open"),
+                )
             }
         };
 
@@ -2496,6 +2520,14 @@ impl Engine {
             self.consensus.record_offense(evidence.validator);
         }
         let mut consensus = self.consensus.finalize(prelim_hash, self.block_number);
+        // `finalize` names the winner of a weighted priority lottery, not the
+        // leader the rotation elected — the node stamps its own address on
+        // the block after production. Use that address for everything this
+        // block credits, or the proposer's fee share lands on another account
+        // on this node only and its state parts from every importer's.
+        if let Some(me) = self.local_validator {
+            consensus.proposer = me;
+        }
         let finalized = finality_rounds.iter().any(|round| round.finalized);
         consensus.finalized = finalized;
         let unbonded = self.consensus.process_unbonding(self.block_number);
@@ -2913,6 +2945,14 @@ impl Engine {
             self.consensus.record_offense(evidence.validator);
         }
         let mut consensus = self.consensus.finalize(prelim_hash, self.block_number);
+        // `finalize` names the winner of a weighted priority lottery, not the
+        // leader the rotation elected — the node stamps its own address on
+        // the block after production. Use that address for everything this
+        // block credits, or the proposer's fee share lands on another account
+        // on this node only and its state parts from every importer's.
+        if let Some(me) = self.local_validator {
+            consensus.proposer = me;
+        }
         let finalized = finality_rounds.iter().any(|round| round.finalized);
         consensus.finalized = finalized;
         let unbonded = self.consensus.process_unbonding(self.block_number);
@@ -3507,9 +3547,16 @@ impl Engine {
     /// relay can gossip it verbatim. Ethereum-format signatures only verify
     /// against the raw RLP signing payload, which peers cannot rebuild from
     /// parsed fields — relaying the envelope keeps the tx self-authenticating.
+    ///
+    /// When the cache fills up, only the envelopes of transactions that have
+    /// left the pool are dropped. The relay re-gossips a pending transaction
+    /// until it is mined, and without its envelope every retry fails the
+    /// peers' signature check, stranding the sender's next nonce until this
+    /// node restarts. Bounded by the pool's own size.
     pub fn cache_raw_tx(&mut self, hash: B256, raw: Vec<u8>) {
-        if self.raw_tx_cache.len() >= 8192 {
-            self.raw_tx_cache.clear();
+        if self.raw_tx_cache.len() >= RAW_TX_CACHE_SOFT_CAP {
+            let live = self.mempool.tx_hashes();
+            self.raw_tx_cache.retain(|h, _| live.contains(h));
         }
         self.raw_tx_cache.insert(hash, raw);
     }
@@ -5029,6 +5076,98 @@ mod reorg_tests {
         b
     }
 
+    /// A full raw-envelope cache drops only the envelopes of transactions that
+    /// left the pool, so the relay can still re-gossip every pending one.
+    #[test]
+    fn raw_envelopes_of_pending_txs_survive_a_full_cache() {
+        let mut e = with_validators(engine());
+        let alice = Address::from_slice(&[0x11; 20]);
+        e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        let h = B256::from([0xAB; 32]);
+        e.submit_tx_unsigned(Transaction {
+            from: alice,
+            to: Some(Address::from_slice(&[0x22; 20])),
+            value: U256::from(1u64),
+            data: Bytes::new(),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            nonce: 0,
+            chain_id: Some(131071),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: Some(h),
+        })
+        .unwrap();
+        e.cache_raw_tx(h, vec![1, 2, 3]);
+        for i in 0..(RAW_TX_CACHE_SOFT_CAP as u64 + 10) {
+            let mut k = [0u8; 32];
+            k[..8].copy_from_slice(&i.to_be_bytes());
+            e.cache_raw_tx(B256::from(k), vec![0]);
+        }
+        assert_eq!(
+            e.raw_tx_for(&h),
+            Some(vec![1, 2, 3]),
+            "pending tx keeps its envelope"
+        );
+        assert!(
+            e.raw_tx_cache.len() <= RAW_TX_CACHE_SOFT_CAP,
+            "still bounded"
+        );
+    }
+
+    /// With the fee floor on, the producer and an importer end every block in
+    /// the same state: the proposer's share of the base fee goes to the
+    /// validator that led the height on both, including failover rounds
+    /// (the weighted lottery in `consensus.proposer()` is not the leader).
+    #[test]
+    fn producer_and_importer_agree_on_the_fee_split() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let bob = Address::from_slice(&[0x22; 20]);
+        let treasury = Address::from_slice(&[0x77; 20]);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.set_fee_floor_params(1, 1_000_000_000, 5_000, 2_500, Some(treasury));
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        for (nonce, round) in [0u64, 1, 0, 2, 3, 1, 0, 2].into_iter().enumerate() {
+            p.transfer(
+                alice,
+                bob,
+                U256::from(1_000u64),
+                21_000,
+                U256::from(2_000_000_000u64),
+                nonce as u64,
+            )
+            .unwrap();
+            let block = produce_as_leader(&mut p, round);
+            assert!(
+                block.gas_used > 0,
+                "block {} collects a base fee",
+                block.number
+            );
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number, "imported {}", block.number);
+            assert_eq!(
+                a.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "block {} (round {round}): importer and producer differ",
+                block.number
+            );
+            assert_eq!(
+                a.get_balance(block.proposer).unwrap(),
+                p.get_balance(block.proposer).unwrap(),
+                "proposer share of block {}",
+                block.number
+            );
+        }
+        assert!(
+            !p.get_balance(treasury).unwrap().is_zero(),
+            "the treasury was paid"
+        );
+    }
+
     /// Two nodes produce different blocks at height 1 (different coinbase).
     /// Node A applied its own; finality (3 of 4 validators) lands on B's block:
     /// A must roll back and adopt B's block and state.
@@ -5278,6 +5417,8 @@ mod open_validator_set_tests {
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
             bench_height: 0,
+            max_validators_height: 0,
+            max_validators_after: 0,
         }
     }
 
@@ -5403,6 +5544,43 @@ mod open_validator_set_tests {
             got, expected,
             "restored set and stakes match what was installed"
         );
+    }
+
+    /// The consensus set follows the cap switch on a produced chain: five
+    /// slots until the first boundary at or after `max_validators_height`,
+    /// six from there, so the newcomer with the smaller stake waits until then.
+    #[test]
+    fn consensus_set_grows_at_the_cap_switch() {
+        let mut p = engine();
+        p.set_validator_set_params(ValidatorSetParams {
+            max_validators: 5,
+            max_validators_height: 25,
+            max_validators_after: 6,
+            ..params()
+        });
+        let operator = Address::from_slice(&[0x55; 20]);
+        while p.block_number < 23 {
+            if p.block_number == 2 {
+                for i in 5..=6u8 {
+                    let stake = U256::from(5_000u64 + u64::from(i)) * U256::from(MRSN);
+                    p.orders
+                        .state
+                        .staking
+                        .register_validator(operator, addr(i), stake, 0, 2)
+                        .unwrap();
+                }
+            }
+            produce(&mut p, 0, &[]);
+        }
+        let set = p.validator_addresses();
+        assert_eq!(set.len(), 5, "boundaries 10 and 20 are before the switch");
+        assert!(set.contains(&addr(6)) && !set.contains(&addr(5)));
+        while p.block_number < 33 {
+            produce(&mut p, 0, &[]);
+        }
+        let set = p.validator_addresses();
+        assert_eq!(set.len(), 6, "boundary 30 is the first at or after 25");
+        assert!(set.contains(&addr(5)));
     }
 
     /// A validator that misses three leader slots is dropped from the rotation
