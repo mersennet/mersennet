@@ -29,12 +29,48 @@ if command -v systemctl >/dev/null 2>&1; then
         "")       printf 'Service      %s\n' "$(yellow 'not installed as a service (mersennet.service missing)')" ;;
         *)        printf 'Service      %s (%s)\n' "$(red "$state")" "systemctl status mersennet" ;;
     esac
-    # A restored state that does not match the chain: the node logs it (and
-    # from engine.resume_root_check=fatal refuses to run). The fix is always
-    # the same.
-    if journalctl -u mersennet --since '-10min' --no-pager 2>/dev/null | grep -q 'RESTORED STATE ROOT MISMATCH'; then
-        printf 'State        %s — this node'"'"'s state does not match the chain. Fix: re-run the installer with --reset-state (keeps keys; restores the latest snapshot, ~1 min)\n' "$(red 'does not match the chain')"
-    fi
+    # Does this node hold the network's state? The validators' operator accounts,
+    # read here and on rpc.mersennet.com at one height (the 30 Sep fee-share drift
+    # sat in exactly those balances). A RESTORED STATE ROOT MISMATCH line alone
+    # cannot tell: right after a correct reset it also appears whenever the head
+    # block's producer has not reset yet, and told operators to reset again.
+    verdict="$(python3 - "$LOCAL_RPC" "$PUBLIC_RPC" 2>/dev/null <<'PY'
+import json, sys, time, urllib.request
+local, public = sys.argv[1], sys.argv[2]
+def call(url, body):
+    req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", "user-agent": "mersennet-check"})
+    return json.load(urllib.request.urlopen(req, timeout=6))
+try:
+    vs = call(public, {"jsonrpc": "2.0", "id": 1, "method": "mersennet_validatorSet", "params": []})["result"]["validators"]
+    ops = sorted({v["operator"].lower() for v in vs})
+except Exception:
+    print("unknown"); sys.exit()
+# One batch per node, bracketed by the height: equal brackets mean one block's state.
+n = len(ops)
+batch = [{"jsonrpc": "2.0", "id": 0, "method": "eth_blockNumber", "params": []}]
+batch += [{"jsonrpc": "2.0", "id": i + 1, "method": "eth_getBalance", "params": [op, "latest"]} for i, op in enumerate(ops)]
+batch += [{"jsonrpc": "2.0", "id": n + 1, "method": "eth_blockNumber", "params": []}]
+def read(url):
+    r = {x["id"]: x.get("result") for x in call(url, batch)}
+    return (r[0] if r[0] == r[n + 1] else None), [r[i + 1] for i in range(n)]
+for _ in range(10):
+    try:
+        (hl, bl), (hp, bp) = read(local), read(public)
+    except Exception:
+        print("unknown"); sys.exit()
+    if hl and hl == hp:
+        diff = sum(1 for a, b in zip(bl, bp) if a != b)
+        print("match" if diff == 0 else f"differ {diff}")
+        sys.exit()
+    time.sleep(0.5)
+print("unknown")
+PY
+)"
+    case "$verdict" in
+        match)   printf 'State        %s (validator operator balances equal rpc.mersennet.com at the same block)\n' "$(green 'matches the network')" ;;
+        differ*) printf 'State        %s — %s operator balance(s) differ from rpc.mersennet.com at the same block. Fix: re-run the installer with --reset-state (keeps keys; restores the latest snapshot, ~1 min)\n' "$(red 'differs from the network')" "${verdict#differ }" ;;
+        *)       ;; # not comparable right now (syncing, or no internet): say nothing
+    esac
     # Self-restarts: the node exits when its head stops while the network
     # moves on (or its engine lock is stuck) and systemd brings it back.
     restarts="$(systemctl show mersennet -p NRestarts --value 2>/dev/null)"

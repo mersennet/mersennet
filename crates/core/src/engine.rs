@@ -814,7 +814,7 @@ impl Engine {
                             height = h,
                             computed = %computed,
                             header = %head.state_root,
-                            "RESTORED STATE ROOT MISMATCH: persisted state does not match the head block's state root (tampered/corrupted snapshot or lineage drift)"
+                            "RESTORED STATE ROOT MISMATCH: persisted state does not match the head block's state root (the head's producer drifted, or this node's state or snapshot did: mersennet-check compares balances with the network)"
                         );
                         if RESUME_ROOT_CHECK_FATAL.load(std::sync::atomic::Ordering::Relaxed) {
                             tracing::error!(
@@ -3482,6 +3482,7 @@ impl Engine {
                 if block.number.is_multiple_of(500) {
                     tracing::warn!(
                         height = block.number,
+                        proposer = %block.proposer,
                         local = %state_root,
                         canonical = %block.state_root,
                         "imported-block local state-root recompute differs from canonical (rate-limited sample; consensus uses the canonical root)"
