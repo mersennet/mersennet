@@ -256,6 +256,9 @@ if ! systemctl is-active --quiet mersennet; then
     exit 1
 fi
 
+# An upgrade keeps the rpc section, so the flag alone does not say where it listens.
+RPC_NOW="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("rpc", {}).get("addr") or "127.0.0.1:8545")' /etc/mersennet/config.json 2>/dev/null || echo "${RPC_ADDR:-127.0.0.1:8545}")"
+
 cat <<EOF
 
 Done. Your node is $([[ $UPGRADE -eq 1 ]] && echo "upgraded and " || true)running as a systemd service.
@@ -272,7 +275,7 @@ else
     echo "usually in sync within a minute or two (from genesis with --from-genesis: most of a day)."
 fi)
 Chain data and your node key live in $DATA_DIR — back up $DATA_DIR/keys/node_key.json:
-it is your node identity. The RPC listens on ${RPC_ADDR:-127.0.0.1:8545}. If the node ever
+it is your node identity. The RPC listens on ${RPC_NOW}. If the node ever
 stops advancing while the network moves on, it restarts itself (log: "head has not advanced").
 
 $(if [[ -n "$OPERATOR" ]]; then
