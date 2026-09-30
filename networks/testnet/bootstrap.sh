@@ -22,7 +22,12 @@ for tool in curl tar sha256sum systemctl; do
 done
 arch="$(uname -m)"
 [[ "$arch" == "x86_64" ]] || { echo "error: this bundle is for x86_64 (you have $arch); build from source instead" >&2; exit 1; }
-glibc="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || echo 0)"
+# getconf answers in one line; ldd is the fallback, read to the end. Under pipefail
+# `ldd --version | head -1` failed whenever ldd was still writing after head exited,
+# and `|| echo 0` then made the version "2.36<newline>0", refused as too old.
+glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}' || true)"
+[[ -n "$glibc" ]] || glibc="$( (ldd --version 2>/dev/null || true) | sed -n '1s/.* \([0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')"
+glibc="${glibc:-0}"
 if [[ "$(printf '%s\n' "2.34" "$glibc" | sort -V | head -1)" != "2.34" ]]; then
     echo "error: glibc $glibc is too old (need 2.34+, e.g. Ubuntu 22.04+ / Debian 12+)" >&2
     exit 1
