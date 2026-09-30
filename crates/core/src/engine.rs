@@ -3228,6 +3228,50 @@ impl Engine {
                 );
                 break;
             }
+            // A finalized block that does not extend our head means our head is on
+            // a dead branch: finality covers ancestors, so the block's parent is
+            // canonical and our block at that height never will be. Roll back to
+            // it through the checkpoints; block-sync (or a remembered competing
+            // proposal) supplies the canonical parent, whose own parent is checked
+            // the same way, one height per step. A lagging validator that built its
+            // own blocks for heights the network had already filled stopped here
+            // with FORK DETECTED until its operator reset it (30 Sep, 2,007,638–9).
+            // Blocks arrive with the hash they claim and only that hash is
+            // finalized, so the hash is re-derived before its parent is trusted.
+            if height >= 2
+                && self.finalized_hash(height) == Some(next.hash)
+                && self
+                    .chain
+                    .last()
+                    .is_some_and(|head| head.number + 1 == height && head.hash != next.parent_hash)
+                && self.header_commits_to_hash(&next)
+            {
+                let parent_height = height - 1;
+                let parent_hash = next.parent_hash;
+                if self
+                    .finalized_hash(parent_height)
+                    .is_some_and(|f| f != parent_hash)
+                {
+                    tracing::error!(
+                        height = parent_height,
+                        %parent_hash,
+                        "a finalized block's parent conflicts with the hash finalized at that height"
+                    );
+                    break;
+                }
+                tracing::warn!(
+                    height,
+                    block_hash = %next.hash,
+                    %parent_hash,
+                    "a finalized block does not extend our head; rolling back to its parent"
+                );
+                self.finalized_heights.insert(parent_height, parent_hash);
+                self.import_buffer.insert(height, next);
+                if !self.reorg_to_finalized(parent_height, parent_hash) {
+                    break;
+                }
+                continue;
+            }
             if let Err(e) = self.apply_imported_block(next) {
                 let msg = e.to_string();
                 // A persistent parent-hash mismatch means this node is on a
@@ -4655,6 +4699,37 @@ impl Engine {
         }
     }
 
+    /// Does the block's hash commit to its own header? The import path
+    /// authenticates the proposer's signature over the hash it is given but
+    /// never re-derives it. The producer hashes the engine coinbase (zero on
+    /// every node) and only then stamps its address into the block, so both
+    /// are tried.
+    pub fn header_commits_to_hash(&self, block: &Block) -> bool {
+        let tx_root = Self::compute_tx_root(&block.transactions);
+        let receipts_root = Self::compute_receipts_root(&block.receipts);
+        [self.coinbase, block.coinbase].iter().any(|coinbase| {
+            let mut coinbase_bytes = [0u8; 20];
+            coinbase_bytes.copy_from_slice(coinbase.as_slice());
+            let witness = mersennet_zkp::sp1::BlockHeaderWitness {
+                chain_id: block.chain_id,
+                gas_limit: block.gas_limit,
+                gas_used: block.gas_used,
+                base_fee_be: block.base_fee.to_be_bytes::<32>(),
+                coinbase: coinbase_bytes,
+                tx_count: block.transactions.len() as u64,
+                parent_hash: block.parent_hash.0,
+                timestamp: block.timestamp,
+                tx_root: tx_root.0,
+                state_root: block.state_root.0,
+                receipts_root: receipts_root.0,
+            };
+            B256::from(mersennet_zkp::sp1::derive_block_hash(
+                block.number,
+                &witness,
+            )) == block.hash
+        })
+    }
+
     /// Keccak Merkle-ish root over the ordered transaction hashes. A
     /// simple sequential keccak accumulator is sufficient to bind the
     /// exact transaction list + order into the block hash.
@@ -5374,6 +5449,143 @@ mod reorg_tests {
         // Too deep: our block at height 1 stays, chain untouched.
         assert_eq!(a.block_by_number(1).unwrap().hash, first.hash);
         assert_eq!(a.latest_height() as usize, REORG_DEPTH + 3);
+    }
+
+    /// A validator that missed the network's blocks built its own at heights
+    /// the network had already filled, then receives a finalized block whose
+    /// parent is not its head (30 Sep: 2,007,638–9 built locally, stuck at
+    /// 2,007,640). It rolls its blocks back one height per canonical parent
+    /// and ends on the canonical chain with the canonical state.
+    #[test]
+    fn a_finalized_block_on_another_parent_rolls_back_our_own_blocks() {
+        let vals = validators();
+        let alice = Address::from_slice(&[0x11; 20]);
+        let bob = Address::from_slice(&[0x22; 20]);
+        let carol = Address::from_slice(&[0x33; 20]);
+        let mut me = with_validators(engine());
+        let mut net = with_validators(engine());
+        for e in [&mut me, &mut net] {
+            e.fund_account(alice, U256::from(2_000_000u64), 0);
+        }
+        me.transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
+        .unwrap();
+        let ours1 = produce_as_leader(&mut me, 1);
+        let ours2 = produce_as_leader(&mut me, 0);
+        net.transfer(
+            alice,
+            carol,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
+        .unwrap();
+        let canon1 = produce_as_leader(&mut net, 0);
+        let canon2 = produce_as_leader(&mut net, 0);
+        let canon3 = produce_as_leader(&mut net, 0);
+        assert_ne!(ours1.hash, canon1.hash);
+        assert_ne!(ours2.hash, canon2.hash);
+
+        for v in vals.iter().take(3) {
+            me.record_finality_vote(3, canon3.hash, *v);
+        }
+        me.import_block(canon3.clone());
+        assert_eq!(me.latest_height(), 1, "our block 2 rolled back");
+        assert_eq!(me.block_by_number(1).unwrap().hash, ours1.hash);
+        assert_eq!(
+            me.finalized_hash(2),
+            Some(canon2.hash),
+            "the parent is final too"
+        );
+
+        // Block-sync backfills the canonical parents.
+        me.import_block(canon2.clone());
+        assert_eq!(me.latest_height(), 0, "our block 1 rolled back too");
+        me.import_block(canon1.clone());
+        assert_eq!(
+            me.latest_height(),
+            3,
+            "canonical 1-3 applied from the buffer"
+        );
+        for (h, c) in [(1u64, &canon1), (2, &canon2), (3, &canon3)] {
+            assert_eq!(me.block_by_number(h).unwrap().hash, c.hash, "height {h}");
+        }
+        assert_eq!(
+            me.get_balance(bob).unwrap(),
+            U256::ZERO,
+            "our transfer undone"
+        );
+        assert_eq!(me.get_balance(carol).unwrap(), U256::from(1_000u64));
+        assert_eq!(
+            me.evm.state.compute_state_root(),
+            net.evm.state.compute_state_root(),
+            "same state as the network"
+        );
+    }
+
+    /// Only the hash is finalized and blocks arrive with the hash they claim: a
+    /// block carrying the finalized hash with a different parent must not roll
+    /// anything back.
+    #[test]
+    fn a_forged_parent_on_a_finalized_hash_rolls_nothing_back() {
+        let vals = validators();
+        let mut me = with_validators(engine());
+        let mut net = with_validators(engine());
+        let canon1 = produce_as_leader(&mut net, 0);
+        let canon2 = produce_as_leader(&mut net, 0);
+        me.import_block(canon1.clone());
+        assert_eq!(me.latest_height(), 1);
+        for v in vals.iter().take(3) {
+            me.record_finality_vote(2, canon2.hash, *v);
+        }
+        let mut forged = canon2.clone();
+        forged.parent_hash = B256::from([0xEEu8; 32]);
+        me.import_block(forged);
+        assert_eq!(me.latest_height(), 1, "nothing rolled back");
+        assert_eq!(me.block_by_number(1).unwrap().hash, canon1.hash);
+        assert_eq!(
+            me.finalized_hash(1),
+            None,
+            "the forged parent was not trusted"
+        );
+        me.import_block(canon2.clone());
+        assert_eq!(me.latest_height(), 2, "the real block still applies");
+        assert_eq!(me.block_by_number(2).unwrap().hash, canon2.hash);
+    }
+
+    /// The rollback above trusts a finalized block's parent only if the hash
+    /// re-derives from the header, so produced blocks must pass that check.
+    #[test]
+    fn produced_blocks_commit_to_their_hash() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let bob = Address::from_slice(&[0x22; 20]);
+        let mut p = with_validators(engine());
+        p.fund_account(alice, U256::from(2_000_000u64), 0);
+        p.transfer(
+            alice,
+            bob,
+            U256::from(1_000u64),
+            21_000,
+            U256::from(1u64),
+            0,
+        )
+        .unwrap();
+        let with_tx = produce_as_leader(&mut p, 0);
+        let empty = produce_as_leader(&mut p, 0);
+        assert!(!with_tx.transactions.is_empty() && !with_tx.receipts.is_empty());
+        let other = with_validators(engine());
+        assert!(other.header_commits_to_hash(&with_tx));
+        assert!(other.header_commits_to_hash(&empty));
+        let mut tampered = with_tx.clone();
+        tampered.timestamp += 1;
+        assert!(!other.header_commits_to_hash(&tampered));
     }
 }
 

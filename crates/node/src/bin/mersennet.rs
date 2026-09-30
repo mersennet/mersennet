@@ -7,7 +7,7 @@ use mersennet::identity::load_or_create_identity;
 use mersennet::network::{Message, RoundStage};
 use mersennet::prometheus;
 use mersennet_network::net_transport::{GossipConfig, TcpSync, UdpGossip};
-use mersennet_network::p2p::{NetworkNode, Node, P2pMessage, P2pNetwork};
+use mersennet_network::p2p::{HeightProbe, NetworkNode, Node, P2pMessage, P2pNetwork};
 use mersennet_rpc::{rpc, ws};
 use revm::primitives::{Address, Bytes, U256, keccak256};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -650,6 +650,8 @@ fn main() -> anyhow::Result<()> {
                         let startup_sync_grace = std::time::Duration::from_secs(15);
                         let mut produced_since_boot = false;
                         let mut in_set: Option<bool> = None;
+                        // Peers' answer for a failover slot: (height, round, may propose).
+                        let mut probe_for: Option<(u64, u64, bool)> = None;
                         loop {
                             if shutdown_producer.load(Ordering::SeqCst) {
                                 break;
@@ -826,6 +828,50 @@ fn main() -> anyhow::Result<()> {
                                 // Not our turn — the elected leader
                                 // produces; we import via gossip and vote.
                                 continue;
+                            }
+                            // A failover round means the leaders before us produced
+                            // nothing we have seen, which a node that stopped
+                            // receiving blocks cannot tell from a dead leader: on
+                            // 30 Sep a validator that got no block or vote for ~7 s
+                            // built its own 2,007,638, which the network had
+                            // finalized, then 2,007,639 on top, and forked itself.
+                            // Ask peers first, once per height and round.
+                            if waiting_round > 0 {
+                                let asked = matches!(probe_for, Some((h, r, _)) if h == next_height && r == waiting_round);
+                                if !asked {
+                                    let may_propose = match net.probe_height(
+                                        next_height,
+                                        3,
+                                        std::time::Duration::from_secs(1),
+                                    ) {
+                                        HeightProbe::Found(blocks) => {
+                                            if let Ok(mut e) = eng.lock() {
+                                                for b in blocks {
+                                                    e.import_block(b);
+                                                }
+                                            }
+                                            info!(
+                                                height = next_height,
+                                                round = waiting_round,
+                                                "peers already hold this height: importing it instead of proposing"
+                                            );
+                                            false
+                                        }
+                                        HeightProbe::NotFound => true,
+                                        HeightProbe::NoAnswer => {
+                                            tracing::warn!(
+                                                height = next_height,
+                                                round = waiting_round,
+                                                "no peer answered: not proposing a failover block blind"
+                                            );
+                                            false
+                                        }
+                                    };
+                                    probe_for = Some((next_height, waiting_round, may_propose));
+                                }
+                                if !matches!(probe_for, Some((_, _, true))) {
+                                    continue;
+                                }
                             }
                             // Pace to the target block time relative to the
                             // last observed block, so consecutive blocks

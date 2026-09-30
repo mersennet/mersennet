@@ -484,6 +484,76 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
 // NetworkNode - wraps Engine + UDP gossip for real P2P networking
 // ---------------------------------------------------------------------------
 
+/// What peers say about a height this node is about to propose for.
+pub enum HeightProbe {
+    /// A peer already holds it: the blocks it sent, from that height on.
+    Found(Vec<Block>),
+    /// At least one peer answered, and none holds it.
+    NotFound,
+    /// No peer answered in time.
+    NoAnswer,
+}
+
+/// `NetworkNode::probe_height` against an explicit list of peers (gossip
+/// addresses), asked in parallel. `NotFound` waits for every answer, so one
+/// peer that is itself behind cannot hide a block another peer holds.
+pub fn probe_peers(peers: &[String], height: u64, timeout: Duration) -> HeightProbe {
+    let (tx, rx) = std::sync::mpsc::channel();
+    for peer in peers {
+        let tx = tx.clone();
+        let addr = derive_tcp_addr(peer);
+        let _ = std::thread::Builder::new()
+            .name("height-probe".into())
+            .spawn(move || {
+                let _ = tx.send(ask_for_blocks_from(&addr, height, timeout));
+            });
+    }
+    drop(tx);
+    let deadline = std::time::Instant::now() + timeout;
+    let mut answered = false;
+    while let Ok(answer) =
+        rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        match answer {
+            Some(blocks) if !blocks.is_empty() => return HeightProbe::Found(blocks),
+            Some(_) => answered = true,
+            None => {}
+        }
+    }
+    if answered {
+        HeightProbe::NotFound
+    } else {
+        HeightProbe::NoAnswer
+    }
+}
+
+/// One sync request for the blocks from `height`: what the peer sent (empty
+/// if it does not hold `height` yet), or `None` if it did not answer in time.
+fn ask_for_blocks_from(addr: &str, height: u64, timeout: Duration) -> Option<Vec<Block>> {
+    let socket: std::net::SocketAddr = addr.parse().ok()?;
+    let mut stream = std::net::TcpStream::connect_timeout(&socket, timeout).ok()?;
+    stream.set_read_timeout(Some(timeout)).ok()?;
+    stream.set_write_timeout(Some(timeout)).ok()?;
+    let request = crate::net_transport::GossipPacket {
+        topic: "sync_request".to_string(),
+        data: height.to_be_bytes().to_vec(),
+        id: String::new(),
+        ttl: 0,
+    };
+    TcpSync::send_packet(&mut stream, &request).ok()?;
+    let response = TcpSync::recv_packet_limited(&mut stream, 64 * 1024 * 1024).ok()??;
+    if response.topic != "sync_response" {
+        return None;
+    }
+    let wire: Vec<WireBlock> = serde_json::from_slice(&response.data).ok()?;
+    Some(
+        wire.iter()
+            .filter_map(wire_to_block)
+            .filter(|b| b.number >= height)
+            .collect(),
+    )
+}
+
 #[derive(Clone)]
 pub struct NetworkNode {
     gossip: Arc<Mutex<UdpGossip>>,
@@ -913,6 +983,19 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// Ask the most recently heard peers (up to `max_peers`) whether they
+    /// already hold `height`, over the TCP sync port, waiting at most `timeout`.
+    pub fn probe_height(&self, height: u64, max_peers: usize, timeout: Duration) -> HeightProbe {
+        let mut peers = match self.gossip.lock() {
+            Ok(g) => g.peers_snapshot(),
+            Err(_) => return HeightProbe::NoAnswer,
+        };
+        peers.retain(|p| p.heard);
+        peers.sort_by_key(|p| p.last_seen_secs);
+        let addrs: Vec<String> = peers.into_iter().take(max_peers).map(|p| p.addr).collect();
+        probe_peers(&addrs, height, timeout)
+    }
+
     pub fn broadcast_tx(&self, tx: &Transaction) -> Result<()> {
         self.broadcast_tx_with_raw(tx, None)
     }
@@ -1069,4 +1152,127 @@ fn derive_tcp_addr(udp_addr: &str) -> String {
     // exactly this. (A previous +1000 offset landed on a firewalled
     // port, so sync connections were silently refused.)
     udp_addr.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Height 1 with one transfer, stamped with its proposer the way the node
+    /// binary does after hashing it.
+    fn produced_block(dir: &std::path::Path) -> Block {
+        let path = dir.join("producer");
+        std::fs::create_dir_all(&path).unwrap();
+        let mut producer = Engine::new_with_backend(131071, path, "redb");
+        let validator = Address::from_slice(&[0x44; 20]);
+        producer
+            .add_validator(validator, U256::from(1_000_000u64))
+            .unwrap();
+        producer.set_local_validator(validator);
+        let alice = Address::from_slice(&[0x11; 20]);
+        let bob = Address::from_slice(&[0x22; 20]);
+        producer.fund_account(alice, U256::from(2_000_000u64), 0);
+        producer
+            .transfer(
+                alice,
+                bob,
+                U256::from(1_000u64),
+                21_000,
+                U256::from(1u64),
+                0,
+            )
+            .unwrap();
+        let mut block = producer.execute_block().unwrap();
+        block.coinbase = validator;
+        block.proposer = validator;
+        block
+    }
+
+    /// The engine trusts a finalized block's parent (to roll back blocks it
+    /// built on a dead branch) only if the block's hash re-derives from its
+    /// header, so that must still hold after the wire round trip.
+    #[test]
+    fn a_block_keeps_a_verifiable_hash_across_the_wire() {
+        let dir = tempfile::tempdir().unwrap();
+        let block = produced_block(dir.path());
+        assert!(!block.transactions.is_empty() && !block.receipts.is_empty());
+
+        let bytes = serde_json::to_vec(&block_to_wire(&block)).unwrap();
+        let back = wire_to_block(&serde_json::from_slice::<WireBlock>(&bytes).unwrap()).unwrap();
+        let path = dir.path().join("importer");
+        std::fs::create_dir_all(&path).unwrap();
+        let importer = Engine::new_with_backend(131071, path, "redb");
+        assert_eq!(back.hash, block.hash);
+        assert!(
+            importer.header_commits_to_hash(&back),
+            "hash re-derives after the wire round trip"
+        );
+    }
+
+    /// A stand-in for a peer's sync port that answers one request with
+    /// `blocks`, or never answers when `blocks` is `None`.
+    fn fake_peer(blocks: Option<Vec<Block>>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let _ = TcpSync::recv_packet(&mut stream);
+            let Some(blocks) = blocks else {
+                std::thread::sleep(Duration::from_secs(5));
+                return;
+            };
+            let wire: Vec<WireBlock> = blocks.iter().map(block_to_wire).collect();
+            let response = crate::net_transport::GossipPacket {
+                topic: "sync_response".to_string(),
+                data: serde_json::to_vec(&wire).unwrap(),
+                id: String::new(),
+                ttl: 0,
+            };
+            let _ = TcpSync::send_packet(&mut stream, &response);
+        });
+        addr
+    }
+
+    #[test]
+    fn probe_finds_a_block_that_one_peer_holds() {
+        let dir = tempfile::tempdir().unwrap();
+        let block = produced_block(dir.path());
+        let peers = [
+            fake_peer(Some(vec![])),
+            fake_peer(Some(vec![block.clone()])),
+        ];
+        match probe_peers(&peers, 1, Duration::from_secs(2)) {
+            HeightProbe::Found(blocks) => assert_eq!(blocks[0].hash, block.hash),
+            _ => panic!("the block one peer holds must be found"),
+        }
+    }
+
+    #[test]
+    fn probe_is_not_found_when_every_peer_answers_without_it() {
+        let peers = [fake_peer(Some(vec![])), fake_peer(Some(vec![]))];
+        assert!(matches!(
+            probe_peers(&peers, 1, Duration::from_secs(2)),
+            HeightProbe::NotFound
+        ));
+    }
+
+    #[test]
+    fn probe_is_no_answer_when_no_peer_replies_in_time() {
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().to_string()
+        };
+        let peers = [closed, fake_peer(None)];
+        let started = std::time::Instant::now();
+        assert!(matches!(
+            probe_peers(&peers, 1, Duration::from_millis(400)),
+            HeightProbe::NoAnswer
+        ));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "bounded by the timeout"
+        );
+    }
 }
