@@ -758,7 +758,9 @@ impl Engine {
             tracing::error!(
                 height = h,
                 "INTERRUPTED COMMIT: the last block commit did not complete; persisted state is inconsistent. \
-                 Restore the latest snapshot (mersennet-snapshot restore) or move data/state aside to resync."
+                 The process was stopped in the middle of a block write (check the log just before this start for an OOM kill, a crash or a restart). \
+                 Recover with the installer, which keeps keys and identity and restores the latest snapshot: \
+                 curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash -s -- --reset-state"
             );
             std::process::exit(78);
         }
