@@ -58,6 +58,43 @@ cat > "${OUTPUT_DIR}/keys/faucet-key.json" <<EOF
 }
 EOF
 
+# configs/privacy/*.json are templates without a validator set: without one
+# every node only follows and the chain never leaves block 0. Write the
+# configs the compose file mounts, with the keys just generated as the genesis
+# validators and the validators and the faucet funded.
+addr_of() {
+    if command -v cast >/dev/null 2>&1; then
+        cast wallet address --private-key "$1"
+    else
+        python3 -c 'import sys; from eth_keys import keys; print(keys.PrivateKey(bytes.fromhex(sys.argv[1].removeprefix("0x"))).public_key.to_checksum_address())' "$1"
+    fi
+}
+key_of() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["private_key"])' "$1"; }
+echo "==> Writing node configs with the generated validator set"
+VALIDATOR_ADDRS=()
+for i in $(seq 1 "${N_VALIDATORS}"); do
+    VALIDATOR_ADDRS+=("$(addr_of "$(key_of "${OUTPUT_DIR}/keys/validator-${i}.json")")")
+done
+FAUCET_ADDR="$(addr_of "$(key_of "${OUTPUT_DIR}/keys/faucet-key.json")")"
+mkdir -p "${OUTPUT_DIR}/configs"
+python3 - "${TESTNET_ROOT}/configs/privacy" "${OUTPUT_DIR}/configs" "${FAUCET_ADDR}" "${VALIDATOR_ADDRS[@]}" <<'PY'
+import json, pathlib, sys
+src, dst, faucet, validators = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4:]
+STAKE = str(10**24)                      # 1,000,000 MRSN, as on the public testnet
+VALIDATOR_BALANCE = str(10 * 10**24)     # 10,000,000 MRSN
+FAUCET_BALANCE = str(100 * 10**24)       # 100,000,000 MRSN
+for template in sorted(src.glob('*.json')):
+    cfg = json.loads(template.read_text())
+    genesis = cfg.setdefault('genesis', {})
+    genesis['validators'] = [{'address': a, 'stake': STAKE} for a in validators]
+    genesis['accounts'] = [{'address': a, 'balance': VALIDATOR_BALANCE, 'nonce': 0} for a in validators] + \
+        [{'address': faucet, 'balance': FAUCET_BALANCE, 'nonce': 0}]
+    (dst / template.name).write_text(json.dumps(cfg, indent=2) + '\n')
+    print(f'    {template.name}')
+PY
+for i in "${!VALIDATOR_ADDRS[@]}"; do echo "    validator-$((i + 1)): ${VALIDATOR_ADDRS[$i]}"; done
+echo "    faucet:      ${FAUCET_ADDR}"
+
 # If a pre-fork snapshot was provided, run the migration tool.
 # Otherwise create an *empty* genesis envelope from scratch — this
 # is the "fresh-chain" path used when the privacy testnet doesn't

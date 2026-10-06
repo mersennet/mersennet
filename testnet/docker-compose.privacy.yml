@@ -35,7 +35,7 @@ services:
     container_name: privacy-validator-1
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-1.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-1.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-1.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-1-data:/data
@@ -48,7 +48,7 @@ services:
     container_name: privacy-validator-2
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-2.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-2.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-2.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-2-data:/data
@@ -61,7 +61,7 @@ services:
     container_name: privacy-validator-3
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-3.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-3.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-3.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-3-data:/data
@@ -74,7 +74,7 @@ services:
     container_name: privacy-validator-4
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-4.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-4.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-4.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-4-data:/data
@@ -87,7 +87,7 @@ services:
     container_name: privacy-validator-5
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-5.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-5.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-5.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-5-data:/data
@@ -100,7 +100,7 @@ services:
     container_name: privacy-validator-6
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-6.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-6.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-6.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-6-data:/data
@@ -113,7 +113,7 @@ services:
     container_name: privacy-validator-7
     command: ["--config", "/etc/mersennet/config.json", "--validator", "--rpc"]
     volumes:
-      - ./configs/privacy/validator-7.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/validator-7.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/keys/validator-7.json:/data/node_key.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-validator-7-data:/data
@@ -126,7 +126,7 @@ services:
     container_name: privacy-rpc-node
     command: ["--config", "/etc/mersennet/config.json", "--mode", "full", "--rpc"]
     volumes:
-      - ./configs/privacy/rpc-node.json:/etc/mersennet/config.json:ro
+      - ./genesis-output/privacy/configs/rpc-node.json:/etc/mersennet/config.json:ro
       - ./genesis-output/privacy/snapshot.bin:/data/snapshot.bin:ro
       - privacy-rpc-node-data:/data
     ports:
