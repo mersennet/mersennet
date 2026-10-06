@@ -3412,6 +3412,10 @@ impl Engine {
         }
         // Match the producer's per-tx execution environment.
         self.base_fee = block.base_fee;
+        // The producer flips the scheduled privacy switch before the block's
+        // first tx; a node that only imports (an RPC node, or a validator
+        // between its leader slots) has to flip it at the same point.
+        self.auto_activate_privacy_if_scheduled();
 
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
@@ -5203,6 +5207,27 @@ mod reorg_tests {
     /// the same state: the proposer's share of the base fee goes to the
     /// validator that led the height on both, including failover rounds
     /// (the weighted lottery in `consensus.proposer()` is not the leader).
+    #[test]
+    fn importer_activates_privacy_at_the_scheduled_height() {
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.set_privacy_activation_height(3);
+        }
+        for _ in 0..5 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number, "imported {}", block.number);
+            assert_eq!(
+                a.privacy_mode_activated(),
+                p.privacy_mode_activated(),
+                "block {}",
+                block.number
+            );
+        }
+        assert!(a.privacy_mode_activated());
+    }
+
     #[test]
     fn producer_and_importer_agree_on_the_fee_split() {
         let alice = Address::from_slice(&[0x11; 20]);
