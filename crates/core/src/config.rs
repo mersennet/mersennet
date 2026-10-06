@@ -725,7 +725,7 @@ mod config_tests {
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let cfg: AppConfig = serde_json::from_str(&raw).unwrap();
-        assert_eq!(cfg.engine.chain_id, 7920);
+        assert_eq!(cfg.engine.chain_id, 524287);
         assert_eq!(cfg.privacy.threshold_k, 5);
         assert_eq!(cfg.privacy.threshold_n, 7);
         assert!(cfg.privacy.activation_height.is_some());
