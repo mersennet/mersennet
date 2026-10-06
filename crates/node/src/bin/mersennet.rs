@@ -93,6 +93,74 @@ static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::Onc
 /// the rest of the epoch).
 static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
 
+/// Shortens the wait after the parent block by how far recent intervals
+/// overshoot the block time: a full block time after the parent arrives still
+/// leaves propagation to the next leader and block building on top (2.18 s
+/// average at a 2 s block time on 6 Oct 2026). An integral controller on the
+/// chain's own header timestamps: every `UPDATE_EVERY` heights it moves the
+/// correction a quarter of the measured overshoot (a full step oscillated in
+/// simulation), within 0..=`MAX_CORRECTION_MS`. Gaps longer than two block
+/// times are failover rounds and are not counted, so a dead leader does not
+/// make the next blocks hurry. Timestamps are whole seconds; over `WINDOW`
+/// intervals the mean resolves to about 2 ms.
+struct Pacer {
+    stamps: std::collections::VecDeque<(u64, u64)>,
+    correction_ms: u64,
+    next_update_at: u64,
+}
+
+impl Pacer {
+    const WINDOW: usize = 600;
+    const UPDATE_EVERY: u64 = 100;
+    const MAX_CORRECTION_MS: u64 = 250;
+
+    fn new() -> Self {
+        Self {
+            stamps: std::collections::VecDeque::with_capacity(Self::WINDOW + 1),
+            correction_ms: 0,
+            next_update_at: 0,
+        }
+    }
+
+    /// Record a new head (height, header timestamp in seconds). Returns the
+    /// measured mean interval and the new correction when it was updated.
+    fn observe(&mut self, height: u64, timestamp: u64, block_time_ms: u64) -> Option<(u64, u64)> {
+        if self.stamps.back().is_some_and(|&(last, _)| height <= last) {
+            return None;
+        }
+        self.stamps.push_back((height, timestamp));
+        while self.stamps.len() > Self::WINDOW + 1 {
+            self.stamps.pop_front();
+        }
+        if height < self.next_update_at || self.stamps.len() <= Self::WINDOW / 2 {
+            return None;
+        }
+        self.next_update_at = height + Self::UPDATE_EVERY;
+        let max_gap_s = (2 * block_time_ms).div_ceil(1000);
+        let (mut sum_s, mut n) = (0u64, 0u64);
+        for (&(h0, t0), &(h1, t1)) in self.stamps.iter().zip(self.stamps.iter().skip(1)) {
+            if h1 != h0 + 1 || t1 < t0 || t1 - t0 > max_gap_s {
+                continue;
+            }
+            sum_s += t1 - t0;
+            n += 1;
+        }
+        if n == 0 {
+            return None;
+        }
+        let mean_ms = sum_s * 1000 / n;
+        let step = (mean_ms as i64 - block_time_ms as i64) / 4;
+        self.correction_ms =
+            (self.correction_ms as i64 + step).clamp(0, Self::MAX_CORRECTION_MS as i64) as u64;
+        Some((mean_ms, self.correction_ms))
+    }
+
+    /// How long to wait after the parent before proposing.
+    fn target(&self, block_time: std::time::Duration) -> std::time::Duration {
+        block_time.saturating_sub(std::time::Duration::from_millis(self.correction_ms))
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     // `mersennet --version` prints the same string web3_clientVersion reports,
     // so packaging and operators can identify a binary without starting it.
@@ -636,6 +704,7 @@ fn main() -> anyhow::Result<()> {
                         // of a full block time.
                         let mut last_seen_height: u64 = 0;
                         let mut last_block_at = std::time::Instant::now();
+                        let mut pacer = Pacer::new();
                         // Startup sync grace: before producing our FIRST block,
                         // give the gossip/sync layer time to tell us the network
                         // head. Without this, a validator that restarted with a
@@ -694,13 +763,25 @@ fn main() -> anyhow::Result<()> {
                             // Determine the next height and whether this
                             // node is its elected leader (at the current
                             // failover round).
-                            let head = {
+                            let (head, head_applied_at, head_timestamp) = {
                                 let Ok(e) = eng.lock() else { break };
-                                e.latest_height()
+                                let h = e.latest_height();
+                                (h, e.last_block_applied_at(), e.block_by_number(h).map(|b| b.timestamp))
                             };
                             if head > last_seen_height {
                                 last_seen_height = head;
-                                last_block_at = std::time::Instant::now();
+                                // Pace from when the head was applied, not from when
+                                // this poll noticed it (up to `poll` later). A stale
+                                // instant (head changed on a path that does not stamp
+                                // it) falls back to now.
+                                last_block_at = head_applied_at
+                                    .filter(|t| t.elapsed() < poll * 3)
+                                    .unwrap_or_else(std::time::Instant::now);
+                                if let Some((mean_ms, correction_ms)) = head_timestamp
+                                    .and_then(|ts| pacer.observe(head, ts, block_time.as_millis() as u64))
+                                {
+                                    info!(mean_interval_ms = mean_ms, correction_ms, "block pacing");
+                                }
                             }
                             let next_height = head.saturating_add(1);
                             let round_timeout_ms = if next_height >= fast_failover_height {
@@ -873,13 +954,14 @@ fn main() -> anyhow::Result<()> {
                                     continue;
                                 }
                             }
-                            // Pace to the target block time relative to the
-                            // last observed block, so consecutive blocks
-                            // are spaced by ~block_time without stacking
-                            // the rotation-detection latency on top.
+                            // Pace relative to when the parent was applied, shortened
+                            // by the pacer's correction, so consecutive blocks are
+                            // spaced by ~block_time with propagation and building
+                            // inside it rather than on top.
+                            let target = pacer.target(block_time);
                             let since = last_block_at.elapsed();
-                            if since < block_time {
-                                std::thread::sleep(block_time - since);
+                            if since < target {
+                                std::thread::sleep(target - since);
                             }
 
                             let block = {
@@ -2114,4 +2196,128 @@ fn private_key_to_address(hex_key: &str) -> anyhow::Result<Address> {
     let public_key = encoded.as_bytes();
     let hash = keccak256(&public_key[1..]);
     Ok(Address::from_slice(&hash[12..]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Pacer;
+    use std::time::Duration;
+
+    const BT: u64 = 2000;
+
+    /// Feeds blocks spaced by the given intervals (ms) as whole-second header
+    /// timestamps, like the chain records them; returns every update.
+    fn feed(p: &mut Pacer, start: u64, intervals_ms: &[u64]) -> Vec<(u64, u64)> {
+        let mut t_ms = 1_000_000_000u64;
+        let mut updates = Vec::new();
+        for (i, d) in intervals_ms.iter().enumerate() {
+            t_ms += d;
+            if let Some(u) = p.observe(start + i as u64, t_ms / 1000, BT) {
+                updates.push(u);
+            }
+        }
+        updates
+    }
+
+    #[test]
+    fn on_target_blocks_need_no_correction() {
+        let mut p = Pacer::new();
+        let updates = feed(&mut p, 1, &[2000; 2000]);
+        assert!(!updates.is_empty());
+        assert!(
+            updates
+                .iter()
+                .all(|&(mean, corr)| mean == 2000 && corr == 0),
+            "{updates:?}"
+        );
+    }
+
+    #[test]
+    fn overshoot_raises_the_correction_a_quarter_at_a_time_up_to_the_cap() {
+        let mut p = Pacer::new();
+        let updates = feed(&mut p, 1, &[2200; 3000]);
+        assert_eq!(updates[0], (2200, 50));
+        assert_eq!(updates[1].1, 100);
+        assert_eq!(updates.last().unwrap().1, Pacer::MAX_CORRECTION_MS);
+        assert_eq!(
+            p.target(Duration::from_millis(BT)),
+            Duration::from_millis(BT - Pacer::MAX_CORRECTION_MS)
+        );
+    }
+
+    #[test]
+    fn failover_gaps_are_not_counted() {
+        let mut p = Pacer::new();
+        let intervals: Vec<u64> = (0..2000)
+            .map(|i| if i % 50 == 0 { 8000 } else { 2000 })
+            .collect();
+        let updates = feed(&mut p, 1, &intervals);
+        assert!(
+            updates
+                .iter()
+                .all(|&(mean, corr)| mean == 2000 && corr == 0),
+            "{updates:?}"
+        );
+    }
+
+    #[test]
+    fn fast_blocks_bring_the_correction_back_down_but_never_below_zero() {
+        let mut p = Pacer::new();
+        feed(&mut p, 1, &[2200; 1500]);
+        assert!(p.correction_ms > 0);
+        let updates = feed(&mut p, 1501, &[1900; 4000]);
+        assert_eq!(updates.last().unwrap().1, 0);
+    }
+
+    #[test]
+    fn skipped_heights_are_not_measured() {
+        let mut p = Pacer::new();
+        let mut t = 1_000_000u64;
+        for i in 0..2000u64 {
+            t += 2;
+            assert_eq!(p.observe(i * 2, t, BT), None);
+        }
+        assert_eq!(p.correction_ms, 0);
+    }
+
+    #[test]
+    fn closed_loop_converges_near_the_block_time_without_oscillating() {
+        // Each block lands `wait + overhead` after its parent; overhead
+        // ~160 ms with noise and an occasional failover, as measured on
+        // 6 Oct 2026. Deterministic LCG noise.
+        let mut p = Pacer::new();
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut rnd = || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as f64 / (1u64 << 31) as f64
+        };
+        let mut t_ms = 1_000_000_000.0f64;
+        let mut stamps = Vec::new();
+        let mut corrections = Vec::new();
+        for h in 1..=30_000u64 {
+            let mut overhead = 110.0 + 100.0 * rnd();
+            if rnd() < 0.0025 {
+                overhead += 6000.0;
+            }
+            t_ms += p.target(Duration::from_millis(BT)).as_millis() as f64 + overhead;
+            let ts = (t_ms / 1000.0) as u64;
+            stamps.push(ts);
+            if let Some((_, c)) = p.observe(h, ts, BT) {
+                corrections.push(c);
+            }
+        }
+        let tail = &stamps[stamps.len() - 6000..];
+        let gaps: Vec<u64> = tail
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .filter(|&d| d <= 4)
+            .collect();
+        let mean = gaps.iter().sum::<u64>() as f64 / gaps.len() as f64;
+        assert!((mean - 2.0).abs() < 0.03, "mean interval {mean}");
+        let late = &corrections[corrections.len() - 60..];
+        let (lo, hi) = (*late.iter().min().unwrap(), *late.iter().max().unwrap());
+        assert!(lo >= 100 && hi <= 220, "correction settled in {lo}..={hi}");
+    }
 }
