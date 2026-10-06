@@ -1098,13 +1098,17 @@ impl NetworkNode {
 fn handle_relayed_tx(engine: &Arc<Mutex<Engine>>, wire: &WireTx) {
     let Ok(mut eng) = engine.lock() else { return };
     if let Some(raw_hex) = &wire.raw {
-        match hex::decode(raw_hex)
-            .ok()
-            .and_then(|raw| mersennet::crypto::decode_raw_signed_tx(&raw).ok())
-        {
-            Some(signed) => {
-                if let Err(err) = eng.submit_tx_unsigned(signed.tx) {
-                    tracing::debug!(reason = err.code(), "dropped relayed raw tx");
+        match hex::decode(raw_hex).ok().and_then(|raw| {
+            let signed = mersennet::crypto::decode_raw_signed_tx(&raw).ok()?;
+            Some((raw, signed))
+        }) {
+            Some((raw, signed)) => {
+                let hash = signed.tx.canonical_hash();
+                match eng.submit_tx_unsigned(signed.tx) {
+                    // Without its envelope a wallet tx cannot be re-verified
+                    // by the next hop or by an importer of its block.
+                    Ok(()) => eng.cache_raw_tx(hash, raw),
+                    Err(err) => tracing::debug!(reason = err.code(), "dropped relayed raw tx"),
                 }
             }
             None => tracing::debug!("dropped relayed tx: bad raw envelope"),

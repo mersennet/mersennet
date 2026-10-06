@@ -3347,6 +3347,69 @@ impl Engine {
         }
     }
 
+    /// Count what a stricter import would reject, without rejecting it:
+    /// a block hash that does not re-derive from the block's contents, and
+    /// transactions whose signature does not prove their sender. A wallet
+    /// transaction can only be checked against its raw envelope, which this
+    /// node has if the transaction reached its mempool.
+    fn audit_imported_block(&self, block: &Block) {
+        if !self.header_commits_to_hash(block) {
+            metrics::increment_counter!("mersennet_import_audit_block_hash_mismatch_total");
+            tracing::warn!(
+                height = block.number,
+                proposer = %block.proposer,
+                "import audit: block hash does not re-derive from its contents"
+            );
+        }
+        for tx in &block.transactions {
+            let result = self.audit_tx_signature(tx);
+            metrics::increment_counter!("mersennet_import_audit_tx_total", "result" => result);
+            if matches!(result, "unsigned" | "envelope_mismatch") {
+                tracing::warn!(
+                    height = block.number,
+                    proposer = %block.proposer,
+                    tx = %tx.canonical_hash(),
+                    from = %tx.from,
+                    result,
+                    "import audit: transaction does not prove its sender"
+                );
+            }
+        }
+    }
+
+    fn audit_tx_signature(&self, tx: &Transaction) -> &'static str {
+        let Some((r, s, v)) = tx.signature else {
+            return "unsigned";
+        };
+        if let Some(raw) = self.raw_tx_cache.get(&tx.canonical_hash()) {
+            return match crypto::decode_raw_signed_tx(raw) {
+                Ok(signed)
+                    if signed.tx.from == tx.from
+                        && signed.tx.to == tx.to
+                        && signed.tx.value == tx.value
+                        && signed.tx.data == tx.data
+                        && signed.tx.nonce == tx.nonce
+                        && signed.tx.gas_limit == tx.gas_limit
+                        && signed.tx.chain_id == tx.chain_id =>
+                {
+                    "envelope_ok"
+                }
+                _ => "envelope_mismatch",
+            };
+        }
+        let signed = SignedTransaction {
+            tx: tx.clone(),
+            v: U256::from(v),
+            r,
+            s,
+            tx_type: 0,
+        };
+        match crypto::recover_signer(&signed) {
+            Ok(signer) if signer == tx.from => "native_ok",
+            _ => "no_envelope",
+        }
+    }
+
     /// Re-execute an externally produced block against local state.
     ///
     /// `execute_block` *builds* a block by pulling transactions from
@@ -3441,6 +3504,9 @@ impl Engine {
             }
         }
         self.record_leader_slots(block.number, block.proposer);
+        if self.highest_observed_height <= block.number.saturating_add(REORG_DEPTH as u64) {
+            self.audit_imported_block(&block);
+        }
 
         // Fee floor: a block priced below the consensus floor is invalid from
         // the switch, whoever proposed it.
@@ -5313,6 +5379,58 @@ mod reorg_tests {
         let dir = tempdir().unwrap();
         let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
         assert_eq!(other.market_repair, None);
+    }
+
+    #[test]
+    fn import_audit_tells_proven_senders_from_unproven_ones() {
+        // EIP-1559 transfer on chain 131071 (crypto::rlp_decode tests).
+        const WALLET_TX: &str = "02f86d8301ffff80010782520894ff00000000000000000000000000000000000011880de0b6b3a764000080c080a0622575814887e044fea9579b9cfd6884ace1d4f2e10e2e9fab58a4df0a3c0e03a060d1356f86b663b4887ed464262d3f84548036147f4d71e8c772806bb7058fae";
+        let mut e = engine();
+        let raw = hex::decode(WALLET_TX).unwrap();
+        let wallet = crate::crypto::decode_raw_signed_tx(&raw).unwrap().tx;
+        assert_eq!(e.audit_tx_signature(&wallet), "no_envelope");
+        e.cache_raw_tx(wallet.canonical_hash(), raw);
+        assert_eq!(e.audit_tx_signature(&wallet), "envelope_ok");
+
+        let mut forged = wallet.clone();
+        forged.from = Address::repeat_byte(0x66);
+        assert_eq!(e.audit_tx_signature(&forged), "envelope_mismatch");
+        let mut unsigned = wallet.clone();
+        unsigned.signature = None;
+        assert_eq!(e.audit_tx_signature(&unsigned), "unsigned");
+
+        let (key, alice) = crate::crypto::generate_keypair();
+        let native = Transaction {
+            from: alice,
+            chain_id: Some(131071),
+            gas_limit: 21_000,
+            ..Default::default()
+        };
+        let native = crate::crypto::sign_transaction(&native, &key).tx;
+        assert_eq!(e.audit_tx_signature(&native), "native_ok");
+    }
+
+    #[test]
+    fn import_audit_does_not_reject_anything() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        p.transfer(
+            alice,
+            Address::from_slice(&[0x22; 20]),
+            U256::from(1u64),
+            21_000,
+            U256::from(2_000_000_000u64),
+            0,
+        )
+        .unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert!(block.transactions[0].signature.is_none());
+        a.import_block(block.clone());
+        assert_eq!(a.latest_height(), block.number);
     }
 
     #[test]
