@@ -7,14 +7,14 @@ privacy layer, built in Rust.
 | Chain | ID | Purpose | Status |
 |---|---|---|---|
 | **Public testnet** | `131071` (Mersenne prime 2^17 − 1, default chain ID) | Transparent EVM + CLOB | Live |
-| **Privacy testnet** | `7920` | Shielded EVM + shielded CLOB + sealed-bid liquidations | **Ready to bring up — `feat/zk-privacy`** |
+| **Privacy testnet** | `524287` (Mersenne prime 2^19 − 1) | Shielded EVM + shielded CLOB + sealed-bid liquidations | Not live yet — code on `main`, off until activation |
 | **Mersennet mainnet** | `8191` (Mersenne prime 2^13 − 1) | Mainnet genesis ([`mainnet/genesis.json`](mainnet/genesis.json)) — MRSN token, 2⁸⁹ − 1 wei ≈ 618.97M MRSN cap, 2⁶¹ − 1 wei ≈ 2.31 MRSN/block initial reward (halving epochs) | Pre-launch — see [`mainnet/launch-checklist.md`](mainnet/launch-checklist.md) |
 
 > **Privacy redesign — testnet ready.** The privacy hard fork
 > introduces shielded accounts, ZK-proved risk checks, sealed-bid
 > liquidation auctions, threshold-encrypted mempool, and SP1 state
 > proofs for light clients. Workstreams A–F (in-repo), G1–G3 (bridge
-> contracts), H, and K are merged on `feat/zk-privacy`; the E5 Groth16
+> contracts), H, and K are merged on `main`, switched off until activation; the E5 Groth16
 > verifying key, external audits (I), and governance activation (J)
 > remain. Bring up your own privacy testnet with one command — see
 > [`docs/runbooks/privacy-testnet-bootstrap.md`](docs/runbooks/privacy-testnet-bootstrap.md).
@@ -40,7 +40,7 @@ privacy layer, built in Rust.
 - Node identity + peer-store persistence
 - Leader-gated BFT consensus with slashing and unbonding (HotStuff-2 pipeline implemented as the upgrade path)
 
-### Privacy testnet (7920, `feat/zk-privacy`)
+### Privacy testnet (524287, not live yet)
 
 - **Shielded note commitment tree** (Poseidon-2 BN254) + global nullifier
   set + 64-block recent-roots ring for client-side proving
@@ -93,7 +93,7 @@ cargo test -p mersennet-zkp --features prover                 # cryptographic te
 bash scripts/ci/check-privacy-invariants.sh               # CI K2 privacy grep
 ```
 
-### Bring up the privacy testnet (chain 7920)
+### Bring up the privacy testnet (chain 524287)
 
 ```bash
 cd testnet
@@ -164,7 +164,7 @@ networks/testnet/               — Public testnet genesis/config, the one-line 
 testnet/                        — Dockerized testnets
 ├── configs/privacy/                  — 7-validator 5-of-7 configs
 ├── docker-compose.testnet.yml        — transparent testnet stack (131071)
-├── docker-compose.privacy.yml        — privacy testnet stack (7920)
+├── docker-compose.privacy.yml        — privacy testnet stack (524287)
 └── scripts/                          — bootstrap, load, chaos
 mainnet/                        — Mainnet genesis (8191) and validator requirements
 scripts/ci/, scripts/zk/        — CI helpers (privacy-grep) + ZK prover adapters
@@ -225,10 +225,10 @@ lives in its own repository under [github.com/mersennet](https://github.com/mers
 ### For operators
 
 - **[Privacy testnet bootstrap](docs/runbooks/privacy-testnet-bootstrap.md)**
-  — bring up chain 7920 from a fresh host.
+  — bring up chain 524287 from a fresh host.
 - **[ZK fork activation runbook](docs/runbooks/zk-fork-activation.md)** —
   mainnet hard-fork checklist (T-8w through T+24h).
-- **[Public testnet](testnet/README.md)** — transparent chain 131071 + privacy chain 7920.
+- **[Public testnet](testnet/README.md)** — transparent chain 131071 + privacy chain 524287.
 
 ### Architecture + design
 

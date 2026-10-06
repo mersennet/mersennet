@@ -5,7 +5,7 @@
 #   - validator keys (7 ECDSA secp256k1 keypairs)
 #   - faucet key
 #   - migrated genesis envelope (snapshot.bin) ready for the privacy
-#     hard-fork chain (chain_id 7920)
+#     hard-fork chain (chain_id 524287)
 #
 # Idempotent: re-running regenerates everything from scratch in a
 # fresh subdir. The pre-fork snapshot is *required* — typically the
@@ -23,7 +23,7 @@ TESTNET_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${TESTNET_ROOT}/.." && pwd)"
 
 ACTIVATION_HEIGHT="${ACTIVATION_HEIGHT:-100}"
-CHAIN_ID="${CHAIN_ID:-7920}"
+CHAIN_ID="${CHAIN_ID:-524287}"
 N_VALIDATORS="${N_VALIDATORS:-7}"
 OUTPUT_DIR="${TESTNET_ROOT}/genesis-output/privacy"
 
