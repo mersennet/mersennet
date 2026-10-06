@@ -4,9 +4,9 @@ Status snapshot (privacy-fork era): the privacy hard fork is
 engineering-complete in-repo — shielded state, shielded CLOB/FBA,
 sealed-bid liquidations, threshold mempool, SP1 state proofs (pinned
 vkey + captured local transcript), bridge contracts, and SDK shielded
-clients are merged on `feat/zk-privacy`. See
-[`docs/delivery/privacy-fork-remaining-work.md`](docs/delivery/privacy-fork-remaining-work.md)
-and [`docs/STATUS.md`](docs/STATUS.md) for live workstream status.
+clients are merged on `main`, switched off until activation. Developer
+documentation: [shielded RPC](https://docs.mersennet.com/developers/privacy/shielded-rpc/)
+and [shielded SDK](https://docs.mersennet.com/developers/privacy/shielded-sdk/).
 
 ## Months 1–3 (Privacy fork close-out)
 
@@ -14,7 +14,8 @@ and [`docs/STATUS.md`](docs/STATUS.md) for live workstream status.
   key in the Ethereum bridge `Groth16Verifier`
 - Credentialed network-prover run (E4 execution) for delegated proving
 - Assemble the external audit packet (`docs/security/privacy-fork-audit-packet.md`)
-- Start the 8-week privacy testnet bake (H6) on chain 131071
+- Start the 8-week privacy testnet bake (H6) on the privacy testnet, chain
+  524287 (2^19 − 1); the public testnet 131071 stays transparent
 
 ## Months 4–6 (Audit + hardening)
 

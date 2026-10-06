@@ -6,14 +6,14 @@ networks:
 | Compose file | Chain ID | Purpose |
 |---|---|---|
 | `docker-compose.testnet.yml` | **131071** | Transparent public testnet — EVM + MersennetOrders CLOB |
-| `docker-compose.privacy.yml` | **7920** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
+| `docker-compose.privacy.yml` | **524287** | Privacy testnet — shielded accounts, sealed-bid liquidations, threshold mempool, 5-of-7 DKG |
 
 Both compose files run a multi-validator stack plus an RPC observer,
 faucet, Prometheus, and Grafana.
 
 ---
 
-## A. Privacy testnet (chain 7920) — recommended starting point
+## A. Privacy testnet (chain 524287) — recommended starting point
 
 Full operator runbook:
 [`../docs/runbooks/privacy-testnet-bootstrap.md`](../docs/runbooks/privacy-testnet-bootstrap.md).

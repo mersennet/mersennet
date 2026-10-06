@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Mersennet privacy testnet (chain ID 7920) \u2014 operator dashboard. All panels obey CI K2: no address labels.",
+  "description": "Mersennet privacy testnet (chain ID 524287) \u2014 operator dashboard. All panels obey CI K2: no address labels.",
   "editable": true,
   "graphTooltip": 1,
   "id": null,

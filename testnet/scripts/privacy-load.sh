@@ -6,7 +6,7 @@
 #   - mersennet_submitLiquidation{Claim,Execute}
 #   - mersennet_submit{Shield,Unshield}
 #
-# Targets the privacy-rpc-node by default (chain ID 7920). All
+# Targets the privacy-rpc-node by default (chain ID 524287). All
 # payloads are *opaque* (bincode-then-hex), since the chain rejects
 # anything else. We generate them by calling the SDK's
 # `mersennet.test_helpers` mock-encoder which produces wire-valid

@@ -348,13 +348,16 @@ single developer's absolute build path.
 - Canonical ELF path:
   `programs/state-transition/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/mersennet-state-transition`
 - ELF sha256:
-  `9debe1cc1267c4f51a1e15885a051a6cd70dcd05b48e0995b6324f43ae22bd89`
+  `03370b219d11ed928ef3ba3df471bd8d05029887a179ea8ccbeac09a50440eb7`
 - Captured verifying-key hash:
-  `0013c6c783c5266f4b361816fb1d25c186582811b90a11edcd15d69ee286200d`
+  `008cd0050b67a4fe3800a848c1c22166b36b696b795ec0d4681fc7678dc1a9a4`
 - Checked-in pin artifact:
   `crates/zkp/params/sp1/state-transition.vk.hash`
-- Captured transcript: `scripts/zk/sp1-prove-response.json` (real `core`
-  proof) + `scripts/zk/sp1-verify-response.json` (`{"verified": true}`).
+- Captured transcript (6 Oct 2026): `scripts/zk/e3-2026-10-06/` (real
+  `compressed` proof, `{"verified": true}`); its README has the build, the
+  machine and the memory it needs (~49 GB with single SP1 workers). The
+  10 Jun files in this directory (`sp1-prove-response.json`, `core` proof,
+  vkey `0013c6c7…`) are superseded: `programs/` changed after they were captured.
 
 Recommended setup:
 
