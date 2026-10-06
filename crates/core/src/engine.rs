@@ -1487,6 +1487,11 @@ impl Engine {
         self.last_block_applied_at.map(|t| t.elapsed().as_secs())
     }
 
+    /// When this node last applied a block (produced or imported), if it ever did.
+    pub fn last_block_applied_at(&self) -> Option<std::time::Instant> {
+        self.last_block_applied_at
+    }
+
     /// True if the network head is ahead of our applied head — i.e. we are
     /// behind (syncing) or wedged on a fork. A validator in this state must
     /// not produce: its next block would build on a stale head and fork the
