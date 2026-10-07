@@ -1232,6 +1232,33 @@ impl MersennetOrdersState {
         }
     }
 
+    /// One-off repair of a market whose book was swept: cancels every resting
+    /// order priced outside `[lo, hi]` and sets the last trade price, which
+    /// every position in the market is marked at, to `reference`. Returns how
+    /// many orders were cancelled.
+    pub fn repair_market(
+        &mut self,
+        market: MarketId,
+        reference: U256,
+        lo: U256,
+        hi: U256,
+    ) -> usize {
+        let mut ids: Vec<OrderId> = self
+            .orders
+            .values()
+            .filter(|o| o.market == market && (o.price < lo || o.price > hi))
+            .map(|o| o.id)
+            .collect();
+        ids.sort_by_key(|id| id.0);
+        for id in &ids {
+            self.cancel_order(*id);
+        }
+        if let Some(m) = self.markets.get_mut(&market) {
+            m.last_price = reference;
+        }
+        ids.len()
+    }
+
     fn levels_from_book(&self, levels: &BTreeMap<U256, VecDeque<OrderId>>) -> Vec<OrderBookLevel> {
         levels
             .iter()
@@ -1580,6 +1607,72 @@ mod tests {
 
     fn addr(b: u8) -> Address {
         Address::from_slice(&[b; 20])
+    }
+
+    #[test]
+    fn repair_market_cancels_out_of_band_orders_and_resets_the_mark() {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+        let other = state.add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+        let (alice, bob) = (addr(1), addr(2));
+        let gtc = TimeInForce::Gtc;
+        let sane = state.place_order(
+            alice,
+            m,
+            Side::Buy,
+            U256::from(11_500u64),
+            U256::from(3u64),
+            gtc,
+        );
+        state.place_order(
+            bob,
+            m,
+            Side::Buy,
+            U256::from(1_650_000u64),
+            U256::from(39u64),
+            gtc,
+        );
+        state.place_order(
+            bob,
+            m,
+            Side::Buy,
+            U256::from(1_000u64),
+            U256::from(9u64),
+            gtc,
+        );
+        state.place_order(
+            alice,
+            m,
+            Side::Sell,
+            U256::from(1_700_000u64),
+            U256::from(1u64),
+            gtc,
+        );
+        let elsewhere = state.place_order(
+            bob,
+            other,
+            Side::Buy,
+            U256::from(5_000_000u64),
+            U256::from(1u64),
+            gtc,
+        );
+
+        let cancelled = state.repair_market(
+            m,
+            U256::from(11_500u64),
+            U256::from(3_450u64),
+            U256::from(34_500u64),
+        );
+
+        assert_eq!(cancelled, 3);
+        assert!(state.orders.contains_key(&sane));
+        assert!(state.orders.contains_key(&elsewhere));
+        let book = state.order_book(m).unwrap();
+        assert_eq!(book.bids.len(), 1);
+        assert!(book.asks.is_empty());
+        assert_eq!(state.markets[&m].last_price, U256::from(11_500u64));
+        assert_eq!(state.accounts[&alice].open_orders, vec![sane]);
+        assert_eq!(state.accounts[&bob].open_orders, vec![elsewhere]);
     }
 
     fn market_with_order(owner: Address) -> (MersennetOrdersState, MarketId, OrderId) {

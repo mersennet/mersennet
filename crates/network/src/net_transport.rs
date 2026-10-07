@@ -284,8 +284,16 @@ impl UdpGossip {
     /// Configured (bootstrap) peer: trusted, so loopback is fine for local
     /// testnets, but an unspecified address is still meaningless, and a
     /// bootstrap entry that is this node itself is skipped.
+    /// A host name (`privacy-validator-2:9090`) is resolved once, here, and the
+    /// peer is known by that address from then on.
     pub fn add_peer(&mut self, addr: &str) -> Result<()> {
-        let peer: SocketAddr = addr.parse()?;
+        let peer: SocketAddr = match addr.parse() {
+            Ok(peer) => peer,
+            Err(_) => match std::net::ToSocketAddrs::to_socket_addrs(addr)?.next() {
+                Some(peer) => peer,
+                None => bail!("{addr} resolves to no address"),
+            },
+        };
         if !is_routable_peer(&peer, true) || self.is_self(&peer) {
             return Ok(());
         }
@@ -790,6 +798,20 @@ impl TcpSync {
 #[cfg(test)]
 mod wire_format_tests {
     use super::*;
+
+    #[test]
+    fn bootstrap_peers_may_be_host_names() {
+        let mut gossip =
+            UdpGossip::bind_with_config("127.0.0.1:0", GossipConfig::default()).unwrap();
+        gossip.add_peer("localhost:39123").unwrap();
+        assert!(
+            gossip
+                .peers_snapshot()
+                .iter()
+                .any(|p| p.addr.ends_with(":39123"))
+        );
+        assert!(gossip.add_peer("no-such-host.invalid:39124").is_err());
+    }
 
     #[test]
     fn packets_round_trip_in_both_encodings_and_compact_is_smaller() {

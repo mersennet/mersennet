@@ -488,6 +488,11 @@ struct StateCheckpoint {
 const REORG_DEPTH: usize = 16;
 /// Raw envelopes kept for relaying before the cache drops those of mined txs.
 const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
+/// MRSN/USD (market 1) on chain 131071: on 6 Oct 2026 at 17:51 UTC one sweep
+/// left its book with bids up to 143x its price, and positions are marked at
+/// the last trade, so every account holding MRSN was frozen. Repaired once at
+/// this height (expected Thu 8 Oct ~09:30 UTC) around $115 (priceScale 100).
+const MRSN_REPAIR: (u64, u64, u64) = (2_324_700, 1, 11_500);
 
 #[derive(Debug)]
 pub struct Engine {
@@ -620,6 +625,8 @@ pub struct Engine {
     /// See `set_price_rescale`.
     price_scale_height: u64,
     price_rescales: Vec<(u64, u64)>,
+    /// One-off market repair as (height, market, reference price).
+    market_repair: Option<(u64, u64, u64)>,
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
@@ -902,6 +909,7 @@ impl Engine {
             highest_observed_height: 0,
             price_scale_height: 0,
             price_rescales: Vec::new(),
+            market_repair: (chain_id == 131071).then_some(MRSN_REPAIR),
             last_block_applied_at: None,
             fork_detected_at: None,
             checkpoints: std::collections::VecDeque::new(),
@@ -1967,6 +1975,30 @@ impl Engine {
     /// the configured rescales. Deterministic from state + config, idempotent
     /// (a market already at the target scale is a no-op), so producer and
     /// importers agree and a restart mid-height cannot double-apply.
+    pub fn set_market_repair(&mut self, repair: Option<(u64, u64, u64)>) {
+        self.market_repair = repair;
+    }
+
+    /// Consensus step at the repair height: the market's resting orders priced
+    /// outside 0.3x-3x of the reference are cancelled and its mark is reset to
+    /// the reference. No balance or position changes.
+    fn maybe_market_repair(&mut self, height: u64) {
+        let Some((at, market, reference)) = self.market_repair else {
+            return;
+        };
+        if height != at {
+            return;
+        }
+        let reference = U256::from(reference);
+        let cancelled = self.orders.state.repair_market(
+            crate::mersennet_orders::MarketId(market),
+            reference,
+            reference * U256::from(3u64) / U256::from(10u64),
+            reference * U256::from(3u64),
+        );
+        tracing::warn!(height, market, cancelled, %reference, "market repaired: out-of-band orders cancelled, mark reset");
+    }
+
     fn maybe_price_rescale(&mut self, height: u64) {
         if self.price_scale_height == 0 || height != self.price_scale_height {
             return;
@@ -2261,6 +2293,7 @@ impl Engine {
         self.checkpoint_before(self.block_number);
         self.maybe_epoch_transition(self.block_number);
         self.maybe_price_rescale(self.block_number);
+        self.maybe_market_repair(self.block_number);
         self.maybe_settlement_switch(self.block_number);
         // Fee floor: from the switch the base fee never sits below the floor
         // (covers the switch block itself and a restart from a checkpoint).
@@ -3356,6 +3389,7 @@ impl Engine {
         // later does not apply it twice.
         self.maybe_epoch_transition(block.number);
         self.maybe_price_rescale(block.number);
+        self.maybe_market_repair(block.number);
         self.maybe_settlement_switch(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
@@ -3412,6 +3446,10 @@ impl Engine {
         }
         // Match the producer's per-tx execution environment.
         self.base_fee = block.base_fee;
+        // The producer flips the scheduled privacy switch before the block's
+        // first tx; a node that only imports (an RPC node, or a validator
+        // between its leader slots) has to flip it at the same point.
+        self.auto_activate_privacy_if_scheduled();
 
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
@@ -5203,6 +5241,74 @@ mod reorg_tests {
     /// the same state: the proposer's share of the base fee goes to the
     /// validator that led the height on both, including failover rounds
     /// (the weighted lottery in `consensus.proposer()` is not the leader).
+    #[test]
+    fn producer_and_importer_repair_the_market_at_the_same_height() {
+        use crate::mersennet_orders::{MarketId, Side, TimeInForce};
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        let mut market = MarketId(0);
+        for e in [&mut p, &mut a] {
+            market = e
+                .orders
+                .state
+                .add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+            for (who, price) in [(0x0b, 1_650_000u64), (0x0c, 11_500), (0x0d, 1_000)] {
+                e.orders.state.place_order(
+                    Address::repeat_byte(who),
+                    market,
+                    Side::Buy,
+                    U256::from(price),
+                    U256::from(3u64),
+                    TimeInForce::Gtc,
+                );
+            }
+            e.set_market_repair(Some((3, market.0, 11_500)));
+        }
+        for _ in 0..4 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number);
+        }
+        for e in [&p, &a] {
+            let book = e.orders.state.order_book(market).unwrap();
+            assert_eq!(book.bids.len(), 1, "only the in-band bid is left");
+            assert_eq!(
+                e.orders.state.markets[&market].last_price,
+                U256::from(11_500u64)
+            );
+        }
+    }
+
+    #[test]
+    fn the_mrsn_repair_is_scheduled_on_chain_131071_only() {
+        let testnet = engine();
+        assert_eq!(testnet.market_repair, Some(MRSN_REPAIR));
+        let dir = tempdir().unwrap();
+        let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
+        assert_eq!(other.market_repair, None);
+    }
+
+    #[test]
+    fn importer_activates_privacy_at_the_scheduled_height() {
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.set_privacy_activation_height(3);
+        }
+        for _ in 0..5 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number, "imported {}", block.number);
+            assert_eq!(
+                a.privacy_mode_activated(),
+                p.privacy_mode_activated(),
+                "block {}",
+                block.number
+            );
+        }
+        assert!(a.privacy_mode_activated());
+    }
+
     #[test]
     fn producer_and_importer_agree_on_the_fee_split() {
         let alice = Address::from_slice(&[0x11; 20]);
