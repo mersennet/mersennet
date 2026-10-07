@@ -8,7 +8,9 @@ set -euo pipefail
 #   --data-dir DIR   Put chain data and the node key under DIR instead of
 #                    /var/lib/mersennet (e.g. a mounted block volume:
 #                    --data-dir /mnt/blockstorage/mersennet). Existing data in
-#                    the previous location is moved there.
+#                    the previous location is moved there (after a free-space
+#                    check). An upgrade without it keeps the node's current
+#                    directory.
 #   --rpc-public     Listen for JSON-RPC on 0.0.0.0:8545 instead of localhost.
 #   --operator ADDR  Your wallet address. The node signs it into its `whoami`
 #                    attestation so you can claim the node as a verified node
@@ -42,6 +44,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 DATA_DIR="/var/lib/mersennet"
+DATA_DIR_SET=0
 RPC_ADDR=""
 FROM_SNAPSHOT=1
 RESET_STATE=0
@@ -49,8 +52,8 @@ OPERATOR=""
 SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --data-dir) DATA_DIR="${2:?--data-dir needs a path}"; shift 2 ;;
-        --data-dir=*) DATA_DIR="${1#*=}"; shift ;;
+        --data-dir) DATA_DIR="${2:?--data-dir needs a path}"; DATA_DIR_SET=1; shift 2 ;;
+        --data-dir=*) DATA_DIR="${1#*=}"; DATA_DIR_SET=1; shift ;;
         --rpc-public) RPC_ADDR="0.0.0.0:8545"; shift ;;
         --from-genesis) FROM_SNAPSHOT=0; shift ;;
         --operator) OPERATOR="${2:?--operator needs a 0x address}"; shift 2 ;;
@@ -60,6 +63,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
     esac
 done
+# An upgrade without --data-dir keeps the node where it is: falling back to
+# the default would move a node on a block volume onto the root disk.
+CURRENT_DIR="$(systemctl show mersennet -p WorkingDirectory --value 2>/dev/null || true)"
+if [[ $DATA_DIR_SET -eq 0 && -n "$CURRENT_DIR" && "$CURRENT_DIR" != "/" && -d "$CURRENT_DIR/data" ]]; then
+    DATA_DIR="$CURRENT_DIR"
+fi
 DATA_DIR="${DATA_DIR%/}"
 case "$DATA_DIR" in
     /tmp|/tmp/*|/var/tmp|/var/tmp/*|/dev/shm|/dev/shm/*)
@@ -123,7 +132,26 @@ PREV_DIR="$(systemctl show mersennet -p WorkingDirectory --value 2>/dev/null || 
 if [[ -n "$PREV_DIR" && "$PREV_DIR" != "$DATA_DIR" && -d "$PREV_DIR/data" && ! -d "$DATA_DIR/data" ]]; then
     echo "    moving existing chain data from $PREV_DIR to $DATA_DIR"
     mkdir -p "$DATA_DIR"
-    mv "$PREV_DIR/data" "$PREV_DIR/keys" "$DATA_DIR/" 2>/dev/null || true
+    # Across filesystems mv copies: a full target disk would leave half a
+    # database behind, so check the space first and never carry on after a
+    # failed move (the node is restarted where it was).
+    abort_move() {
+        echo "error: $1" >&2
+        echo "       Nothing was deleted; the node keeps running from $PREV_DIR." >&2
+        [[ $UPGRADE -eq 1 ]] && systemctl start mersennet
+        exit 1
+    }
+    if [[ "$(stat -c %d "$PREV_DIR")" != "$(stat -c %d "$DATA_DIR")" ]]; then
+        need_kb=$(du -sk "$PREV_DIR/data" "$PREV_DIR/keys" 2>/dev/null | awk '{s+=$1} END {print s+0}')
+        free_kb=$(df -Pk "$DATA_DIR" | awk 'NR==2 {print $4}')
+        if (( free_kb < need_kb + need_kb / 10 )); then
+            abort_move "$DATA_DIR has $((free_kb / 1048576)) GB free; moving the node needs $(( (need_kb + need_kb / 10) / 1048576 + 1 )) GB."
+        fi
+    fi
+    mv "$PREV_DIR/data" "$DATA_DIR/" || abort_move "moving $PREV_DIR/data to $DATA_DIR failed."
+    if [[ -d "$PREV_DIR/keys" ]]; then
+        mv "$PREV_DIR/keys" "$DATA_DIR/" || abort_move "moving $PREV_DIR/keys to $DATA_DIR failed."
+    fi
 fi
 mkdir -p "$DATA_DIR/data" "$DATA_DIR/keys" /etc/mersennet
 chown -R mersennet:mersennet "$DATA_DIR"
