@@ -1233,30 +1233,43 @@ impl MersennetOrdersState {
     }
 
     /// One-off repair of a market whose book was swept: cancels every resting
-    /// order priced outside `[lo, hi]` and sets the last trade price, which
-    /// every position in the market is marked at, to `reference`. Returns how
-    /// many orders were cancelled.
+    /// order priced outside `[lo, hi]`, gives every position entered outside
+    /// it the entry `reference` (so prices from the broken book neither pay
+    /// nor cost anyone), and sets the last trade price, which every position
+    /// in the market is marked at, to `reference`. Collateral is untouched.
+    /// Returns (orders cancelled, positions re-entered).
     pub fn repair_market(
         &mut self,
         market: MarketId,
         reference: U256,
         lo: U256,
         hi: U256,
-    ) -> usize {
+    ) -> (usize, usize) {
+        let out_of_band = |price: U256| price < lo || price > hi;
         let mut ids: Vec<OrderId> = self
             .orders
             .values()
-            .filter(|o| o.market == market && (o.price < lo || o.price > hi))
+            .filter(|o| o.market == market && out_of_band(o.price))
             .map(|o| o.id)
             .collect();
         ids.sort_by_key(|id| id.0);
         for id in &ids {
             self.cancel_order(*id);
         }
+        let mut reentered = 0;
+        for account in self.accounts.values_mut() {
+            if let Some(pos) = account.positions.get_mut(&market)
+                && pos.size != 0
+                && out_of_band(pos.entry_price)
+            {
+                pos.entry_price = reference;
+                reentered += 1;
+            }
+        }
         if let Some(m) = self.markets.get_mut(&market) {
             m.last_price = reference;
         }
-        ids.len()
+        (ids.len(), reentered)
     }
 
     fn levels_from_book(&self, levels: &BTreeMap<U256, VecDeque<OrderId>>) -> Vec<OrderBookLevel> {
@@ -1657,14 +1670,50 @@ mod tests {
             gtc,
         );
 
-        let cancelled = state.repair_market(
+        let position = |size: i128, entry: u64| Position {
+            size,
+            entry_price: U256::from(entry),
+            realized_pnl: 0,
+        };
+        let (carol, dave) = (addr(3), addr(4));
+        for (who, mkt, pos) in [
+            (carol, m, position(-20, 1_650_093)),
+            (dave, m, position(12, 11_495)),
+            (dave, other, position(1, 5_000_000)),
+        ] {
+            state
+                .accounts
+                .entry(who)
+                .or_default()
+                .positions
+                .insert(mkt, pos);
+        }
+
+        let (cancelled, reentered) = state.repair_market(
             m,
             U256::from(11_500u64),
             U256::from(3_450u64),
             U256::from(34_500u64),
         );
 
-        assert_eq!(cancelled, 3);
+        assert_eq!((cancelled, reentered), (3, 1));
+        let entry = |who: Address, mkt: MarketId| state.accounts[&who].positions[&mkt].entry_price;
+        assert_eq!(
+            entry(carol, m),
+            U256::from(11_500u64),
+            "entered on the broken book: re-entered"
+        );
+        assert_eq!(
+            entry(dave, m),
+            U256::from(11_495u64),
+            "entered before the sweep: untouched"
+        );
+        assert_eq!(
+            entry(dave, other),
+            U256::from(5_000_000u64),
+            "other markets: untouched"
+        );
+        assert_eq!(state.accounts[&carol].positions[&m].size, -20);
         assert!(state.orders.contains_key(&sane));
         assert!(state.orders.contains_key(&elsewhere));
         let book = state.order_book(m).unwrap();

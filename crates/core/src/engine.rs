@@ -491,7 +491,8 @@ const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
 /// MRSN/USD (market 1) on chain 131071: on 6 Oct 2026 at 17:51 UTC one sweep
 /// left its book with bids up to 143x its price, and positions are marked at
 /// the last trade, so every account holding MRSN was frozen. Repaired once at
-/// this height (expected Thu 8 Oct ~09:30 UTC) around $115 (priceScale 100).
+/// this height (expected Thu 8 Oct ~09:30 UTC) around $115 (priceScale 100);
+/// positions entered on the broken book are re-entered at $115.
 const MRSN_REPAIR: (u64, u64, u64) = (2_324_700, 1, 11_500);
 
 #[derive(Debug)]
@@ -1980,8 +1981,9 @@ impl Engine {
     }
 
     /// Consensus step at the repair height: the market's resting orders priced
-    /// outside 0.3x-3x of the reference are cancelled and its mark is reset to
-    /// the reference. No balance or position changes.
+    /// outside 0.3x-3x of the reference are cancelled, positions entered
+    /// outside that band and the mark are reset to the reference. Collateral
+    /// and position sizes do not change.
     fn maybe_market_repair(&mut self, height: u64) {
         let Some((at, market, reference)) = self.market_repair else {
             return;
@@ -1990,13 +1992,20 @@ impl Engine {
             return;
         }
         let reference = U256::from(reference);
-        let cancelled = self.orders.state.repair_market(
+        let (cancelled, reentered) = self.orders.state.repair_market(
             crate::mersennet_orders::MarketId(market),
             reference,
             reference * U256::from(3u64) / U256::from(10u64),
             reference * U256::from(3u64),
         );
-        tracing::warn!(height, market, cancelled, %reference, "market repaired: out-of-band orders cancelled, mark reset");
+        tracing::warn!(
+            height,
+            market,
+            cancelled,
+            reentered,
+            %reference,
+            "market repaired: out-of-band orders cancelled, out-of-band entries and the mark reset"
+        );
     }
 
     fn maybe_price_rescale(&mut self, height: u64) {
@@ -5262,6 +5271,20 @@ mod reorg_tests {
                     TimeInForce::Gtc,
                 );
             }
+            e.orders
+                .state
+                .accounts
+                .entry(Address::repeat_byte(0x0e))
+                .or_default()
+                .positions
+                .insert(
+                    market,
+                    crate::mersennet_orders::Position {
+                        size: -20,
+                        entry_price: U256::from(1_650_093u64),
+                        realized_pnl: 0,
+                    },
+                );
             e.set_market_repair(Some((3, market.0, 11_500)));
         }
         for _ in 0..4 {
@@ -5272,6 +5295,10 @@ mod reorg_tests {
         for e in [&p, &a] {
             let book = e.orders.state.order_book(market).unwrap();
             assert_eq!(book.bids.len(), 1, "only the in-band bid is left");
+            assert_eq!(
+                e.orders.state.accounts[&Address::repeat_byte(0x0e)].positions[&market].entry_price,
+                U256::from(11_500u64)
+            );
             assert_eq!(
                 e.orders.state.markets[&market].last_price,
                 U256::from(11_500u64)
