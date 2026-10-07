@@ -181,6 +181,12 @@ else
     printf 'Operator     %s — set one to be recognised as a node runner: re-run the installer with --operator 0xYOURWALLET (or add p2p.operator_address to /etc/mersennet/config.json and restart)\n' "$(yellow 'not set')"
 fi
 
+# Blocks to wall-clock time at about 2.05 s per block.
+blocks_eta() {
+    local m=$(( $1 * 205 / 100 / 60 ))
+    if (( m < 120 )); then echo "~$m min"; else echo "~$(( m / 60 )) h $(( m % 60 )) min"; fi
+}
+
 if [[ -n "$ident" ]]; then
     vset=$(curl -s --max-time 4 http://127.0.0.1:8545 -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"mersennet_validatorSet","params":[]}' 2>/dev/null)
     if echo "$vset" | grep -q "\"identity\":\"$ident\""; then
@@ -189,13 +195,22 @@ import json,sys
 d=json.load(sys.stdin)['result']
 v=next((v for v in d['validators'] if v['identity']=='$ident'),None)
 if v:
-    blocks_left=max(0,d['nextEpochAt']-d['height'])
-    print(f\"{v['status']}|{v['proposedSlots']}|{v['missedSlots']}|{d['epoch']}|{blocks_left}|{int(v['selfStake'],16)//10**18}\")" 2>/dev/null)
-        IFS='|' read -r st prop miss ep left selfst <<< "$vinfo"
+    back_at=d['nextEpochAt']
+    if v['status']=='jailed':
+        back_at=max(back_at, v.get('jailedUntilEpoch',0)*d.get('params',{}).get('epochBlocks',1800))
+    blocks_left=max(0,back_at-d['height'])
+    print(f\"{v['status']}|{v['proposedSlots']}|{v['missedSlots']}|{d['epoch']}|{blocks_left}|{int(v['selfStake'],16)//10**18}|{back_at}|{v.get('jailedUntilEpoch',0)}|{v.get('timesJailed',0)}\")" 2>/dev/null)
+        IFS='|' read -r st prop miss ep left selfst back until times <<< "$vinfo"
         case "$st" in
             active)  printf 'Validator    %s — %s · self-stake %s MRSN · epoch %s: %s blocks proposed, %s missed\n' "$ident" "$(green 'active')" "$selfst" "$ep" "$prop" "$miss" ;;
-            pending) printf 'Validator    %s — %s · joins the active set in %s blocks (~%s min)\n' "$ident" "$(yellow 'pending')" "$left" "$(( left * 2 / 60 ))" ;;
-            jailed)  printf 'Validator    %s — %s for this epoch (missed too many slots last epoch); back automatically in %s blocks\n' "$ident" "$(red 'jailed')" "$left" ;;
+            pending) printf 'Validator    %s — %s · joins the active set in %s blocks (%s)\n' "$ident" "$(yellow 'pending')" "$left" "$(blocks_eta "$left")" ;;
+            jailed)
+                if (( ${times:-0} > 1 )); then
+                    why="jailed $times times in a row: each repeat doubles the time out, 1, 2, 4, 8, 16, then 24 epochs; one full epoch without misses resets the count"
+                else
+                    why="it missed too many of its slots in an epoch"
+                fi
+                printf 'Validator    %s — %s until epoch %s (%s). Back automatically at block %s, in %s blocks (%s); keep the node running\n' "$ident" "$(red 'jailed')" "$until" "$why" "$back" "$left" "$(blocks_eta "$left")" ;;
             *)       printf 'Validator    %s — registered, status %s (epoch %s)\n' "$ident" "$(yellow "$st")" "$ep" ;;
         esac
     elif echo "$vset" | grep -q '"active":true'; then
