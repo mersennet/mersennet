@@ -1044,24 +1044,10 @@ impl Engine {
     /// recomputes the active set from the registry and installs it as the
     /// consensus validator set. Identical on producer and importer.
     fn maybe_epoch_transition(&mut self, height: u64) {
+        if !self.epoch_transition_due(height) {
+            return;
+        }
         let st = &self.orders.state.staking;
-        if !st.is_open_set_active(height) {
-            return;
-        }
-        let activation = st.params.activation_height;
-        let epoch_blocks = st.params.epoch_blocks.max(1);
-        let at_boundary = height == activation || height.is_multiple_of(epoch_blocks);
-        if !at_boundary {
-            return;
-        }
-        // Idempotency: the transition for this epoch already ran.
-        let epoch = height / epoch_blocks;
-        if !st.active_set.is_empty() && st.current_epoch == epoch && height != activation {
-            return;
-        }
-        if height == activation && st.current_epoch == epoch && !st.active_set.is_empty() {
-            return;
-        }
         if st.registry.is_empty() {
             // First activation: the genesis validators become registry
             // entries with their consensus stake as self-stake.
@@ -1100,6 +1086,36 @@ impl Engine {
             rotated = transition.rotated.len(),
             "epoch transition: validator set recomputed"
         );
+    }
+
+    /// The first block of an epoch (or the activation height) whose
+    /// transition this node has not applied yet.
+    fn epoch_transition_due(&self, height: u64) -> bool {
+        let st = &self.orders.state.staking;
+        if !st.is_open_set_active(height) {
+            return false;
+        }
+        let epoch_blocks = st.params.epoch_blocks.max(1);
+        if height != st.params.activation_height && !height.is_multiple_of(epoch_blocks) {
+            return false;
+        }
+        st.active_set.is_empty() || st.current_epoch != height / epoch_blocks
+    }
+
+    /// The set the transition for `height` will install, while it is due.
+    /// The first block of an epoch is authenticated and its slots counted
+    /// after that transition, which runs inside the block; a node deciding
+    /// whether to propose it has not run it yet. Electing from the set still
+    /// in place made the old rotation's leader propose: everyone ahead of it
+    /// in the new rotation was charged a missed slot, and a leader that had
+    /// just left the set had its block refused.
+    fn pending_epoch_rotation(&self, height: u64) -> Option<Vec<Address>> {
+        let st = &self.orders.state.staking;
+        if st.registry.is_empty() || !self.epoch_transition_due(height) {
+            return None;
+        }
+        let set = st.clone().epoch_transition(height).active_set;
+        (!set.is_empty()).then_some(set)
     }
 
     /// Leader-slot accounting for jailing: the proposer took height `height`
@@ -1141,6 +1157,9 @@ impl Engine {
     /// node maintains from block data, so every node computes the same
     /// rotation; never empties the rotation.
     fn leader_rotation(&self, height: u64) -> Vec<Address> {
+        if let Some(next) = self.pending_epoch_rotation(height) {
+            return next;
+        }
         let vs = self.validator_addresses();
         let st = &self.orders.state.staking;
         let bh = st.params.bench_height;
@@ -5820,6 +5839,73 @@ mod open_validator_set_tests {
             last.proposer_sig = b.proposer_sig;
         }
         b
+    }
+
+    /// Produce the next block the way the node does: it decides it leads the
+    /// height before the block (and so the epoch transition) runs.
+    fn produce_as_the_node_does(e: &mut Engine, skip: &[Address]) -> Block {
+        let mut r = 0;
+        while skip.contains(&e.leader_for_height(e.block_number, r).expect("leader")) {
+            r += 1;
+        }
+        let leader = e.leader_for_height(e.block_number, r).expect("leader");
+        let k = (1..=6u8)
+            .map(key)
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .expect("leader key");
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        b.proposer_sig = Some(crate::crypto::sign_block_proposal(b.number, b.hash, &k));
+        if let Some(last) = e.chain.last_mut()
+            && last.number == b.number
+        {
+            last.proposer = leader;
+            last.proposer_sig = b.proposer_sig;
+        }
+        b
+    }
+
+    #[test]
+    fn live_validators_are_never_charged_a_miss_when_the_set_changes_at_a_boundary() {
+        let (mut p, mut c) = (engine(), engine());
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        let stake = U256::from(5_000u64) * U256::from(MRSN);
+        let live: Vec<Address> = (1..=4u8).map(addr).collect();
+        let (mut charged, mut sizes) = (Vec::new(), Vec::new());
+        // v5 joins at 10 and never shows up: jailed at 20, back at 30,
+        // jailed again at 40. The set changes at every boundary.
+        for h in 1..=40u64 {
+            if h == 2 {
+                for e in [&mut p, &mut c] {
+                    e.orders
+                        .state
+                        .staking
+                        .register_validator(operator, v5, stake, 500, h)
+                        .unwrap();
+                }
+            }
+            let b = produce_as_the_node_does(&mut p, &[v5]);
+            c.import_block(b.clone());
+            assert_eq!(c.latest_height(), h, "the follower accepts block {h}");
+            for v in &live {
+                let missed = p.orders.state.staking.registry[v].missed_slots;
+                if missed > 0 {
+                    charged.push((h, *v, missed));
+                }
+            }
+            if h % 10 == 0 {
+                sizes.push(p.consensus.validators().len());
+            }
+        }
+        assert_eq!(sizes, [5, 4, 5, 4]);
+        assert!(
+            charged.is_empty(),
+            "live validators charged misses: {charged:?}"
+        );
     }
 
     /// A fresh process starts from the genesis validators in its config; the
