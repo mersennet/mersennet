@@ -47,6 +47,7 @@ fn precompile_tx(from: Address, nonce: u64, data: Bytes) -> Transaction {
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     }
 }
 

@@ -139,6 +139,11 @@ pub struct Transaction {
     /// field-derived hash.
     #[serde(default)]
     pub hash: Option<B256>,
+    /// The signed envelope a wallet transaction arrived in. Its signature is
+    /// over fields this struct does not keep (EIP-1559 fees, access list), so
+    /// an importer can only verify the sender from these bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Bytes>,
 }
 
 impl Transaction {
@@ -183,6 +188,7 @@ impl Default for Transaction {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         }
     }
 }
@@ -507,6 +513,9 @@ pub struct Engine {
     pub fee_max_change_denominator: u64,
     /// Fee floor + split (consensus switch `fee_floor_height`, 0 = off).
     pub fee_floor_height: u64,
+    /// Consensus switch (`None` = off): from this height every transaction in
+    /// a block proves its sender and the block hash commits to it signed.
+    signed_tx_height: Option<u64>,
     pub min_base_fee: U256,
     pub fee_treasury_bps: u64,
     pub fee_proposer_bps: u64,
@@ -855,6 +864,7 @@ impl Engine {
             },
             fee_max_change_denominator: 8,
             fee_floor_height: 0,
+            signed_tx_height: None,
             min_base_fee: U256::ZERO,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -1957,6 +1967,44 @@ impl Engine {
         }
     }
 
+    pub fn set_signed_tx_height(&mut self, height: Option<u64>) {
+        self.signed_tx_height = height;
+    }
+
+    fn signed_txs_at(&self, height: u64) -> bool {
+        self.signed_tx_height.is_some_and(|from| height >= from)
+    }
+
+    /// Does `tx` prove that `from` signed it? A transaction with an envelope
+    /// is exactly what the envelope decodes to (the decoder recovers the
+    /// signer); one without carries a signature in the native scheme.
+    fn tx_proves_sender(&self, tx: &Transaction) -> bool {
+        let Some(raw) = &tx.raw else {
+            return self.verify_tx_signature(tx).is_ok();
+        };
+        let Ok(signed) = crypto::decode_raw_signed_tx(raw) else {
+            return false;
+        };
+        let d = &signed.tx;
+        let same_payload = || match (&d.shielded_payload, &tx.shielded_payload) {
+            (None, None) => true,
+            (Some(a), Some(b)) => bincode::serialize(a).ok() == bincode::serialize(b).ok(),
+            _ => false,
+        };
+        d.from == tx.from
+            && d.to == tx.to
+            && d.value == tx.value
+            && d.data == tx.data
+            && d.nonce == tx.nonce
+            && d.gas_limit == tx.gas_limit
+            && d.gas_price == tx.gas_price
+            && d.chain_id == tx.chain_id
+            && d.tx_type == tx.tx_type
+            && d.signature == tx.signature
+            && d.hash == tx.hash
+            && same_payload()
+    }
+
     /// Consensus switch: precompiles authorise on the call frame's caller (0 = off).
     pub fn set_revert_reasons_height(&mut self, height: u64) {
         precompiles::set_revert_reasons_height(height);
@@ -2101,6 +2149,7 @@ impl Engine {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         };
         // Use the same hash the tx index/lookup will compute, so the
         // returned txHash resolves via eth_getTransactionByHash.
@@ -2471,6 +2520,15 @@ impl Engine {
                 let Some(tx) = self.mempool.take_ready(sender, expected_nonce) else {
                     continue;
                 };
+                if self.signed_txs_at(self.block_number) && !self.tx_proves_sender(&tx) {
+                    tracing::warn!(
+                        from = %tx.from,
+                        nonce = tx.nonce,
+                        "dropping mempool tx that does not prove its sender"
+                    );
+                    progressed = true;
+                    continue;
+                }
 
                 let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                     self.apply_shielded_tx(&tx)
@@ -2648,7 +2706,7 @@ impl Engine {
         // root, and receipts root. Computed here, after the state root
         // is known, so the hash actually commits to the block's content.
         let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
-        let tx_root = Self::compute_tx_root(&transactions);
+        let tx_root = Self::compute_tx_root(&transactions, self.signed_txs_at(self.block_number));
         let receipts_root = Self::compute_receipts_root(&receipts);
         let header_witness = self.header_witness(
             gas_used,
@@ -2861,6 +2919,10 @@ impl Engine {
                 let Some(tx) = self.mempool.take_ready(sender, expected_nonce) else {
                     continue;
                 };
+                if self.signed_txs_at(self.block_number) && !self.tx_proves_sender(&tx) {
+                    progressed = true;
+                    continue;
+                }
 
                 estimated_gas = estimated_gas.saturating_add(tx_gas);
                 if let Some(nonce) = nonce_cache.get_mut(&tx.from) {
@@ -3045,7 +3107,7 @@ impl Engine {
             .as_secs();
 
         let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
-        let tx_root = Self::compute_tx_root(&transactions);
+        let tx_root = Self::compute_tx_root(&transactions, self.signed_txs_at(self.block_number));
         let receipts_root = Self::compute_receipts_root(&receipts);
         let header_witness = self.header_witness(
             gas_used,
@@ -3500,6 +3562,29 @@ impl Engine {
                     "block {} proposer {} is not an elected leader for this height",
                     block.number,
                     block.proposer
+                );
+            }
+        }
+        // The proposer's signature covers only the hash it claims. From the
+        // switch the hash must re-derive from the contents, and each
+        // transaction must prove its sender: a leader could otherwise move
+        // any account's funds, and any relay could edit the block in transit.
+        // Checked before slot accounting so a rejected copy leaves no trace;
+        // an intact copy of the same block can still be imported.
+        if self.signed_txs_at(block.number) {
+            if !self.header_commits_to_hash(&block) {
+                anyhow::bail!(
+                    "block {} hash {} does not commit to its contents",
+                    block.number,
+                    block.hash
+                );
+            }
+            if let Some(tx) = block.transactions.iter().find(|tx| !self.tx_proves_sender(tx)) {
+                anyhow::bail!(
+                    "block {} transaction {} does not prove its sender {}",
+                    block.number,
+                    tx.canonical_hash(),
+                    tx.from
                 );
             }
         }
@@ -4027,6 +4112,7 @@ impl Engine {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -4125,6 +4211,7 @@ impl Engine {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -4825,41 +4912,64 @@ impl Engine {
     /// every node) and only then stamps its address into the block, so both
     /// are tried.
     pub fn header_commits_to_hash(&self, block: &Block) -> bool {
-        let tx_root = Self::compute_tx_root(&block.transactions);
+        [self.coinbase, block.coinbase]
+            .iter()
+            .any(|coinbase| self.derive_block_hash_with(block, *coinbase) == block.hash)
+    }
+
+    fn derive_block_hash_with(&self, block: &Block, coinbase: Address) -> B256 {
+        let tx_root = Self::compute_tx_root(&block.transactions, self.signed_txs_at(block.number));
         let receipts_root = Self::compute_receipts_root(&block.receipts);
-        [self.coinbase, block.coinbase].iter().any(|coinbase| {
-            let mut coinbase_bytes = [0u8; 20];
-            coinbase_bytes.copy_from_slice(coinbase.as_slice());
-            let witness = mersennet_zkp::sp1::BlockHeaderWitness {
-                chain_id: block.chain_id,
-                gas_limit: block.gas_limit,
-                gas_used: block.gas_used,
-                base_fee_be: block.base_fee.to_be_bytes::<32>(),
-                coinbase: coinbase_bytes,
-                tx_count: block.transactions.len() as u64,
-                parent_hash: block.parent_hash.0,
-                timestamp: block.timestamp,
-                tx_root: tx_root.0,
-                state_root: block.state_root.0,
-                receipts_root: receipts_root.0,
-            };
-            B256::from(mersennet_zkp::sp1::derive_block_hash(
-                block.number,
-                &witness,
-            )) == block.hash
-        })
+        let mut coinbase_bytes = [0u8; 20];
+        coinbase_bytes.copy_from_slice(coinbase.as_slice());
+        let witness = mersennet_zkp::sp1::BlockHeaderWitness {
+            chain_id: block.chain_id,
+            gas_limit: block.gas_limit,
+            gas_used: block.gas_used,
+            base_fee_be: block.base_fee.to_be_bytes::<32>(),
+            coinbase: coinbase_bytes,
+            tx_count: block.transactions.len() as u64,
+            parent_hash: block.parent_hash.0,
+            timestamp: block.timestamp,
+            tx_root: tx_root.0,
+            state_root: block.state_root.0,
+            receipts_root: receipts_root.0,
+        };
+        B256::from(mersennet_zkp::sp1::derive_block_hash(block.number, &witness))
     }
 
     /// Keccak Merkle-ish root over the ordered transaction hashes. A
     /// simple sequential keccak accumulator is sufficient to bind the
-    /// exact transaction list + order into the block hash.
-    fn compute_tx_root(transactions: &[Transaction]) -> B256 {
+    /// exact transaction list + order into the block hash. With `signed`,
+    /// each transaction is committed with its sender and signature, so no
+    /// part of it can change without changing the block hash.
+    fn compute_tx_root(transactions: &[Transaction], signed: bool) -> B256 {
         if transactions.is_empty() {
             return B256::ZERO;
         }
         let mut buf = Vec::with_capacity(transactions.len() * 32);
         for tx in transactions {
-            buf.extend_from_slice(crate::crypto::tx_signing_hash(tx).as_slice());
+            let leaf = if signed {
+                Self::signed_tx_commitment(tx)
+            } else {
+                crate::crypto::tx_signing_hash(tx)
+            };
+            buf.extend_from_slice(leaf.as_slice());
+        }
+        keccak256(&buf)
+    }
+
+    fn signed_tx_commitment(tx: &Transaction) -> B256 {
+        if let Some(raw) = &tx.raw {
+            return keccak256(raw);
+        }
+        let mut buf = Vec::with_capacity(32 + 20 + 72);
+        buf.extend_from_slice(crate::crypto::tx_signing_hash(tx).as_slice());
+        buf.extend_from_slice(tx.from.as_slice());
+        if let Some((r, s, v)) = tx.signature {
+            buf.extend_from_slice(&r.to_be_bytes::<32>());
+            buf.extend_from_slice(&s.to_be_bytes::<32>());
+            buf.extend_from_slice(&v.to_be_bytes());
         }
         keccak256(&buf)
     }
@@ -5293,6 +5403,7 @@ mod reorg_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: Some(h),
+            raw: None,
         })
         .unwrap();
         e.cache_raw_tx(h, vec![1, 2, 3]);
@@ -6440,6 +6551,7 @@ mod open_validator_set_tests {
                 tx_type: 0,
                 shielded_payload: None,
                 hash: None,
+                raw: None,
             })
             .expect("tx accepted into mempool");
             produce(&mut e, 0, &[]);
@@ -6559,6 +6671,7 @@ mod history_index_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
     }
@@ -6736,6 +6849,7 @@ mod agent_delegation_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         produce(e);
@@ -7011,6 +7125,7 @@ mod price_scale_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
     }
@@ -7234,6 +7349,7 @@ mod frame_caller_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         produce(e);
@@ -7425,6 +7541,7 @@ mod settlement_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
     }
@@ -7915,6 +8032,7 @@ mod liquidation_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         produce(e);

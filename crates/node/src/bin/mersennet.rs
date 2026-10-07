@@ -2100,6 +2100,7 @@ fn run_p2p_demo() -> anyhow::Result<()> {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         }),
     );
     network.broadcast(
