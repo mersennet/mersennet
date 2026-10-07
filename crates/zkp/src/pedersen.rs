@@ -73,18 +73,19 @@ impl Commit {
 
     /// Compute the commitment. Returns the same `Fr` value across
     /// repeated calls with the same `(msg, randomness)`.
+    #[cfg(feature = "prover")]
     pub fn commit(&self, msg: &[Fr], randomness: Fr) -> Fr {
-        #[cfg(feature = "prover")]
-        {
-            return self.inner.commit_to_fr(&self.poseidon, msg, randomness);
-        }
-        #[cfg(not(feature = "prover"))]
-        {
-            let mut buf = Vec::with_capacity(msg.len() + 1);
-            buf.extend_from_slice(msg);
-            buf.push(randomness);
-            self.poseidon.hash_many(&buf)
-        }
+        self.inner.commit_to_fr(&self.poseidon, msg, randomness)
+    }
+
+    /// Compute the commitment. Returns the same `Fr` value across
+    /// repeated calls with the same `(msg, randomness)`.
+    #[cfg(not(feature = "prover"))]
+    pub fn commit(&self, msg: &[Fr], randomness: Fr) -> Fr {
+        let mut buf = Vec::with_capacity(msg.len() + 1);
+        buf.extend_from_slice(msg);
+        buf.push(randomness);
+        self.poseidon.hash_many(&buf)
     }
 }
 
@@ -183,8 +184,8 @@ mod real {
         for ctr in 0u64..1_000 {
             let mut h = Keccak256::new();
             h.update(domain);
-            h.update(&index.to_le_bytes());
-            h.update(&ctr.to_le_bytes());
+            h.update(index.to_le_bytes());
+            h.update(ctr.to_le_bytes());
             let digest = h.finalize();
             let mut x_bytes = [0u8; 32];
             x_bytes.copy_from_slice(&digest);

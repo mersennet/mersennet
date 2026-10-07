@@ -279,7 +279,7 @@ mod real {
             // having to parse the full ciphertext. NOT security-
             // sensitive.
             let mut h = Keccak256::new();
-            h.update(&c1_bytes);
+            h.update(c1_bytes);
             let mut buf = [0u8; 32];
             buf.copy_from_slice(&h.finalize());
             let ephemeral = Fr::from_bytes_reduce(&buf);
