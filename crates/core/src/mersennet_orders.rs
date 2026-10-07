@@ -189,9 +189,15 @@ pub struct MersennetOrdersState {
     /// Whether the one-time unit migration at `settlement_height` has run.
     /// Persisted in its own key; absent while false.
     pub units_migrated: bool,
-    /// Resting orders cancelled by self-trade prevention during the current
-    /// call (drained by the precompile to emit cancel events). Not persisted.
+    /// Resting orders cancelled while matching during the current call — by
+    /// self-trade prevention, or because their owner could not margin the
+    /// fill (drained by the precompile to emit cancel events). Not persisted.
     pub self_trade_cancels: Vec<OrderId>,
+    /// From this height (the engine's `signed_tx_height`, copied in every
+    /// block) new orders must be priced within 10x of the last trade and a
+    /// resting order whose owner cannot margin the fill is cancelled instead
+    /// of stopping the match. Not persisted.
+    pub safety_height: Option<u64>,
     /// Account being force-closed by `liquidate_on_book` (margin checks are
     /// bypassed for its closing sweeps). Never persisted.
     pub liquidating: Option<Address>,
@@ -666,15 +672,26 @@ impl MersennetOrdersState {
         post_only: bool,
         expire_at: u64,
     ) -> Result<OrderOutcome, MersennetOrdersError> {
-        match self.markets.get(&market) {
+        let last_price = match self.markets.get(&market) {
             None => return Err(MersennetOrdersError::UnknownMarket),
             Some(m) if m.status != MarketStatus::Active => {
                 return Err(MersennetOrdersError::MarketHalted);
             }
-            _ => {}
-        }
+            Some(m) => m.last_price,
+        };
         if size.is_zero() {
             return Err(MersennetOrdersError::InvalidSize);
+        }
+        // A bid at 143x the market (6 Oct, MRSN/USD) became every position's
+        // mark once one trade printed against it. Liquidation sweeps price
+        // at the extremes on purpose and are exempt.
+        let ten = U256::from(10u64);
+        if self.safety_active()
+            && self.liquidating != Some(owner)
+            && !last_price.is_zero()
+            && (price > last_price.saturating_mul(ten) || price.saturating_mul(ten) < last_price)
+        {
+            return Err(MersennetOrdersError::PriceOutOfBand);
         }
 
         // Post-only and GTD are maker semantics: they only make sense for
@@ -767,10 +784,24 @@ impl MersennetOrdersState {
                     let maker_new_size =
                         self.projected_position_size(maker_owner, market, maker_side, fill);
 
-                    if !self.validate_fill_margin(owner, taker_new_size, market)
-                        || !self.validate_fill_margin(maker_owner, maker_new_size, market)
-                    {
+                    if !self.validate_fill_margin(owner, taker_new_size, market) {
                         break 'outer;
+                    }
+                    if !self.validate_fill_margin(maker_owner, maker_new_size, market) {
+                        if !self.safety_active() {
+                            break 'outer;
+                        }
+                        // A resting order its owner cannot margin would stop
+                        // every taker (and every liquidation) at this level:
+                        // it is dropped like a self-trade and matching goes on.
+                        if let Some(removed) = queue.remove(idx) {
+                            self.orders.remove(&removed);
+                            if let Some(account) = self.accounts.get_mut(&maker_owner) {
+                                account.open_orders.retain(|id| *id != removed);
+                            }
+                            self.self_trade_cancels.push(removed);
+                        }
+                        continue;
                     }
 
                     {
@@ -1013,6 +1044,10 @@ impl MersennetOrdersState {
             deficit,
             deleveraged_accounts: deleveraged,
         }
+    }
+
+    fn safety_active(&self) -> bool {
+        self.safety_height.is_some_and(|h| self.current_height >= h)
     }
 
     pub fn validate_fill_margin(
@@ -1620,6 +1655,100 @@ mod tests {
 
     fn addr(b: u8) -> Address {
         Address::from_slice(&[b; 20])
+    }
+
+    #[test]
+    fn from_the_safety_height_far_off_prices_are_refused() {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+        state.markets.get_mut(&m).unwrap().last_price = U256::from(11_500u64);
+        let alice = addr(1);
+        let bid = |state: &mut MersennetOrdersState, price: u64| {
+            let (side, size, tif) = (Side::Buy, U256::from(1u64), TimeInForce::Gtc);
+            state.submit_order_ext(alice, m, side, U256::from(price), size, tif, false, 0)
+        };
+        assert!(
+            bid(&mut state, 1_650_000).is_ok(),
+            "no band before the switch"
+        );
+
+        state.safety_height = Some(10);
+        state.current_height = 10;
+        assert!(matches!(
+            bid(&mut state, 1_650_000),
+            Err(MersennetOrdersError::PriceOutOfBand)
+        ));
+        assert!(matches!(
+            bid(&mut state, 1_000),
+            Err(MersennetOrdersError::PriceOutOfBand)
+        ));
+        assert!(bid(&mut state, 11_600).is_ok());
+        state.liquidating = Some(alice);
+        assert!(
+            bid(&mut state, 1_650_000).is_ok(),
+            "liquidation sweeps are exempt"
+        );
+    }
+
+    #[test]
+    fn from_the_safety_height_an_unmargined_resting_order_no_longer_walls_the_book() {
+        let (broke, rich, taker) = (addr(1), addr(2), addr(3));
+        let setup = || {
+            let mut state = MersennetOrdersState::new();
+            let m = state.add_market("TEST/USD", U256::from(1u64), U256::from(1u64));
+            let gtc = TimeInForce::Gtc;
+            state.place_order(
+                broke,
+                m,
+                Side::Sell,
+                U256::from(100u64),
+                U256::from(5u64),
+                gtc,
+            );
+            state.place_order(
+                rich,
+                m,
+                Side::Sell,
+                U256::from(101u64),
+                U256::from(5u64),
+                gtc,
+            );
+            state.markets.get_mut(&m).unwrap().last_price = U256::from(100u64);
+            state.set_margin_params(1_000, 500);
+            for who in [rich, taker] {
+                state.deposit_collateral(who, U256::from(1_000_000u64));
+            }
+            (state, m)
+        };
+        let buy = |state: &mut MersennetOrdersState, m: MarketId| {
+            let (price, size, tif) = (U256::from(105u64), U256::from(5u64), TimeInForce::Ioc);
+            state
+                .submit_order_ext(taker, m, Side::Buy, price, size, tif, false, 0)
+                .unwrap()
+        };
+
+        let (mut state, m) = setup();
+        assert!(
+            buy(&mut state, m).trades.is_empty(),
+            "before the switch the first ask stops the match"
+        );
+
+        let (mut state, m) = setup();
+        state.safety_height = Some(0);
+        let outcome = buy(&mut state, m);
+        assert_eq!(outcome.trades.len(), 1);
+        assert_eq!(outcome.trades[0].maker, rich);
+        assert_eq!(
+            state.self_trade_cancels.len(),
+            1,
+            "the ask its owner cannot margin is cancelled"
+        );
+        assert!(
+            state
+                .accounts
+                .get(&broke)
+                .is_none_or(|a| a.open_orders.is_empty())
+        );
     }
 
     #[test]

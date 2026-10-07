@@ -355,6 +355,12 @@ fn main() -> anyhow::Result<()> {
         app_config.engine.fee_elasticity_multiplier,
         app_config.engine.fee_max_change_denominator,
     );
+    engine.set_signed_tx_height(
+        app_config
+            .engine
+            .signed_tx_height
+            .or_else(|| mersennet::config::default_signed_tx_height(app_config.engine.chain_id)),
+    );
     engine.set_fee_floor_params(
         app_config.engine.fee_floor_height,
         app_config.engine.min_base_fee_wei,
@@ -1515,6 +1521,12 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
         config.engine.gas_limit_per_block,
         config.engine.fee_elasticity_multiplier,
         config.engine.fee_max_change_denominator,
+    );
+    engine.set_signed_tx_height(
+        config
+            .engine
+            .signed_tx_height
+            .or_else(|| mersennet::config::default_signed_tx_height(config.engine.chain_id)),
     );
     engine.set_fee_floor_params(
         config.engine.fee_floor_height,

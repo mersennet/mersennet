@@ -286,7 +286,7 @@ pub fn tx_to_wire_with_raw(tx: &Transaction, raw: Option<&[u8]>) -> WireTx {
         tx_type: tx.tx_type,
         shielded_payload: tx.shielded_payload.clone(),
         hash: tx.hash.map(|h| hex_b256(&h)),
-        raw: raw.or(tx.raw.as_deref()).map(hex::encode),
+        raw: raw.or(tx.raw.as_ref().map(|b| &b[..])).map(hex::encode),
     }
 }
 

@@ -2411,6 +2411,7 @@ impl Engine {
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = self.block_number;
+        self.orders.state.safety_height = self.signed_tx_height;
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -3579,7 +3580,11 @@ impl Engine {
                     block.hash
                 );
             }
-            if let Some(tx) = block.transactions.iter().find(|tx| !self.tx_proves_sender(tx)) {
+            if let Some(tx) = block
+                .transactions
+                .iter()
+                .find(|tx| !self.tx_proves_sender(tx))
+            {
                 anyhow::bail!(
                     "block {} transaction {} does not prove its sender {}",
                     block.number,
@@ -3614,6 +3619,7 @@ impl Engine {
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = block.number;
+        self.orders.state.safety_height = self.signed_tx_height;
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -4935,7 +4941,10 @@ impl Engine {
             state_root: block.state_root.0,
             receipts_root: receipts_root.0,
         };
-        B256::from(mersennet_zkp::sp1::derive_block_hash(block.number, &witness))
+        B256::from(mersennet_zkp::sp1::derive_block_hash(
+            block.number,
+            &witness,
+        ))
     }
 
     /// Keccak Merkle-ish root over the ordered transaction hashes. A
@@ -5519,6 +5528,157 @@ mod reorg_tests {
         };
         let native = crate::crypto::sign_transaction(&native, &key).tx;
         assert_eq!(e.audit_tx_signature(&native), "native_ok");
+    }
+
+    /// What a leader can do to a block it produced: change it and sign the
+    /// new hash with its own key.
+    fn reseal(e: &Engine, mut b: Block) -> Block {
+        b.hash = e.derive_block_hash_with(&b, Address::ZERO);
+        let key = keys()
+            .into_iter()
+            .find(|k| crate::crypto::address_from_signing_key(k) == b.proposer)
+            .unwrap();
+        b.proposer_sig = Some(crate::crypto::sign_block_proposal(b.number, b.hash, &key));
+        b
+    }
+
+    #[test]
+    fn from_the_switch_imports_require_every_sender_to_be_proven() {
+        let (key, alice) = crate::crypto::generate_keypair();
+        let victim = Address::repeat_byte(0x66);
+        let one_mrsn = U256::from(10u64).pow(U256::from(18u64));
+        let fresh = || {
+            let mut e = with_validators(engine());
+            e.set_signed_tx_height(Some(1));
+            for who in [alice, victim] {
+                e.fund_account(who, one_mrsn, 0);
+            }
+            e
+        };
+        let mut p = fresh();
+        let tx = Transaction {
+            from: alice,
+            to: Some(Address::repeat_byte(0x22)),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        p.submit_tx(crate::crypto::sign_transaction(&tx, &key).tx)
+            .unwrap();
+        let honest = produce_as_leader(&mut p, 0);
+        assert_eq!(honest.transactions.len(), 1);
+
+        let mut forged = honest.clone();
+        forged.transactions[0].from = victim;
+        let mut unsigned = honest.clone();
+        unsigned.transactions[0].signature = None;
+        let mut tampered = honest.clone();
+        tampered.transactions[0].to = Some(victim);
+
+        let mut a = fresh();
+        for (what, bad) in [
+            ("sender swapped by the leader", reseal(&a, forged)),
+            ("signature dropped by the leader", reseal(&a, unsigned)),
+            ("edited by a relay", tampered),
+        ] {
+            a.import_block(bad);
+            assert_eq!(a.latest_height(), 0, "{what}: rejected");
+        }
+        a.import_block(honest.clone());
+        assert_eq!(
+            a.latest_height(),
+            honest.number,
+            "the intact block still imports"
+        );
+        assert_eq!(a.get_balance(victim).unwrap(), one_mrsn);
+    }
+
+    #[test]
+    fn from_the_switch_a_wallet_transaction_travels_with_its_envelope() {
+        // EIP-1559 transfer on chain 131071 (crypto::rlp_decode tests).
+        const WALLET_TX: &str = "02f86d8301ffff80010782520894ff00000000000000000000000000000000000011880de0b6b3a764000080c080a0622575814887e044fea9579b9cfd6884ace1d4f2e10e2e9fab58a4df0a3c0e03a060d1356f86b663b4887ed464262d3f84548036147f4d71e8c772806bb7058fae";
+        let wallet = crate::crypto::decode_raw_signed_tx(&hex::decode(WALLET_TX).unwrap())
+            .unwrap()
+            .tx;
+        let fresh = || {
+            let mut e = with_validators(engine());
+            e.set_signed_tx_height(Some(1));
+            for who in [wallet.from, Address::repeat_byte(0x66)] {
+                e.fund_account(who, U256::from(10u64).pow(U256::from(19u64)), 0);
+            }
+            e
+        };
+        let mut p = fresh();
+        p.submit_tx_unsigned(wallet.clone()).unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert_eq!(block.transactions.len(), 1);
+        assert!(block.transactions[0].raw.is_some());
+
+        // The root commits to keccak(raw), so this keeps the block hash.
+        let mut forged = block.clone();
+        forged.transactions[0].from = Address::repeat_byte(0x66);
+        let mut a = fresh();
+        a.import_block(forged);
+        assert_eq!(
+            a.latest_height(),
+            0,
+            "a sender the envelope does not name is rejected"
+        );
+        a.import_block(block.clone());
+        assert_eq!(a.latest_height(), block.number);
+    }
+
+    #[test]
+    fn before_the_switch_blocks_import_as_they_always_have() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        a.set_signed_tx_height(Some(100));
+        for e in [&mut p, &mut a] {
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        let (bob, gas_price) = (
+            Address::from_slice(&[0x22; 20]),
+            U256::from(2_000_000_000u64),
+        );
+        p.transfer(alice, bob, U256::from(1u64), 21_000, gas_price, 0)
+            .unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        a.import_block(block.clone());
+        assert_eq!(a.latest_height(), block.number);
+    }
+
+    #[test]
+    fn from_the_switch_the_producer_leaves_out_what_it_cannot_prove() {
+        let (key, alice) = crate::crypto::generate_keypair();
+        let carol = Address::from_slice(&[0x33; 20]);
+        let mut p = with_validators(engine());
+        p.set_signed_tx_height(Some(1));
+        for who in [alice, carol] {
+            p.fund_account(who, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        let (bob, gas_price) = (
+            Address::from_slice(&[0x22; 20]),
+            U256::from(2_000_000_000u64),
+        );
+        p.transfer(carol, bob, U256::from(1u64), 21_000, gas_price, 0)
+            .unwrap();
+        let tx = Transaction {
+            from: alice,
+            to: Some(bob),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price,
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        p.submit_tx(crate::crypto::sign_transaction(&tx, &key).tx)
+            .unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert_eq!(block.transactions.len(), 1);
+        assert_eq!(block.transactions[0].from, alice);
     }
 
     #[test]
