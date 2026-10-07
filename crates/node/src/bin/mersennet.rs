@@ -378,6 +378,12 @@ fn main() -> anyhow::Result<()> {
             .signed_tx_height
             .or_else(|| mersennet::config::default_signed_tx_height(app_config.engine.chain_id)),
     );
+    engine.set_mark_price_height(
+        app_config
+            .engine
+            .mark_price_height
+            .or_else(|| mersennet::config::default_mark_price_height(app_config.engine.chain_id)),
+    );
     engine.set_fee_floor_params(
         app_config.engine.fee_floor_height,
         app_config.engine.min_base_fee_wei,
@@ -1547,6 +1553,12 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
             .engine
             .signed_tx_height
             .or_else(|| mersennet::config::default_signed_tx_height(config.engine.chain_id)),
+    );
+    engine.set_mark_price_height(
+        config
+            .engine
+            .mark_price_height
+            .or_else(|| mersennet::config::default_mark_price_height(config.engine.chain_id)),
     );
     engine.set_fee_floor_params(
         config.engine.fee_floor_height,

@@ -539,6 +539,9 @@ pub struct Engine {
     /// Consensus switch (`None` = off): from this height every transaction in
     /// a block proves its sender and the block hash commits to it signed.
     signed_tx_height: Option<u64>,
+    /// Consensus switch (`None` = off): from this height positions are marked
+    /// at the bounded mark and the circuit breaker can halt a market.
+    mark_price_height: Option<u64>,
     pub min_base_fee: U256,
     pub fee_treasury_bps: u64,
     pub fee_proposer_bps: u64,
@@ -892,6 +895,7 @@ impl Engine {
             fee_max_change_denominator: 8,
             fee_floor_height: 0,
             signed_tx_height: None,
+            mark_price_height: None,
             min_base_fee: U256::ZERO,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -2005,6 +2009,10 @@ impl Engine {
         self.signed_tx_height = height;
     }
 
+    pub fn set_mark_price_height(&mut self, height: Option<u64>) {
+        self.mark_price_height = height;
+    }
+
     fn signed_txs_at(&self, height: u64) -> bool {
         self.signed_tx_height.is_some_and(|from| height >= from)
     }
@@ -2490,6 +2498,9 @@ impl Engine {
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = self.block_number;
         self.orders.state.safety_height = self.signed_tx_height;
+        self.orders.state.mark_height = self.mark_price_height;
+        let epoch = self.orders.state.staking.epoch_of(self.block_number);
+        self.orders.state.update_marks(epoch);
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -3700,6 +3711,9 @@ impl Engine {
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = block.number;
         self.orders.state.safety_height = self.signed_tx_height;
+        self.orders.state.mark_height = self.mark_price_height;
+        let epoch = self.orders.state.staking.epoch_of(block.number);
+        self.orders.state.update_marks(epoch);
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -6311,6 +6325,41 @@ mod reorg_tests {
         tampered.timestamp += 1;
         assert!(!other.header_commits_to_hash(&tampered));
     }
+    #[test]
+    fn producer_and_importer_move_the_marks_together() {
+        let fresh = || {
+            let mut e = with_validators(engine());
+            e.set_mark_price_height(Some(1));
+            let m = e
+                .orders
+                .state
+                .add_market("TST/USD", U256::from(1u64), U256::from(1u64));
+            e.orders.state.markets.get_mut(&m).unwrap().last_price = U256::from(10_000u64);
+            (e, m)
+        };
+        let ((mut p, m), (mut a, _)) = (fresh(), fresh());
+        for height in 1..=3u64 {
+            if height == 2 {
+                for e in [&mut p, &mut a] {
+                    e.orders.state.markets.get_mut(&m).unwrap().last_price = U256::from(20_000u64);
+                }
+            }
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), height);
+            assert_eq!(a.orders.state.marks, p.orders.state.marks, "block {height}");
+        }
+        assert_eq!(
+            p.orders.state.marks[&m].mark,
+            U256::from(10_404u64),
+            "2% a block"
+        );
+        assert_eq!(
+            a.evm.state.compute_state_root(),
+            p.evm.state.compute_state_root()
+        );
+    }
+
 }
 
 /// Precompile calls run through a process-wide context that the engine
