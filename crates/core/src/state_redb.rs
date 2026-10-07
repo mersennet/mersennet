@@ -980,9 +980,26 @@ impl StateBackend for RedbState {
             storage.push((key.value().to_vec(), value.value().to_vec()));
         }
 
-        let mersennet_orders = {
+        let (mersennet_orders, orders_extra) = {
             let table = read_txn.open_table(MERSENNET_ORDERS)?;
-            table.get(b"state".as_slice())?.map(|v| v.value().to_vec())
+            let mut extra = Vec::new();
+            for entry in table.iter()? {
+                let (key, value) = entry?;
+                if key.value() != b"state" {
+                    extra.push((key.value().to_vec(), value.value().to_vec()));
+                }
+            }
+            (
+                table.get(b"state".as_slice())?.map(|v| v.value().to_vec()),
+                extra,
+            )
+        };
+        let validator_registry = match read_txn.open_table(HEIGHT_META) {
+            Ok(meta) => meta
+                .get(b"validator_registry".as_slice())?
+                .map(|v| vec![(b"validator_registry".to_vec(), v.value().to_vec())])
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
         };
 
         let bridge_orders_to_evm = {
@@ -1003,12 +1020,14 @@ impl StateBackend for RedbState {
             mersennet_orders,
             bridge_orders_to_evm,
             bridge_evm_to_orders,
+            orders_extra,
+            validator_registry,
         };
         Ok(bincode::serialize(&snapshot)?)
     }
 
     fn import_snapshot_bytes(&self, data: &[u8]) -> Result<SnapshotMeta> {
-        let snapshot: SnapshotRecord = bincode::deserialize(data)?;
+        let snapshot = SnapshotRecord::decode(data)?;
 
         let write_txn = self.db.begin_write()?;
         {
@@ -1040,9 +1059,29 @@ impl StateBackend for RedbState {
                 storage_table.insert(key.as_slice(), value.as_slice())?;
             }
         }
-        if let Some(data) = snapshot.mersennet_orders {
+        {
             let mut table = write_txn.open_table(MERSENNET_ORDERS)?;
-            table.insert(b"state".as_slice(), data.as_slice())?;
+            let keys: Vec<Vec<u8>> = {
+                let iter = table.iter()?;
+                iter.filter_map(|r| r.ok().map(|(k, _)| k.value().to_vec()))
+                    .collect()
+            };
+            for key in keys {
+                table.remove(key.as_slice())?;
+            }
+            if let Some(data) = &snapshot.mersennet_orders {
+                table.insert(b"state".as_slice(), data.as_slice())?;
+            }
+            for (key, value) in &snapshot.orders_extra {
+                table.insert(key.as_slice(), value.as_slice())?;
+            }
+        }
+        {
+            let mut meta = write_txn.open_table(HEIGHT_META)?;
+            meta.remove(b"validator_registry".as_slice())?;
+            for (key, value) in &snapshot.validator_registry {
+                meta.insert(key.as_slice(), value.as_slice())?;
+            }
         }
         if let Some(data) = snapshot.bridge_orders_to_evm {
             let mut table = write_txn.open_table(BRIDGE_OTE)?;

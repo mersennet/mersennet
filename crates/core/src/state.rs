@@ -185,6 +185,44 @@ pub(crate) struct SnapshotRecord {
     pub(crate) mersennet_orders: Option<Vec<u8>>,
     pub(crate) bridge_orders_to_evm: Option<Vec<u8>>,
     pub(crate) bridge_evm_to_orders: Option<Vec<u8>>,
+    /// The orders store's other keys (price scales, agent grants, bad debt,
+    /// the units flag): the state root covers them.
+    pub(crate) orders_extra: Vec<(Vec<u8>, Vec<u8>)>,
+    /// The validator registry as the backend keeps it (sled: its tree;
+    /// redb: the metadata entry).
+    pub(crate) validator_registry: Vec<(Vec<u8>, Vec<u8>)>,
+}
+
+/// The layout written before `orders_extra` and `validator_registry`.
+#[derive(Deserialize)]
+struct SnapshotRecordV1 {
+    height: u64,
+    state_root: [u8; 32],
+    accounts: Vec<(Vec<u8>, AccountRecord)>,
+    storage: Vec<(Vec<u8>, Vec<u8>)>,
+    mersennet_orders: Option<Vec<u8>>,
+    bridge_orders_to_evm: Option<Vec<u8>>,
+    bridge_evm_to_orders: Option<Vec<u8>>,
+}
+
+impl SnapshotRecord {
+    pub(crate) fn decode(data: &[u8]) -> Result<Self> {
+        if let Ok(record) = bincode::deserialize::<SnapshotRecord>(data) {
+            return Ok(record);
+        }
+        let v1: SnapshotRecordV1 = bincode::deserialize(data)?;
+        Ok(SnapshotRecord {
+            height: v1.height,
+            state_root: v1.state_root,
+            accounts: v1.accounts,
+            storage: v1.storage,
+            mersennet_orders: v1.mersennet_orders,
+            bridge_orders_to_evm: v1.bridge_orders_to_evm,
+            bridge_evm_to_orders: v1.bridge_evm_to_orders,
+            orders_extra: Vec::new(),
+            validator_registry: Vec::new(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -915,6 +953,19 @@ impl PersistentState {
             storage.push((key.to_vec(), value.to_vec()));
         }
 
+        let mut orders_extra = Vec::new();
+        for entry in self.mersennet_orders.iter() {
+            let (key, value) = entry?;
+            if key.as_ref() != b"state" {
+                orders_extra.push((key.to_vec(), value.to_vec()));
+            }
+        }
+        let mut validator_registry = Vec::new();
+        for entry in self.validator_registry.iter() {
+            let (key, value) = entry?;
+            validator_registry.push((key.to_vec(), value.to_vec()));
+        }
+
         let snapshot = SnapshotRecord {
             height,
             state_root: state_root.0,
@@ -923,16 +974,20 @@ impl PersistentState {
             mersennet_orders: self.mersennet_orders.get("state")?.map(|v| v.to_vec()),
             bridge_orders_to_evm: self.bridge_orders_to_evm.get("queue")?.map(|v| v.to_vec()),
             bridge_evm_to_orders: self.bridge_evm_to_orders.get("queue")?.map(|v| v.to_vec()),
+            orders_extra,
+            validator_registry,
         };
         Ok(bincode::serialize(&snapshot)?)
     }
 
     #[allow(dead_code)]
     pub fn import_snapshot_bytes(&self, data: &[u8]) -> Result<SnapshotMeta> {
-        let snapshot: SnapshotRecord = bincode::deserialize(data)?;
+        let snapshot = SnapshotRecord::decode(data)?;
 
         self.accounts.clear()?;
         self.storage.clear()?;
+        self.mersennet_orders.clear()?;
+        self.validator_registry.clear()?;
 
         for (key, record) in snapshot.accounts {
             let data = bincode::serialize(&record)?;
@@ -945,6 +1000,12 @@ impl PersistentState {
 
         if let Some(data) = snapshot.mersennet_orders {
             self.mersennet_orders.insert("state", data)?;
+        }
+        for (key, value) in snapshot.orders_extra {
+            self.mersennet_orders.insert(key, value)?;
+        }
+        for (key, value) in snapshot.validator_registry {
+            self.validator_registry.insert(key, value)?;
         }
         if let Some(data) = snapshot.bridge_orders_to_evm {
             self.bridge_orders_to_evm.insert("queue", data)?;
@@ -1577,6 +1638,39 @@ pub(crate) fn decode_tx_location(v: &[u8]) -> Option<(u64, u32)> {
         u64::from_be_bytes(v[..8].try_into().unwrap()),
         u32::from_be_bytes(v[8..].try_into().unwrap()),
     ))
+}
+
+#[cfg(test)]
+mod snapshot_record_tests {
+    use super::*;
+
+    #[test]
+    fn a_snapshot_written_before_the_extra_keys_still_decodes() {
+        #[derive(Serialize)]
+        struct OldLayout {
+            height: u64,
+            state_root: [u8; 32],
+            accounts: Vec<(Vec<u8>, AccountRecord)>,
+            storage: Vec<(Vec<u8>, Vec<u8>)>,
+            mersennet_orders: Option<Vec<u8>>,
+            bridge_orders_to_evm: Option<Vec<u8>>,
+            bridge_evm_to_orders: Option<Vec<u8>>,
+        }
+        let old = OldLayout {
+            height: 9,
+            state_root: [3; 32],
+            accounts: Vec::new(),
+            storage: vec![(vec![1], vec![2])],
+            mersennet_orders: Some(vec![4]),
+            bridge_orders_to_evm: None,
+            bridge_evm_to_orders: None,
+        };
+        let decoded = SnapshotRecord::decode(&bincode::serialize(&old).unwrap()).unwrap();
+        assert_eq!(decoded.height, 9);
+        assert_eq!(decoded.storage, vec![(vec![1], vec![2])]);
+        assert_eq!(decoded.mersennet_orders, Some(vec![4]));
+        assert!(decoded.orders_extra.is_empty() && decoded.validator_registry.is_empty());
+    }
 }
 
 #[cfg(test)]
