@@ -951,7 +951,8 @@ impl MersennetOrdersState {
         if let Some(account) = self.accounts.get_mut(&owner) {
             let open_orders = account.open_orders.clone();
             account.open_orders.clear();
-            let positions: Vec<(MarketId, Position)> = account.positions.drain().collect();
+            let mut positions: Vec<(MarketId, Position)> = account.positions.drain().collect();
+            positions.sort_by_key(|(market, _)| market.0);
             // Token collateral is treated like native collateral: it stays
             // with the account through liquidation (only positions and
             // orders are cleared), and remains subject to the maintenance
@@ -1134,7 +1135,7 @@ impl MersennetOrdersState {
                 outcome.cancelled_orders.push((order_id, order.market));
             }
         }
-        let positions: Vec<(MarketId, i128)> = self
+        let mut positions: Vec<(MarketId, i128)> = self
             .accounts
             .get(&account)
             .map(|a| {
@@ -1145,6 +1146,9 @@ impl MersennetOrdersState {
                     .collect()
             })
             .unwrap_or_default();
+        // The order decides what an account's collateral still covers when
+        // each loss settles, so every node must close in the same one.
+        positions.sort_by_key(|(market, _)| market.0);
         self.liquidating = Some(account);
         for (market, size) in positions {
             let (side, price) = if size > 0 {
@@ -1893,5 +1897,58 @@ mod tests {
         let mut state = MersennetOrdersState::new();
         let res = state.cancel_order_owned(OrderId(123), addr(0x11));
         assert!(matches!(res, Ok(None)));
+    }
+
+    /// A trader long in six markets, three of them now losing more than its
+    /// collateral; a keeper liquidates it. Returns what every node must
+    /// agree on.
+    fn liquidate_six_market_account() -> (U256, U256, U256, U256) {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        state.current_height = 5;
+        state.set_margin_params(1_000, 500);
+        let (trader, maker, keeper) = (addr(1), addr(2), addr(3));
+        state.deposit_collateral(trader, U256::from(1_000u64));
+        state.deposit_collateral(maker, U256::from(10_000_000u64));
+        let gtc = TimeInForce::Gtc;
+        let markets: Vec<MarketId> = (0..6)
+            .map(|i| state.add_market(format!("M{i}/USD"), U256::from(1u64), U256::from(1u64)))
+            .collect();
+        let ten = U256::from(10u64);
+        for m in &markets {
+            state
+                .submit_order(maker, *m, Side::Sell, U256::from(100u64), ten, gtc)
+                .unwrap();
+            state
+                .submit_order(trader, *m, Side::Buy, U256::from(100u64), ten, gtc)
+                .unwrap();
+        }
+        for (i, m) in markets.iter().enumerate() {
+            let price = U256::from(if i % 2 == 0 { 140u64 } else { 30u64 });
+            state
+                .submit_order(maker, *m, Side::Buy, price, ten, gtc)
+                .unwrap();
+            state.markets.get_mut(m).unwrap().last_price = price;
+        }
+        assert!(state.is_liquidatable(trader));
+        state.liquidate_on_book(trader, keeper).unwrap();
+        (
+            state.bad_debt,
+            state.insurance_fund,
+            state.accounts[&trader].collateral,
+            state.accounts[&keeper].collateral,
+        )
+    }
+
+    #[test]
+    fn a_liquidation_settles_the_same_on_every_node() {
+        let first = liquidate_six_market_account();
+        for _ in 0..32 {
+            assert_eq!(
+                liquidate_six_market_account(),
+                first,
+                "the account's positions iterate in another order here"
+            );
+        }
     }
 }
