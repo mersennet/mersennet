@@ -500,6 +500,19 @@ const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
 /// this height (expected Thu 8 Oct ~09:30 UTC) around $115 (priceScale 100);
 /// positions entered on the broken book are re-entered at $115.
 const MRSN_REPAIR: (u64, u64, u64) = (2_324_700, 1, 11_500);
+/// Chain 131071 from block 2,324,702: liquidations closed positions in
+/// whatever order each node's map gave them, and part of the nodes ended up
+/// with 26 more units of bad debt and as much more fee credit for our keeper
+/// (20,523 instead of 20,497). At every block of this window, a node still
+/// holding 20,523 for the keeper gives both back, so every node agrees again
+/// whenever it upgraded within the window. The keeper is not used again.
+const REJOIN_WINDOW: (u64, u64) = (2_554_100, 2_850_900);
+const REJOIN_KEEPER: Address = Address::new([
+    0x28, 0x19, 0x85, 0xf1, 0xd7, 0x08, 0x6c, 0x38, 0x43, 0x40, 0xa5, 0x27, 0x89, 0x1d, 0x15, 0x06,
+    0xea, 0x07, 0x30, 0x49,
+]);
+const REJOIN_KEEPER_COLLATERAL: u64 = 20_497;
+const REJOIN_APART: u64 = 26;
 
 #[derive(Debug)]
 pub struct Engine {
@@ -637,6 +650,8 @@ pub struct Engine {
     price_rescales: Vec<(u64, u64)>,
     /// One-off market repair as (height, market, reference price).
     market_repair: Option<(u64, u64, u64)>,
+    /// (window, keeper, keeper collateral, amount apart): see `REJOIN_WINDOW`.
+    rejoin: Option<((u64, u64), Address, U256, U256)>,
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
@@ -921,6 +936,12 @@ impl Engine {
             price_scale_height: 0,
             price_rescales: Vec::new(),
             market_repair: (chain_id == 131071).then_some(MRSN_REPAIR),
+            rejoin: (chain_id == 131071).then_some((
+                REJOIN_WINDOW,
+                REJOIN_KEEPER,
+                U256::from(REJOIN_KEEPER_COLLATERAL),
+                U256::from(REJOIN_APART),
+            )),
             last_block_applied_at: None,
             fork_detected_at: None,
             checkpoints: std::collections::VecDeque::new(),
@@ -2024,6 +2045,33 @@ impl Engine {
     /// the configured rescales. Deterministic from state + config, idempotent
     /// (a market already at the target scale is a no-op), so producer and
     /// importers agree and a restart mid-height cannot double-apply.
+    pub fn set_rejoin(&mut self, rejoin: Option<((u64, u64), Address, U256, U256)>) {
+        self.rejoin = rejoin;
+    }
+
+    /// Consensus step at every block of the rejoin window, before the block's
+    /// transactions: see `REJOIN_WINDOW`.
+    fn maybe_rejoin(&mut self, height: u64) {
+        let Some(((from, to), keeper, expected, apart)) = self.rejoin else {
+            return;
+        };
+        if height < from || height > to {
+            return;
+        }
+        if self
+            .orders
+            .state
+            .take_back_apart_credit(keeper, expected, apart)
+        {
+            tracing::warn!(
+                height,
+                %keeper,
+                %apart,
+                "rejoined: the keeper credit and the bad debt this node held apart are given back"
+            );
+        }
+    }
+
     pub fn set_market_repair(&mut self, repair: Option<(u64, u64, u64)>) {
         self.market_repair = repair;
     }
@@ -2352,6 +2400,7 @@ impl Engine {
         self.maybe_epoch_transition(self.block_number);
         self.maybe_price_rescale(self.block_number);
         self.maybe_market_repair(self.block_number);
+        self.maybe_rejoin(self.block_number);
         self.maybe_settlement_switch(self.block_number);
         // Fee floor: from the switch the base fee never sits below the floor
         // (covers the switch block itself and a restart from a checkpoint).
@@ -3525,6 +3574,7 @@ impl Engine {
         self.maybe_epoch_transition(block.number);
         self.maybe_price_rescale(block.number);
         self.maybe_market_repair(block.number);
+        self.maybe_rejoin(block.number);
         self.maybe_settlement_switch(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
@@ -5490,6 +5540,76 @@ mod reorg_tests {
                 U256::from(11_500u64)
             );
         }
+    }
+
+    #[test]
+    fn nodes_apart_by_keeper_credit_and_bad_debt_agree_after_the_rejoin_window() {
+        let keeper = Address::repeat_byte(0x2b);
+        let window = ((3, 6), keeper, U256::from(20_497u64), U256::from(26u64));
+        let mut p = with_validators(engine());
+        let mut b = with_validators(engine());
+        let mut late = with_validators(engine());
+        for (e, apart) in [(&mut p, 0u64), (&mut b, 26), (&mut late, 26)] {
+            e.orders.state.bad_debt = U256::from(2_885_825 + apart);
+            e.orders
+                .state
+                .deposit_collateral(keeper, U256::from(20_497 + apart));
+        }
+        p.set_rejoin(Some(window));
+        b.set_rejoin(Some(window));
+        late.set_rejoin(None);
+        for height in 1..=8u64 {
+            let block = produce_as_leader(&mut p, 0);
+            if height == 5 {
+                late.set_rejoin(Some(window)); // upgraded halfway through the window
+            }
+            for e in [&mut b, &mut late] {
+                e.import_block(block.clone());
+                assert_eq!(e.latest_height(), block.number);
+            }
+            if height == 2 {
+                assert_eq!(
+                    b.orders.state.bad_debt,
+                    U256::from(2_885_851u64),
+                    "not before the window"
+                );
+            }
+        }
+        for e in [&p, &b, &late] {
+            assert_eq!(e.orders.state.bad_debt, U256::from(2_885_825u64));
+            assert_eq!(
+                e.orders.state.accounts[&keeper].collateral,
+                U256::from(20_497u64)
+            );
+        }
+        let root = p.evm.state.compute_state_root();
+        assert_eq!(b.evm.state.compute_state_root(), root, "one state again");
+        assert_eq!(
+            late.evm.state.compute_state_root(),
+            root,
+            "a late upgrade too"
+        );
+    }
+
+    #[test]
+    fn the_rejoin_is_scheduled_on_chain_131071_only() {
+        let testnet = engine();
+        assert_eq!(
+            testnet.rejoin,
+            Some((
+                REJOIN_WINDOW,
+                REJOIN_KEEPER,
+                U256::from(REJOIN_KEEPER_COLLATERAL),
+                U256::from(REJOIN_APART)
+            ))
+        );
+        assert_eq!(
+            format!("{REJOIN_KEEPER:#x}"),
+            "0x281985f1d7086c384340a527891d1506ea073049"
+        );
+        let dir = tempdir().unwrap();
+        let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
+        assert_eq!(other.rejoin, None);
     }
 
     #[test]

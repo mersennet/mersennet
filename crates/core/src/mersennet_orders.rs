@@ -1311,6 +1311,31 @@ impl MersennetOrdersState {
         (ids.len(), reentered)
     }
 
+    /// One-off correction: an account holding exactly `apart` more than
+    /// `expected` gives it back, and the bad debt drops by as much. Nodes that
+    /// settled a liquidation in another order credited the keeper and booked
+    /// the bad debt `apart` higher; every other node holds `expected` and
+    /// nothing changes. Returns whether it applied.
+    pub fn take_back_apart_credit(
+        &mut self,
+        account: Address,
+        expected: U256,
+        apart: U256,
+    ) -> bool {
+        if self.bad_debt < apart {
+            return false;
+        }
+        let Some(acc) = self.accounts.get_mut(&account) else {
+            return false;
+        };
+        if acc.collateral != expected.saturating_add(apart) {
+            return false;
+        }
+        acc.collateral = expected;
+        self.bad_debt -= apart;
+        true
+    }
+
     fn levels_from_book(&self, levels: &BTreeMap<U256, VecDeque<OrderId>>) -> Vec<OrderBookLevel> {
         levels
             .iter()
@@ -1938,6 +1963,51 @@ mod tests {
             state.accounts[&trader].collateral,
             state.accounts[&keeper].collateral,
         )
+    }
+
+    #[test]
+    fn an_account_apart_by_the_same_credit_and_bad_debt_comes_back_and_no_other() {
+        let keeper = addr(9);
+        let state_with = |credit: u64, bad_debt: u64| {
+            let mut state = MersennetOrdersState::new();
+            state.deposit_collateral(keeper, U256::from(credit));
+            state.deposit_collateral(addr(1), U256::from(20_523u64));
+            state.bad_debt = U256::from(bad_debt);
+            state
+        };
+        let (expected, apart) = (U256::from(20_497u64), U256::from(26u64));
+        let result = |s: &MersennetOrdersState| {
+            (
+                s.accounts[&keeper].collateral,
+                s.bad_debt,
+                s.accounts[&addr(1)].collateral,
+            )
+        };
+
+        let mut b = state_with(20_523, 2_885_851);
+        assert!(b.take_back_apart_credit(keeper, expected, apart));
+        let mut a = state_with(20_497, 2_885_825);
+        assert!(
+            !a.take_back_apart_credit(keeper, expected, apart),
+            "already right"
+        );
+        assert_eq!(result(&a), result(&b), "one state");
+        assert!(!b.take_back_apart_credit(keeper, expected, apart), "once");
+        assert_eq!(
+            b.accounts[&addr(1)].collateral,
+            U256::from(20_523u64),
+            "nobody else"
+        );
+
+        let mut other = state_with(20_600, 2_885_851);
+        assert!(!other.take_back_apart_credit(keeper, expected, apart));
+        assert_eq!(other.accounts[&keeper].collateral, U256::from(20_600u64));
+        let mut thin = state_with(20_523, 10);
+        assert!(
+            !thin.take_back_apart_credit(keeper, expected, apart),
+            "no bad debt to give back"
+        );
+        assert!(!MersennetOrdersState::new().take_back_apart_credit(keeper, expected, apart));
     }
 
     #[test]
