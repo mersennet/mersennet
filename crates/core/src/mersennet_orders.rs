@@ -505,6 +505,19 @@ impl MersennetOrdersState {
         self.collateral_assets.insert(token, asset);
     }
 
+    /// One-off: `token` stops counting as margin (its weight drops to zero).
+    /// Balances stay with their owners and can be withdrawn. Returns whether
+    /// the token was registered.
+    pub fn stop_counting_collateral_asset(&mut self, token: Address) -> bool {
+        match self.collateral_assets.get_mut(&token) {
+            Some(asset) => {
+                asset.weight_bps = 0;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Weighted margin value of an account's non-native collateral, in the
     /// same unit as native collateral.
     pub fn token_margin_value(&self, owner: Address) -> U256 {
@@ -564,6 +577,20 @@ impl MersennetOrdersState {
             .unwrap_or(U256::ZERO);
         if held < amount {
             return Err(MersennetOrdersError::InsufficientEquity);
+        }
+        // A token that counts for nothing as margin backs nothing: taking it
+        // out changes no one's equity.
+        if asset.weight_bps == 0 {
+            let account = self.accounts.get_mut(&owner).expect("held checked above");
+            let balance = account
+                .token_collateral
+                .get_mut(&token)
+                .expect("held checked above");
+            *balance = balance.saturating_sub(amount);
+            if balance.is_zero() {
+                account.token_collateral.remove(&token);
+            }
+            return Ok(());
         }
         // Simulated equity after the withdrawal: native collateral + PnL +
         // remaining weighted token value.
@@ -2008,6 +2035,75 @@ mod tests {
             "no bad debt to give back"
         );
         assert!(!MersennetOrdersState::new().take_back_apart_credit(keeper, expected, apart));
+    }
+
+    #[test]
+    fn a_token_that_stops_counting_backs_no_margin_and_can_still_be_withdrawn() {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        state.current_height = 5;
+        state.set_margin_params(1_000, 500);
+        let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+        let token = addr(0xAA);
+        state.register_collateral_asset(
+            token,
+            CollateralAsset {
+                weight_bps: 9_000,
+                value_num: U256::from(1u64),
+                value_den: U256::from(1u64),
+                balances_slot: U256::from(3u64),
+            },
+        );
+        let (trader, maker) = (addr(1), addr(2));
+        state.deposit_collateral(maker, U256::from(1_000_000u64));
+        state
+            .deposit_token_collateral(trader, token, U256::from(1_000u64))
+            .unwrap();
+        let gtc = TimeInForce::Gtc;
+        let ten = U256::from(10u64);
+        state
+            .submit_order(
+                maker,
+                m,
+                Side::Sell,
+                U256::from(100u64),
+                U256::from(20u64),
+                gtc,
+            )
+            .unwrap();
+        state
+            .submit_order(trader, m, Side::Buy, U256::from(100u64), ten, gtc)
+            .unwrap();
+        assert_eq!(
+            state.accounts[&trader].positions[&m].size, 10,
+            "tokens backed it"
+        );
+        assert!(!state.is_liquidatable(trader));
+
+        assert!(state.stop_counting_collateral_asset(token));
+        assert!(
+            !state.stop_counting_collateral_asset(addr(0xBB)),
+            "not registered"
+        );
+        assert_eq!(state.token_margin_value(trader), U256::ZERO);
+        assert!(
+            state.is_liquidatable(trader),
+            "nothing backs the position now"
+        );
+        let more = state.submit_order(trader, m, Side::Buy, U256::from(100u64), ten, gtc);
+        assert!(more.is_err(), "no new exposure");
+        assert_eq!(state.accounts[&trader].positions[&m].size, 10);
+        assert!(
+            state
+                .withdraw_token_collateral(trader, token, U256::from(1_000u64))
+                .is_ok(),
+            "it backed nothing, so it can leave"
+        );
+        assert!(
+            !state.accounts[&trader]
+                .token_collateral
+                .contains_key(&token)
+        );
     }
 
     #[test]

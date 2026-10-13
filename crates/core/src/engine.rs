@@ -513,6 +513,16 @@ const REJOIN_KEEPER: Address = Address::new([
 ]);
 const REJOIN_KEEPER_COLLATERAL: u64 = 20_497;
 const REJOIN_APART: u64 = 26;
+/// Chain 131071: the test USDC is free to mint, so from this height it counts
+/// for nothing as margin and is no longer accepted as collateral. Balances
+/// already deposited stay with their owners and can be withdrawn.
+const FREE_TOKEN_OFF: (u64, Address) = (
+    2_670_700,
+    Address::new([
+        0xa4, 0x4b, 0x23, 0xd1, 0xd0, 0xc0, 0x13, 0x3d, 0xa7, 0x1d, 0xec, 0xe3, 0x99, 0xd5, 0xd5,
+        0xad, 0xe6, 0xdd, 0x22, 0xd1,
+    ]),
+);
 
 #[derive(Debug)]
 pub struct Engine {
@@ -652,6 +662,8 @@ pub struct Engine {
     market_repair: Option<(u64, u64, u64)>,
     /// (window, keeper, keeper collateral, amount apart): see `REJOIN_WINDOW`.
     rejoin: Option<((u64, u64), Address, U256, U256)>,
+    /// (height, token): see `FREE_TOKEN_OFF`.
+    free_token_off: Option<(u64, Address)>,
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
@@ -942,6 +954,7 @@ impl Engine {
                 U256::from(REJOIN_KEEPER_COLLATERAL),
                 U256::from(REJOIN_APART),
             )),
+            free_token_off: (chain_id == 131071).then_some(FREE_TOKEN_OFF),
             last_block_applied_at: None,
             fork_detected_at: None,
             checkpoints: std::collections::VecDeque::new(),
@@ -2049,6 +2062,21 @@ impl Engine {
         self.rejoin = rejoin;
     }
 
+    pub fn set_free_token_off(&mut self, off: Option<(u64, Address)>) {
+        self.free_token_off = off;
+    }
+
+    /// Consensus step at `FREE_TOKEN_OFF`, before the block's transactions:
+    /// the token's weight drops to zero in the persisted registry.
+    fn maybe_free_token_off(&mut self, height: u64) {
+        let Some((at, token)) = self.free_token_off else {
+            return;
+        };
+        if height == at && self.orders.state.stop_counting_collateral_asset(token) {
+            tracing::warn!(height, %token, "collateral token no longer counts as margin");
+        }
+    }
+
     /// Consensus step at every block of the rejoin window, before the block's
     /// transactions: see `REJOIN_WINDOW`.
     fn maybe_rejoin(&mut self, height: u64) {
@@ -2401,6 +2429,7 @@ impl Engine {
         self.maybe_price_rescale(self.block_number);
         self.maybe_market_repair(self.block_number);
         self.maybe_rejoin(self.block_number);
+        self.maybe_free_token_off(self.block_number);
         self.maybe_settlement_switch(self.block_number);
         // Fee floor: from the switch the base fee never sits below the floor
         // (covers the switch block itself and a restart from a checkpoint).
@@ -3575,6 +3604,7 @@ impl Engine {
         self.maybe_price_rescale(block.number);
         self.maybe_market_repair(block.number);
         self.maybe_rejoin(block.number);
+        self.maybe_free_token_off(block.number);
         self.maybe_settlement_switch(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
@@ -5589,6 +5619,51 @@ mod reorg_tests {
             root,
             "a late upgrade too"
         );
+    }
+
+    #[test]
+    fn producer_and_importer_stop_counting_the_free_token_at_the_same_height() {
+        let token = Address::repeat_byte(0x77);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.register_collateral_asset(
+                token,
+                9_000,
+                U256::from(1u64),
+                U256::from(1u64),
+                U256::from(3u64),
+            );
+            e.set_free_token_off(Some((3, token)));
+        }
+        for height in 1..=4u64 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number);
+            let weight = |e: &Engine| e.orders.state.collateral_assets[&token].weight_bps;
+            let expected = if height < 3 { 9_000 } else { 0 };
+            assert_eq!(
+                (weight(&p), weight(&a)),
+                (expected, expected),
+                "at block {height}"
+            );
+        }
+        assert_eq!(
+            p.evm.state.compute_state_root(),
+            a.evm.state.compute_state_root()
+        );
+    }
+
+    #[test]
+    fn the_free_token_switch_is_scheduled_on_chain_131071_only() {
+        assert_eq!(engine().free_token_off, Some(FREE_TOKEN_OFF));
+        assert_eq!(
+            format!("{:#x}", FREE_TOKEN_OFF.1),
+            "0xa44b23d1d0c0133da71dece399d5d5ade6dd22d1"
+        );
+        let dir = tempdir().unwrap();
+        let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
+        assert_eq!(other.free_token_off, None);
     }
 
     #[test]
