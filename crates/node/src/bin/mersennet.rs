@@ -161,6 +161,23 @@ impl Pacer {
     }
 }
 
+/// Called before a watchdog exit, so systemd gets its restart even when the
+/// exit itself wedges (14 Oct: the public node logged its stall exit, then
+/// lived on for 34 h with its RPC closed): 15 s later the process ends
+/// without exit handlers or a core dump.
+fn arm_exit_deadline() {
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(15));
+        // SAFETY: _exit only ends the process; it touches no Rust state.
+        #[cfg(unix)]
+        unsafe {
+            libc::_exit(70)
+        };
+        #[cfg(not(unix))]
+        std::process::abort();
+    });
+}
+
 fn main() -> anyhow::Result<()> {
     // `mersennet --version` prints the same string web3_clientVersion reports,
     // so packaging and operators can identify a binary without starting it.
@@ -1345,6 +1362,7 @@ fn main() -> anyhow::Result<()> {
                                     }
                                     Err(std::sync::TryLockError::Poisoned(_)) => {
                                         tracing::error!("engine lock is poisoned; exiting so systemd restarts the node");
+                                        arm_exit_deadline();
                                         std::process::exit(4);
                                     }
                                     Err(_) => std::thread::sleep(std::time::Duration::from_millis(250)),
@@ -1357,6 +1375,7 @@ fn main() -> anyhow::Result<()> {
                                         held_secs = since.elapsed().as_secs(),
                                         "engine lock unobtainable; node is wedged — exiting so systemd restarts it"
                                     );
+                                    arm_exit_deadline();
                                     std::process::exit(4);
                                 }
                                 continue;
@@ -1381,6 +1400,7 @@ fn main() -> anyhow::Result<()> {
                                     stalled_secs = stalled,
                                     "head has not advanced while the network moved on — exiting so systemd restarts the node"
                                 );
+                                arm_exit_deadline();
                                 if let Ok(e) = eng.try_lock() {
                                     let _ = e.flush_state();
                                 }
