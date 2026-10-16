@@ -2013,6 +2013,10 @@ impl Engine {
         self.mark_price_height = height;
     }
 
+    pub fn mark_price_height(&self) -> Option<u64> {
+        self.mark_price_height
+    }
+
     fn signed_txs_at(&self, height: u64) -> bool {
         self.signed_tx_height.is_some_and(|from| height >= from)
     }
@@ -6359,7 +6363,6 @@ mod reorg_tests {
             p.evm.state.compute_state_root()
         );
     }
-
 }
 
 /// Precompile calls run through a process-wide context that the engine
