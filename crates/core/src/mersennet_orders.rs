@@ -11,6 +11,10 @@ pub struct MarketId(pub u64);
 /// Fee taken from a liquidated account's remaining collateral, in basis points
 /// of the closed notional; half goes to the keeper, half to the insurance fund.
 pub const LIQUIDATION_FEE_BPS: u64 = 100;
+/// From the mark switch, a liquidation sweep only fills within this distance
+/// of the bounded mark. What the book cannot fill there stays open (and
+/// liquidatable) for the keeper's next call.
+pub const LIQUIDATION_SWEEP_BAND_BPS: u64 = 500;
 
 /// What a `liquidate(address)` call did.
 #[derive(Debug, Default, Clone)]
@@ -1106,6 +1110,26 @@ impl MersennetOrdersState {
         self.mark_height.is_some_and(|h| self.current_height >= h)
     }
 
+    /// Side and limit of the sweep that closes a position of `size`; from the
+    /// mark switch the limit is within `LIQUIDATION_SWEEP_BAND_BPS` of the mark.
+    fn sweep_limit(&self, market: MarketId, size: i128) -> (Side, U256) {
+        let side = if size > 0 { Side::Sell } else { Side::Buy };
+        let mark = if self.mark_active() {
+            self.mark_price(market, U256::ZERO)
+        } else {
+            U256::ZERO
+        };
+        if mark.is_zero() {
+            return (side, if size > 0 { U256::ONE } else { U256::MAX });
+        }
+        let band =
+            mark.saturating_mul(U256::from(LIQUIDATION_SWEEP_BAND_BPS)) / U256::from(10_000u64);
+        match side {
+            Side::Sell => (side, mark.saturating_sub(band).max(U256::ONE)),
+            Side::Buy => (side, mark.saturating_add(band)),
+        }
+    }
+
     /// Once per block, before its transactions. Each market's mark moves at
     /// most `MARK_STEP_BPS` toward the median of its last trade and its best
     /// bid and ask (a crossed book is ignored: it is a book that stopped
@@ -1255,11 +1279,7 @@ impl MersennetOrdersState {
         positions.sort_by_key(|(market, _)| market.0);
         self.liquidating = Some(account);
         for (market, size) in positions {
-            let (side, price) = if size > 0 {
-                (Side::Sell, U256::ONE)
-            } else {
-                (Side::Buy, U256::MAX)
-            };
+            let (side, price) = self.sweep_limit(market, size);
             let sweep = self.submit_order_ext(
                 account,
                 market,
@@ -2172,6 +2192,81 @@ mod tests {
         let mut state = MersennetOrdersState::new();
         let res = state.cancel_order_owned(OrderId(123), addr(0x11));
         assert!(matches!(res, Ok(None)));
+    }
+
+    /// A trader long 10 at 100 on 150 of collateral, marked at 88 (below
+    /// maintenance); the book bids 4 at 85, inside the sweep band, and a
+    /// catcher rests 100 at 40. Returns the trader's position and the
+    /// catcher's after a keeper liquidates.
+    fn liquidate_into_a_far_bid(mark_from: Option<u64>) -> (i128, i128) {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        state.current_height = 5;
+        state.mark_height = mark_from;
+        state.set_margin_params(1_000, 500);
+        let (trader, maker, catcher, keeper) = (addr(1), addr(2), addr(3), addr(4));
+        state.deposit_collateral(trader, U256::from(150u64));
+        state.deposit_collateral(maker, U256::from(10_000_000u64));
+        state.deposit_collateral(catcher, U256::from(10_000_000u64));
+        let m = state.add_market("TST/USD", U256::from(1u64), U256::from(1u64));
+        let gtc = TimeInForce::Gtc;
+        let ten = U256::from(10u64);
+        state
+            .submit_order(maker, m, Side::Sell, U256::from(100u64), ten, gtc)
+            .unwrap();
+        state
+            .submit_order(trader, m, Side::Buy, U256::from(100u64), ten, gtc)
+            .unwrap();
+        state
+            .submit_order(
+                maker,
+                m,
+                Side::Buy,
+                U256::from(85u64),
+                U256::from(4u64),
+                gtc,
+            )
+            .unwrap();
+        state
+            .submit_order(
+                catcher,
+                m,
+                Side::Buy,
+                U256::from(40u64),
+                U256::from(100u64),
+                gtc,
+            )
+            .unwrap();
+        last_trade(&mut state, m, 88);
+        let mark = U256::from(88u64);
+        let ms = MarkState {
+            mark,
+            epoch_open: mark,
+            epoch: 0,
+            halted: false,
+        };
+        state.marks.insert(m, ms);
+        assert!(state.is_liquidatable(trader));
+        state.liquidate_on_book(trader, keeper).unwrap();
+        let size = |who: Address| {
+            state.accounts[&who]
+                .positions
+                .get(&m)
+                .map(|p| p.size)
+                .unwrap_or(0)
+        };
+        (size(trader), size(catcher))
+    }
+
+    #[test]
+    fn from_the_mark_switch_a_liquidation_sweep_stops_at_the_band() {
+        // 5% under a mark of 88 is 84: the 4 at 85 fill, the bid at 40 does not.
+        assert_eq!(liquidate_into_a_far_bid(Some(1)), (6, 0));
+    }
+
+    #[test]
+    fn before_the_mark_switch_a_liquidation_sweep_takes_any_price() {
+        assert_eq!(liquidate_into_a_far_bid(None), (0, 6));
     }
 
     /// A trader long in six markets, three of them now losing more than its
