@@ -669,6 +669,13 @@ fn handle_request(
                 return Ok(());
             }
         };
+        if denied(&address) {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("this address cannot claim from the faucet"),
+            ))?;
+            return Ok(());
+        }
 
         let addr_key = format!("native:{}", hex::encode(address.as_slice()));
         let ip_key = format!("native-ip:{}", ip);
@@ -844,6 +851,13 @@ fn handle_request(
             ))?;
             return Ok(());
         }
+        if parse_address(&req.address).is_ok_and(|a| denied(&a)) {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("this address cannot claim from the faucet"),
+            ))?;
+            return Ok(());
+        }
         let addr_norm = req.address.trim().to_lowercase();
         let addr_key = format!("token:{}:{}", token, addr_norm);
         let ip_key = format!("token-ip:{}:{}", token, ip);
@@ -912,6 +926,24 @@ fn parse_address(s: &str) -> Result<Address, String> {
         return Err("address must be 20 bytes".to_string());
     }
     Ok(Address::from_slice(&bytes))
+}
+
+/// Addresses refused at both claim endpoints: `FAUCET_DENYLIST` (default
+/// /etc/mersennet/faucet-deny.txt), one 0x address per line, `#` starts a
+/// comment. Read on every claim so an edit applies without a restart; a missing
+/// file refuses nobody.
+fn denied(address: &Address) -> bool {
+    let path = std::env::var("FAUCET_DENYLIST")
+        .unwrap_or_else(|_| "/etc/mersennet/faucet-deny.txt".to_string());
+    std::fs::read_to_string(path).is_ok_and(|text| denylist_contains(&text, address))
+}
+
+fn denylist_contains(text: &str, address: &Address) -> bool {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or_default().trim())
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| parse_address(line).ok())
+        .any(|listed| listed == *address)
 }
 
 fn load_faucet_key(path: &str) -> Result<SigningKey, Box<dyn std::error::Error>> {
@@ -1221,6 +1253,19 @@ fn parse_args() -> Args {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_deny_list_matches_any_case_and_skips_comments_and_bad_lines() {
+        let listed = parse_address("0xCA7E8A7D00000000000000000000000000000001").unwrap();
+        let other = parse_address("0x0000000000000000000000000000000000000002").unwrap();
+        let text = "# farm, 20 Oct\n\n  0xca7e8a7d00000000000000000000000000000001  # funder\nnot-an-address\n#0x0000000000000000000000000000000000000002\n";
+        assert!(denylist_contains(text, &listed));
+        assert!(
+            !denylist_contains(text, &other),
+            "a commented-out line refuses nobody"
+        );
+        assert!(!denylist_contains("", &listed));
+    }
 
     #[test]
     fn rate_limit_blocks_repeat_within_window() {
