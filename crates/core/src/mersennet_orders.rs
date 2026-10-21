@@ -1449,6 +1449,78 @@ impl MersennetOrdersState {
         (ids.len(), reentered)
     }
 
+    /// One-off relisting of a market whose price no longer fits its ticks.
+    /// Cancels every resting order in the market, closes every position at
+    /// the last trade with its PnL settled into collateral as a fill would
+    /// (a loss the collateral cannot cover becomes bad debt), moves the market
+    /// to `new_scale` and clears its last price and mark, so the first quotes
+    /// at the real price set them again. `height` decides settlement, so a node
+    /// that restarted just before the switch settles the same as the others.
+    /// Returns (orders cancelled, positions closed).
+    pub fn relist_market(
+        &mut self,
+        market: MarketId,
+        new_scale: u64,
+        height: u64,
+    ) -> Result<(usize, usize), MersennetOrdersError> {
+        if !self.markets.contains_key(&market) {
+            return Err(MersennetOrdersError::UnknownMarket);
+        }
+        let old = self.price_scale(market);
+        if new_scale <= old || !new_scale.is_multiple_of(old) {
+            return Err(MersennetOrdersError::InvalidMarketParams);
+        }
+        let mut ids: Vec<OrderId> = self
+            .orders
+            .values()
+            .filter(|o| o.market == market)
+            .map(|o| o.id)
+            .collect();
+        ids.sort_by_key(|id| id.0);
+        for id in &ids {
+            self.cancel_order(*id);
+        }
+        let close = self.markets[&market].last_price;
+        let mut owners: Vec<Address> = self
+            .accounts
+            .iter()
+            .filter(|(_, a)| a.positions.get(&market).is_some_and(|p| p.size != 0))
+            .map(|(owner, _)| *owner)
+            .collect();
+        owners.sort();
+        let settle = self.settlement_active(height);
+        for owner in &owners {
+            let (size, entry) = {
+                let p = &self.accounts[owner].positions[&market];
+                (p.size, p.entry_price)
+            };
+            let pnl = if close.is_zero() {
+                0
+            } else {
+                self.pnl_of(market, size, close, entry)
+            };
+            if let Some(p) = self
+                .accounts
+                .get_mut(owner)
+                .and_then(|a| a.positions.get_mut(&market))
+            {
+                p.realized_pnl = p.realized_pnl.saturating_add(pnl);
+                p.size = 0;
+                p.entry_price = U256::ZERO;
+            }
+            if settle {
+                self.settle_pnl(*owner, pnl);
+            }
+        }
+        self.rescale_market(market, new_scale)?;
+        if let Some(m) = self.markets.get_mut(&market) {
+            m.last_price = U256::ZERO;
+            m.status = MarketStatus::Active;
+        }
+        self.marks.remove(&market);
+        Ok((ids.len(), owners.len()))
+    }
+
     /// One-off correction: an account holding exactly `apart` more than
     /// `expected` gives it back, and the bad debt drops by as much. Nodes that
     /// settled a liquidation in another order credited the keeper and booked
@@ -2192,6 +2264,76 @@ mod tests {
         let mut state = MersennetOrdersState::new();
         let res = state.cancel_order_owned(OrderId(123), addr(0x11));
         assert!(matches!(res, Ok(None)));
+    }
+
+    #[test]
+    fn relisting_closes_every_position_at_the_last_trade_and_rescales() {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        let m = state.add_market("ARB/USD", U256::from(1u64), U256::from(1u64));
+        let other = state.add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+        state.price_scales.insert(m, 100);
+        let (winner, loser, broke, maker) = (addr(1), addr(2), addr(3), addr(4));
+        for (who, size, entry, collateral) in [
+            (winner, 10i128, 10_000u64, 1_000u64),
+            (loser, -10, 10_000, 1_000),
+            (broke, 10, 20_000, 50),
+        ] {
+            let acc = state.accounts.entry(who).or_default();
+            acc.collateral = U256::from(collateral);
+            acc.positions.insert(
+                m,
+                Position {
+                    size,
+                    entry_price: U256::from(entry),
+                    realized_pnl: 0,
+                },
+            );
+        }
+        state.deposit_collateral(maker, U256::from(1_000_000u64));
+        let gtc = TimeInForce::Gtc;
+        let one = U256::from(1u64);
+        state
+            .submit_order(maker, m, Side::Buy, U256::from(9_000u64), one, gtc)
+            .unwrap();
+        state
+            .submit_order(maker, other, Side::Buy, U256::from(70_000u64), one, gtc)
+            .unwrap();
+        last_trade(&mut state, m, 10_500);
+        let ms = MarkState {
+            mark: U256::from(10_500u64),
+            epoch_open: U256::from(10_000u64),
+            epoch: 0,
+            halted: false,
+        };
+        state.marks.insert(m, ms);
+
+        assert!(matches!(state.relist_market(m, 10_000, 5), Ok((1, 3))));
+
+        // Closed at $105 on scale 100: +$50, -$50, and -$950 on 50 of collateral.
+        assert_eq!(state.accounts[&winner].collateral, U256::from(1_050u64));
+        assert_eq!(state.accounts[&loser].collateral, U256::from(950u64));
+        assert_eq!(state.accounts[&broke].collateral, U256::ZERO);
+        assert_eq!(state.bad_debt, U256::from(900u64));
+        assert!(
+            state
+                .accounts
+                .values()
+                .all(|a| a.positions.get(&m).is_none_or(|p| p.size == 0))
+        );
+        assert_eq!(state.price_scale(m), 10_000);
+        assert_eq!(state.markets[&m].last_price, U256::ZERO);
+        assert!(!state.marks.contains_key(&m));
+        assert!(state.order_book(m).unwrap().bids.is_empty());
+        assert_eq!(
+            state.order_book(other).unwrap().bids.len(),
+            1,
+            "other markets keep their orders"
+        );
+        // Only to a finer multiple of the current scale.
+        assert!(state.relist_market(m, 10_000, 6).is_err());
+        assert!(state.relist_market(m, 15_000, 6).is_err());
+        assert_eq!(state.price_scale(m), 10_000);
     }
 
     /// A trader long 10 at 100 on 150 of collateral, marked at 88 (below
