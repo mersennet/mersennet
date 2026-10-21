@@ -428,6 +428,8 @@ pub enum BlockProgramError {
     PrevStateRootMismatch,
     #[error("prev nullifier root does not match the restored prior state")]
     PrevNullifierRootMismatch,
+    #[error("amount is outside the range a proof can bind")]
+    AmountOutOfRange,
 }
 
 /// Canonical deterministic block executor used by the current SP1
@@ -981,6 +983,12 @@ pub fn hash_liquidation_auction_stats(stats: &LiquidationAuctionStatsWitness) ->
     out
 }
 
+/// The amount exactly as the one field element the proof binds (see the
+/// engine's `shielded_evm::amount_input`).
+fn amount_input(amount: &U256Bytes) -> Result<Fr, BlockProgramError> {
+    Fr::from_bytes(&amount.0).ok_or(BlockProgramError::AmountOutOfRange)
+}
+
 fn apply_block_tx(
     state: &mut ReplayShieldedState,
     transparent_balances: &mut HashMap<[u8; 20], U256Bytes>,
@@ -1004,20 +1012,17 @@ fn apply_block_tx(
             Ok(())
         }
         ShieldedBlockTx::Shield(tx) => {
+            // Same order as the engine: verify before the balance moves.
+            let public_inputs = vec![tx.output_commitment, Fr::ZERO, amount_input(&tx.amount)?];
+            verifier
+                .verify(&tx.proof, Circuit::Output, &public_inputs)
+                .map_err(|_| BlockProgramError::InvalidProof)?;
             let Some(balance) = transparent_balances.get_mut(&tx.from) else {
                 return Err(BlockProgramError::InsufficientTransparentBalance);
             };
             *balance = balance
                 .checked_sub(tx.amount)
                 .ok_or(BlockProgramError::InsufficientTransparentBalance)?;
-            let public_inputs = vec![
-                tx.output_commitment,
-                Fr::ZERO,
-                Fr::from_u64(tx.amount.low_u64()),
-            ];
-            verifier
-                .verify(&tx.proof, Circuit::Output, &public_inputs)
-                .map_err(|_| BlockProgramError::InvalidProof)?;
             state.insert_note(NoteCommitment(tx.output_commitment));
             Ok(())
         }
@@ -1029,7 +1034,7 @@ fn apply_block_tx(
                 tx.anchor_root,
                 tx.nullifier,
                 tx.change_commitment,
-                Fr::from_u64(tx.amount.low_u64()),
+                amount_input(&tx.amount)?,
             ];
             verifier
                 .verify(&tx.proof, Circuit::Spend, &public_inputs)
@@ -1710,6 +1715,51 @@ mod tests {
         );
         assert_eq!(second.new_market_state_hash, hash_market_aggregates(&[]));
         assert_eq!(second.tx_count, 1);
+    }
+
+    #[test]
+    fn the_block_program_binds_the_whole_unshield_amount() {
+        let empty = MerkleTree::new().root();
+        let (nullifier, proved) = (Fr::from_u64(7), Fr::from_u64(25));
+        let input = |amount: [u8; 32]| {
+            let tx = ShieldedBlockTx::Unshield(UnshieldBlockTx {
+                anchor_root: empty,
+                nullifier,
+                amount: U256Bytes(amount),
+                to: [0x22; 20],
+                change_commitment: Fr::ZERO,
+                encrypted_change: Vec::new(),
+                proof: crate::noir::MockVerifier::new()
+                    .prove(Circuit::Spend, vec![empty, nullifier, Fr::ZERO, proved]),
+            });
+            BlockProgramInput {
+                prev_state_root: empty.to_bytes(),
+                prev_nullifier_root: [0u8; 32],
+                block_number: 1,
+                timestamp: 2,
+                header: test_header(1, 0),
+                txs: vec![bincode::serialize(&tx).unwrap()],
+                prev_market_state: Vec::new(),
+                prev_shielded_state: ShieldedStateWitness {
+                    leaves: Vec::new(),
+                    nullifiers: Vec::new(),
+                    recent_roots: vec![empty.to_bytes()],
+                },
+                transparent_balances: Vec::new(),
+                pre_tick_witness: ShieldedTickWitness::default(),
+                expected_block_hash: derive_block_hash(1, &test_header(1, 0)),
+                expected_market_state_hash: hash_market_aggregates(&[]),
+            }
+        };
+        let mut honest = [0u8; 32];
+        honest[..8].copy_from_slice(&25u64.to_le_bytes());
+        let mut inflated = honest;
+        inflated[8] = 1; // + 2^64
+        assert!(execute_block_program(&input(honest)).is_ok());
+        assert!(matches!(
+            execute_block_program(&input(inflated)),
+            Err(BlockProgramError::InvalidProof)
+        ));
     }
 
     #[test]

@@ -20,6 +20,9 @@ const RATE_LIMIT_HOURS: u64 = 1;
 /// (and every farmed MRSN turns into trading points). Three a day leaves a
 /// shared office/NAT usable and caps a single host at ~3,000 MRSN/day.
 const IP_DAILY_CAP: usize = 3;
+/// Native drips one address may take in 24 h, whatever the IPs: the window
+/// opens at its first claim and all three come back together 24 h later.
+const ADDRESS_DAILY_CAP: usize = 3;
 const DAY: Duration = Duration::from_secs(24 * 3600);
 /// Cloudflare Turnstile. Set TURNSTILE_SECRET (+ TURNSTILE_SITE_KEY for the
 /// page) in the service environment to require a passed challenge on every
@@ -47,6 +50,9 @@ const WORKER_THREADS: usize = 8;
 type RateLedger = Mutex<HashMap<String, Instant>>;
 /// Per-key grant timestamps inside a rolling window (the IP daily cap).
 type CountLedger = Mutex<HashMap<String, Vec<Instant>>>;
+/// Per-key claims inside a window that opens with the key's first claim and
+/// closes `window` later (the address daily cap): key -> (window start, claims).
+type AnchoredLedger = Mutex<HashMap<String, (Instant, usize)>>;
 
 /// Turnstile settings from the environment; `None` = challenge disabled.
 struct Turnstile {
@@ -108,6 +114,69 @@ fn rate_limit_check(ledger: &RateLedger, keys: &[String], window: Duration) -> R
     Ok(())
 }
 
+/// Claims `key` has used in its open window and the time until the window
+/// closes (`None` when none is open).
+fn anchored_status(
+    ledger: &AnchoredLedger,
+    key: &str,
+    window: Duration,
+) -> (usize, Option<Duration>) {
+    let Ok(map) = ledger.lock() else {
+        return (0, None);
+    };
+    let now = Instant::now();
+    match map.get(key) {
+        Some((start, n)) if now.duration_since(*start) < window => {
+            (*n, Some(window - now.duration_since(*start)))
+        }
+        _ => (0, None),
+    }
+}
+
+/// Take one claim in `key`'s window, opening one if none is open; returns the
+/// window's start. Err(()) once `cap` claims are used.
+fn anchored_grant(
+    ledger: &AnchoredLedger,
+    key: &str,
+    window: Duration,
+    cap: usize,
+) -> Result<Instant, ()> {
+    let mut map = ledger.lock().map_err(|_| ())?;
+    let now = Instant::now();
+    map.retain(|_, (start, _)| now.duration_since(*start) < window);
+    let entry = map.entry(key.to_string()).or_insert((now, 0));
+    if entry.1 >= cap {
+        return Err(());
+    }
+    entry.1 += 1;
+    Ok(entry.0)
+}
+
+/// Longest wait left on any of `keys` in a `window` ledger (`None` = free now).
+fn rate_limit_remaining(
+    ledger: &RateLedger,
+    keys: &[String],
+    window: Duration,
+) -> Option<Duration> {
+    let map = ledger.lock().ok()?;
+    let now = Instant::now();
+    keys.iter()
+        .filter_map(|k| map.get(k))
+        .filter_map(|t| window.checked_sub(now.duration_since(*t)))
+        .filter(|d| !d.is_zero())
+        .max()
+}
+
+/// "3h 05m" / "12m" for a wait shown to a person.
+fn fmt_wait(d: Duration) -> String {
+    let mins = d.as_secs().div_ceil(60);
+    if mins >= 60 {
+        format!("{}h {:02}m", mins / 60, mins % 60)
+    } else {
+        format!("{mins}m")
+    }
+}
+
 /// Read-only counterpart of `count_cap_grant`.
 fn count_cap_check(
     ledger: &CountLedger,
@@ -159,6 +228,7 @@ struct Grant<'a> {
     caps: &'a CountLedger,
     window_stamps: Vec<(String, Instant)>,
     cap_stamps: Vec<(String, Instant)>,
+    anchor_stamps: Vec<(&'a AnchoredLedger, String, Instant)>,
 }
 
 impl<'a> Grant<'a> {
@@ -168,6 +238,23 @@ impl<'a> Grant<'a> {
             caps,
             window_stamps: Vec::new(),
             cap_stamps: Vec::new(),
+            anchor_stamps: Vec::new(),
+        }
+    }
+
+    fn anchored(
+        &mut self,
+        ledger: &'a AnchoredLedger,
+        key: &str,
+        window: Duration,
+        cap: usize,
+    ) -> bool {
+        match anchored_grant(ledger, key, window, cap) {
+            Ok(start) => {
+                self.anchor_stamps.push((ledger, key.to_string(), start));
+                true
+            }
+            Err(()) => false,
         }
     }
 
@@ -197,6 +284,17 @@ impl<'a> Grant<'a> {
         if let Ok(mut map) = self.windows.lock() {
             for (k, t) in &self.window_stamps {
                 if map.get(k) == Some(t) {
+                    map.remove(k);
+                }
+            }
+        }
+        for (ledger, k, start) in &self.anchor_stamps {
+            if let Ok(mut map) = ledger.lock()
+                && let Some(entry) = map.get_mut(k)
+                && entry.0 == *start
+            {
+                entry.1 = entry.1.saturating_sub(1);
+                if entry.1 == 0 {
                     map.remove(k);
                 }
             }
@@ -268,6 +366,9 @@ struct FaucetResponse {
     tx_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// Seconds until the limit that refused this request lets it through.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_after: Option<u64>,
 }
 
 impl FaucetResponse {
@@ -276,6 +377,7 @@ impl FaucetResponse {
             success: true,
             tx_hash: Some(tx_hash),
             error: None,
+            retry_after: None,
         }
     }
     fn err(message: impl Into<String>) -> Self {
@@ -283,6 +385,13 @@ impl FaucetResponse {
             success: false,
             tx_hash: None,
             error: Some(message.into()),
+            retry_after: None,
+        }
+    }
+    fn wait(message: impl Into<String>, retry_after: Duration) -> Self {
+        Self {
+            retry_after: Some(retry_after.as_secs().max(1)),
+            ..Self::err(message)
         }
     }
 }
@@ -363,6 +472,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain_id = fetch_chain_id(&rpc_url)?;
     let rate_limit: Arc<RateLedger> = Arc::new(Mutex::new(HashMap::new()));
     let daily_ip: Arc<CountLedger> = Arc::new(Mutex::new(HashMap::new()));
+    let daily_addr: Arc<AnchoredLedger> = Arc::new(Mutex::new(HashMap::new()));
     let turnstile: Arc<Option<Turnstile>> = Arc::new(turnstile_from_env());
     match turnstile.as_ref() {
         Some(t) => println!(
@@ -378,7 +488,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     }
     println!(
-        "Limits: 1 drip per address per {RATE_LIMIT_HOURS} h, {IP_DAILY_CAP} drips per IP per 24 h; scripts without a challenge token: {API_DAILY_CAP} per address and per IP per 24 h"
+        "Limits: 1 drip per address per {RATE_LIMIT_HOURS} h, {ADDRESS_DAILY_CAP} per address and {IP_DAILY_CAP} per IP per 24 h; scripts without a challenge token: {API_DAILY_CAP} per address and per IP per 24 h"
     );
     let nonce_state: Arc<Mutex<NonceState>> = Arc::new(Mutex::new(NonceState::new()));
 
@@ -402,6 +512,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let faucet_key = faucet_key.clone();
         let rate_limit = Arc::clone(&rate_limit);
         let daily_ip = Arc::clone(&daily_ip);
+        let daily_addr = Arc::clone(&daily_addr);
         let turnstile = Arc::clone(&turnstile);
         let nonce_state = Arc::clone(&nonce_state);
         handles.push(std::thread::spawn(move || {
@@ -413,6 +524,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     chain_id,
                     &rate_limit,
                     &daily_ip,
+                    &daily_addr,
                     turnstile.as_ref().as_ref(),
                     &nonce_state,
                 );
@@ -434,6 +546,7 @@ fn handle_request(
     chain_id: u64,
     rate_limit: &RateLedger,
     daily_ip: &CountLedger,
+    daily_addr: &AnchoredLedger,
     turnstile: Option<&Turnstile>,
     nonce_state: &Mutex<NonceState>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -447,8 +560,54 @@ fn handle_request(
             "turnstileSiteKey": turnstile.and_then(|t| t.site_key.clone()),
             "dripMrsn": 1001,
             "addressWindowHours": RATE_LIMIT_HOURS,
+            "addressDailyCap": ADDRESS_DAILY_CAP,
             "ipDailyCap": IP_DAILY_CAP,
             "scriptDailyCap": API_DAILY_CAP,
+        })
+        .to_string();
+        let response = Response::from_string(body)
+            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+            .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap());
+        request.respond(response)?;
+        return Ok(());
+    }
+
+    // The page's claim counter: an address's native claims in its current
+    // 24 h window, when that window closes, and when its next claim opens
+    // (IP limits are not included: they depend on the caller).
+    if request.method() == &Method::Get
+        && let Some(raw) = url.strip_prefix("/claims/")
+    {
+        let raw = raw.split('?').next().unwrap_or_default();
+        let address = match parse_address(raw) {
+            Ok(a) => a,
+            Err(e) => {
+                request.respond(json_response(
+                    400,
+                    &FaucetResponse::err(format!("invalid address: {e}")),
+                ))?;
+                return Ok(());
+            }
+        };
+        let hex_addr = hex::encode(address.as_slice());
+        let (used, closes_in) =
+            anchored_status(daily_addr, &format!("native-addr-day:{hex_addr}"), DAY);
+        let hourly = rate_limit_remaining(
+            rate_limit,
+            &[format!("native:{hex_addr}")],
+            Duration::from_secs(RATE_LIMIT_HOURS * 3600),
+        );
+        let next = if used >= ADDRESS_DAILY_CAP {
+            closes_in
+        } else {
+            hourly
+        };
+        let body = json!({
+            "address": format!("0x{hex_addr}"),
+            "used": used,
+            "max": ADDRESS_DAILY_CAP,
+            "resetsInSec": closes_in.map(|d| d.as_secs().max(1)),
+            "nextInSec": next.map(|d| d.as_secs().max(1)),
         })
         .to_string();
         let response = Response::from_string(body)
@@ -510,10 +669,18 @@ fn handle_request(
                 return Ok(());
             }
         };
+        if denied(&address) {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("this address cannot claim from the faucet"),
+            ))?;
+            return Ok(());
+        }
 
         let addr_key = format!("native:{}", hex::encode(address.as_slice()));
         let ip_key = format!("native-ip:{}", ip);
         let day_key = format!("native-ip-day:{ip}");
+        let addr_day_key = format!("native-addr-day:{}", hex::encode(address.as_slice()));
         let window = Duration::from_secs(RATE_LIMIT_HOURS * 3600);
         let has_token = req
             .turnstile_token
@@ -538,13 +705,34 @@ fn handle_request(
             return Ok(());
         }
         // 1. Would the limits allow it? (read-only — nothing is stamped yet)
-        if rate_limit_check(rate_limit, &[addr_key.clone(), ip_key.clone()], window).is_err() {
+        let (used, closes_in) = anchored_status(daily_addr, &addr_day_key, DAY);
+        if used >= ADDRESS_DAILY_CAP {
+            let wait = closes_in.unwrap_or(DAY);
             request.respond(json_response(
                 429,
-                &FaucetResponse::err(format!(
-                    "rate limited: 1 native drip per address and per IP per {} hour(s)",
-                    RATE_LIMIT_HOURS
-                )),
+                &FaucetResponse::wait(
+                    format!(
+                        "rate limited: {ADDRESS_DAILY_CAP} claims per address per 24 hours — they come back in {}",
+                        fmt_wait(wait)
+                    ),
+                    wait,
+                ),
+            ))?;
+            return Ok(());
+        }
+        if rate_limit_check(rate_limit, &[addr_key.clone(), ip_key.clone()], window).is_err() {
+            let wait =
+                rate_limit_remaining(rate_limit, &[addr_key.clone(), ip_key.clone()], window)
+                    .unwrap_or(window);
+            request.respond(json_response(
+                429,
+                &FaucetResponse::wait(
+                    format!(
+                        "rate limited: 1 native drip per address and per IP per {} hour(s)",
+                        RATE_LIMIT_HOURS
+                    ),
+                    wait,
+                ),
             ))?;
             return Ok(());
         }
@@ -574,6 +762,7 @@ fn handle_request(
         let mut grant = Grant::new(rate_limit, daily_ip);
         let granted = grant.window(&[addr_key, ip_key], window)
             && grant.cap(&day_key, DAY, IP_DAILY_CAP)
+            && grant.anchored(daily_addr, &addr_day_key, DAY, ADDRESS_DAILY_CAP)
             && (!script_mode
                 || (grant.cap(&api_addr_key, DAY, API_DAILY_CAP)
                     && grant.cap(&api_ip_key, DAY, API_DAILY_CAP)));
@@ -614,6 +803,7 @@ fn handle_request(
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         };
 
         let signed = sign_transaction(&tx, faucet_key);
@@ -659,6 +849,13 @@ fn handle_request(
                 &FaucetResponse::err(
                     "expected {\"address\":\"0x...\",\"token\":\"usdc|usdt|dai\"}",
                 ),
+            ))?;
+            return Ok(());
+        }
+        if parse_address(&req.address).is_ok_and(|a| denied(&a)) {
+            request.respond(json_response(
+                403,
+                &FaucetResponse::err("this address cannot claim from the faucet"),
             ))?;
             return Ok(());
         }
@@ -730,6 +927,24 @@ fn parse_address(s: &str) -> Result<Address, String> {
         return Err("address must be 20 bytes".to_string());
     }
     Ok(Address::from_slice(&bytes))
+}
+
+/// Addresses refused at both claim endpoints: `FAUCET_DENYLIST` (default
+/// /etc/mersennet/faucet-deny.txt), one 0x address per line, `#` starts a
+/// comment. Read on every claim so an edit applies without a restart; a missing
+/// file refuses nobody.
+fn denied(address: &Address) -> bool {
+    let path = std::env::var("FAUCET_DENYLIST")
+        .unwrap_or_else(|_| "/etc/mersennet/faucet-deny.txt".to_string());
+    std::fs::read_to_string(path).is_ok_and(|text| denylist_contains(&text, address))
+}
+
+fn denylist_contains(text: &str, address: &Address) -> bool {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or_default().trim())
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| parse_address(line).ok())
+        .any(|listed| listed == *address)
 }
 
 fn load_faucet_key(path: &str) -> Result<SigningKey, Box<dyn std::error::Error>> {
@@ -902,11 +1117,7 @@ fn handle_claim_token(
         "usdt" => (parse_address(MOCK_USDT).unwrap(), TOKEN_AMOUNT_6),
         "dai" => (parse_address(MOCK_DAI).unwrap(), TOKEN_AMOUNT_18),
         _ => {
-            return FaucetResponse {
-                success: false,
-                tx_hash: None,
-                error: Some("unknown token: use usdc, usdt, or dai".into()),
-            };
+            return FaucetResponse::err("unknown token: use usdc, usdt, or dai");
         }
     };
 
@@ -940,6 +1151,7 @@ fn handle_claim_token(
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
     let signed_mint = sign_transaction(&mint_tx, faucet_key);
     let raw_mint = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_mint)));
@@ -963,15 +1175,12 @@ fn handle_claim_token(
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
     let signed_transfer = sign_transaction(&transfer_tx, faucet_key);
     let raw_transfer = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_transfer)));
     match send_raw_transaction(rpc_url, &raw_transfer) {
-        Ok(tx_hash) => FaucetResponse {
-            success: true,
-            tx_hash: Some(tx_hash),
-            error: None,
-        },
+        Ok(tx_hash) => FaucetResponse::ok(tx_hash),
         Err(e) => {
             release_nonces(nonce_state, nonce + 1, 1);
             refused("transfer", &e)
@@ -1047,6 +1256,19 @@ fn parse_args() -> Args {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_deny_list_matches_any_case_and_skips_comments_and_bad_lines() {
+        let listed = parse_address("0xCA7E8A7D00000000000000000000000000000001").unwrap();
+        let other = parse_address("0x0000000000000000000000000000000000000002").unwrap();
+        let text = "# farm, 20 Oct\n\n  0xca7e8a7d00000000000000000000000000000001  # funder\nnot-an-address\n#0x0000000000000000000000000000000000000002\n";
+        assert!(denylist_contains(text, &listed));
+        assert!(
+            !denylist_contains(text, &other),
+            "a commented-out line refuses nobody"
+        );
+        assert!(!denylist_contains("", &listed));
+    }
 
     #[test]
     fn rate_limit_blocks_repeat_within_window() {
@@ -1171,6 +1393,63 @@ mod tests {
             assert!(count_cap_grant(&daily, "ip", window, IP_DAILY_CAP).is_ok());
         }
         assert!(count_cap_check(&daily, "ip", window, IP_DAILY_CAP).is_err());
+    }
+
+    #[test]
+    fn three_claims_share_one_window_and_come_back_together() {
+        let ledger: AnchoredLedger = Mutex::new(HashMap::new());
+        let window = Duration::from_millis(80);
+        assert_eq!(anchored_status(&ledger, "addr", window), (0, None));
+        for n in 1..=ADDRESS_DAILY_CAP {
+            assert!(anchored_grant(&ledger, "addr", window, ADDRESS_DAILY_CAP).is_ok());
+            assert_eq!(anchored_status(&ledger, "addr", window).0, n);
+        }
+        assert!(anchored_grant(&ledger, "addr", window, ADDRESS_DAILY_CAP).is_err());
+        let (used, left) = anchored_status(&ledger, "addr", window);
+        assert_eq!(used, ADDRESS_DAILY_CAP);
+        assert!(left.is_some_and(|d| d <= window));
+        // Another address is independent.
+        assert!(anchored_grant(&ledger, "other", window, ADDRESS_DAILY_CAP).is_ok());
+        std::thread::sleep(Duration::from_millis(90));
+        // The window closed: all three come back at once, and the next claim opens a new one.
+        assert_eq!(anchored_status(&ledger, "addr", window), (0, None));
+        assert!(anchored_grant(&ledger, "addr", window, ADDRESS_DAILY_CAP).is_ok());
+        assert_eq!(anchored_status(&ledger, "addr", window).0, 1);
+    }
+
+    #[test]
+    fn a_released_claim_gives_its_slot_back_and_a_refused_first_one_opens_no_window() {
+        let windows: RateLedger = Mutex::new(HashMap::new());
+        let caps: CountLedger = Mutex::new(HashMap::new());
+        let daily: AnchoredLedger = Mutex::new(HashMap::new());
+        let mut first = Grant::new(&windows, &caps);
+        assert!(first.anchored(&daily, "addr", DAY, ADDRESS_DAILY_CAP));
+        first.release();
+        assert_eq!(anchored_status(&daily, "addr", DAY), (0, None));
+        let mut kept = Grant::new(&windows, &caps);
+        assert!(kept.anchored(&daily, "addr", DAY, ADDRESS_DAILY_CAP));
+        let mut refused = Grant::new(&windows, &caps);
+        assert!(refused.anchored(&daily, "addr", DAY, ADDRESS_DAILY_CAP));
+        refused.release();
+        assert_eq!(
+            anchored_status(&daily, "addr", DAY).0,
+            1,
+            "the drip that went out still counts"
+        );
+    }
+
+    #[test]
+    fn the_wait_is_the_longest_left_on_any_key() {
+        let ledger: RateLedger = Mutex::new(HashMap::new());
+        let hour = Duration::from_secs(3600);
+        let keys = vec!["native:w".to_string(), "native-ip:7.7.7.7".to_string()];
+        assert_eq!(rate_limit_remaining(&ledger, &keys, hour), None);
+        assert!(rate_limit_grant(&ledger, &keys[..1], hour).is_ok());
+        let left = rate_limit_remaining(&ledger, &keys, hour).unwrap();
+        assert!(left <= hour && left > hour - Duration::from_secs(5));
+        assert_eq!(fmt_wait(Duration::from_secs(3 * 3600 + 5 * 60)), "3h 05m");
+        assert_eq!(fmt_wait(Duration::from_secs(12 * 60)), "12m");
+        assert_eq!(fmt_wait(Duration::from_secs(30)), "1m");
     }
 
     #[test]

@@ -25,6 +25,7 @@ fn tx(from: Address, to: Option<Address>, nonce: u64, data: Bytes) -> Transactio
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     }
 }
 

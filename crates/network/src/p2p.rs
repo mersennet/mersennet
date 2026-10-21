@@ -286,7 +286,7 @@ pub fn tx_to_wire_with_raw(tx: &Transaction, raw: Option<&[u8]>) -> WireTx {
         tx_type: tx.tx_type,
         shielded_payload: tx.shielded_payload.clone(),
         hash: tx.hash.map(|h| hex_b256(&h)),
-        raw: raw.map(hex::encode),
+        raw: raw.or(tx.raw.as_ref().map(|b| &b[..])).map(hex::encode),
     }
 }
 
@@ -315,6 +315,10 @@ pub fn wire_to_tx(wire: &WireTx) -> Option<Transaction> {
         tx_type: wire.tx_type,
         shielded_payload: wire.shielded_payload.clone(),
         hash: wire.hash.as_deref().and_then(parse_hex_b256),
+        raw: match &wire.raw {
+            Some(raw) => Some(parse_hex_bytes(raw)?),
+            None => None,
+        },
     })
 }
 
@@ -1098,13 +1102,17 @@ impl NetworkNode {
 fn handle_relayed_tx(engine: &Arc<Mutex<Engine>>, wire: &WireTx) {
     let Ok(mut eng) = engine.lock() else { return };
     if let Some(raw_hex) = &wire.raw {
-        match hex::decode(raw_hex)
-            .ok()
-            .and_then(|raw| mersennet::crypto::decode_raw_signed_tx(&raw).ok())
-        {
-            Some(signed) => {
-                if let Err(err) = eng.submit_tx_unsigned(signed.tx) {
-                    tracing::debug!(reason = err.code(), "dropped relayed raw tx");
+        match hex::decode(raw_hex).ok().and_then(|raw| {
+            let signed = mersennet::crypto::decode_raw_signed_tx(&raw).ok()?;
+            Some((raw, signed))
+        }) {
+            Some((raw, signed)) => {
+                let hash = signed.tx.canonical_hash();
+                match eng.submit_tx_unsigned(signed.tx) {
+                    // Without its envelope a wallet tx cannot be re-verified
+                    // by the next hop or by an importer of its block.
+                    Ok(()) => eng.cache_raw_tx(hash, raw),
+                    Err(err) => tracing::debug!(reason = err.code(), "dropped relayed raw tx"),
                 }
             }
             None => tracing::debug!("dropped relayed tx: bad raw envelope"),

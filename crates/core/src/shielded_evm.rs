@@ -95,6 +95,15 @@ pub enum ShieldedEvmError {
     UnshieldAmountMismatch,
     #[error("malformed precompile input")]
     MalformedInput,
+    #[error("amount is outside the range a proof or a note can carry")]
+    AmountOutOfRange,
+}
+
+/// A proof binds an amount as one field element, so the amount must be that
+/// element exactly: binding only its low 64 bits let an unshield credit
+/// `amount + k * 2^64` against a proof for `amount`.
+fn amount_input(amount: &U256) -> Result<Fr, ShieldedEvmError> {
+    Fr::from_bytes(&amount.to_le_bytes::<32>()).ok_or(ShieldedEvmError::AmountOutOfRange)
 }
 
 /// Shielded transfer transaction. Encoded inside a `0x7E` tx envelope.
@@ -386,20 +395,22 @@ impl ShieldedEvm {
 
     /// Apply a shield (transparent → shielded) operation.
     pub fn apply_shield(&mut self, tx: &ShieldTx) -> Result<(), ShieldedEvmError> {
-        // 1. Debit the transparent EOA.
-        self.debit_transparent(tx.from, tx.amount)?;
-        // 2. Verify the output circuit proof.
+        // Nothing changes until the proof verifies and the note is in the
+        // tree: a failed shield must not cost its source anything.
         let public_inputs = vec![
             tx.output_commitment,
             Fr::ZERO, // asset_id = 0 (native MRSN); a real impl reads from `tx`
-            Fr::from_u64(u256_low(&tx.amount)),
+            amount_input(&tx.amount)?,
         ];
         self.verifier
             .verify(&tx.proof, Circuit::Output, &public_inputs)?;
-        // 3. Insert the new note commitment.
+        if self.transparent_balance(&tx.from) < tx.amount {
+            return Err(ShieldedEvmError::InsufficientTransparentBalance);
+        }
         let _ = self
             .state
             .insert_note(NoteCommitment(tx.output_commitment))?;
+        self.debit_transparent(tx.from, tx.amount)?;
         self.record_encrypted_note_payload(tx.output_commitment, &tx.encrypted_output);
         Ok(())
     }
@@ -413,7 +424,7 @@ impl ShieldedEvm {
             tx.anchor_root,
             tx.nullifier,
             tx.change_commitment,
-            Fr::from_u64(u256_low(&tx.amount)),
+            amount_input(&tx.amount)?,
         ];
         self.verifier
             .verify(&tx.proof, Circuit::Spend, &public_inputs)?;
@@ -451,10 +462,6 @@ impl From<crate::shielded_state::ShieldedStateError> for ShieldedEvmError {
     }
 }
 
-fn u256_low(x: &U256) -> u64 {
-    x.as_limbs()[0]
-}
-
 // ---------------------------------------------------------------------------
 // Hard-fork migration
 // ---------------------------------------------------------------------------
@@ -488,7 +495,7 @@ impl MigrationPlan {
             let rho = derive_migration_rho(owner, self.activation_height);
             let psi = derive_migration_psi(owner, self.activation_height);
             let note = mersennet_zkp::note::Note {
-                value: u256_low(&amount) as u128,
+                value: u128::try_from(amount).map_err(|_| ShieldedEvmError::AmountOutOfRange)?,
                 asset_id: 0,
                 owner_pk,
                 rho,
@@ -593,6 +600,107 @@ mod tests {
             err,
             ShieldedEvmError::InsufficientTransparentBalance
         ));
+    }
+
+    #[test]
+    fn unshield_binds_the_whole_amount() {
+        let mut evm = ShieldedEvm::new();
+        evm.state
+            .insert_note(NoteCommitment(Fr::from_u64(1)))
+            .unwrap();
+        let (anchor, nullifier, bob) = (
+            evm.state.current_root(),
+            Fr::from_u64(7),
+            Address::repeat_byte(0xbb),
+        );
+        // A valid proof for 500, presented with 2^64 more.
+        let proof = MockVerifier::new().prove(
+            Circuit::Spend,
+            vec![anchor, nullifier, Fr::ZERO, Fr::from_u64(500)],
+        );
+        let inflated = UnshieldTx {
+            anchor_root: anchor,
+            nullifier,
+            amount: U256::from(500u64) + (U256::from(1u64) << 64),
+            to: bob,
+            change_commitment: Fr::ZERO,
+            encrypted_change: Vec::new(),
+            proof,
+        };
+        assert!(matches!(
+            evm.apply_unshield(&inflated),
+            Err(ShieldedEvmError::InvalidProof(_))
+        ));
+        assert_eq!(evm.transparent_balance(&bob), U256::ZERO);
+        assert!(!evm.state.is_spent(&Nullifier(nullifier)));
+    }
+
+    #[test]
+    fn a_failed_shield_costs_nothing() {
+        let mut evm = ShieldedEvm::new();
+        let alice = Address::repeat_byte(0xaa);
+        evm.credit_transparent(alice, U256::from(1_000u64));
+        // The proof is for 900; the shield moves 1,000.
+        let proof = MockVerifier::new().prove(
+            Circuit::Output,
+            vec![Fr::from_u64(55), Fr::ZERO, Fr::from_u64(900)],
+        );
+        let tx = ShieldTx {
+            from: alice,
+            amount: U256::from(1_000u64),
+            output_commitment: Fr::from_u64(55),
+            encrypted_output: Vec::new(),
+            proof,
+        };
+        assert!(evm.apply_shield(&tx).is_err());
+        assert_eq!(evm.transparent_balance(&alice), U256::from(1_000u64));
+        assert_eq!(evm.state.note_count(), 0);
+    }
+
+    #[test]
+    fn amounts_outside_the_field_are_refused() {
+        let mut evm = ShieldedEvm::new();
+        let alice = Address::repeat_byte(0xaa);
+        evm.credit_transparent(alice, U256::MAX);
+        let proof =
+            MockVerifier::new().prove(Circuit::Output, vec![Fr::from_u64(55), Fr::ZERO, Fr::ZERO]);
+        let tx = ShieldTx {
+            from: alice,
+            amount: U256::MAX,
+            output_commitment: Fr::from_u64(55),
+            encrypted_output: Vec::new(),
+            proof,
+        };
+        assert!(matches!(
+            evm.apply_shield(&tx),
+            Err(ShieldedEvmError::AmountOutOfRange)
+        ));
+    }
+
+    #[test]
+    fn migration_keeps_balances_above_2_64() {
+        let mut evm = ShieldedEvm::new();
+        let a = Address::repeat_byte(0x11);
+        // One 131071 faucet drip: 1,001 MRSN, more than 2^64 wei.
+        let amount = U256::from(1_001u64) * U256::from(10u64).pow(U256::from(18u64));
+        evm.credit_transparent(a, amount);
+        let owner_pk = Fr::from_u64(0xaa);
+        let plan = MigrationPlan {
+            activation_height: 1000,
+            accounts: vec![(a, amount, owner_pk)],
+        };
+        plan.apply(&mut evm).unwrap();
+        let note = Note {
+            value: 1_001u128 * 10u128.pow(18),
+            asset_id: 0,
+            owner_pk,
+            rho: derive_migration_rho(a, 1000),
+            psi: derive_migration_psi(a, 1000),
+        };
+        assert_eq!(
+            evm.state.snapshot().leaves,
+            vec![note.commit(&Poseidon).0.to_bytes()]
+        );
     }
 
     #[test]

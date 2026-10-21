@@ -134,6 +134,17 @@ impl Default for PrivacyConfig {
     }
 }
 
+/// `engine.signed_tx_height` when the config leaves it unset. Chains with a
+/// schedule carry it in the binary, so a node upgraded by swapping the binary
+/// alone still enforces it at the same block as everyone else.
+pub fn default_signed_tx_height(chain_id: u64) -> Option<u64> {
+    match chain_id {
+        131071 => Some(2_623_500),
+        524287 | 8191 => Some(0),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
     #[serde(default = "default_chain_id")]
@@ -150,6 +161,13 @@ pub struct EngineConfig {
     /// the base fee may fall to 1 wei and everything it collects is burned.
     #[serde(default)]
     pub fee_floor_height: u64,
+    /// Consensus switch: from this height every transaction in a block must
+    /// prove its sender, the block hash commits to it signed, and the order
+    /// book refuses far-off prices and drops resting orders that cannot be
+    /// margined when hit. Unset: the chain's built-in schedule
+    /// (`default_signed_tx_height`).
+    #[serde(default)]
+    pub signed_tx_height: Option<u64>,
     /// From `fee_floor_height` the base fee never falls below this many wei
     /// (the EIP-1559 adjustment still moves it up with usage). At 1 wei one
     /// account put 530k reverting transactions a day on the chain for free.
@@ -570,6 +588,7 @@ impl Default for EngineConfig {
             fee_elasticity_multiplier: default_fee_elasticity(),
             fee_max_change_denominator: default_fee_change_denominator(),
             fee_floor_height: 0,
+            signed_tx_height: None,
             min_base_fee_wei: 0,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,

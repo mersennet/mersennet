@@ -139,6 +139,11 @@ pub struct Transaction {
     /// field-derived hash.
     #[serde(default)]
     pub hash: Option<B256>,
+    /// The signed envelope a wallet transaction arrived in. Its signature is
+    /// over fields this struct does not keep (EIP-1559 fees, access list), so
+    /// an importer can only verify the sender from these bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Bytes>,
 }
 
 impl Transaction {
@@ -183,6 +188,7 @@ impl Default for Transaction {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         }
     }
 }
@@ -494,6 +500,29 @@ const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
 /// this height (expected Thu 8 Oct ~09:30 UTC) around $115 (priceScale 100);
 /// positions entered on the broken book are re-entered at $115.
 const MRSN_REPAIR: (u64, u64, u64) = (2_324_700, 1, 11_500);
+/// Chain 131071 from block 2,324,702: liquidations closed positions in
+/// whatever order each node's map gave them, and part of the nodes ended up
+/// with 26 more units of bad debt and as much more fee credit for our keeper
+/// (20,523 instead of 20,497). At every block of this window, a node still
+/// holding 20,523 for the keeper gives both back, so every node agrees again
+/// whenever it upgraded within the window. The keeper is not used again.
+const REJOIN_WINDOW: (u64, u64) = (2_554_100, 2_850_900);
+const REJOIN_KEEPER: Address = Address::new([
+    0x28, 0x19, 0x85, 0xf1, 0xd7, 0x08, 0x6c, 0x38, 0x43, 0x40, 0xa5, 0x27, 0x89, 0x1d, 0x15, 0x06,
+    0xea, 0x07, 0x30, 0x49,
+]);
+const REJOIN_KEEPER_COLLATERAL: u64 = 20_497;
+const REJOIN_APART: u64 = 26;
+/// Chain 131071: the test USDC is free to mint, so from this height it counts
+/// for nothing as margin and is no longer accepted as collateral. Balances
+/// already deposited stay with their owners and can be withdrawn.
+const FREE_TOKEN_OFF: (u64, Address) = (
+    2_670_700,
+    Address::new([
+        0xa4, 0x4b, 0x23, 0xd1, 0xd0, 0xc0, 0x13, 0x3d, 0xa7, 0x1d, 0xec, 0xe3, 0x99, 0xd5, 0xd5,
+        0xad, 0xe6, 0xdd, 0x22, 0xd1,
+    ]),
+);
 
 #[derive(Debug)]
 pub struct Engine {
@@ -507,6 +536,9 @@ pub struct Engine {
     pub fee_max_change_denominator: u64,
     /// Fee floor + split (consensus switch `fee_floor_height`, 0 = off).
     pub fee_floor_height: u64,
+    /// Consensus switch (`None` = off): from this height every transaction in
+    /// a block proves its sender and the block hash commits to it signed.
+    signed_tx_height: Option<u64>,
     pub min_base_fee: U256,
     pub fee_treasury_bps: u64,
     pub fee_proposer_bps: u64,
@@ -628,6 +660,10 @@ pub struct Engine {
     price_rescales: Vec<(u64, u64)>,
     /// One-off market repair as (height, market, reference price).
     market_repair: Option<(u64, u64, u64)>,
+    /// (window, keeper, keeper collateral, amount apart): see `REJOIN_WINDOW`.
+    rejoin: Option<((u64, u64), Address, U256, U256)>,
+    /// (height, token): see `FREE_TOKEN_OFF`.
+    free_token_off: Option<(u64, Address)>,
     /// When we last applied a block (produced or imported). Used to tell a
     /// real "catching up" state from a stalled network.
     last_block_applied_at: Option<std::time::Instant>,
@@ -855,6 +891,7 @@ impl Engine {
             },
             fee_max_change_denominator: 8,
             fee_floor_height: 0,
+            signed_tx_height: None,
             min_base_fee: U256::ZERO,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -911,6 +948,13 @@ impl Engine {
             price_scale_height: 0,
             price_rescales: Vec::new(),
             market_repair: (chain_id == 131071).then_some(MRSN_REPAIR),
+            rejoin: (chain_id == 131071).then_some((
+                REJOIN_WINDOW,
+                REJOIN_KEEPER,
+                U256::from(REJOIN_KEEPER_COLLATERAL),
+                U256::from(REJOIN_APART),
+            )),
+            free_token_off: (chain_id == 131071).then_some(FREE_TOKEN_OFF),
             last_block_applied_at: None,
             fork_detected_at: None,
             checkpoints: std::collections::VecDeque::new(),
@@ -1044,24 +1088,10 @@ impl Engine {
     /// recomputes the active set from the registry and installs it as the
     /// consensus validator set. Identical on producer and importer.
     fn maybe_epoch_transition(&mut self, height: u64) {
+        if !self.epoch_transition_due(height) {
+            return;
+        }
         let st = &self.orders.state.staking;
-        if !st.is_open_set_active(height) {
-            return;
-        }
-        let activation = st.params.activation_height;
-        let epoch_blocks = st.params.epoch_blocks.max(1);
-        let at_boundary = height == activation || height.is_multiple_of(epoch_blocks);
-        if !at_boundary {
-            return;
-        }
-        // Idempotency: the transition for this epoch already ran.
-        let epoch = height / epoch_blocks;
-        if !st.active_set.is_empty() && st.current_epoch == epoch && height != activation {
-            return;
-        }
-        if height == activation && st.current_epoch == epoch && !st.active_set.is_empty() {
-            return;
-        }
         if st.registry.is_empty() {
             // First activation: the genesis validators become registry
             // entries with their consensus stake as self-stake.
@@ -1100,6 +1130,36 @@ impl Engine {
             rotated = transition.rotated.len(),
             "epoch transition: validator set recomputed"
         );
+    }
+
+    /// The first block of an epoch (or the activation height) whose
+    /// transition this node has not applied yet.
+    fn epoch_transition_due(&self, height: u64) -> bool {
+        let st = &self.orders.state.staking;
+        if !st.is_open_set_active(height) {
+            return false;
+        }
+        let epoch_blocks = st.params.epoch_blocks.max(1);
+        if height != st.params.activation_height && !height.is_multiple_of(epoch_blocks) {
+            return false;
+        }
+        st.active_set.is_empty() || st.current_epoch != height / epoch_blocks
+    }
+
+    /// The set the transition for `height` will install, while it is due.
+    /// The first block of an epoch is authenticated and its slots counted
+    /// after that transition, which runs inside the block; a node deciding
+    /// whether to propose it has not run it yet. Electing from the set still
+    /// in place made the old rotation's leader propose: everyone ahead of it
+    /// in the new rotation was charged a missed slot, and a leader that had
+    /// just left the set had its block refused.
+    fn pending_epoch_rotation(&self, height: u64) -> Option<Vec<Address>> {
+        let st = &self.orders.state.staking;
+        if st.registry.is_empty() || !self.epoch_transition_due(height) {
+            return None;
+        }
+        let set = st.clone().epoch_transition(height).active_set;
+        (!set.is_empty()).then_some(set)
     }
 
     /// Leader-slot accounting for jailing: the proposer took height `height`
@@ -1141,6 +1201,9 @@ impl Engine {
     /// node maintains from block data, so every node computes the same
     /// rotation; never empties the rotation.
     fn leader_rotation(&self, height: u64) -> Vec<Address> {
+        if let Some(next) = self.pending_epoch_rotation(height) {
+            return next;
+        }
         let vs = self.validator_addresses();
         let st = &self.orders.state.staking;
         let bh = st.params.bench_height;
@@ -1957,6 +2020,44 @@ impl Engine {
         }
     }
 
+    pub fn set_signed_tx_height(&mut self, height: Option<u64>) {
+        self.signed_tx_height = height;
+    }
+
+    fn signed_txs_at(&self, height: u64) -> bool {
+        self.signed_tx_height.is_some_and(|from| height >= from)
+    }
+
+    /// Does `tx` prove that `from` signed it? A transaction with an envelope
+    /// is exactly what the envelope decodes to (the decoder recovers the
+    /// signer); one without carries a signature in the native scheme.
+    fn tx_proves_sender(&self, tx: &Transaction) -> bool {
+        let Some(raw) = &tx.raw else {
+            return self.verify_tx_signature(tx).is_ok();
+        };
+        let Ok(signed) = crypto::decode_raw_signed_tx(raw) else {
+            return false;
+        };
+        let d = &signed.tx;
+        let same_payload = || match (&d.shielded_payload, &tx.shielded_payload) {
+            (None, None) => true,
+            (Some(a), Some(b)) => bincode::serialize(a).ok() == bincode::serialize(b).ok(),
+            _ => false,
+        };
+        d.from == tx.from
+            && d.to == tx.to
+            && d.value == tx.value
+            && d.data == tx.data
+            && d.nonce == tx.nonce
+            && d.gas_limit == tx.gas_limit
+            && d.gas_price == tx.gas_price
+            && d.chain_id == tx.chain_id
+            && d.tx_type == tx.tx_type
+            && d.signature == tx.signature
+            && d.hash == tx.hash
+            && same_payload()
+    }
+
     /// Consensus switch: precompiles authorise on the call frame's caller (0 = off).
     pub fn set_revert_reasons_height(&mut self, height: u64) {
         precompiles::set_revert_reasons_height(height);
@@ -1976,6 +2077,48 @@ impl Engine {
     /// the configured rescales. Deterministic from state + config, idempotent
     /// (a market already at the target scale is a no-op), so producer and
     /// importers agree and a restart mid-height cannot double-apply.
+    pub fn set_rejoin(&mut self, rejoin: Option<((u64, u64), Address, U256, U256)>) {
+        self.rejoin = rejoin;
+    }
+
+    pub fn set_free_token_off(&mut self, off: Option<(u64, Address)>) {
+        self.free_token_off = off;
+    }
+
+    /// Consensus step at `FREE_TOKEN_OFF`, before the block's transactions:
+    /// the token's weight drops to zero in the persisted registry.
+    fn maybe_free_token_off(&mut self, height: u64) {
+        let Some((at, token)) = self.free_token_off else {
+            return;
+        };
+        if height == at && self.orders.state.stop_counting_collateral_asset(token) {
+            tracing::warn!(height, %token, "collateral token no longer counts as margin");
+        }
+    }
+
+    /// Consensus step at every block of the rejoin window, before the block's
+    /// transactions: see `REJOIN_WINDOW`.
+    fn maybe_rejoin(&mut self, height: u64) {
+        let Some(((from, to), keeper, expected, apart)) = self.rejoin else {
+            return;
+        };
+        if height < from || height > to {
+            return;
+        }
+        if self
+            .orders
+            .state
+            .take_back_apart_credit(keeper, expected, apart)
+        {
+            tracing::warn!(
+                height,
+                %keeper,
+                %apart,
+                "rejoined: the keeper credit and the bad debt this node held apart are given back"
+            );
+        }
+    }
+
     pub fn set_market_repair(&mut self, repair: Option<(u64, u64, u64)>) {
         self.market_repair = repair;
     }
@@ -2101,6 +2244,7 @@ impl Engine {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         };
         // Use the same hash the tx index/lookup will compute, so the
         // returned txHash resolves via eth_getTransactionByHash.
@@ -2303,6 +2447,8 @@ impl Engine {
         self.maybe_epoch_transition(self.block_number);
         self.maybe_price_rescale(self.block_number);
         self.maybe_market_repair(self.block_number);
+        self.maybe_rejoin(self.block_number);
+        self.maybe_free_token_off(self.block_number);
         self.maybe_settlement_switch(self.block_number);
         // Fee floor: from the switch the base fee never sits below the floor
         // (covers the switch block itself and a restart from a checkpoint).
@@ -2362,6 +2508,7 @@ impl Engine {
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = self.block_number;
+        self.orders.state.safety_height = self.signed_tx_height;
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -2471,6 +2618,15 @@ impl Engine {
                 let Some(tx) = self.mempool.take_ready(sender, expected_nonce) else {
                     continue;
                 };
+                if self.signed_txs_at(self.block_number) && !self.tx_proves_sender(&tx) {
+                    tracing::warn!(
+                        from = %tx.from,
+                        nonce = tx.nonce,
+                        "dropping mempool tx that does not prove its sender"
+                    );
+                    progressed = true;
+                    continue;
+                }
 
                 let execution = if tx.tx_type == crate::shielded_evm::SHIELDED_TX_TYPE {
                     self.apply_shielded_tx(&tx)
@@ -2648,7 +2804,7 @@ impl Engine {
         // root, and receipts root. Computed here, after the state root
         // is known, so the hash actually commits to the block's content.
         let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
-        let tx_root = Self::compute_tx_root(&transactions);
+        let tx_root = Self::compute_tx_root(&transactions, self.signed_txs_at(self.block_number));
         let receipts_root = Self::compute_receipts_root(&receipts);
         let header_witness = self.header_witness(
             gas_used,
@@ -2861,6 +3017,10 @@ impl Engine {
                 let Some(tx) = self.mempool.take_ready(sender, expected_nonce) else {
                     continue;
                 };
+                if self.signed_txs_at(self.block_number) && !self.tx_proves_sender(&tx) {
+                    progressed = true;
+                    continue;
+                }
 
                 estimated_gas = estimated_gas.saturating_add(tx_gas);
                 if let Some(nonce) = nonce_cache.get_mut(&tx.from) {
@@ -3045,7 +3205,7 @@ impl Engine {
             .as_secs();
 
         let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
-        let tx_root = Self::compute_tx_root(&transactions);
+        let tx_root = Self::compute_tx_root(&transactions, self.signed_txs_at(self.block_number));
         let receipts_root = Self::compute_receipts_root(&receipts);
         let header_witness = self.header_witness(
             gas_used,
@@ -3347,6 +3507,69 @@ impl Engine {
         }
     }
 
+    /// Count what a stricter import would reject, without rejecting it:
+    /// a block hash that does not re-derive from the block's contents, and
+    /// transactions whose signature does not prove their sender. A wallet
+    /// transaction can only be checked against its raw envelope, which this
+    /// node has if the transaction reached its mempool.
+    fn audit_imported_block(&self, block: &Block) {
+        if !self.header_commits_to_hash(block) {
+            metrics::increment_counter!("mersennet_import_audit_block_hash_mismatch_total");
+            tracing::warn!(
+                height = block.number,
+                proposer = %block.proposer,
+                "import audit: block hash does not re-derive from its contents"
+            );
+        }
+        for tx in &block.transactions {
+            let result = self.audit_tx_signature(tx);
+            metrics::increment_counter!("mersennet_import_audit_tx_total", "result" => result);
+            if matches!(result, "unsigned" | "envelope_mismatch") {
+                tracing::warn!(
+                    height = block.number,
+                    proposer = %block.proposer,
+                    tx = %tx.canonical_hash(),
+                    from = %tx.from,
+                    result,
+                    "import audit: transaction does not prove its sender"
+                );
+            }
+        }
+    }
+
+    fn audit_tx_signature(&self, tx: &Transaction) -> &'static str {
+        let Some((r, s, v)) = tx.signature else {
+            return "unsigned";
+        };
+        if let Some(raw) = self.raw_tx_cache.get(&tx.canonical_hash()) {
+            return match crypto::decode_raw_signed_tx(raw) {
+                Ok(signed)
+                    if signed.tx.from == tx.from
+                        && signed.tx.to == tx.to
+                        && signed.tx.value == tx.value
+                        && signed.tx.data == tx.data
+                        && signed.tx.nonce == tx.nonce
+                        && signed.tx.gas_limit == tx.gas_limit
+                        && signed.tx.chain_id == tx.chain_id =>
+                {
+                    "envelope_ok"
+                }
+                _ => "envelope_mismatch",
+            };
+        }
+        let signed = SignedTransaction {
+            tx: tx.clone(),
+            v: U256::from(v),
+            r,
+            s,
+            tx_type: 0,
+        };
+        match crypto::recover_signer(&signed) {
+            Ok(signer) if signer == tx.from => "native_ok",
+            _ => "no_envelope",
+        }
+    }
+
     /// Re-execute an externally produced block against local state.
     ///
     /// `execute_block` *builds* a block by pulling transactions from
@@ -3399,6 +3622,8 @@ impl Engine {
         self.maybe_epoch_transition(block.number);
         self.maybe_price_rescale(block.number);
         self.maybe_market_repair(block.number);
+        self.maybe_rejoin(block.number);
+        self.maybe_free_token_off(block.number);
         self.maybe_settlement_switch(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
@@ -3440,7 +3665,37 @@ impl Engine {
                 );
             }
         }
+        // The proposer's signature covers only the hash it claims. From the
+        // switch the hash must re-derive from the contents, and each
+        // transaction must prove its sender: a leader could otherwise move
+        // any account's funds, and any relay could edit the block in transit.
+        // Checked before slot accounting so a rejected copy leaves no trace;
+        // an intact copy of the same block can still be imported.
+        if self.signed_txs_at(block.number) {
+            if !self.header_commits_to_hash(&block) {
+                anyhow::bail!(
+                    "block {} hash {} does not commit to its contents",
+                    block.number,
+                    block.hash
+                );
+            }
+            if let Some(tx) = block
+                .transactions
+                .iter()
+                .find(|tx| !self.tx_proves_sender(tx))
+            {
+                anyhow::bail!(
+                    "block {} transaction {} does not prove its sender {}",
+                    block.number,
+                    tx.canonical_hash(),
+                    tx.from
+                );
+            }
+        }
         self.record_leader_slots(block.number, block.proposer);
+        if self.highest_observed_height <= block.number.saturating_add(REORG_DEPTH as u64) {
+            self.audit_imported_block(&block);
+        }
 
         // Fee floor: a block priced below the consensus floor is invalid from
         // the switch, whoever proposed it.
@@ -3463,6 +3718,7 @@ impl Engine {
         #[cfg(test)]
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = block.number;
+        self.orders.state.safety_height = self.signed_tx_height;
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -3961,6 +4217,7 @@ impl Engine {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -4059,6 +4316,7 @@ impl Engine {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         });
         result.map_err(|err| anyhow::anyhow!("tx rejected: {} ({})", err.code(), err))
     }
@@ -4759,41 +5017,67 @@ impl Engine {
     /// every node) and only then stamps its address into the block, so both
     /// are tried.
     pub fn header_commits_to_hash(&self, block: &Block) -> bool {
-        let tx_root = Self::compute_tx_root(&block.transactions);
+        [self.coinbase, block.coinbase]
+            .iter()
+            .any(|coinbase| self.derive_block_hash_with(block, *coinbase) == block.hash)
+    }
+
+    fn derive_block_hash_with(&self, block: &Block, coinbase: Address) -> B256 {
+        let tx_root = Self::compute_tx_root(&block.transactions, self.signed_txs_at(block.number));
         let receipts_root = Self::compute_receipts_root(&block.receipts);
-        [self.coinbase, block.coinbase].iter().any(|coinbase| {
-            let mut coinbase_bytes = [0u8; 20];
-            coinbase_bytes.copy_from_slice(coinbase.as_slice());
-            let witness = mersennet_zkp::sp1::BlockHeaderWitness {
-                chain_id: block.chain_id,
-                gas_limit: block.gas_limit,
-                gas_used: block.gas_used,
-                base_fee_be: block.base_fee.to_be_bytes::<32>(),
-                coinbase: coinbase_bytes,
-                tx_count: block.transactions.len() as u64,
-                parent_hash: block.parent_hash.0,
-                timestamp: block.timestamp,
-                tx_root: tx_root.0,
-                state_root: block.state_root.0,
-                receipts_root: receipts_root.0,
-            };
-            B256::from(mersennet_zkp::sp1::derive_block_hash(
-                block.number,
-                &witness,
-            )) == block.hash
-        })
+        let mut coinbase_bytes = [0u8; 20];
+        coinbase_bytes.copy_from_slice(coinbase.as_slice());
+        let witness = mersennet_zkp::sp1::BlockHeaderWitness {
+            chain_id: block.chain_id,
+            gas_limit: block.gas_limit,
+            gas_used: block.gas_used,
+            base_fee_be: block.base_fee.to_be_bytes::<32>(),
+            coinbase: coinbase_bytes,
+            tx_count: block.transactions.len() as u64,
+            parent_hash: block.parent_hash.0,
+            timestamp: block.timestamp,
+            tx_root: tx_root.0,
+            state_root: block.state_root.0,
+            receipts_root: receipts_root.0,
+        };
+        B256::from(mersennet_zkp::sp1::derive_block_hash(
+            block.number,
+            &witness,
+        ))
     }
 
     /// Keccak Merkle-ish root over the ordered transaction hashes. A
     /// simple sequential keccak accumulator is sufficient to bind the
-    /// exact transaction list + order into the block hash.
-    fn compute_tx_root(transactions: &[Transaction]) -> B256 {
+    /// exact transaction list + order into the block hash. With `signed`,
+    /// each transaction is committed with its sender and signature, so no
+    /// part of it can change without changing the block hash.
+    fn compute_tx_root(transactions: &[Transaction], signed: bool) -> B256 {
         if transactions.is_empty() {
             return B256::ZERO;
         }
         let mut buf = Vec::with_capacity(transactions.len() * 32);
         for tx in transactions {
-            buf.extend_from_slice(crate::crypto::tx_signing_hash(tx).as_slice());
+            let leaf = if signed {
+                Self::signed_tx_commitment(tx)
+            } else {
+                crate::crypto::tx_signing_hash(tx)
+            };
+            buf.extend_from_slice(leaf.as_slice());
+        }
+        keccak256(&buf)
+    }
+
+    fn signed_tx_commitment(tx: &Transaction) -> B256 {
+        if let Some(raw) = &tx.raw {
+            return keccak256(raw);
+        }
+        let mut buf = Vec::with_capacity(32 + 20 + 72);
+        buf.extend_from_slice(crate::crypto::tx_signing_hash(tx).as_slice());
+        buf.extend_from_slice(tx.from.as_slice());
+        if let Some((r, s, v)) = tx.signature {
+            buf.extend_from_slice(&r.to_be_bytes::<32>());
+            buf.extend_from_slice(&s.to_be_bytes::<32>());
+            buf.extend_from_slice(&v.to_be_bytes());
         }
         keccak256(&buf)
     }
@@ -5227,6 +5511,7 @@ mod reorg_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: Some(h),
+            raw: None,
         })
         .unwrap();
         e.cache_raw_tx(h, vec![1, 2, 3]);
@@ -5307,12 +5592,330 @@ mod reorg_tests {
     }
 
     #[test]
+    fn nodes_apart_by_keeper_credit_and_bad_debt_agree_after_the_rejoin_window() {
+        let keeper = Address::repeat_byte(0x2b);
+        let window = ((3, 6), keeper, U256::from(20_497u64), U256::from(26u64));
+        let mut p = with_validators(engine());
+        let mut b = with_validators(engine());
+        let mut late = with_validators(engine());
+        for (e, apart) in [(&mut p, 0u64), (&mut b, 26), (&mut late, 26)] {
+            e.orders.state.bad_debt = U256::from(2_885_825 + apart);
+            e.orders
+                .state
+                .deposit_collateral(keeper, U256::from(20_497 + apart));
+        }
+        p.set_rejoin(Some(window));
+        b.set_rejoin(Some(window));
+        late.set_rejoin(None);
+        for height in 1..=8u64 {
+            let block = produce_as_leader(&mut p, 0);
+            if height == 5 {
+                late.set_rejoin(Some(window)); // upgraded halfway through the window
+            }
+            for e in [&mut b, &mut late] {
+                e.import_block(block.clone());
+                assert_eq!(e.latest_height(), block.number);
+            }
+            if height == 2 {
+                assert_eq!(
+                    b.orders.state.bad_debt,
+                    U256::from(2_885_851u64),
+                    "not before the window"
+                );
+            }
+        }
+        for e in [&p, &b, &late] {
+            assert_eq!(e.orders.state.bad_debt, U256::from(2_885_825u64));
+            assert_eq!(
+                e.orders.state.accounts[&keeper].collateral,
+                U256::from(20_497u64)
+            );
+        }
+        let root = p.evm.state.compute_state_root();
+        assert_eq!(b.evm.state.compute_state_root(), root, "one state again");
+        assert_eq!(
+            late.evm.state.compute_state_root(),
+            root,
+            "a late upgrade too"
+        );
+    }
+
+    #[test]
+    fn producer_and_importer_stop_counting_the_free_token_at_the_same_height() {
+        let token = Address::repeat_byte(0x77);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.register_collateral_asset(
+                token,
+                9_000,
+                U256::from(1u64),
+                U256::from(1u64),
+                U256::from(3u64),
+            );
+            e.set_free_token_off(Some((3, token)));
+        }
+        for height in 1..=4u64 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number);
+            let weight = |e: &Engine| e.orders.state.collateral_assets[&token].weight_bps;
+            let expected = if height < 3 { 9_000 } else { 0 };
+            assert_eq!(
+                (weight(&p), weight(&a)),
+                (expected, expected),
+                "at block {height}"
+            );
+        }
+        assert_eq!(
+            p.evm.state.compute_state_root(),
+            a.evm.state.compute_state_root()
+        );
+    }
+
+    #[test]
+    fn the_free_token_switch_is_scheduled_on_chain_131071_only() {
+        assert_eq!(engine().free_token_off, Some(FREE_TOKEN_OFF));
+        assert_eq!(
+            format!("{:#x}", FREE_TOKEN_OFF.1),
+            "0xa44b23d1d0c0133da71dece399d5d5ade6dd22d1"
+        );
+        let dir = tempdir().unwrap();
+        let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
+        assert_eq!(other.free_token_off, None);
+    }
+
+    #[test]
+    fn the_rejoin_is_scheduled_on_chain_131071_only() {
+        let testnet = engine();
+        assert_eq!(
+            testnet.rejoin,
+            Some((
+                REJOIN_WINDOW,
+                REJOIN_KEEPER,
+                U256::from(REJOIN_KEEPER_COLLATERAL),
+                U256::from(REJOIN_APART)
+            ))
+        );
+        assert_eq!(
+            format!("{REJOIN_KEEPER:#x}"),
+            "0x281985f1d7086c384340a527891d1506ea073049"
+        );
+        let dir = tempdir().unwrap();
+        let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
+        assert_eq!(other.rejoin, None);
+    }
+
+    #[test]
     fn the_mrsn_repair_is_scheduled_on_chain_131071_only() {
         let testnet = engine();
         assert_eq!(testnet.market_repair, Some(MRSN_REPAIR));
         let dir = tempdir().unwrap();
         let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
         assert_eq!(other.market_repair, None);
+    }
+
+    #[test]
+    fn import_audit_tells_proven_senders_from_unproven_ones() {
+        // EIP-1559 transfer on chain 131071 (crypto::rlp_decode tests).
+        const WALLET_TX: &str = "02f86d8301ffff80010782520894ff00000000000000000000000000000000000011880de0b6b3a764000080c080a0622575814887e044fea9579b9cfd6884ace1d4f2e10e2e9fab58a4df0a3c0e03a060d1356f86b663b4887ed464262d3f84548036147f4d71e8c772806bb7058fae";
+        let mut e = engine();
+        let raw = hex::decode(WALLET_TX).unwrap();
+        let wallet = crate::crypto::decode_raw_signed_tx(&raw).unwrap().tx;
+        assert_eq!(e.audit_tx_signature(&wallet), "no_envelope");
+        e.cache_raw_tx(wallet.canonical_hash(), raw);
+        assert_eq!(e.audit_tx_signature(&wallet), "envelope_ok");
+
+        let mut forged = wallet.clone();
+        forged.from = Address::repeat_byte(0x66);
+        assert_eq!(e.audit_tx_signature(&forged), "envelope_mismatch");
+        let mut unsigned = wallet.clone();
+        unsigned.signature = None;
+        assert_eq!(e.audit_tx_signature(&unsigned), "unsigned");
+
+        let (key, alice) = crate::crypto::generate_keypair();
+        let native = Transaction {
+            from: alice,
+            chain_id: Some(131071),
+            gas_limit: 21_000,
+            ..Default::default()
+        };
+        let native = crate::crypto::sign_transaction(&native, &key).tx;
+        assert_eq!(e.audit_tx_signature(&native), "native_ok");
+    }
+
+    /// What a leader can do to a block it produced: change it and sign the
+    /// new hash with its own key.
+    fn reseal(e: &Engine, mut b: Block) -> Block {
+        b.hash = e.derive_block_hash_with(&b, Address::ZERO);
+        let key = keys()
+            .into_iter()
+            .find(|k| crate::crypto::address_from_signing_key(k) == b.proposer)
+            .unwrap();
+        b.proposer_sig = Some(crate::crypto::sign_block_proposal(b.number, b.hash, &key));
+        b
+    }
+
+    #[test]
+    fn from_the_switch_imports_require_every_sender_to_be_proven() {
+        let (key, alice) = crate::crypto::generate_keypair();
+        let victim = Address::repeat_byte(0x66);
+        let one_mrsn = U256::from(10u64).pow(U256::from(18u64));
+        let fresh = || {
+            let mut e = with_validators(engine());
+            e.set_signed_tx_height(Some(1));
+            for who in [alice, victim] {
+                e.fund_account(who, one_mrsn, 0);
+            }
+            e
+        };
+        let mut p = fresh();
+        let tx = Transaction {
+            from: alice,
+            to: Some(Address::repeat_byte(0x22)),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        p.submit_tx(crate::crypto::sign_transaction(&tx, &key).tx)
+            .unwrap();
+        let honest = produce_as_leader(&mut p, 0);
+        assert_eq!(honest.transactions.len(), 1);
+
+        let mut forged = honest.clone();
+        forged.transactions[0].from = victim;
+        let mut unsigned = honest.clone();
+        unsigned.transactions[0].signature = None;
+        let mut tampered = honest.clone();
+        tampered.transactions[0].to = Some(victim);
+
+        let mut a = fresh();
+        for (what, bad) in [
+            ("sender swapped by the leader", reseal(&a, forged)),
+            ("signature dropped by the leader", reseal(&a, unsigned)),
+            ("edited by a relay", tampered),
+        ] {
+            a.import_block(bad);
+            assert_eq!(a.latest_height(), 0, "{what}: rejected");
+        }
+        a.import_block(honest.clone());
+        assert_eq!(
+            a.latest_height(),
+            honest.number,
+            "the intact block still imports"
+        );
+        assert_eq!(a.get_balance(victim).unwrap(), one_mrsn);
+    }
+
+    #[test]
+    fn from_the_switch_a_wallet_transaction_travels_with_its_envelope() {
+        // EIP-1559 transfer on chain 131071 (crypto::rlp_decode tests).
+        const WALLET_TX: &str = "02f86d8301ffff80010782520894ff00000000000000000000000000000000000011880de0b6b3a764000080c080a0622575814887e044fea9579b9cfd6884ace1d4f2e10e2e9fab58a4df0a3c0e03a060d1356f86b663b4887ed464262d3f84548036147f4d71e8c772806bb7058fae";
+        let wallet = crate::crypto::decode_raw_signed_tx(&hex::decode(WALLET_TX).unwrap())
+            .unwrap()
+            .tx;
+        let fresh = || {
+            let mut e = with_validators(engine());
+            e.set_signed_tx_height(Some(1));
+            for who in [wallet.from, Address::repeat_byte(0x66)] {
+                e.fund_account(who, U256::from(10u64).pow(U256::from(19u64)), 0);
+            }
+            e
+        };
+        let mut p = fresh();
+        p.submit_tx_unsigned(wallet.clone()).unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert_eq!(block.transactions.len(), 1);
+        assert!(block.transactions[0].raw.is_some());
+
+        // The root commits to keccak(raw), so this keeps the block hash.
+        let mut forged = block.clone();
+        forged.transactions[0].from = Address::repeat_byte(0x66);
+        let mut a = fresh();
+        a.import_block(forged);
+        assert_eq!(
+            a.latest_height(),
+            0,
+            "a sender the envelope does not name is rejected"
+        );
+        a.import_block(block.clone());
+        assert_eq!(a.latest_height(), block.number);
+    }
+
+    #[test]
+    fn before_the_switch_blocks_import_as_they_always_have() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        a.set_signed_tx_height(Some(100));
+        for e in [&mut p, &mut a] {
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        let (bob, gas_price) = (
+            Address::from_slice(&[0x22; 20]),
+            U256::from(2_000_000_000u64),
+        );
+        p.transfer(alice, bob, U256::from(1u64), 21_000, gas_price, 0)
+            .unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        a.import_block(block.clone());
+        assert_eq!(a.latest_height(), block.number);
+    }
+
+    #[test]
+    fn from_the_switch_the_producer_leaves_out_what_it_cannot_prove() {
+        let (key, alice) = crate::crypto::generate_keypair();
+        let carol = Address::from_slice(&[0x33; 20]);
+        let mut p = with_validators(engine());
+        p.set_signed_tx_height(Some(1));
+        for who in [alice, carol] {
+            p.fund_account(who, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        let (bob, gas_price) = (
+            Address::from_slice(&[0x22; 20]),
+            U256::from(2_000_000_000u64),
+        );
+        p.transfer(carol, bob, U256::from(1u64), 21_000, gas_price, 0)
+            .unwrap();
+        let tx = Transaction {
+            from: alice,
+            to: Some(bob),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price,
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        p.submit_tx(crate::crypto::sign_transaction(&tx, &key).tx)
+            .unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert_eq!(block.transactions.len(), 1);
+        assert_eq!(block.transactions[0].from, alice);
+    }
+
+    #[test]
+    fn import_audit_does_not_reject_anything() {
+        let alice = Address::from_slice(&[0x11; 20]);
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        for e in [&mut p, &mut a] {
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+        }
+        p.transfer(
+            alice,
+            Address::from_slice(&[0x22; 20]),
+            U256::from(1u64),
+            21_000,
+            U256::from(2_000_000_000u64),
+            0,
+        )
+        .unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert!(block.transactions[0].signature.is_none());
+        a.import_block(block.clone());
+        assert_eq!(a.latest_height(), block.number);
     }
 
     #[test]
@@ -5822,6 +6425,73 @@ mod open_validator_set_tests {
         b
     }
 
+    /// Produce the next block the way the node does: it decides it leads the
+    /// height before the block (and so the epoch transition) runs.
+    fn produce_as_the_node_does(e: &mut Engine, skip: &[Address]) -> Block {
+        let mut r = 0;
+        while skip.contains(&e.leader_for_height(e.block_number, r).expect("leader")) {
+            r += 1;
+        }
+        let leader = e.leader_for_height(e.block_number, r).expect("leader");
+        let k = (1..=6u8)
+            .map(key)
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .expect("leader key");
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        b.proposer_sig = Some(crate::crypto::sign_block_proposal(b.number, b.hash, &k));
+        if let Some(last) = e.chain.last_mut()
+            && last.number == b.number
+        {
+            last.proposer = leader;
+            last.proposer_sig = b.proposer_sig;
+        }
+        b
+    }
+
+    #[test]
+    fn live_validators_are_never_charged_a_miss_when_the_set_changes_at_a_boundary() {
+        let (mut p, mut c) = (engine(), engine());
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        let stake = U256::from(5_000u64) * U256::from(MRSN);
+        let live: Vec<Address> = (1..=4u8).map(addr).collect();
+        let (mut charged, mut sizes) = (Vec::new(), Vec::new());
+        // v5 joins at 10 and never shows up: jailed at 20, back at 30,
+        // jailed again at 40. The set changes at every boundary.
+        for h in 1..=40u64 {
+            if h == 2 {
+                for e in [&mut p, &mut c] {
+                    e.orders
+                        .state
+                        .staking
+                        .register_validator(operator, v5, stake, 500, h)
+                        .unwrap();
+                }
+            }
+            let b = produce_as_the_node_does(&mut p, &[v5]);
+            c.import_block(b.clone());
+            assert_eq!(c.latest_height(), h, "the follower accepts block {h}");
+            for v in &live {
+                let missed = p.orders.state.staking.registry[v].missed_slots;
+                if missed > 0 {
+                    charged.push((h, *v, missed));
+                }
+            }
+            if h % 10 == 0 {
+                sizes.push(p.consensus.validators().len());
+            }
+        }
+        assert_eq!(sizes, [5, 4, 5, 4]);
+        assert!(
+            charged.is_empty(),
+            "live validators charged misses: {charged:?}"
+        );
+    }
+
     /// A fresh process starts from the genesis validators in its config; the
     /// active set installed at the last boundary (with its stakes) must be
     /// restored, or the restarted node runs a different schedule than the
@@ -6322,6 +6992,7 @@ mod open_validator_set_tests {
                 tx_type: 0,
                 shielded_payload: None,
                 hash: None,
+                raw: None,
             })
             .expect("tx accepted into mempool");
             produce(&mut e, 0, &[]);
@@ -6441,6 +7112,7 @@ mod history_index_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
     }
@@ -6618,6 +7290,7 @@ mod agent_delegation_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         produce(e);
@@ -6893,6 +7566,7 @@ mod price_scale_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
     }
@@ -7116,6 +7790,7 @@ mod frame_caller_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         produce(e);
@@ -7307,6 +7982,7 @@ mod settlement_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
     }
@@ -7797,6 +8473,7 @@ mod liquidation_tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         produce(e);

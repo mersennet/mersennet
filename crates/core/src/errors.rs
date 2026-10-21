@@ -24,6 +24,8 @@ pub enum MersennetOrdersError {
     PostOnlyWouldCross,
     #[error("post-only/expiry flags require GTC time-in-force")]
     InvalidOrderFlags,
+    #[error("price is more than 10x away from the market's last trade")]
+    PriceOutOfBand,
     #[error("market symbol already exists")]
     DuplicateMarket,
     #[error("invalid market parameters")]
@@ -53,6 +55,9 @@ impl MersennetOrdersError {
             MersennetOrdersError::PostOnlyWouldCross => "post-only order would cross the book",
             MersennetOrdersError::InvalidOrderFlags => {
                 "post-only/expiry flags require GTC time-in-force"
+            }
+            MersennetOrdersError::PriceOutOfBand => {
+                "price is more than 10x away from the market's last trade"
             }
             MersennetOrdersError::DuplicateMarket => "market symbol already exists",
             MersennetOrdersError::InvalidMarketParams => "invalid market parameters",

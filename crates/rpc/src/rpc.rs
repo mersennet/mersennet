@@ -1864,6 +1864,7 @@ mod tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         let old_block = eng.execute_block().expect("block executed");
@@ -2181,6 +2182,7 @@ mod tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         })
         .expect("tx accepted");
         let block = eng.execute_block().expect("block executed");

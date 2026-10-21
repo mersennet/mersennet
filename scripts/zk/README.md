@@ -358,6 +358,10 @@ single developer's absolute build path.
   machine and the memory it needs (~49 GB with single SP1 workers). The
   10 Jun files in this directory (`sp1-prove-response.json`, `core` proof,
   vkey `0013c6c7…`) are superseded: `programs/` changed after they were captured.
+- The pin above is the program at `cf992f8`. The shield/unshield fixes of
+  7 Oct (amounts bound as one field element, verify before debit) change
+  the block program, so the ELF and its key move: re-pin with a new E3 run
+  before the real prover is used. Mock proving is unaffected.
 
 Recommended setup:
 

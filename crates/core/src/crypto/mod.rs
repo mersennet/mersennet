@@ -171,13 +171,13 @@ pub fn address_from_signing_key(key: &SigningKey) -> Address {
 /// Decode raw signed transaction bytes. Tries standard Ethereum RLP first (for MetaMask/ethers.js
 /// compatibility), then falls back to Mersennet's custom format.
 pub fn decode_raw_signed_tx(bytes: &[u8]) -> Result<SignedTransaction> {
-    // Try standard Ethereum RLP first
-    if let Ok(signed) = rlp_decode::decode_ethereum_tx(bytes) {
-        return Ok(signed);
-    }
-
-    // Fall back to custom Mersennet format
-    decode_mersennet_format_tx(bytes)
+    // Try standard Ethereum RLP first, then Mersennet's custom format.
+    let mut signed = match rlp_decode::decode_ethereum_tx(bytes) {
+        Ok(signed) => signed,
+        Err(_) => decode_mersennet_format_tx(bytes)?,
+    };
+    signed.tx.raw = Some(revm::primitives::Bytes::copy_from_slice(bytes));
+    Ok(signed)
 }
 
 /// Decode raw signed transaction in Mersennet's custom binary format.
@@ -234,6 +234,7 @@ fn decode_mersennet_format_tx(bytes: &[u8]) -> Result<SignedTransaction> {
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
     let signed_temp = SignedTransaction {
         tx: tx.clone(),
@@ -554,6 +555,7 @@ mod tests {
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         }
     }
 

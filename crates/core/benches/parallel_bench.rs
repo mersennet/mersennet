@@ -47,6 +47,7 @@ fn main() {
                 tx_type: 0,
                 shielded_payload: None,
                 hash: None,
+                raw: None,
             };
             let _ = eng.submit_tx_unsigned(tx);
         }
@@ -76,6 +77,7 @@ fn main() {
                 tx_type: 0,
                 shielded_payload: None,
                 hash: None,
+                raw: None,
             };
             let _ = eng2.submit_tx_unsigned(tx);
         }
@@ -210,6 +212,7 @@ fn main() {
                     tx_type: 0,
                     shielded_payload: None,
                     hash: None,
+                    raw: None,
                 };
                 let _ = eng.submit_tx_unsigned(tx);
             }
