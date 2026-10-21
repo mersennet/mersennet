@@ -803,6 +803,7 @@ fn handle_request(
             tx_type: 0,
             shielded_payload: None,
             hash: None,
+            raw: None,
         };
 
         let signed = sign_transaction(&tx, faucet_key);
@@ -1150,6 +1151,7 @@ fn handle_claim_token(
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
     let signed_mint = sign_transaction(&mint_tx, faucet_key);
     let raw_mint = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_mint)));
@@ -1173,6 +1175,7 @@ fn handle_claim_token(
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
     let signed_transfer = sign_transaction(&transfer_tx, faucet_key);
     let raw_transfer = format!("0x{}", hex::encode(encode_raw_signed_tx(&signed_transfer)));

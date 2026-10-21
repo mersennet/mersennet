@@ -27,6 +27,7 @@ fn sample_signed_tx() -> Transaction {
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
     // `sign_transaction` returns a SignedTransaction whose inner `tx`
     // carries the populated `signature` field.
@@ -144,4 +145,31 @@ fn legacy_wire_without_signature_is_unsigned() {
     let tx = wire_to_tx(&wire).expect("reconstruct legacy tx");
     assert!(tx.signature.is_none());
     assert_eq!(tx.tx_type, 0);
+}
+
+/// A wallet transaction can only be verified from the envelope it was signed
+/// in, so the envelope has to survive the wire on its own and inside a block.
+#[test]
+fn wallet_envelope_survives_the_wire() {
+    // EIP-1559 transfer on chain 131071 (mersennet::crypto::rlp_decode tests).
+    let raw = hex::decode("02f86d8301ffff80010782520894ff00000000000000000000000000000000000011880de0b6b3a764000080c080a0622575814887e044fea9579b9cfd6884ace1d4f2e10e2e9fab58a4df0a3c0e03a060d1356f86b663b4887ed464262d3f84548036147f4d71e8c772806bb7058fae").unwrap();
+    let tx = mersennet::crypto::decode_raw_signed_tx(&raw).unwrap().tx;
+    assert_eq!(tx.raw.as_ref().map(|b| &b[..]), Some(&raw[..]));
+
+    let json = serde_json::to_vec(&tx_to_wire(&tx)).unwrap();
+    let back = wire_to_tx(&serde_json::from_slice::<WireTx>(&json).unwrap()).unwrap();
+    assert_eq!(back.raw.as_ref().map(|b| &b[..]), Some(&raw[..]));
+}
+
+/// Blocks stored before transactions carried envelopes still load.
+#[test]
+fn stored_transaction_without_envelope_still_loads() {
+    let mut stored = serde_json::to_value(sample_signed_tx()).unwrap();
+    stored.as_object_mut().unwrap().remove("raw");
+    let tx: Transaction = serde_json::from_value(stored).unwrap();
+    assert!(tx.raw.is_none());
+    assert!(
+        !serde_json::to_string(&tx).unwrap().contains("\"raw\""),
+        "an absent envelope is not written"
+    );
 }

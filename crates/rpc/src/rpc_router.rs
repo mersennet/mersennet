@@ -1395,6 +1395,7 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::UnknownCollateralAsset => -32022,
         MersennetOrdersError::Agent(_) => -32023,
         MersennetOrdersError::NotLiquidatable => -32024,
+        MersennetOrdersError::PriceOutOfBand => -32025,
     };
     RpcError::new(code, err.message())
 }

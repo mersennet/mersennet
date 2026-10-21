@@ -73,6 +73,7 @@ fn decode_shielded(payload: &[u8]) -> Result<SignedTransaction> {
         tx_type: 0x7E,
         shielded_payload: Some(envelope),
         hash: None,
+        raw: None,
     };
 
     Ok(SignedTransaction {
@@ -144,6 +145,7 @@ fn decode_legacy(bytes: &[u8]) -> Result<SignedTransaction> {
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
 
     Ok(SignedTransaction {
@@ -201,6 +203,7 @@ fn decode_eip2930(payload: &[u8]) -> Result<SignedTransaction> {
         tx_type: 1,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
 
     Ok(SignedTransaction {
@@ -260,6 +263,7 @@ fn decode_eip1559(payload: &[u8]) -> Result<SignedTransaction> {
         tx_type: 2,
         shielded_payload: None,
         hash: None,
+        raw: None,
     };
 
     Ok(SignedTransaction {

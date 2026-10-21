@@ -189,9 +189,15 @@ pub struct MersennetOrdersState {
     /// Whether the one-time unit migration at `settlement_height` has run.
     /// Persisted in its own key; absent while false.
     pub units_migrated: bool,
-    /// Resting orders cancelled by self-trade prevention during the current
-    /// call (drained by the precompile to emit cancel events). Not persisted.
+    /// Resting orders cancelled while matching during the current call — by
+    /// self-trade prevention, or because their owner could not margin the
+    /// fill (drained by the precompile to emit cancel events). Not persisted.
     pub self_trade_cancels: Vec<OrderId>,
+    /// From this height (the engine's `signed_tx_height`, copied in every
+    /// block) new orders must be priced within 10x of the last trade and a
+    /// resting order whose owner cannot margin the fill is cancelled instead
+    /// of stopping the match. Not persisted.
+    pub safety_height: Option<u64>,
     /// Account being force-closed by `liquidate_on_book` (margin checks are
     /// bypassed for its closing sweeps). Never persisted.
     pub liquidating: Option<Address>,
@@ -499,6 +505,19 @@ impl MersennetOrdersState {
         self.collateral_assets.insert(token, asset);
     }
 
+    /// One-off: `token` stops counting as margin (its weight drops to zero).
+    /// Balances stay with their owners and can be withdrawn. Returns whether
+    /// the token was registered.
+    pub fn stop_counting_collateral_asset(&mut self, token: Address) -> bool {
+        match self.collateral_assets.get_mut(&token) {
+            Some(asset) => {
+                asset.weight_bps = 0;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Weighted margin value of an account's non-native collateral, in the
     /// same unit as native collateral.
     pub fn token_margin_value(&self, owner: Address) -> U256 {
@@ -558,6 +577,20 @@ impl MersennetOrdersState {
             .unwrap_or(U256::ZERO);
         if held < amount {
             return Err(MersennetOrdersError::InsufficientEquity);
+        }
+        // A token that counts for nothing as margin backs nothing: taking it
+        // out changes no one's equity.
+        if asset.weight_bps == 0 {
+            let account = self.accounts.get_mut(&owner).expect("held checked above");
+            let balance = account
+                .token_collateral
+                .get_mut(&token)
+                .expect("held checked above");
+            *balance = balance.saturating_sub(amount);
+            if balance.is_zero() {
+                account.token_collateral.remove(&token);
+            }
+            return Ok(());
         }
         // Simulated equity after the withdrawal: native collateral + PnL +
         // remaining weighted token value.
@@ -666,15 +699,26 @@ impl MersennetOrdersState {
         post_only: bool,
         expire_at: u64,
     ) -> Result<OrderOutcome, MersennetOrdersError> {
-        match self.markets.get(&market) {
+        let last_price = match self.markets.get(&market) {
             None => return Err(MersennetOrdersError::UnknownMarket),
             Some(m) if m.status != MarketStatus::Active => {
                 return Err(MersennetOrdersError::MarketHalted);
             }
-            _ => {}
-        }
+            Some(m) => m.last_price,
+        };
         if size.is_zero() {
             return Err(MersennetOrdersError::InvalidSize);
+        }
+        // A bid at 143x the market (6 Oct, MRSN/USD) became every position's
+        // mark once one trade printed against it. Liquidation sweeps price
+        // at the extremes on purpose and are exempt.
+        let ten = U256::from(10u64);
+        if self.safety_active()
+            && self.liquidating != Some(owner)
+            && !last_price.is_zero()
+            && (price > last_price.saturating_mul(ten) || price.saturating_mul(ten) < last_price)
+        {
+            return Err(MersennetOrdersError::PriceOutOfBand);
         }
 
         // Post-only and GTD are maker semantics: they only make sense for
@@ -767,10 +811,24 @@ impl MersennetOrdersState {
                     let maker_new_size =
                         self.projected_position_size(maker_owner, market, maker_side, fill);
 
-                    if !self.validate_fill_margin(owner, taker_new_size, market)
-                        || !self.validate_fill_margin(maker_owner, maker_new_size, market)
-                    {
+                    if !self.validate_fill_margin(owner, taker_new_size, market) {
                         break 'outer;
+                    }
+                    if !self.validate_fill_margin(maker_owner, maker_new_size, market) {
+                        if !self.safety_active() {
+                            break 'outer;
+                        }
+                        // A resting order its owner cannot margin would stop
+                        // every taker (and every liquidation) at this level:
+                        // it is dropped like a self-trade and matching goes on.
+                        if let Some(removed) = queue.remove(idx) {
+                            self.orders.remove(&removed);
+                            if let Some(account) = self.accounts.get_mut(&maker_owner) {
+                                account.open_orders.retain(|id| *id != removed);
+                            }
+                            self.self_trade_cancels.push(removed);
+                        }
+                        continue;
                     }
 
                     {
@@ -920,7 +978,8 @@ impl MersennetOrdersState {
         if let Some(account) = self.accounts.get_mut(&owner) {
             let open_orders = account.open_orders.clone();
             account.open_orders.clear();
-            let positions: Vec<(MarketId, Position)> = account.positions.drain().collect();
+            let mut positions: Vec<(MarketId, Position)> = account.positions.drain().collect();
+            positions.sort_by_key(|(market, _)| market.0);
             // Token collateral is treated like native collateral: it stays
             // with the account through liquidation (only positions and
             // orders are cleared), and remains subject to the maintenance
@@ -1015,6 +1074,10 @@ impl MersennetOrdersState {
         }
     }
 
+    fn safety_active(&self) -> bool {
+        self.safety_height.is_some_and(|h| self.current_height >= h)
+    }
+
     pub fn validate_fill_margin(
         &self,
         account: Address,
@@ -1099,7 +1162,7 @@ impl MersennetOrdersState {
                 outcome.cancelled_orders.push((order_id, order.market));
             }
         }
-        let positions: Vec<(MarketId, i128)> = self
+        let mut positions: Vec<(MarketId, i128)> = self
             .accounts
             .get(&account)
             .map(|a| {
@@ -1110,6 +1173,9 @@ impl MersennetOrdersState {
                     .collect()
             })
             .unwrap_or_default();
+        // The order decides what an account's collateral still covers when
+        // each loss settles, so every node must close in the same one.
+        positions.sort_by_key(|(market, _)| market.0);
         self.liquidating = Some(account);
         for (market, size) in positions {
             let (side, price) = if size > 0 {
@@ -1270,6 +1336,31 @@ impl MersennetOrdersState {
             m.last_price = reference;
         }
         (ids.len(), reentered)
+    }
+
+    /// One-off correction: an account holding exactly `apart` more than
+    /// `expected` gives it back, and the bad debt drops by as much. Nodes that
+    /// settled a liquidation in another order credited the keeper and booked
+    /// the bad debt `apart` higher; every other node holds `expected` and
+    /// nothing changes. Returns whether it applied.
+    pub fn take_back_apart_credit(
+        &mut self,
+        account: Address,
+        expected: U256,
+        apart: U256,
+    ) -> bool {
+        if self.bad_debt < apart {
+            return false;
+        }
+        let Some(acc) = self.accounts.get_mut(&account) else {
+            return false;
+        };
+        if acc.collateral != expected.saturating_add(apart) {
+            return false;
+        }
+        acc.collateral = expected;
+        self.bad_debt -= apart;
+        true
     }
 
     fn levels_from_book(&self, levels: &BTreeMap<U256, VecDeque<OrderId>>) -> Vec<OrderBookLevel> {
@@ -1623,6 +1714,100 @@ mod tests {
     }
 
     #[test]
+    fn from_the_safety_height_far_off_prices_are_refused() {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+        state.markets.get_mut(&m).unwrap().last_price = U256::from(11_500u64);
+        let alice = addr(1);
+        let bid = |state: &mut MersennetOrdersState, price: u64| {
+            let (side, size, tif) = (Side::Buy, U256::from(1u64), TimeInForce::Gtc);
+            state.submit_order_ext(alice, m, side, U256::from(price), size, tif, false, 0)
+        };
+        assert!(
+            bid(&mut state, 1_650_000).is_ok(),
+            "no band before the switch"
+        );
+
+        state.safety_height = Some(10);
+        state.current_height = 10;
+        assert!(matches!(
+            bid(&mut state, 1_650_000),
+            Err(MersennetOrdersError::PriceOutOfBand)
+        ));
+        assert!(matches!(
+            bid(&mut state, 1_000),
+            Err(MersennetOrdersError::PriceOutOfBand)
+        ));
+        assert!(bid(&mut state, 11_600).is_ok());
+        state.liquidating = Some(alice);
+        assert!(
+            bid(&mut state, 1_650_000).is_ok(),
+            "liquidation sweeps are exempt"
+        );
+    }
+
+    #[test]
+    fn from_the_safety_height_an_unmargined_resting_order_no_longer_walls_the_book() {
+        let (broke, rich, taker) = (addr(1), addr(2), addr(3));
+        let setup = || {
+            let mut state = MersennetOrdersState::new();
+            let m = state.add_market("TEST/USD", U256::from(1u64), U256::from(1u64));
+            let gtc = TimeInForce::Gtc;
+            state.place_order(
+                broke,
+                m,
+                Side::Sell,
+                U256::from(100u64),
+                U256::from(5u64),
+                gtc,
+            );
+            state.place_order(
+                rich,
+                m,
+                Side::Sell,
+                U256::from(101u64),
+                U256::from(5u64),
+                gtc,
+            );
+            state.markets.get_mut(&m).unwrap().last_price = U256::from(100u64);
+            state.set_margin_params(1_000, 500);
+            for who in [rich, taker] {
+                state.deposit_collateral(who, U256::from(1_000_000u64));
+            }
+            (state, m)
+        };
+        let buy = |state: &mut MersennetOrdersState, m: MarketId| {
+            let (price, size, tif) = (U256::from(105u64), U256::from(5u64), TimeInForce::Ioc);
+            state
+                .submit_order_ext(taker, m, Side::Buy, price, size, tif, false, 0)
+                .unwrap()
+        };
+
+        let (mut state, m) = setup();
+        assert!(
+            buy(&mut state, m).trades.is_empty(),
+            "before the switch the first ask stops the match"
+        );
+
+        let (mut state, m) = setup();
+        state.safety_height = Some(0);
+        let outcome = buy(&mut state, m);
+        assert_eq!(outcome.trades.len(), 1);
+        assert_eq!(outcome.trades[0].maker, rich);
+        assert_eq!(
+            state.self_trade_cancels.len(),
+            1,
+            "the ask its owner cannot margin is cancelled"
+        );
+        assert!(
+            state
+                .accounts
+                .get(&broke)
+                .is_none_or(|a| a.open_orders.is_empty())
+        );
+    }
+
+    #[test]
     fn repair_market_cancels_out_of_band_orders_and_resets_the_mark() {
         let mut state = MersennetOrdersState::new();
         let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
@@ -1764,5 +1949,172 @@ mod tests {
         let mut state = MersennetOrdersState::new();
         let res = state.cancel_order_owned(OrderId(123), addr(0x11));
         assert!(matches!(res, Ok(None)));
+    }
+
+    /// A trader long in six markets, three of them now losing more than its
+    /// collateral; a keeper liquidates it. Returns what every node must
+    /// agree on.
+    fn liquidate_six_market_account() -> (U256, U256, U256, U256) {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        state.current_height = 5;
+        state.set_margin_params(1_000, 500);
+        let (trader, maker, keeper) = (addr(1), addr(2), addr(3));
+        state.deposit_collateral(trader, U256::from(1_000u64));
+        state.deposit_collateral(maker, U256::from(10_000_000u64));
+        let gtc = TimeInForce::Gtc;
+        let markets: Vec<MarketId> = (0..6)
+            .map(|i| state.add_market(format!("M{i}/USD"), U256::from(1u64), U256::from(1u64)))
+            .collect();
+        let ten = U256::from(10u64);
+        for m in &markets {
+            state
+                .submit_order(maker, *m, Side::Sell, U256::from(100u64), ten, gtc)
+                .unwrap();
+            state
+                .submit_order(trader, *m, Side::Buy, U256::from(100u64), ten, gtc)
+                .unwrap();
+        }
+        for (i, m) in markets.iter().enumerate() {
+            let price = U256::from(if i % 2 == 0 { 140u64 } else { 30u64 });
+            state
+                .submit_order(maker, *m, Side::Buy, price, ten, gtc)
+                .unwrap();
+            state.markets.get_mut(m).unwrap().last_price = price;
+        }
+        assert!(state.is_liquidatable(trader));
+        state.liquidate_on_book(trader, keeper).unwrap();
+        (
+            state.bad_debt,
+            state.insurance_fund,
+            state.accounts[&trader].collateral,
+            state.accounts[&keeper].collateral,
+        )
+    }
+
+    #[test]
+    fn an_account_apart_by_the_same_credit_and_bad_debt_comes_back_and_no_other() {
+        let keeper = addr(9);
+        let state_with = |credit: u64, bad_debt: u64| {
+            let mut state = MersennetOrdersState::new();
+            state.deposit_collateral(keeper, U256::from(credit));
+            state.deposit_collateral(addr(1), U256::from(20_523u64));
+            state.bad_debt = U256::from(bad_debt);
+            state
+        };
+        let (expected, apart) = (U256::from(20_497u64), U256::from(26u64));
+        let result = |s: &MersennetOrdersState| {
+            (
+                s.accounts[&keeper].collateral,
+                s.bad_debt,
+                s.accounts[&addr(1)].collateral,
+            )
+        };
+
+        let mut b = state_with(20_523, 2_885_851);
+        assert!(b.take_back_apart_credit(keeper, expected, apart));
+        let mut a = state_with(20_497, 2_885_825);
+        assert!(
+            !a.take_back_apart_credit(keeper, expected, apart),
+            "already right"
+        );
+        assert_eq!(result(&a), result(&b), "one state");
+        assert!(!b.take_back_apart_credit(keeper, expected, apart), "once");
+        assert_eq!(
+            b.accounts[&addr(1)].collateral,
+            U256::from(20_523u64),
+            "nobody else"
+        );
+
+        let mut other = state_with(20_600, 2_885_851);
+        assert!(!other.take_back_apart_credit(keeper, expected, apart));
+        assert_eq!(other.accounts[&keeper].collateral, U256::from(20_600u64));
+        let mut thin = state_with(20_523, 10);
+        assert!(
+            !thin.take_back_apart_credit(keeper, expected, apart),
+            "no bad debt to give back"
+        );
+        assert!(!MersennetOrdersState::new().take_back_apart_credit(keeper, expected, apart));
+    }
+
+    #[test]
+    fn a_token_that_stops_counting_backs_no_margin_and_can_still_be_withdrawn() {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        state.current_height = 5;
+        state.set_margin_params(1_000, 500);
+        let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+        let token = addr(0xAA);
+        state.register_collateral_asset(
+            token,
+            CollateralAsset {
+                weight_bps: 9_000,
+                value_num: U256::from(1u64),
+                value_den: U256::from(1u64),
+                balances_slot: U256::from(3u64),
+            },
+        );
+        let (trader, maker) = (addr(1), addr(2));
+        state.deposit_collateral(maker, U256::from(1_000_000u64));
+        state
+            .deposit_token_collateral(trader, token, U256::from(1_000u64))
+            .unwrap();
+        let gtc = TimeInForce::Gtc;
+        let ten = U256::from(10u64);
+        state
+            .submit_order(
+                maker,
+                m,
+                Side::Sell,
+                U256::from(100u64),
+                U256::from(20u64),
+                gtc,
+            )
+            .unwrap();
+        state
+            .submit_order(trader, m, Side::Buy, U256::from(100u64), ten, gtc)
+            .unwrap();
+        assert_eq!(
+            state.accounts[&trader].positions[&m].size, 10,
+            "tokens backed it"
+        );
+        assert!(!state.is_liquidatable(trader));
+
+        assert!(state.stop_counting_collateral_asset(token));
+        assert!(
+            !state.stop_counting_collateral_asset(addr(0xBB)),
+            "not registered"
+        );
+        assert_eq!(state.token_margin_value(trader), U256::ZERO);
+        assert!(
+            state.is_liquidatable(trader),
+            "nothing backs the position now"
+        );
+        let more = state.submit_order(trader, m, Side::Buy, U256::from(100u64), ten, gtc);
+        assert!(more.is_err(), "no new exposure");
+        assert_eq!(state.accounts[&trader].positions[&m].size, 10);
+        assert!(
+            state
+                .withdraw_token_collateral(trader, token, U256::from(1_000u64))
+                .is_ok(),
+            "it backed nothing, so it can leave"
+        );
+        assert!(
+            !state.accounts[&trader]
+                .token_collateral
+                .contains_key(&token)
+        );
+    }
+
+    #[test]
+    fn a_liquidation_settles_the_same_on_every_node() {
+        let first = liquidate_six_market_account();
+        for _ in 0..32 {
+            assert_eq!(
+                liquidate_six_market_account(),
+                first,
+                "the account's positions iterate in another order here"
+            );
+        }
     }
 }

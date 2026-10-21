@@ -1256,10 +1256,14 @@ fn handle_deposit_collateral_multi(
     let token = decode_address(token_w);
     let amount = decode_u256(amt_w);
 
-    let slot = with_orders(|state| state.collateral_assets.get(&token).map(|a| a.balances_slot))?;
-    let Some(mapping_slot) = slot else {
+    let asset = with_orders(|state| state.collateral_assets.get(&token).copied())?;
+    let Some(asset) = asset else {
         return Err(PrecompileError::other("token is not a registered collateral asset").into());
     };
+    if asset.weight_bps == 0 {
+        return Err(PrecompileError::other("token is no longer accepted as collateral").into());
+    }
+    let mapping_slot = asset.balances_slot;
 
     let moved = erc20_move(
         evmctx,

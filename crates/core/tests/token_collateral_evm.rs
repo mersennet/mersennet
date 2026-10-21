@@ -15,6 +15,13 @@ use mersennet::precompile_abi::{
     withdraw_collateral_multi_selector,
 };
 use revm::primitives::{Address, Bytes, U256, keccak256};
+use std::sync::Mutex;
+
+// The CLOB precompile uses a process-global context set per `execute_block`, so
+// two tests in this binary running on separate threads credit each other's
+// engines. Serialize them behind one lock (recovering from poison so a failure
+// in one test does not cascade into the other).
+static ORDERS_CTX_LOCK: Mutex<()> = Mutex::new(());
 
 fn balance_slot(holder: Address, mapping_slot: U256) -> U256 {
     let mut buf = [0u8; 64];
@@ -47,11 +54,13 @@ fn precompile_tx(from: Address, nonce: u64, data: Bytes) -> Transaction {
         tx_type: 0,
         shielded_payload: None,
         hash: None,
+        raw: None,
     }
 }
 
 #[test]
 fn token_collateral_moves_erc20_storage_through_commit() {
+    let _guard = ORDERS_CTX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::TempDir::new().unwrap();
     let mut engine = Engine::new_with_state(1, dir.path());
 
@@ -148,5 +157,78 @@ fn token_collateral_moves_erc20_storage_through_commit() {
             .unwrap_or_default(),
         U256::from(350u64),
         "CLOB token collateral decremented"
+    );
+}
+
+#[test]
+fn a_token_that_stops_counting_is_refused_as_a_deposit_and_still_comes_back_out() {
+    let _guard = ORDERS_CTX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut engine = Engine::new_with_state(1, dir.path());
+    let alice = Address::from([0x22; 20]);
+    let token = Address::from([0x77; 20]);
+    let mapping_slot = U256::from(3u64);
+    engine.fund_account(alice, U256::from(10_000_000u64), 0);
+    engine.register_collateral_asset(
+        token,
+        9_000,
+        U256::from(1u64),
+        U256::from(1u64),
+        mapping_slot,
+    );
+    let alice_slot = balance_slot(alice, mapping_slot);
+    engine
+        .evm
+        .db
+        .insert_account_storage(token, alice_slot, U256::from(1_000u64))
+        .unwrap();
+    let send = |engine: &mut Engine, nonce, selector, amount: u64| {
+        engine
+            .submit_tx_unsigned(precompile_tx(
+                alice,
+                nonce,
+                calldata(selector, token, U256::from(amount)),
+            ))
+            .unwrap();
+        engine.execute_block().unwrap()
+    };
+    let held = |engine: &Engine| {
+        engine
+            .orders
+            .state
+            .accounts
+            .get(&alice)
+            .and_then(|a| a.token_collateral.get(&token).copied())
+            .unwrap_or_default()
+    };
+
+    send(&mut engine, 0, deposit_collateral_multi_selector(), 600);
+    assert_eq!(held(&engine), U256::from(600u64));
+
+    // The switch lands in the next block.
+    let next = engine.latest_height() + 1;
+    engine.set_free_token_off(Some((next, token)));
+    let refused = send(&mut engine, 1, deposit_collateral_multi_selector(), 100);
+    assert!(!refused.receipts[0].success, "no longer accepted");
+    assert_eq!(held(&engine), U256::from(600u64));
+    assert_eq!(
+        engine.get_storage_at(token, alice_slot).unwrap(),
+        U256::from(400u64),
+        "a refused deposit moves no tokens"
+    );
+
+    send(&mut engine, 2, withdraw_collateral_multi_selector(), 600);
+    assert_eq!(held(&engine), U256::ZERO);
+    assert_eq!(
+        engine.get_storage_at(token, alice_slot).unwrap(),
+        U256::from(1_000u64),
+        "what was deposited comes back"
+    );
+    assert_eq!(engine.orders.state.collateral_assets[&token].weight_bps, 0);
+    drop(engine);
+    let reopened = Engine::new_with_state(1, dir.path());
+    assert_eq!(
+        reopened.orders.state.collateral_assets[&token].weight_bps, 0,
+        "the switch is part of the stored state"
     );
 }
