@@ -706,6 +706,8 @@ fn mersennet_orders_precompile(
         handle_agent_of(input, gas_limit)
     } else if sel == deposit_collateral_selector() {
         handle_deposit_collateral(input, gas_limit, caller, evmctx)
+    } else if sel == contribute_insurance_selector() {
+        handle_contribute_insurance(input, gas_limit, caller, evmctx)
     } else if sel == withdraw_collateral_selector() {
         handle_withdraw_collateral(input, gas_limit, caller, evmctx)
     } else if sel == deposit_collateral_multi_selector() {
@@ -955,11 +957,19 @@ fn handle_create_market(
         }
     }
 
+    // The fund counts collateral units: from the mark switch the fee is
+    // credited as such (100 MRSN is 100 units, not 10^20).
+    let height = evmctx.env.block.number.saturating_to::<u64>();
     let created = with_orders(|state| {
+        let credit = if state.contributions_active(height) {
+            fee.checked_div(state.wei_per_unit(height)).unwrap_or(fee)
+        } else {
+            fee
+        };
         state
             .create_market_checked(symbol.clone(), tick_size, lot_size)
             .inspect(|_| {
-                state.insurance_fund = state.insurance_fund.saturating_add(fee);
+                state.insurance_fund = state.insurance_fund.saturating_add(credit);
             })
     })?;
     let market_id = match created {
@@ -1090,6 +1100,52 @@ fn handle_agent_of(input: &Bytes, gas_limit: u64) -> PrecompileResult {
 // ---------------------------------------------------------------------------
 // depositCollateral(uint256 amount) -> (bool success)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// contributeInsurance(uint256 amount) -> (bool)
+// From the mark switch. Escrows `amount` collateral units of the caller's MRSN;
+// they pay down bad debt first, the rest joins the insurance fund.
+// ---------------------------------------------------------------------------
+
+fn handle_contribute_insurance(
+    input: &Bytes,
+    gas_limit: u64,
+    caller: Address,
+    evmctx: &mut InnerEvmContext<InMemoryDB>,
+) -> PrecompileResult {
+    let height = evmctx.env.block.number.saturating_to::<u64>();
+    if !with_orders(|state| state.contributions_active(height))? {
+        return Err(PrecompileError::other("unknown function selector").into());
+    }
+    check_gas(gas_limit, GAS_DEPOSIT_COLLATERAL)?;
+    let amt_w = read_word(input, 0).ok_or_else(|| PrecompileError::other("missing amount"))?;
+    let amount = decode_u256(amt_w);
+    if amount.is_zero() {
+        return Err(PrecompileError::other("contributeInsurance: amount must be positive").into());
+    }
+    let wei_per_unit = with_orders(|state| state.wei_per_unit(height))?;
+    let wei = amount
+        .checked_mul(wei_per_unit)
+        .ok_or_else(|| PrecompileError::other("contribution amount too large"))?;
+    // Escrow first (journaled — a frame revert undoes it), credit after.
+    match evmctx
+        .journaled_state
+        .transfer(&caller, &MERSENNET_ORDERS_PRECOMPILE, wei, &mut evmctx.db)
+        .map_err(|_| PrecompileError::other("contributeInsurance: state error"))?
+    {
+        None => {}
+        Some(_) => {
+            return Err(
+                PrecompileError::other("insufficient MRSN balance for the contribution").into(),
+            );
+        }
+    }
+    with_orders(|state| state.contribute_insurance(amount))?;
+    Ok(PrecompileOutput::new(
+        GAS_DEPOSIT_COLLATERAL,
+        Bytes::from(encode_bool(true).to_vec()),
+    ))
+}
 
 fn handle_deposit_collateral(
     input: &Bytes,

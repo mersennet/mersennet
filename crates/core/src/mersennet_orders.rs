@@ -1110,6 +1110,23 @@ impl MersennetOrdersState {
         self.mark_height.is_some_and(|h| self.current_height >= h)
     }
 
+    /// Whether `contributeInsurance` exists and the listing fee is credited in
+    /// collateral units: both from the mark switch.
+    pub fn contributions_active(&self, height: u64) -> bool {
+        self.mark_height.is_some_and(|h| height >= h)
+    }
+
+    /// `units` of escrowed MRSN: they pay down outstanding bad debt (the
+    /// escrow's shortfall against everyone's collateral) first and the rest
+    /// joins the insurance fund. Returns (debt paid down, added to the fund).
+    pub fn contribute_insurance(&mut self, units: U256) -> (U256, U256) {
+        let paid = min_u256(units, self.bad_debt);
+        self.bad_debt -= paid;
+        let rest = units - paid;
+        self.insurance_fund = self.insurance_fund.saturating_add(rest);
+        (paid, rest)
+    }
+
     /// Side and limit of the sweep that closes a position of `size`; from the
     /// mark switch the limit is within `LIQUIDATION_SWEEP_BAND_BPS` of the mark.
     fn sweep_limit(&self, market: MarketId, size: i128) -> (Side, U256) {
