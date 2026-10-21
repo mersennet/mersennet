@@ -146,10 +146,11 @@ pub fn default_signed_tx_height(chain_id: u64) -> Option<u64> {
 }
 
 /// `engine.mark_price_height` when the config leaves it unset. Chains
-/// started on these rules carry them from genesis; 131071 gets a height with
-/// the release that ships them.
+/// started on these rules carry them from genesis; 131071 switches at block
+/// 3,102,100 (about 12:00 UTC on Mon 26 Oct 2026).
 pub fn default_mark_price_height(chain_id: u64) -> Option<u64> {
     match chain_id {
+        131071 => Some(3_102_100),
         524287 | 8191 => Some(0),
         _ => None,
     }
