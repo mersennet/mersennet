@@ -190,12 +190,15 @@ d=json.load(sys.stdin)['result']
 v=next((v for v in d['validators'] if v['identity']=='$ident'),None)
 if v:
     blocks_left=max(0,d['nextEpochAt']-d['height'])
-    print(f\"{v['status']}|{v['proposedSlots']}|{v['missedSlots']}|{d['epoch']}|{blocks_left}|{int(v['selfStake'],16)//10**18}\")" 2>/dev/null)
-        IFS='|' read -r st prop miss ep left selfst <<< "$vinfo"
+    # A jail lasts through epoch jailedUntilEpoch (1 to 24 epochs since jail escalation).
+    until=int(v.get('jailedUntilEpoch') or 0)
+    jail_left=max(0,d['nextEpochAt']+(until-d['epoch'])*int((d.get('params') or {}).get('epochBlocks') or 1800)-d['height'])
+    print(f\"{v['status']}|{v['proposedSlots']}|{v['missedSlots']}|{d['epoch']}|{blocks_left}|{int(v['selfStake'],16)//10**18}|{until}|{jail_left}\")" 2>/dev/null)
+        IFS='|' read -r st prop miss ep left selfst until jleft <<< "$vinfo"
         case "$st" in
             active)  printf 'Validator    %s — %s · self-stake %s MRSN · epoch %s: %s blocks proposed, %s missed\n' "$ident" "$(green 'active')" "$selfst" "$ep" "$prop" "$miss" ;;
             pending) printf 'Validator    %s — %s · joins the active set in %s blocks (~%s min)\n' "$ident" "$(yellow 'pending')" "$left" "$(( left * 2 / 60 ))" ;;
-            jailed)  printf 'Validator    %s — %s for this epoch (missed too many slots last epoch); back automatically in %s blocks\n' "$ident" "$(red 'jailed')" "$left" ;;
+            jailed)  printf 'Validator    %s — %s until epoch %s (now %s) for missed slots; back automatically in %s blocks (~%s h) if the node is in sync\n' "$ident" "$(red 'jailed')" "$until" "$ep" "$jleft" "$(awk -v b="$jleft" 'BEGIN { printf "%.1f", b * 2 / 3600 }')" ;;
             *)       printf 'Validator    %s — registered, status %s (epoch %s)\n' "$ident" "$(yellow "$st")" "$ep" ;;
         esac
     elif echo "$vset" | grep -q '"active":true'; then
