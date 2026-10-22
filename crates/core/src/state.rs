@@ -579,12 +579,23 @@ impl PersistentState {
             .insert(b"m:active_set", bincode::serialize(&active)?)?;
         self.validator_registry
             .insert(b"m:epoch", staking.current_epoch.to_be_bytes().to_vec())?;
+        // Written only once the restart grace has flagged someone, so the root is unchanged before.
+        if !staking.last_bad.is_empty() {
+            let ids: Vec<Vec<u8>> = staking
+                .last_bad
+                .iter()
+                .map(|a| a.as_slice().to_vec())
+                .collect();
+            self.validator_registry
+                .insert(b"m:last_bad", bincode::serialize(&ids)?)?;
+        }
         Ok(())
     }
 
     fn load_validator_registry(&self, staking: &mut crate::staking::StakingState) -> Result<()> {
         staking.registry.clear();
         staking.active_set.clear();
+        staking.last_bad.clear();
         for item in self.validator_registry.iter() {
             let (k, v) = item?;
             if k.starts_with(b"r:") && k.len() == 22 {
@@ -593,6 +604,9 @@ impl PersistentState {
             } else if k.as_ref() == b"m:active_set" {
                 let active: Vec<Vec<u8>> = bincode::deserialize(&v)?;
                 staking.active_set = active.iter().map(|a| Address::from_slice(a)).collect();
+            } else if k.as_ref() == b"m:last_bad" {
+                let ids: Vec<Vec<u8>> = bincode::deserialize(&v)?;
+                staking.last_bad = ids.iter().map(|a| Address::from_slice(a)).collect();
             } else if k.as_ref() == b"m:epoch" && v.len() == 8 {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&v);

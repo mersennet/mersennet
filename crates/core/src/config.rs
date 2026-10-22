@@ -433,6 +433,9 @@ pub struct ValidatorSetConfig {
     /// Height from which a leader that missed 3 slots is benched for the rest of the epoch (0 = off).
     #[serde(default)]
     pub bench_height: u64,
+    /// Height from which a validator is jailed only on its second bad epoch in a row (0 = off).
+    #[serde(default)]
+    pub restart_grace_height: u64,
     /// Height from which the active set holds up to `max_validators_after` (0 = off).
     #[serde(default)]
     pub max_validators_height: u64,
@@ -486,6 +489,7 @@ impl ValidatorSetConfig {
             rewards_to_operator_height: self.rewards_to_operator_height,
             jail_escalation_height: self.jail_escalation_height,
             bench_height: self.bench_height,
+            restart_grace_height: self.restart_grace_height,
             max_validators_height: self.max_validators_height,
             max_validators_after: self.max_validators_after,
         }

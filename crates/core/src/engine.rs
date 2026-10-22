@@ -6549,6 +6549,7 @@ mod open_validator_set_tests {
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
             bench_height: 0,
+            restart_grace_height: 0,
             max_validators_height: 0,
             max_validators_after: 0,
         }

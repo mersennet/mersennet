@@ -698,6 +698,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                         "totalProposed": r.total_proposed,
                         "timesJailed": r.times_jailed,
                         "benched": benched.contains(&r.identity),
+                        "lastEpochBad": st.last_bad.contains(&r.identity),
                     })
                 })
                 .collect();
@@ -718,6 +719,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "rewardsToOperatorHeight": p.rewards_to_operator_height,
                     "jailEscalationHeight": p.jail_escalation_height,
                     "benchHeight": p.bench_height,
+                    "restartGraceHeight": p.restart_grace_height,
                 },
                 "height": height,
                 "epoch": st.current_epoch,
