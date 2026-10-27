@@ -436,6 +436,9 @@ pub struct ValidatorSetConfig {
     /// Height from which a validator is jailed only on its second bad epoch in a row (0 = off).
     #[serde(default)]
     pub restart_grace_height: u64,
+    /// Height from which delegators earn D / (S + D) of their validator's reward (0 = off).
+    #[serde(default)]
+    pub delegator_share_height: u64,
     /// Height from which the active set holds up to `max_validators_after` (0 = off).
     #[serde(default)]
     pub max_validators_height: u64,
@@ -490,6 +493,7 @@ impl ValidatorSetConfig {
             jail_escalation_height: self.jail_escalation_height,
             bench_height: self.bench_height,
             restart_grace_height: self.restart_grace_height,
+            delegator_share_height: self.delegator_share_height,
             max_validators_height: self.max_validators_height,
             max_validators_after: self.max_validators_after,
         }

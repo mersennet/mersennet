@@ -5181,7 +5181,14 @@ impl Engine {
             // to the staking escrow; delegators claim it via the precompile.
             // Deterministic across produce/import (same state, same stake).
             let delegator_cut = {
-                let self_stake = self.stake_of(reward.address);
+                let st = &self.orders.state.staking;
+                let h = st.params.delegator_share_height;
+                // Blocks before the switch replay with the consensus stake.
+                let self_stake = if h > 0 && self.block_number >= h {
+                    st.self_stake_of(reward.address)
+                } else {
+                    self.stake_of(reward.address)
+                };
                 self.orders
                     .state
                     .staking
@@ -6550,6 +6557,7 @@ mod open_validator_set_tests {
             jail_escalation_height: 0,
             bench_height: 0,
             restart_grace_height: 0,
+            delegator_share_height: 0,
             max_validators_height: 0,
             max_validators_after: 0,
         }
@@ -6992,6 +7000,83 @@ mod open_validator_set_tests {
             !operator_gain_after.is_zero(),
             "operator earns after the switch"
         );
+    }
+
+    /// Delegators of a validator with self-stake S and delegations D earn
+    /// D / (S + 2D) of its block reward before `delegator_share_height` and
+    /// D / (S + D) from it. Producer and importer agree on the root throughout.
+    #[test]
+    fn delegators_earn_their_share_of_the_stake_from_the_configured_height() {
+        let mut p = engine();
+        let mut c = engine();
+        let mut prm = params();
+        prm.rewards_to_operator_height = 1;
+        prm.delegator_share_height = 35;
+        for e in [&mut p, &mut c] {
+            e.set_validator_set_params(prm.clone());
+            e.set_token_economics(
+                U256::from(2u64).pow(U256::from(89u64)) - U256::from(1u64),
+                U256::from(2u64).pow(U256::from(61u64)) - U256::from(1u64),
+                33_550_336,
+            );
+        }
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        let delegator = Address::from_slice(&[0x66; 20]);
+        let self_stake = U256::from(1_000u64) * U256::from(MRSN);
+        let delegated = U256::from(3_000u64) * U256::from(MRSN);
+        for e in [&mut p, &mut c] {
+            e.fund_account(v5, U256::ZERO, 0);
+            e.fund_account(operator, U256::ZERO, 0);
+            if e.block_number == 0 {
+                drop(produce(e, 0, &[]));
+            }
+            e.orders
+                .state
+                .staking
+                .register_validator(operator, v5, self_stake, 0, 1)
+                .unwrap();
+            e.orders
+                .state
+                .staking
+                .delegate(delegator, v5, delegated)
+                .unwrap();
+        }
+        let escrow = crate::precompile_abi::STAKING_PRECOMPILE;
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        while p.block_number < 50 {
+            let escrow0 = p.get_balance(escrow).unwrap();
+            let b = produce(&mut p, 0, &[]);
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b.clone());
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "state roots agree at #{}",
+                b.number
+            );
+            let Some(r) = b.rewards.iter().find(|r| r.address == v5) else {
+                continue;
+            };
+            let cut = p.get_balance(escrow).unwrap().saturating_sub(escrow0);
+            if b.number < 35 {
+                before.push((r.amount, cut));
+            } else {
+                after.push((r.amount, cut));
+            }
+        }
+        assert!(!before.is_empty(), "v5 earned before the switch");
+        assert!(!after.is_empty(), "v5 earned after the switch");
+        for (reward, cut) in before {
+            assert_eq!(
+                cut,
+                reward * delegated / (self_stake + delegated + delegated)
+            );
+        }
+        for (reward, cut) in after {
+            assert_eq!(cut, reward * delegated / (self_stake + delegated));
+        }
     }
 
     #[test]

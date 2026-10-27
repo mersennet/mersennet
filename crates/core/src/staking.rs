@@ -134,6 +134,12 @@ pub struct ValidatorSetParams {
     /// count either way, so a validator back from a jail gets no grace.
     /// 0 = off. Consensus-critical.
     pub restart_grace_height: u64,
+    /// From this height delegators earn `D / (S + D)` of their validator's
+    /// block reward (minus commission), S its self-stake and D the
+    /// delegations. Before it the split weighed delegations against the
+    /// consensus stake, which already includes them: `D / (S + 2D)`.
+    /// 0 = off. Consensus-critical.
+    pub delegator_share_height: u64,
     /// From this height the active set holds up to `max_validators_after`
     /// validators instead of `max_validators`. Like every change to the set
     /// it lands at an epoch boundary: the first transition at or after this
@@ -173,6 +179,7 @@ impl Default for ValidatorSetParams {
             jail_escalation_height: 0,
             bench_height: 0,
             restart_grace_height: 0,
+            delegator_share_height: 0,
             max_validators_height: 0,
             max_validators_after: 0,
         }
@@ -302,6 +309,14 @@ impl StakingState {
 
     pub fn epoch_of(&self, height: u64) -> u64 {
         height / self.params.epoch_blocks.max(1)
+    }
+
+    /// A validator's own bonded stake (0 when unregistered).
+    pub fn self_stake_of(&self, identity: Address) -> U256 {
+        self.registry
+            .get(&identity)
+            .map(|r| r.self_stake)
+            .unwrap_or(U256::ZERO)
     }
 
     /// Total stake ranking a validator: self-stake + delegations to its pool.

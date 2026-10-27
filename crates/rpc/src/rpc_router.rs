@@ -720,6 +720,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "jailEscalationHeight": p.jail_escalation_height,
                     "benchHeight": p.bench_height,
                     "restartGraceHeight": p.restart_grace_height,
+                    "delegatorShareHeight": p.delegator_share_height,
                 },
                 "height": height,
                 "epoch": st.current_epoch,
