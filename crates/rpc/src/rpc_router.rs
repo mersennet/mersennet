@@ -247,6 +247,8 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "settlementHeight": st.settlement_height,
                     "revertReasonsHeight": revert_reasons,
                     "feeFloorHeight": engine.fee_floor_height,
+                    // null while unset, so readers that schedule switches skip it.
+                    "markPriceHeight": engine.mark_price_height(),
                 },
                 // Fee floor + split (engine config; active from feeFloorHeight).
                 "fees": {
@@ -459,6 +461,10 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                         "tickSize": hex_u256(m.tick_size),
                         "lotSize": hex_u256(m.lot_size),
                         "lastPrice": hex_u256(m.last_price),
+                        // What positions are marked at: the last trade, or from the
+                        // mark switch the bounded mark (the opening mark while halted).
+                        "markPrice": hex_u256(engine.orders.state.mark_of(m.id)),
+                        "breaker": engine.orders.state.breaker_halted(m.id),
                         // On-chain prices are human prices × priceScale (1 = integer prices).
                         "priceScale": engine.orders.state.price_scale(m.id),
                         "status": format!("{:?}", m.status).to_lowercase(),

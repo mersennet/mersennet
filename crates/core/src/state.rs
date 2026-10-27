@@ -4,7 +4,7 @@ use revm::primitives::{
     AccountInfo, Address, B256, Bytecode, Bytes, KECCAK_EMPTY, U256, keccak256,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -173,6 +173,46 @@ pub(crate) struct AccountRecord {
     pub(crate) nonce: u64,
     pub(crate) code_hash: [u8; 32],
     pub(crate) code: Vec<u8>,
+}
+
+type MarkRecord = (u64, [u8; 32], [u8; 32], u64, bool);
+
+pub(crate) fn encode_marks(
+    marks: &BTreeMap<crate::mersennet_orders::MarketId, crate::mersennet_orders::MarkState>,
+) -> Result<Vec<u8>> {
+    let records: Vec<MarkRecord> = marks
+        .iter()
+        .map(|(m, ms)| {
+            (
+                m.0,
+                ms.mark.to_be_bytes::<32>(),
+                ms.epoch_open.to_be_bytes::<32>(),
+                ms.epoch,
+                ms.halted,
+            )
+        })
+        .collect();
+    Ok(bincode::serialize(&records)?)
+}
+
+pub(crate) fn decode_marks(
+    raw: &[u8],
+) -> Result<BTreeMap<crate::mersennet_orders::MarketId, crate::mersennet_orders::MarkState>> {
+    let records: Vec<MarkRecord> = bincode::deserialize(raw)?;
+    Ok(records
+        .into_iter()
+        .map(|(m, mark, open, epoch, halted)| {
+            (
+                crate::mersennet_orders::MarketId(m),
+                crate::mersennet_orders::MarkState {
+                    mark: U256::from_be_bytes(mark),
+                    epoch_open: U256::from_be_bytes(open),
+                    epoch,
+                    halted,
+                },
+            )
+        })
+        .collect())
 }
 
 #[allow(dead_code)]
@@ -669,6 +709,10 @@ impl PersistentState {
                     .insert(crate::mersennet_orders::MarketId(m), sc);
             }
         }
+        state.marks = match self.mersennet_orders.get("marks")? {
+            Some(raw) => decode_marks(&raw)?,
+            None => BTreeMap::new(),
+        };
         state.agents.clear();
         if let Some(raw) = self.mersennet_orders.get("agents")? {
             let agents: Vec<(Vec<u8>, Vec<u8>, u64)> = bincode::deserialize(&raw)?;
@@ -861,6 +905,13 @@ impl PersistentState {
                 .collect();
             self.mersennet_orders
                 .insert("price_scales", bincode::serialize(&scales)?)?;
+        }
+        // Bounded marks: same convention (absent until the first update).
+        if state.marks.is_empty() {
+            self.mersennet_orders.remove("marks")?;
+        } else {
+            self.mersennet_orders
+                .insert("marks", encode_marks(&state.marks)?)?;
         }
         if state.agents.is_empty() {
             self.mersennet_orders.remove("agents")?;

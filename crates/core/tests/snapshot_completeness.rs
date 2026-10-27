@@ -4,7 +4,7 @@
 //! mismatch").
 
 use mersennet::engine::Engine;
-use mersennet::mersennet_orders::MarketId;
+use mersennet::mersennet_orders::{MarkState, MarketId};
 use revm::primitives::{Address, U256};
 
 fn round_trip(backend: &str) {
@@ -14,6 +14,13 @@ fn round_trip(backend: &str) {
     source.fund_account(Address::repeat_byte(0x11), U256::from(5u64), 0);
     source.orders.state.price_scales.insert(MarketId(1), 100);
     source.orders.state.bad_debt = U256::from(7u64);
+    let mark = MarkState {
+        mark: U256::from(11_500u64),
+        epoch_open: U256::from(11_000u64),
+        epoch: 3,
+        halted: true,
+    };
+    source.orders.state.marks.insert(MarketId(1), mark);
     source
         .orders
         .state
@@ -33,6 +40,7 @@ fn round_trip(backend: &str) {
         "{backend}"
     );
     assert_eq!(state.bad_debt, U256::from(7u64), "{backend}");
+    assert_eq!(state.marks.get(&MarketId(1)), Some(&mark), "{backend}");
     assert!(state.staking.registry.contains_key(&validator), "{backend}");
 }
 

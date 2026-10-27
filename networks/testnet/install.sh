@@ -155,6 +155,9 @@ if [[ -n "$PREV_DIR" && "$PREV_DIR" != "$DATA_DIR" && -d "$PREV_DIR/data" && ! -
 fi
 mkdir -p "$DATA_DIR/data" "$DATA_DIR/keys" /etc/mersennet
 chown -R mersennet:mersennet "$DATA_DIR"
+# The node key signs as this node: only the service user may read it.
+chmod 700 "$DATA_DIR/keys"
+find "$DATA_DIR/keys" -type f -exec chmod 600 {} +
 
 echo "==> Installing canonical testnet config to /etc/mersennet/config.json"
 if [[ -f /etc/mersennet/config.json ]]; then

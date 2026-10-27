@@ -48,6 +48,7 @@ tiny_http = "0.12"
 ureq = "2.9"
 revm = { version = "12", default-features = false, features = ["std", "serde", "c-kzg"] }
 ctrlc = { version = "3.4", features = ["termination"] }
+libc = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 metrics = "0.19"

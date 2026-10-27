@@ -11,6 +11,10 @@ pub struct MarketId(pub u64);
 /// Fee taken from a liquidated account's remaining collateral, in basis points
 /// of the closed notional; half goes to the keeper, half to the insurance fund.
 pub const LIQUIDATION_FEE_BPS: u64 = 100;
+/// From the mark switch, a liquidation sweep only fills within this distance
+/// of the bounded mark. What the book cannot fill there stays open (and
+/// liquidatable) for the keeper's next call.
+pub const LIQUIDATION_SWEEP_BAND_BPS: u64 = 500;
 
 /// What a `liquidate(address)` call did.
 #[derive(Debug, Default, Clone)]
@@ -55,6 +59,23 @@ pub struct Market {
     pub lot_size: U256,
     pub last_price: U256,
     pub status: MarketStatus,
+}
+
+/// Largest move of the bounded mark per block, in basis points.
+pub const MARK_STEP_BPS: u64 = 200;
+/// The breaker halts a market whose mark reaches this multiple of (or this
+/// fraction of) its mark when the epoch began.
+pub const BREAKER_MULTIPLE: u64 = 3;
+
+/// A market's bounded mark (from `mark_height`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarkState {
+    pub mark: U256,
+    /// The mark at the first block of `epoch`: the breaker's reference, and
+    /// the price positions are held at while the breaker has halted the market.
+    pub epoch_open: U256,
+    pub epoch: u64,
+    pub halted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -198,6 +219,13 @@ pub struct MersennetOrdersState {
     /// resting order whose owner cannot margin the fill is cancelled instead
     /// of stopping the match. Not persisted.
     pub safety_height: Option<u64>,
+    /// From this height (the engine's `mark_price_height`, copied in every
+    /// block) positions are marked at the bounded mark instead of the last
+    /// trade, and the breaker can halt a market. Not persisted.
+    pub mark_height: Option<u64>,
+    /// Bounded marks per market. Persisted in its own key (`marks`), absent
+    /// until the first update, so the state root is untouched before the switch.
+    pub marks: BTreeMap<MarketId, MarkState>,
     /// Account being force-closed by `liquidate_on_book` (margin checks are
     /// bypassed for its closing sweeps). Never persisted.
     pub liquidating: Option<Address>,
@@ -1078,6 +1106,96 @@ impl MersennetOrdersState {
         self.safety_height.is_some_and(|h| self.current_height >= h)
     }
 
+    fn mark_active(&self) -> bool {
+        self.mark_height.is_some_and(|h| self.current_height >= h)
+    }
+
+    /// Whether `contributeInsurance` exists and the listing fee is credited in
+    /// collateral units: both from the mark switch.
+    pub fn contributions_active(&self, height: u64) -> bool {
+        self.mark_height.is_some_and(|h| height >= h)
+    }
+
+    /// `units` of escrowed MRSN: they pay down outstanding bad debt (the
+    /// escrow's shortfall against everyone's collateral) first and the rest
+    /// joins the insurance fund. Returns (debt paid down, added to the fund).
+    pub fn contribute_insurance(&mut self, units: U256) -> (U256, U256) {
+        let paid = min_u256(units, self.bad_debt);
+        self.bad_debt -= paid;
+        let rest = units - paid;
+        self.insurance_fund = self.insurance_fund.saturating_add(rest);
+        (paid, rest)
+    }
+
+    /// Side and limit of the sweep that closes a position of `size`; from the
+    /// mark switch the limit is within `LIQUIDATION_SWEEP_BAND_BPS` of the mark.
+    fn sweep_limit(&self, market: MarketId, size: i128) -> (Side, U256) {
+        let side = if size > 0 { Side::Sell } else { Side::Buy };
+        let mark = if self.mark_active() {
+            self.mark_price(market, U256::ZERO)
+        } else {
+            U256::ZERO
+        };
+        if mark.is_zero() {
+            return (side, if size > 0 { U256::ONE } else { U256::MAX });
+        }
+        let band =
+            mark.saturating_mul(U256::from(LIQUIDATION_SWEEP_BAND_BPS)) / U256::from(10_000u64);
+        match side {
+            Side::Sell => (side, mark.saturating_sub(band).max(U256::ONE)),
+            Side::Buy => (side, mark.saturating_add(band)),
+        }
+    }
+
+    /// Once per block, before its transactions. Each market's mark moves at
+    /// most `MARK_STEP_BPS` toward the median of its last trade and its best
+    /// bid and ask (a crossed book is ignored: it is a book that stopped
+    /// matching, not a price). A mark that reaches `BREAKER_MULTIPLE` times
+    /// (or that fraction of) the epoch's opening mark halts the market, whose
+    /// positions are then held at the opening mark until a repair.
+    pub fn update_marks(&mut self, epoch: u64) {
+        if !self.mark_active() {
+            return;
+        }
+        let mut ids: Vec<MarketId> = self.markets.keys().copied().collect();
+        ids.sort();
+        for id in ids {
+            let last = self.markets[&id].last_price;
+            if last.is_zero() || self.marks.get(&id).is_some_and(|ms| ms.halted) {
+                continue;
+            }
+            let touch = self.books.get(&id).map(|b| {
+                (
+                    b.bids.keys().next_back().copied(),
+                    b.asks.keys().next().copied(),
+                )
+            });
+            let candidate = match touch {
+                Some((Some(bid), Some(ask))) if bid < ask => last.clamp(bid, ask),
+                _ => last,
+            };
+            let ms = self.marks.entry(id).or_default();
+            ms.mark = if ms.mark.is_zero() {
+                candidate
+            } else {
+                let step = (ms.mark * U256::from(MARK_STEP_BPS) / U256::from(10_000u64))
+                    .max(U256::from(1u64));
+                candidate.clamp(ms.mark.saturating_sub(step), ms.mark + step)
+            };
+            if ms.epoch != epoch || ms.epoch_open.is_zero() {
+                ms.epoch = epoch;
+                ms.epoch_open = ms.mark;
+            }
+            let multiple = U256::from(BREAKER_MULTIPLE);
+            if ms.mark >= ms.epoch_open * multiple || ms.mark * multiple <= ms.epoch_open {
+                ms.halted = true;
+                if let Some(m) = self.markets.get_mut(&id) {
+                    m.status = MarketStatus::Halted;
+                }
+            }
+        }
+    }
+
     pub fn validate_fill_margin(
         &self,
         account: Address,
@@ -1178,11 +1296,7 @@ impl MersennetOrdersState {
         positions.sort_by_key(|(market, _)| market.0);
         self.liquidating = Some(account);
         for (market, size) in positions {
-            let (side, price) = if size > 0 {
-                (Side::Sell, U256::ONE)
-            } else {
-                (Side::Buy, U256::MAX)
-            };
+            let (side, price) = self.sweep_limit(market, size);
             let sweep = self.submit_order_ext(
                 account,
                 market,
@@ -1335,7 +1449,93 @@ impl MersennetOrdersState {
         if let Some(m) = self.markets.get_mut(&market) {
             m.last_price = reference;
         }
+        // A market the breaker halted reopens at the reference.
+        if let Some(ms) = self.marks.get_mut(&market) {
+            if ms.halted
+                && let Some(m) = self.markets.get_mut(&market)
+            {
+                m.status = MarketStatus::Active;
+            }
+            *ms = MarkState {
+                mark: reference,
+                epoch_open: reference,
+                epoch: ms.epoch,
+                halted: false,
+            };
+        }
         (ids.len(), reentered)
+    }
+
+    /// One-off relisting of a market whose price no longer fits its ticks.
+    /// Cancels every resting order in the market, closes every position at
+    /// the last trade with its PnL settled into collateral as a fill would
+    /// (a loss the collateral cannot cover becomes bad debt), moves the market
+    /// to `new_scale` and clears its last price and mark, so the first quotes
+    /// at the real price set them again. `height` decides settlement, so a node
+    /// that restarted just before the switch settles the same as the others.
+    /// Returns (orders cancelled, positions closed).
+    pub fn relist_market(
+        &mut self,
+        market: MarketId,
+        new_scale: u64,
+        height: u64,
+    ) -> Result<(usize, usize), MersennetOrdersError> {
+        if !self.markets.contains_key(&market) {
+            return Err(MersennetOrdersError::UnknownMarket);
+        }
+        let old = self.price_scale(market);
+        if new_scale <= old || !new_scale.is_multiple_of(old) {
+            return Err(MersennetOrdersError::InvalidMarketParams);
+        }
+        let mut ids: Vec<OrderId> = self
+            .orders
+            .values()
+            .filter(|o| o.market == market)
+            .map(|o| o.id)
+            .collect();
+        ids.sort_by_key(|id| id.0);
+        for id in &ids {
+            self.cancel_order(*id);
+        }
+        let close = self.markets[&market].last_price;
+        let mut owners: Vec<Address> = self
+            .accounts
+            .iter()
+            .filter(|(_, a)| a.positions.get(&market).is_some_and(|p| p.size != 0))
+            .map(|(owner, _)| *owner)
+            .collect();
+        owners.sort();
+        let settle = self.settlement_active(height);
+        for owner in &owners {
+            let (size, entry) = {
+                let p = &self.accounts[owner].positions[&market];
+                (p.size, p.entry_price)
+            };
+            let pnl = if close.is_zero() {
+                0
+            } else {
+                self.pnl_of(market, size, close, entry)
+            };
+            if let Some(p) = self
+                .accounts
+                .get_mut(owner)
+                .and_then(|a| a.positions.get_mut(&market))
+            {
+                p.realized_pnl = p.realized_pnl.saturating_add(pnl);
+                p.size = 0;
+                p.entry_price = U256::ZERO;
+            }
+            if settle {
+                self.settle_pnl(*owner, pnl);
+            }
+        }
+        self.rescale_market(market, new_scale)?;
+        if let Some(m) = self.markets.get_mut(&market) {
+            m.last_price = U256::ZERO;
+            m.status = MarketStatus::Active;
+        }
+        self.marks.remove(&market);
+        Ok((ids.len(), owners.len()))
     }
 
     /// One-off correction: an account holding exactly `apart` more than
@@ -1672,7 +1872,23 @@ impl MersennetOrdersState {
         total
     }
 
+    /// The price positions in `market` are marked at.
+    pub fn mark_of(&self, market: MarketId) -> U256 {
+        self.mark_price(market, U256::ZERO)
+    }
+
+    /// Whether the circuit breaker has halted `market`.
+    pub fn breaker_halted(&self, market: MarketId) -> bool {
+        self.marks.get(&market).is_some_and(|ms| ms.halted)
+    }
+
     fn mark_price(&self, market: MarketId, fallback: U256) -> U256 {
+        if self.mark_active()
+            && let Some(ms) = self.marks.get(&market)
+            && !ms.mark.is_zero()
+        {
+            return if ms.halted { ms.epoch_open } else { ms.mark };
+        }
         self.markets
             .get(&market)
             .map(|m| {
@@ -1805,6 +2021,122 @@ mod tests {
                 .get(&broke)
                 .is_none_or(|a| a.open_orders.is_empty())
         );
+    }
+
+    fn last_trade(state: &mut MersennetOrdersState, market: MarketId, price: u64) {
+        state.markets.get_mut(&market).unwrap().last_price = U256::from(price);
+    }
+
+    #[test]
+    fn the_bounded_mark_follows_a_move_and_shrugs_off_a_single_print() {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+        (state.mark_height, state.current_height) = (Some(1), 1);
+        let quote = |state: &mut MersennetOrdersState, bid: u64, ask: u64| {
+            for id in state.orders.keys().copied().collect::<Vec<_>>() {
+                state.cancel_order(id);
+            }
+            let one = U256::from(1u64);
+            state.place_order(
+                addr(1),
+                m,
+                Side::Buy,
+                U256::from(bid),
+                one,
+                TimeInForce::Gtc,
+            );
+            state.place_order(
+                addr(2),
+                m,
+                Side::Sell,
+                U256::from(ask),
+                one,
+                TimeInForce::Gtc,
+            );
+        };
+        last_trade(&mut state, m, 10_000);
+        quote(&mut state, 9_990, 10_010);
+        state.update_marks(0);
+        assert_eq!(state.marks[&m].mark, U256::from(10_000u64));
+
+        // One print far off while the book stays put: the mark stays at the book.
+        last_trade(&mut state, m, 100_000);
+        state.update_marks(0);
+        assert_eq!(state.marks[&m].mark, U256::from(10_010u64));
+
+        // A real move (book and trades at 11,000) is followed, 2% per block.
+        last_trade(&mut state, m, 11_000);
+        quote(&mut state, 10_990, 11_010);
+        let marks: Vec<u64> = (0..6)
+            .map(|_| {
+                state.update_marks(0);
+                state.marks[&m].mark.to::<u64>()
+            })
+            .collect();
+        assert_eq!(marks, [10_210, 10_414, 10_622, 10_834, 11_000, 11_000]);
+    }
+
+    #[test]
+    fn the_breaker_halts_a_market_whose_mark_triples_until_a_repair() {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("MRSN/USD", U256::from(1u64), U256::from(1u64));
+        (state.mark_height, state.current_height) = (Some(1), 1);
+        last_trade(&mut state, m, 11_500);
+        state.update_marks(5);
+
+        // A print at 143x the price, and nothing trades after it.
+        last_trade(&mut state, m, 1_650_093);
+        let mut blocks = 0;
+        while state.markets[&m].status == MarketStatus::Active {
+            state.update_marks(5);
+            blocks += 1;
+            assert!(blocks < 100, "never halted");
+        }
+        assert!((55..=58).contains(&blocks), "halted after {blocks} blocks");
+        assert_eq!(
+            state.mark_price(m, U256::ZERO),
+            U256::from(11_500u64),
+            "positions are held at the epoch's opening mark"
+        );
+        let refused = state.submit_order_ext(
+            addr(1),
+            m,
+            Side::Buy,
+            U256::from(11_500u64),
+            U256::from(1u64),
+            TimeInForce::Gtc,
+            false,
+            0,
+        );
+        assert!(matches!(refused, Err(MersennetOrdersError::MarketHalted)));
+
+        state.repair_market(
+            m,
+            U256::from(11_500u64),
+            U256::from(3_450u64),
+            U256::from(34_500u64),
+        );
+        assert_eq!(state.markets[&m].status, MarketStatus::Active);
+        let reopened = MarkState {
+            mark: U256::from(11_500u64),
+            epoch_open: U256::from(11_500u64),
+            epoch: 5,
+            halted: false,
+        };
+        assert_eq!(state.marks[&m], reopened);
+    }
+
+    #[test]
+    fn before_the_switch_the_mark_is_the_last_trade() {
+        let mut state = MersennetOrdersState::new();
+        let m = state.add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+        state.current_height = 10;
+        last_trade(&mut state, m, 1_650_093);
+        state.update_marks(0);
+        state.mark_height = Some(11);
+        state.update_marks(0);
+        assert!(state.marks.is_empty(), "nothing stored before the switch");
+        assert_eq!(state.mark_price(m, U256::ZERO), U256::from(1_650_093u64));
     }
 
     #[test]
@@ -1949,6 +2281,151 @@ mod tests {
         let mut state = MersennetOrdersState::new();
         let res = state.cancel_order_owned(OrderId(123), addr(0x11));
         assert!(matches!(res, Ok(None)));
+    }
+
+    #[test]
+    fn relisting_closes_every_position_at_the_last_trade_and_rescales() {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        let m = state.add_market("ARB/USD", U256::from(1u64), U256::from(1u64));
+        let other = state.add_market("BTC/USD", U256::from(1u64), U256::from(1u64));
+        state.price_scales.insert(m, 100);
+        let (winner, loser, broke, maker) = (addr(1), addr(2), addr(3), addr(4));
+        for (who, size, entry, collateral) in [
+            (winner, 10i128, 10_000u64, 1_000u64),
+            (loser, -10, 10_000, 1_000),
+            (broke, 10, 20_000, 50),
+        ] {
+            let acc = state.accounts.entry(who).or_default();
+            acc.collateral = U256::from(collateral);
+            acc.positions.insert(
+                m,
+                Position {
+                    size,
+                    entry_price: U256::from(entry),
+                    realized_pnl: 0,
+                },
+            );
+        }
+        state.deposit_collateral(maker, U256::from(1_000_000u64));
+        let gtc = TimeInForce::Gtc;
+        let one = U256::from(1u64);
+        state
+            .submit_order(maker, m, Side::Buy, U256::from(9_000u64), one, gtc)
+            .unwrap();
+        state
+            .submit_order(maker, other, Side::Buy, U256::from(70_000u64), one, gtc)
+            .unwrap();
+        last_trade(&mut state, m, 10_500);
+        let ms = MarkState {
+            mark: U256::from(10_500u64),
+            epoch_open: U256::from(10_000u64),
+            epoch: 0,
+            halted: false,
+        };
+        state.marks.insert(m, ms);
+
+        assert!(matches!(state.relist_market(m, 10_000, 5), Ok((1, 3))));
+
+        // Closed at $105 on scale 100: +$50, -$50, and -$950 on 50 of collateral.
+        assert_eq!(state.accounts[&winner].collateral, U256::from(1_050u64));
+        assert_eq!(state.accounts[&loser].collateral, U256::from(950u64));
+        assert_eq!(state.accounts[&broke].collateral, U256::ZERO);
+        assert_eq!(state.bad_debt, U256::from(900u64));
+        assert!(
+            state
+                .accounts
+                .values()
+                .all(|a| a.positions.get(&m).is_none_or(|p| p.size == 0))
+        );
+        assert_eq!(state.price_scale(m), 10_000);
+        assert_eq!(state.markets[&m].last_price, U256::ZERO);
+        assert!(!state.marks.contains_key(&m));
+        assert!(state.order_book(m).unwrap().bids.is_empty());
+        assert_eq!(
+            state.order_book(other).unwrap().bids.len(),
+            1,
+            "other markets keep their orders"
+        );
+        // Only to a finer multiple of the current scale.
+        assert!(state.relist_market(m, 10_000, 6).is_err());
+        assert!(state.relist_market(m, 15_000, 6).is_err());
+        assert_eq!(state.price_scale(m), 10_000);
+    }
+
+    /// A trader long 10 at 100 on 150 of collateral, marked at 88 (below
+    /// maintenance); the book bids 4 at 85, inside the sweep band, and a
+    /// catcher rests 100 at 40. Returns the trader's position and the
+    /// catcher's after a keeper liquidates.
+    fn liquidate_into_a_far_bid(mark_from: Option<u64>) -> (i128, i128) {
+        let mut state = MersennetOrdersState::new();
+        state.settlement_height = 1;
+        state.current_height = 5;
+        state.mark_height = mark_from;
+        state.set_margin_params(1_000, 500);
+        let (trader, maker, catcher, keeper) = (addr(1), addr(2), addr(3), addr(4));
+        state.deposit_collateral(trader, U256::from(150u64));
+        state.deposit_collateral(maker, U256::from(10_000_000u64));
+        state.deposit_collateral(catcher, U256::from(10_000_000u64));
+        let m = state.add_market("TST/USD", U256::from(1u64), U256::from(1u64));
+        let gtc = TimeInForce::Gtc;
+        let ten = U256::from(10u64);
+        state
+            .submit_order(maker, m, Side::Sell, U256::from(100u64), ten, gtc)
+            .unwrap();
+        state
+            .submit_order(trader, m, Side::Buy, U256::from(100u64), ten, gtc)
+            .unwrap();
+        state
+            .submit_order(
+                maker,
+                m,
+                Side::Buy,
+                U256::from(85u64),
+                U256::from(4u64),
+                gtc,
+            )
+            .unwrap();
+        state
+            .submit_order(
+                catcher,
+                m,
+                Side::Buy,
+                U256::from(40u64),
+                U256::from(100u64),
+                gtc,
+            )
+            .unwrap();
+        last_trade(&mut state, m, 88);
+        let mark = U256::from(88u64);
+        let ms = MarkState {
+            mark,
+            epoch_open: mark,
+            epoch: 0,
+            halted: false,
+        };
+        state.marks.insert(m, ms);
+        assert!(state.is_liquidatable(trader));
+        state.liquidate_on_book(trader, keeper).unwrap();
+        let size = |who: Address| {
+            state.accounts[&who]
+                .positions
+                .get(&m)
+                .map(|p| p.size)
+                .unwrap_or(0)
+        };
+        (size(trader), size(catcher))
+    }
+
+    #[test]
+    fn from_the_mark_switch_a_liquidation_sweep_stops_at_the_band() {
+        // 5% under a mark of 88 is 84: the 4 at 85 fill, the bid at 40 does not.
+        assert_eq!(liquidate_into_a_far_bid(Some(1)), (6, 0));
+    }
+
+    #[test]
+    fn before_the_mark_switch_a_liquidation_sweep_takes_any_price() {
+        assert_eq!(liquidate_into_a_far_bid(None), (0, 6));
     }
 
     /// A trader long in six markets, three of them now losing more than its
