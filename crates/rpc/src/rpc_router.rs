@@ -249,6 +249,7 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     "feeFloorHeight": engine.fee_floor_height,
                     // null while unset, so readers that schedule switches skip it.
                     "markPriceHeight": engine.mark_price_height(),
+                    "timestampOrderHeight": engine.timestamp_order_height(),
                 },
                 // Fee floor + split (engine config; active from feeFloorHeight).
                 "fees": {

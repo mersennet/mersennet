@@ -156,6 +156,15 @@ pub fn default_mark_price_height(chain_id: u64) -> Option<u64> {
     }
 }
 
+/// `engine.timestamp_order_height` when the config leaves it unset. Off on
+/// the running chains until a release sets a height; a new chain starts with it.
+pub fn default_timestamp_order_height(chain_id: u64) -> Option<u64> {
+    match chain_id {
+        8191 => Some(0),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
     #[serde(default = "default_chain_id")]
@@ -185,6 +194,11 @@ pub struct EngineConfig {
     /// schedule (`default_mark_price_height`).
     #[serde(default)]
     pub mark_price_height: Option<u64>,
+    /// Consensus switch: from this height a block stamped before its parent
+    /// is invalid. Unset: the chain's built-in schedule
+    /// (`default_timestamp_order_height`).
+    #[serde(default)]
+    pub timestamp_order_height: Option<u64>,
     /// From `fee_floor_height` the base fee never falls below this many wei
     /// (the EIP-1559 adjustment still moves it up with usage). At 1 wei one
     /// account put 530k reverting transactions a day on the chain for free.
@@ -615,6 +629,7 @@ impl Default for EngineConfig {
             fee_floor_height: 0,
             signed_tx_height: None,
             mark_price_height: None,
+            timestamp_order_height: None,
             min_base_fee_wei: 0,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
