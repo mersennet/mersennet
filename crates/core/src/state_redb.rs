@@ -356,6 +356,10 @@ impl StateBackend for RedbState {
                     .insert(crate::mersennet_orders::MarketId(m), sc);
             }
         }
+        state.marks = match table.get(b"marks".as_slice())? {
+            Some(raw) => crate::state::decode_marks(raw.value())?,
+            None => Default::default(),
+        };
         state.agents.clear();
         if let Some(raw) = table.get(b"agents".as_slice())? {
             let agents: Vec<(Vec<u8>, Vec<u8>, u64)> = bincode::deserialize(raw.value())?;
@@ -562,6 +566,11 @@ impl StateBackend for RedbState {
                 .collect();
             Some(bincode::serialize(&agents)?)
         };
+        let marks_blob: Option<Vec<u8>> = if state.marks.is_empty() {
+            None
+        } else {
+            Some(crate::state::encode_marks(&state.marks)?)
+        };
         let scales_blob: Option<Vec<u8>> = if state.price_scales.is_empty() {
             None
         } else {
@@ -585,6 +594,10 @@ impl StateBackend for RedbState {
             table.remove(b"price_scales".as_slice())?;
             if let Some(blob) = &scales_blob {
                 table.insert(b"price_scales".as_slice(), blob.as_slice())?;
+            }
+            table.remove(b"marks".as_slice())?;
+            if let Some(blob) = &marks_blob {
+                table.insert(b"marks".as_slice(), blob.as_slice())?;
             }
             table.remove(b"bad_debt".as_slice())?;
             if !state.bad_debt.is_zero() {

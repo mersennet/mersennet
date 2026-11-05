@@ -145,6 +145,17 @@ pub fn default_signed_tx_height(chain_id: u64) -> Option<u64> {
     }
 }
 
+/// `engine.mark_price_height` when the config leaves it unset. Chains
+/// started on these rules carry them from genesis; 131071 switches at block
+/// 3,102,100 (about 12:00 UTC on Mon 26 Oct 2026).
+pub fn default_mark_price_height(chain_id: u64) -> Option<u64> {
+    match chain_id {
+        131071 => Some(3_102_100),
+        524287 | 8191 => Some(0),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
     #[serde(default = "default_chain_id")]
@@ -168,6 +179,12 @@ pub struct EngineConfig {
     /// (`default_signed_tx_height`).
     #[serde(default)]
     pub signed_tx_height: Option<u64>,
+    /// From this height each market's mark moves at most 2% per block toward
+    /// the median of its last trade and best bid and ask, and a market whose
+    /// mark moves 3x within an epoch halts. Unset: the chain's built-in
+    /// schedule (`default_mark_price_height`).
+    #[serde(default)]
+    pub mark_price_height: Option<u64>,
     /// From `fee_floor_height` the base fee never falls below this many wei
     /// (the EIP-1559 adjustment still moves it up with usage). At 1 wei one
     /// account put 530k reverting transactions a day on the chain for free.
@@ -589,6 +606,7 @@ impl Default for EngineConfig {
             fee_max_change_denominator: default_fee_change_denominator(),
             fee_floor_height: 0,
             signed_tx_height: None,
+            mark_price_height: None,
             min_base_fee_wei: 0,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,

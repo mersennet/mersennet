@@ -216,6 +216,13 @@ pub fn deposit_collateral_selector() -> [u8; 4] {
     selector("depositCollateral(uint256)")
 }
 
+/// From the mark switch: moves `amount` collateral units of the caller's
+/// native MRSN into the escrow; they pay down outstanding bad debt first and
+/// the rest joins the insurance fund. Before the switch: unknown selector.
+pub fn contribute_insurance_selector() -> [u8; 4] {
+    selector("contributeInsurance(uint256)")
+}
+
 pub fn withdraw_collateral_selector() -> [u8; 4] {
     selector("withdrawCollateral(uint256)")
 }

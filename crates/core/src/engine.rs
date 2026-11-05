@@ -523,6 +523,12 @@ const FREE_TOKEN_OFF: (u64, Address) = (
         0xad, 0xe6, 0xdd, 0x22, 0xd1,
     ]),
 );
+/// ARB/USD (market 5) on chain 131071 trades near $0.19 in the world, where
+/// one tick at its scale of 100 ($0.01) is ~5% of the price, so it was quoted
+/// at a fixed $100. At the mark switch it is relisted on $0.0001 ticks (scale
+/// 10,000): positions close at the last trade first, so the price change
+/// moves nobody's equity.
+const ARB_RELIST: (u64, u64) = (5, 10_000);
 
 #[derive(Debug)]
 pub struct Engine {
@@ -539,6 +545,9 @@ pub struct Engine {
     /// Consensus switch (`None` = off): from this height every transaction in
     /// a block proves its sender and the block hash commits to it signed.
     signed_tx_height: Option<u64>,
+    /// Consensus switch (`None` = off): from this height positions are marked
+    /// at the bounded mark and the circuit breaker can halt a market.
+    mark_price_height: Option<u64>,
     pub min_base_fee: U256,
     pub fee_treasury_bps: u64,
     pub fee_proposer_bps: u64,
@@ -660,6 +669,8 @@ pub struct Engine {
     price_rescales: Vec<(u64, u64)>,
     /// One-off market repair as (height, market, reference price).
     market_repair: Option<(u64, u64, u64)>,
+    /// `(market, new_scale)` relisted at the mark switch (see `ARB_RELIST`).
+    market_relist: Option<(u64, u64)>,
     /// (window, keeper, keeper collateral, amount apart): see `REJOIN_WINDOW`.
     rejoin: Option<((u64, u64), Address, U256, U256)>,
     /// (height, token): see `FREE_TOKEN_OFF`.
@@ -892,6 +903,7 @@ impl Engine {
             fee_max_change_denominator: 8,
             fee_floor_height: 0,
             signed_tx_height: None,
+            mark_price_height: None,
             min_base_fee: U256::ZERO,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -955,6 +967,7 @@ impl Engine {
                 U256::from(REJOIN_APART),
             )),
             free_token_off: (chain_id == 131071).then_some(FREE_TOKEN_OFF),
+            market_relist: (chain_id == 131071).then_some(ARB_RELIST),
             last_block_applied_at: None,
             fork_detected_at: None,
             checkpoints: std::collections::VecDeque::new(),
@@ -2024,6 +2037,14 @@ impl Engine {
         self.signed_tx_height = height;
     }
 
+    pub fn set_mark_price_height(&mut self, height: Option<u64>) {
+        self.mark_price_height = height;
+    }
+
+    pub fn mark_price_height(&self) -> Option<u64> {
+        self.mark_price_height
+    }
+
     fn signed_txs_at(&self, height: u64) -> bool {
         self.signed_tx_height.is_some_and(|from| height >= from)
     }
@@ -2149,6 +2170,37 @@ impl Engine {
             %reference,
             "market repaired: out-of-band orders cancelled, out-of-band entries and the mark reset"
         );
+    }
+
+    pub fn set_market_relist(&mut self, relist: Option<(u64, u64)>) {
+        self.market_relist = relist;
+    }
+
+    /// Consensus step at the mark switch, before the block's transactions:
+    /// see `ARB_RELIST`. Runs before the block's marks update, so the market's
+    /// mark starts again from the new book.
+    fn maybe_market_relist(&mut self, height: u64) {
+        let (Some(at), Some((market, scale))) = (self.mark_price_height, self.market_relist) else {
+            return;
+        };
+        if height != at {
+            return;
+        }
+        match self.orders.state.relist_market(
+            crate::mersennet_orders::MarketId(market),
+            scale,
+            height,
+        ) {
+            Ok((cancelled, closed)) => tracing::warn!(
+                height,
+                market,
+                scale,
+                cancelled,
+                closed,
+                "market relisted: orders cancelled, positions closed at the last trade, new price scale"
+            ),
+            Err(e) => tracing::warn!(height, market, scale, %e, "market relist skipped"),
+        }
     }
 
     fn maybe_price_rescale(&mut self, height: u64) {
@@ -2449,6 +2501,7 @@ impl Engine {
         self.maybe_market_repair(self.block_number);
         self.maybe_rejoin(self.block_number);
         self.maybe_free_token_off(self.block_number);
+        self.maybe_market_relist(self.block_number);
         self.maybe_settlement_switch(self.block_number);
         // Fee floor: from the switch the base fee never sits below the floor
         // (covers the switch block itself and a restart from a checkpoint).
@@ -2509,6 +2562,9 @@ impl Engine {
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = self.block_number;
         self.orders.state.safety_height = self.signed_tx_height;
+        self.orders.state.mark_height = self.mark_price_height;
+        let epoch = self.orders.state.staking.epoch_of(self.block_number);
+        self.orders.state.update_marks(epoch);
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -3624,6 +3680,7 @@ impl Engine {
         self.maybe_market_repair(block.number);
         self.maybe_rejoin(block.number);
         self.maybe_free_token_off(block.number);
+        self.maybe_market_relist(block.number);
         self.maybe_settlement_switch(block.number);
 
         // Authenticate the proposer: the block must be signed by the address in
@@ -3719,6 +3776,9 @@ impl Engine {
         let _ctx_serial = precompile_test_lock();
         self.orders.state.current_height = block.number;
         self.orders.state.safety_height = self.signed_tx_height;
+        self.orders.state.mark_height = self.mark_price_height;
+        let epoch = self.orders.state.staking.epoch_of(block.number);
+        self.orders.state.update_marks(epoch);
         let orders_state = std::mem::take(&mut self.orders.state);
         let shared_orders = Arc::new(Mutex::new(orders_state));
         precompiles::set_mersennet_orders_context(shared_orders.clone());
@@ -5707,6 +5767,88 @@ mod reorg_tests {
     }
 
     #[test]
+    fn producer_and_importer_relist_the_market_at_the_mark_switch() {
+        use crate::mersennet_orders::{MarketId, Side, TimeInForce};
+        let mut p = with_validators(engine());
+        let mut a = with_validators(engine());
+        let (long, short) = (Address::repeat_byte(0x0a), Address::repeat_byte(0x0b));
+        let mut market = MarketId(0);
+        for e in [&mut p, &mut a] {
+            market = e
+                .orders
+                .state
+                .add_market("ARB/USD", U256::from(1u64), U256::from(1u64));
+            e.orders.state.price_scales.insert(market, 100);
+            // Settlement live with collateral already in MRSN units, as on 131071.
+            e.orders.state.settlement_height = 1;
+            e.orders.state.units_migrated = true;
+            e.orders.state.place_order(
+                Address::repeat_byte(0x0c),
+                market,
+                Side::Buy,
+                U256::from(9_990u64),
+                U256::from(3u64),
+                TimeInForce::Gtc,
+            );
+            for (who, size) in [(long, 10i128), (short, -10)] {
+                let acc = e.orders.state.accounts.entry(who).or_default();
+                acc.collateral = U256::from(1_000u64);
+                acc.positions.insert(
+                    market,
+                    crate::mersennet_orders::Position {
+                        size,
+                        entry_price: U256::from(10_000u64),
+                        realized_pnl: 0,
+                    },
+                );
+            }
+            e.orders.state.markets.get_mut(&market).unwrap().last_price = U256::from(10_500u64);
+            e.set_mark_price_height(Some(3));
+            e.set_market_relist(Some((market.0, 10_000)));
+        }
+        for _ in 0..2 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+        }
+        assert_eq!(
+            p.orders.state.price_scale(market),
+            100,
+            "nothing before the switch"
+        );
+        for _ in 0..2 {
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), block.number);
+        }
+        for e in [&p, &a] {
+            let st = &e.orders.state;
+            assert_eq!(st.price_scale(market), 10_000);
+            assert!(
+                st.order_book(market).unwrap().bids.is_empty(),
+                "orders cancelled"
+            );
+            assert_eq!(st.markets[&market].last_price, U256::ZERO);
+            // closed at the last trade, $105: 10 × $5 each way
+            assert_eq!(st.accounts[&long].collateral, U256::from(1_050u64));
+            assert_eq!(st.accounts[&short].collateral, U256::from(950u64));
+            assert_eq!(st.accounts[&long].positions[&market].size, 0);
+        }
+        assert_eq!(
+            p.evm.state.compute_state_root(),
+            a.evm.state.compute_state_root()
+        );
+    }
+
+    #[test]
+    fn the_arb_relist_is_scheduled_on_chain_131071_only() {
+        assert_eq!(engine().market_relist, Some(ARB_RELIST));
+        assert_eq!(ARB_RELIST, (5, 10_000));
+        let dir = tempdir().unwrap();
+        let other = Engine::new_with_backend(524287, dir.path().join("e"), "redb");
+        assert_eq!(other.market_relist, None);
+    }
+
+    #[test]
     fn the_mrsn_repair_is_scheduled_on_chain_131071_only() {
         let testnet = engine();
         assert_eq!(testnet.market_repair, Some(MRSN_REPAIR));
@@ -6329,6 +6471,40 @@ mod reorg_tests {
         let mut tampered = with_tx.clone();
         tampered.timestamp += 1;
         assert!(!other.header_commits_to_hash(&tampered));
+    }
+    #[test]
+    fn producer_and_importer_move_the_marks_together() {
+        let fresh = || {
+            let mut e = with_validators(engine());
+            e.set_mark_price_height(Some(1));
+            let m = e
+                .orders
+                .state
+                .add_market("TST/USD", U256::from(1u64), U256::from(1u64));
+            e.orders.state.markets.get_mut(&m).unwrap().last_price = U256::from(10_000u64);
+            (e, m)
+        };
+        let ((mut p, m), (mut a, _)) = (fresh(), fresh());
+        for height in 1..=3u64 {
+            if height == 2 {
+                for e in [&mut p, &mut a] {
+                    e.orders.state.markets.get_mut(&m).unwrap().last_price = U256::from(20_000u64);
+                }
+            }
+            let block = produce_as_leader(&mut p, 0);
+            a.import_block(block.clone());
+            assert_eq!(a.latest_height(), height);
+            assert_eq!(a.orders.state.marks, p.orders.state.marks, "block {height}");
+        }
+        assert_eq!(
+            p.orders.state.marks[&m].mark,
+            U256::from(10_404u64),
+            "2% a block"
+        );
+        assert_eq!(
+            a.evm.state.compute_state_root(),
+            p.evm.state.compute_state_root()
+        );
     }
 }
 
