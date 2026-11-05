@@ -1,4 +1,4 @@
-use mersennet::bridge::{BridgeDomain, BridgeMessage};
+use mersennet::bridge::BridgeDomain;
 use mersennet::engine::Engine;
 use mersennet::errors::MersennetOrdersError;
 use mersennet::events::{
@@ -355,33 +355,20 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                     .to_string(),
             ))
         }
-        "mersennet_bridge_enqueueOrdersToEvm" => {
-            let payload = parse_payload(params)?;
-            let msg = engine.bridge_enqueue_orders_to_evm(payload);
-            Ok(serde_json::to_value(bridge_message_to_dto(msg))
-                .map_err(|err| RpcError::new(-32000, err.to_string()))?)
-        }
-        "mersennet_bridge_enqueueEvmToOrders" => {
-            let payload = parse_payload(params)?;
-            let msg = engine.bridge_enqueue_evm_to_orders(payload);
-            Ok(serde_json::to_value(bridge_message_to_dto(msg))
-                .map_err(|err| RpcError::new(-32000, err.to_string()))?)
-        }
-        "mersennet_bridge_dequeueOrdersToEvm" => {
-            let msg = engine.bridge_dequeue_orders_to_evm();
-            match msg {
-                Some(msg) => Ok(serde_json::to_value(bridge_message_to_dto(msg))
-                    .map_err(|err| RpcError::new(-32000, err.to_string()))?),
-                None => Ok(Value::Null),
-            }
-        }
-        "mersennet_bridge_dequeueEvmToOrders" => {
-            let msg = engine.bridge_dequeue_evm_to_orders();
-            match msg {
-                Some(msg) => Ok(serde_json::to_value(bridge_message_to_dto(msg))
-                    .map_err(|err| RpcError::new(-32000, err.to_string()))?),
-                None => Ok(Value::Null),
-            }
+        "mersennet_bridge_enqueueOrdersToEvm"
+        | "mersennet_bridge_enqueueEvmToOrders"
+        | "mersennet_bridge_dequeueOrdersToEvm"
+        | "mersennet_bridge_dequeueEvmToOrders" => {
+            // Disabled: direct local mutation — the bridge queues are part of
+            // the state root, so a change on one node splits its state from
+            // every other node's (same class of bug as addMarket).
+            Err(RpcError::new(
+                -32601,
+                format!(
+                    "{call} is disabled: bridge queues are consensus state and cannot be \
+                     changed via RPC on a single node"
+                ),
+            ))
         }
         "mersennet_gasPrice" | "eth_gasPrice" => Ok(Value::String(hex_u256(engine.base_fee))),
         "mersennet_validators" => {
@@ -801,14 +788,6 @@ struct MersennetOrderDto {
 }
 
 #[derive(Debug, Serialize)]
-struct BridgeMessageDto {
-    nonce: String,
-    from: String,
-    to: String,
-    payload: String,
-}
-
-#[derive(Debug, Serialize)]
 struct DomainEventDto {
     block_number: String,
     event_index: String,
@@ -981,17 +960,6 @@ fn parse_collateral_input(params: Value) -> RpcResult<(Address, U256)> {
         _ => return Err(RpcError::new(-32602, "amount required")),
     };
     Ok((owner, amount))
-}
-
-fn parse_payload(params: Value) -> RpcResult<Bytes> {
-    let array = match params {
-        Value::Array(values) => values,
-        _ => return Err(RpcError::new(-32602, "invalid params")),
-    };
-    match array.first() {
-        Some(Value::String(value)) => parse_hex_bytes(value),
-        _ => Err(RpcError::new(-32602, "payload required")),
-    }
 }
 
 fn parse_domain_event_filter(params: Value, engine: &Engine) -> RpcResult<DomainEventFilter> {
@@ -1408,15 +1376,6 @@ fn map_mersennet_orders_error(err: MersennetOrdersError) -> RpcError {
         MersennetOrdersError::PriceOutOfBand => -32025,
     };
     RpcError::new(code, err.message())
-}
-
-fn bridge_message_to_dto(msg: BridgeMessage) -> BridgeMessageDto {
-    BridgeMessageDto {
-        nonce: hex_u64(msg.nonce),
-        from: bridge_domain_to_str(&msg.from).to_string(),
-        to: bridge_domain_to_str(&msg.to).to_string(),
-        payload: format!("0x{}", hex::encode(msg.payload.as_ref())),
-    }
 }
 
 fn bridge_domain_to_str(domain: &BridgeDomain) -> &'static str {
