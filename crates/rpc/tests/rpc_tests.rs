@@ -316,6 +316,39 @@ fn rpc_mersennet_orders_add_market() {
     assert!(err.message.contains("disabled"), "got: {}", err.message);
 }
 
+#[test]
+fn rpc_bridge_queue_methods_are_disabled_and_leave_the_queues_alone() {
+    // The bridge queues are folded into the state root; an RPC that changed
+    // them on the receiving node alone left that node on a different root.
+    let (mut engine, _dir) = setup_engine(131071);
+    let before = (
+        engine.bridge.orders_to_evm.snapshot(),
+        engine.bridge.evm_to_orders.snapshot(),
+    );
+    for method in [
+        "mersennet_bridge_enqueueOrdersToEvm",
+        "mersennet_bridge_enqueueEvmToOrders",
+        "mersennet_bridge_dequeueOrdersToEvm",
+        "mersennet_bridge_dequeueEvmToOrders",
+    ] {
+        let err = route(method, json!(["0x01"]), &mut engine).expect_err("must be disabled");
+        assert_eq!(err.code, -32601, "{method}");
+        assert!(
+            err.message.contains("disabled"),
+            "{method}: {}",
+            err.message
+        );
+    }
+    let after = (
+        engine.bridge.orders_to_evm.snapshot(),
+        engine.bridge.evm_to_orders.snapshot(),
+    );
+    assert_eq!(before.0.next_nonce, after.0.next_nonce);
+    assert_eq!(before.1.next_nonce, after.1.next_nonce);
+    assert_eq!(before.0.messages.len(), after.0.messages.len());
+    assert_eq!(before.1.messages.len(), after.1.messages.len());
+}
+
 // NOTE: the consensus-routed submitOrder flow (accepted -> mined -> resting)
 // lives in tests/rpc_orders_consensus.rs — its own binary — because block
 // execution uses process-global precompile contexts that concurrent tests in

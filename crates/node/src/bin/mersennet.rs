@@ -384,6 +384,11 @@ fn main() -> anyhow::Result<()> {
             .mark_price_height
             .or_else(|| mersennet::config::default_mark_price_height(app_config.engine.chain_id)),
     );
+    engine.set_timestamp_order_height(
+        app_config.engine.timestamp_order_height.or_else(|| {
+            mersennet::config::default_timestamp_order_height(app_config.engine.chain_id)
+        }),
+    );
     engine.set_fee_floor_params(
         app_config.engine.fee_floor_height,
         app_config.engine.min_base_fee_wei,
@@ -395,7 +400,11 @@ fn main() -> anyhow::Result<()> {
         }),
     );
     engine.set_round_timeout_ms(app_config.slashing.round_timeout_ms);
-    engine.set_validator_set_params(app_config.validator_set.to_params());
+    engine.set_validator_set_params(
+        app_config
+            .validator_set
+            .to_params(app_config.engine.chain_id),
+    );
     // A restart must resume with the set the network is using, not the
     // genesis set from the config (see Engine::restore_consensus_set).
     engine.restore_consensus_set();
@@ -868,8 +877,8 @@ fn main() -> anyhow::Result<()> {
                             // only proposes if it leads *that* round.
                             let time_round = {
                                 let Ok(e) = eng.lock() else { break };
-                                e.block_by_number(head)
-                                    .map(|b| {
+                                e.round_anchor_at(head)
+                                    .map(|anchor| {
                                         let now = std::time::SystemTime::now()
                                             .duration_since(std::time::UNIX_EPOCH)
                                             .map(|d| d.as_secs())
@@ -877,7 +886,7 @@ fn main() -> anyhow::Result<()> {
                                         // Peers start their round timer when the parent
                                         // arrives (~its timestamp) and rotate every
                                         // round_timeout; mirror that.
-                                        let pending_ms = now.saturating_sub(b.timestamp).saturating_mul(1000);
+                                        let pending_ms = now.saturating_sub(anchor).saturating_mul(1000);
                                         pending_ms / round_timeout_ms
                                     })
                                     .unwrap_or(0)
@@ -901,12 +910,12 @@ fn main() -> anyhow::Result<()> {
                             // rotation, ~19 s, only when a leader is already late.
                             {
                                 let Ok(e) = eng.lock() else { break };
-                                if let Some(b) = e.block_by_number(head) {
+                                if let Some(anchor) = e.round_anchor_at(head) {
                                     let now = std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .map(|d| d.as_secs())
                                         .unwrap_or(0);
-                                    let pending_ms = now.saturating_sub(b.timestamp).saturating_mul(1000);
+                                    let pending_ms = now.saturating_sub(anchor).saturating_mul(1000);
                                     let into_round = pending_ms % round_timeout_ms;
                                     let margin = block_time.as_millis() as u64 * 2;
                                     if into_round + margin >= round_timeout_ms {
@@ -1559,6 +1568,12 @@ fn apply_runtime_config(engine: &mut Engine, config: &AppConfig) {
             .engine
             .mark_price_height
             .or_else(|| mersennet::config::default_mark_price_height(config.engine.chain_id)),
+    );
+    engine.set_timestamp_order_height(
+        config
+            .engine
+            .timestamp_order_height
+            .or_else(|| mersennet::config::default_timestamp_order_height(config.engine.chain_id)),
     );
     engine.set_fee_floor_params(
         config.engine.fee_floor_height,

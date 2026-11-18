@@ -156,6 +156,37 @@ pub fn default_mark_price_height(chain_id: u64) -> Option<u64> {
     }
 }
 
+/// The 131071 switch for the rules below: block 3,720,600, the first block of
+/// epoch 2067 (about 12:00 UTC on Tue 10 Nov 2026).
+pub const SWITCH_3720600: u64 = 3_720_600;
+
+/// `engine.timestamp_order_height` when the config leaves it unset. A new chain
+/// starts with it; 131071 switches at block 3,720,600.
+pub fn default_timestamp_order_height(chain_id: u64) -> Option<u64> {
+    match chain_id {
+        131071 => Some(SWITCH_3720600),
+        8191 => Some(0),
+        _ => None,
+    }
+}
+
+/// `validator_set.restart_grace_height` when the config leaves it at 0, so a
+/// node upgraded by swapping the binary alone switches too.
+pub fn default_restart_grace_height(chain_id: u64) -> u64 {
+    match chain_id {
+        131071 => SWITCH_3720600,
+        _ => 0,
+    }
+}
+
+/// `validator_set.delegator_share_height` when the config leaves it at 0.
+pub fn default_delegator_share_height(chain_id: u64) -> u64 {
+    match chain_id {
+        131071 => SWITCH_3720600,
+        _ => 0,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
     #[serde(default = "default_chain_id")]
@@ -185,6 +216,11 @@ pub struct EngineConfig {
     /// schedule (`default_mark_price_height`).
     #[serde(default)]
     pub mark_price_height: Option<u64>,
+    /// Consensus switch: from this height a block stamped before its parent
+    /// is invalid. Unset: the chain's built-in schedule
+    /// (`default_timestamp_order_height`).
+    #[serde(default)]
+    pub timestamp_order_height: Option<u64>,
     /// From `fee_floor_height` the base fee never falls below this many wei
     /// (the EIP-1559 adjustment still moves it up with usage). At 1 wei one
     /// account put 530k reverting transactions a day on the chain for free.
@@ -433,6 +469,12 @@ pub struct ValidatorSetConfig {
     /// Height from which a leader that missed 3 slots is benched for the rest of the epoch (0 = off).
     #[serde(default)]
     pub bench_height: u64,
+    /// Height from which a validator is jailed only on its second bad epoch in a row (0 = off).
+    #[serde(default)]
+    pub restart_grace_height: u64,
+    /// Height from which delegators earn D / (S + D) of their validator's reward (0 = off).
+    #[serde(default)]
+    pub delegator_share_height: u64,
     /// Height from which the active set holds up to `max_validators_after` (0 = off).
     #[serde(default)]
     pub max_validators_height: u64,
@@ -460,7 +502,7 @@ fn default_jail_min_slots() -> u64 {
 }
 
 impl ValidatorSetConfig {
-    pub fn to_params(&self) -> crate::staking::ValidatorSetParams {
+    pub fn to_params(&self, chain_id: u64) -> crate::staking::ValidatorSetParams {
         let d = crate::staking::ValidatorSetParams::default();
         crate::staking::ValidatorSetParams {
             activation_height: self.activation_height,
@@ -486,6 +528,16 @@ impl ValidatorSetConfig {
             rewards_to_operator_height: self.rewards_to_operator_height,
             jail_escalation_height: self.jail_escalation_height,
             bench_height: self.bench_height,
+            restart_grace_height: if self.restart_grace_height == 0 {
+                default_restart_grace_height(chain_id)
+            } else {
+                self.restart_grace_height
+            },
+            delegator_share_height: if self.delegator_share_height == 0 {
+                default_delegator_share_height(chain_id)
+            } else {
+                self.delegator_share_height
+            },
             max_validators_height: self.max_validators_height,
             max_validators_after: self.max_validators_after,
         }
@@ -607,6 +659,7 @@ impl Default for EngineConfig {
             fee_floor_height: 0,
             signed_tx_height: None,
             mark_price_height: None,
+            timestamp_order_height: None,
             min_base_fee_wei: 0,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -964,5 +1017,36 @@ mod canonical_config_tests {
                 "fee_treasury_address must be a 0x-prefixed 20-byte hex address when fee_treasury_bps > 0"
             );
         }
+    }
+
+    /// A 131071 node whose config does not name the restart-grace, delegator-share
+    /// and timestamp-order heights (every config in the field) switches at the
+    /// built-in height, an epoch start; a height in the config still wins; other
+    /// chains keep the rules off.
+    #[test]
+    fn release_switch_heights_come_from_the_binary() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../networks/testnet/config.json"
+        );
+        let cfg = load_config(path).expect("canonical config parses");
+        let p = cfg.validator_set.to_params(131071);
+        assert_eq!(p.restart_grace_height, SWITCH_3720600);
+        assert_eq!(p.delegator_share_height, SWITCH_3720600);
+        assert_eq!(default_timestamp_order_height(131071), Some(SWITCH_3720600));
+        assert_eq!(SWITCH_3720600 % cfg.validator_set.epoch_blocks, 0);
+
+        let mut vs = cfg.validator_set.clone();
+        vs.restart_grace_height = 1_800;
+        vs.delegator_share_height = 3_600;
+        let p = vs.to_params(131071);
+        assert_eq!(
+            (p.restart_grace_height, p.delegator_share_height),
+            (1_800, 3_600)
+        );
+
+        let p = cfg.validator_set.to_params(524287);
+        assert_eq!((p.restart_grace_height, p.delegator_share_height), (0, 0));
+        assert_eq!(default_timestamp_order_height(524287), None);
     }
 }
