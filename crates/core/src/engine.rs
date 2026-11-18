@@ -492,6 +492,22 @@ struct StateCheckpoint {
 /// How many recent heights can be rolled back. Finality normally lands
 /// within the same block interval, so 1 would do; 16 covers a slow round.
 const REORG_DEPTH: usize = 16;
+
+/// The timestamp a height's failover clock counts from: the head's, unless
+/// the head was stamped before its parent. A validator whose clock ran 74
+/// minutes slow did that on 1 Nov, and every next leader counted the height
+/// as pending since then, jumped from round 0 to round 553 and gave it up.
+pub fn round_anchor(head_ts: u64, parent_ts: Option<u64>) -> u64 {
+    parent_ts.map_or(head_ts, |p| head_ts.max(p))
+}
+
+/// From `timestamp_order_height` a block may not be stamped before its parent.
+fn timestamp_in_order(from: Option<u64>, height: u64, ts: u64, parent_ts: Option<u64>) -> bool {
+    match (from, parent_ts) {
+        (Some(from), Some(parent)) if height >= from => ts >= parent,
+        _ => true,
+    }
+}
 /// Raw envelopes kept for relaying before the cache drops those of mined txs.
 const RAW_TX_CACHE_SOFT_CAP: usize = 8192;
 /// MRSN/USD (market 1) on chain 131071: on 6 Oct 2026 at 17:51 UTC one sweep
@@ -548,6 +564,9 @@ pub struct Engine {
     /// Consensus switch (`None` = off): from this height positions are marked
     /// at the bounded mark and the circuit breaker can halt a market.
     mark_price_height: Option<u64>,
+    /// Consensus switch (`None` = off): from this height a block stamped
+    /// before its parent is invalid.
+    timestamp_order_height: Option<u64>,
     pub min_base_fee: U256,
     pub fee_treasury_bps: u64,
     pub fee_proposer_bps: u64,
@@ -904,6 +923,7 @@ impl Engine {
             fee_floor_height: 0,
             signed_tx_height: None,
             mark_price_height: None,
+            timestamp_order_height: None,
             min_base_fee: U256::ZERO,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -1609,6 +1629,14 @@ impl Engine {
         self.chain.iter().find(|block| block.number == number)
     }
 
+    /// The time the height after `head` has been pending since, for the
+    /// leaders' failover clock: see [`round_anchor`].
+    pub fn round_anchor_at(&self, head: u64) -> Option<u64> {
+        let ts = self.block_by_number(head)?.timestamp;
+        let parent = head.checked_sub(1).and_then(|p| self.block_by_number(p));
+        Some(round_anchor(ts, parent.map(|b| b.timestamp)))
+    }
+
     /// Fetch a block by height from the in-memory window, falling back to
     /// the on-disk store for older heights. Returns an owned `Block`.
     ///
@@ -2043,6 +2071,14 @@ impl Engine {
 
     pub fn mark_price_height(&self) -> Option<u64> {
         self.mark_price_height
+    }
+
+    pub fn set_timestamp_order_height(&mut self, height: Option<u64>) {
+        self.timestamp_order_height = height;
+    }
+
+    pub fn timestamp_order_height(&self) -> Option<u64> {
+        self.timestamp_order_height
     }
 
     fn signed_txs_at(&self, height: u64) -> bool {
@@ -2850,10 +2886,12 @@ impl Engine {
         let domain_events = std::mem::take(&mut self.pending_events);
 
         let tx_count = transactions.len();
+        // A clock behind the chain stamps the parent's time, never earlier.
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_secs()
+            .max(self.chain.last().map_or(0, |b| b.timestamp));
 
         // Canonical, content-committing block hash: binds the parent
         // hash (hash-linked chain), timestamp, transaction root, state
@@ -3255,10 +3293,12 @@ impl Engine {
         let domain_events = std::mem::take(&mut self.pending_events);
 
         let tx_count = transactions.len();
+        // A clock behind the chain stamps the parent's time, never earlier.
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_secs()
+            .max(self.chain.last().map_or(0, |b| b.timestamp));
 
         let parent_hash = self.chain.last().map(|b| b.hash).unwrap_or(B256::ZERO);
         let tx_root = Self::compute_tx_root(&transactions, self.signed_txs_at(self.block_number));
@@ -3668,6 +3708,19 @@ impl Engine {
                 block.number,
                 block.parent_hash,
                 expected_parent
+            );
+        }
+        let parent_ts = self.chain.last().map(|b| b.timestamp);
+        if !timestamp_in_order(
+            self.timestamp_order_height,
+            block.number,
+            block.timestamp,
+            parent_ts,
+        ) {
+            anyhow::bail!(
+                "block {} is stamped {} s before its parent",
+                block.number,
+                parent_ts.unwrap_or(0).saturating_sub(block.timestamp)
             );
         }
 
@@ -5181,7 +5234,14 @@ impl Engine {
             // to the staking escrow; delegators claim it via the precompile.
             // Deterministic across produce/import (same state, same stake).
             let delegator_cut = {
-                let self_stake = self.stake_of(reward.address);
+                let st = &self.orders.state.staking;
+                let h = st.params.delegator_share_height;
+                // Blocks before the switch replay with the consensus stake.
+                let self_stake = if h > 0 && self.block_number >= h {
+                    st.self_stake_of(reward.address)
+                } else {
+                    self.stake_of(reward.address)
+                };
                 self.orders
                     .state
                     .staking
@@ -6549,6 +6609,8 @@ mod open_validator_set_tests {
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
             bench_height: 0,
+            restart_grace_height: 0,
+            delegator_share_height: 0,
             max_validators_height: 0,
             max_validators_after: 0,
         }
@@ -6991,6 +7053,147 @@ mod open_validator_set_tests {
             !operator_gain_after.is_zero(),
             "operator earns after the switch"
         );
+    }
+
+    #[test]
+    fn the_failover_clock_ignores_a_head_stamped_before_its_parent() {
+        // 1 Nov: 3,330,197 was stamped 4,429 s before 3,330,196.
+        assert_eq!(round_anchor(1_000, Some(5_429)), 5_429);
+        assert_eq!(round_anchor(5_431, Some(5_429)), 5_431);
+        assert_eq!(round_anchor(7, None), 7);
+    }
+
+    #[test]
+    fn a_block_stamped_before_its_parent_is_out_of_order_from_the_switch() {
+        assert!(timestamp_in_order(None, 50, 10, Some(20)), "rule off");
+        assert!(
+            timestamp_in_order(Some(60), 50, 10, Some(20)),
+            "before the switch"
+        );
+        assert!(
+            !timestamp_in_order(Some(50), 50, 10, Some(20)),
+            "at the switch"
+        );
+        assert!(
+            timestamp_in_order(Some(50), 51, 20, Some(20)),
+            "same second is fine"
+        );
+        assert!(
+            timestamp_in_order(Some(0), 1, 10, None),
+            "no parent to compare with"
+        );
+    }
+
+    /// From `timestamp_order_height` an importer refuses a block stamped
+    /// before its parent; before it, the same block imports.
+    #[test]
+    fn an_importer_refuses_a_block_stamped_before_its_parent_from_the_switch() {
+        for rule in [None, Some(1)] {
+            let mut p = engine();
+            let mut c = engine();
+            c.set_timestamp_order_height(rule);
+            let b1 = produce(&mut p, 0, &[]);
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b1.clone());
+            assert_eq!(c.latest_height(), b1.number);
+            let b2 = produce(&mut p, 0, &[]);
+            // The importer's parent says it was stamped an hour after b2.
+            c.chain.last_mut().unwrap().timestamp = b2.timestamp + 3_600;
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b2.clone());
+            match rule {
+                None => assert_eq!(c.latest_height(), b2.number, "imports before the switch"),
+                Some(_) => assert_eq!(c.latest_height(), b1.number, "refused from the switch"),
+            }
+        }
+    }
+
+    /// A producer whose clock is behind the chain stamps the parent's time.
+    #[test]
+    fn a_producer_never_stamps_a_block_before_its_parent() {
+        let mut p = engine();
+        produce(&mut p, 0, &[]);
+        let ahead = p.chain.last().unwrap().timestamp + 3_600;
+        p.chain.last_mut().unwrap().timestamp = ahead;
+        let b = produce(&mut p, 0, &[]);
+        assert_eq!(b.timestamp, ahead);
+    }
+
+    /// Delegators of a validator with self-stake S and delegations D earn
+    /// D / (S + 2D) of its block reward before `delegator_share_height` and
+    /// D / (S + D) from it. Producer and importer agree on the root throughout.
+    #[test]
+    fn delegators_earn_their_share_of_the_stake_from_the_configured_height() {
+        let mut p = engine();
+        let mut c = engine();
+        let mut prm = params();
+        prm.rewards_to_operator_height = 1;
+        prm.delegator_share_height = 35;
+        for e in [&mut p, &mut c] {
+            e.set_validator_set_params(prm.clone());
+            e.set_token_economics(
+                U256::from(2u64).pow(U256::from(89u64)) - U256::from(1u64),
+                U256::from(2u64).pow(U256::from(61u64)) - U256::from(1u64),
+                33_550_336,
+            );
+        }
+        let v5 = addr(5);
+        let operator = Address::from_slice(&[0x55; 20]);
+        let delegator = Address::from_slice(&[0x66; 20]);
+        let self_stake = U256::from(1_000u64) * U256::from(MRSN);
+        let delegated = U256::from(3_000u64) * U256::from(MRSN);
+        for e in [&mut p, &mut c] {
+            e.fund_account(v5, U256::ZERO, 0);
+            e.fund_account(operator, U256::ZERO, 0);
+            if e.block_number == 0 {
+                drop(produce(e, 0, &[]));
+            }
+            e.orders
+                .state
+                .staking
+                .register_validator(operator, v5, self_stake, 0, 1)
+                .unwrap();
+            e.orders
+                .state
+                .staking
+                .delegate(delegator, v5, delegated)
+                .unwrap();
+        }
+        let escrow = crate::precompile_abi::STAKING_PRECOMPILE;
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        while p.block_number < 50 {
+            let escrow0 = p.get_balance(escrow).unwrap();
+            let b = produce(&mut p, 0, &[]);
+            c.maybe_epoch_transition(c.block_number);
+            c.import_block(b.clone());
+            assert_eq!(
+                c.evm.state.compute_state_root(),
+                p.evm.state.compute_state_root(),
+                "state roots agree at #{}",
+                b.number
+            );
+            let Some(r) = b.rewards.iter().find(|r| r.address == v5) else {
+                continue;
+            };
+            let cut = p.get_balance(escrow).unwrap().saturating_sub(escrow0);
+            if b.number < 35 {
+                before.push((r.amount, cut));
+            } else {
+                after.push((r.amount, cut));
+            }
+        }
+        assert!(!before.is_empty(), "v5 earned before the switch");
+        assert!(!after.is_empty(), "v5 earned after the switch");
+        for (reward, cut) in before {
+            assert_eq!(
+                cut,
+                reward * delegated / (self_stake + delegated + delegated)
+            );
+        }
+        for (reward, cut) in after {
+            assert_eq!(cut, reward * delegated / (self_stake + delegated));
+        }
     }
 
     #[test]

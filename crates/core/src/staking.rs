@@ -20,7 +20,7 @@
 
 use revm::primitives::{Address, U256};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 /// Fixed-point scale for `acc_reward_per_share`.
 pub const REWARD_SCALE: u64 = 1_000_000_000_000_000_000;
@@ -72,6 +72,10 @@ pub struct StakingState {
     /// Parameters, copied from the canonical config at startup (not a
     /// governance surface yet).
     pub params: ValidatorSetParams,
+    /// From `restart_grace_height`: validators whose last judged epoch was
+    /// bad, so the next bad one jails them. Empty before that height, so the
+    /// persisted registry (and the state root) are as before until then.
+    pub last_bad: BTreeSet<Address>,
 }
 
 impl Default for StakingState {
@@ -85,6 +89,7 @@ impl Default for StakingState {
             active_set: Vec::new(),
             current_epoch: 0,
             params: ValidatorSetParams::default(),
+            last_bad: BTreeSet::new(),
         }
     }
 }
@@ -120,6 +125,21 @@ pub struct ValidatorSetParams {
     /// them. Derived from the per-epoch counters every node keeps from block
     /// data, so it is identical everywhere. 0 = off.
     pub bench_height: u64,
+    /// From this height a validator is jailed only on its second bad epoch
+    /// in a row (bad: benched, or more than `jail_miss_bps` of at least
+    /// `jail_min_slots` slots missed). One bad epoch, such as an upgrade
+    /// restart early in an epoch, costs the rest of that epoch's slots and
+    /// nothing more; a dead node is bad again in the next epoch and is
+    /// jailed at its end. Epochs without slots (jailed, standby) do not
+    /// count either way, so a validator back from a jail gets no grace.
+    /// 0 = off. Consensus-critical.
+    pub restart_grace_height: u64,
+    /// From this height delegators earn `D / (S + D)` of their validator's
+    /// block reward (minus commission), S its self-stake and D the
+    /// delegations. Before it the split weighed delegations against the
+    /// consensus stake, which already includes them: `D / (S + 2D)`.
+    /// 0 = off. Consensus-critical.
+    pub delegator_share_height: u64,
     /// From this height the active set holds up to `max_validators_after`
     /// validators instead of `max_validators`. Like every change to the set
     /// it lands at an epoch boundary: the first transition at or after this
@@ -158,6 +178,8 @@ impl Default for ValidatorSetParams {
             rewards_to_operator_height: 0,
             jail_escalation_height: 0,
             bench_height: 0,
+            restart_grace_height: 0,
+            delegator_share_height: 0,
             max_validators_height: 0,
             max_validators_after: 0,
         }
@@ -287,6 +309,14 @@ impl StakingState {
 
     pub fn epoch_of(&self, height: u64) -> u64 {
         height / self.params.epoch_blocks.max(1)
+    }
+
+    /// A validator's own bonded stake (0 when unregistered).
+    pub fn self_stake_of(&self, identity: Address) -> U256 {
+        self.registry
+            .get(&identity)
+            .map(|r| r.self_stake)
+            .unwrap_or(U256::ZERO)
     }
 
     /// Total stake ranking a validator: self-stake + delegations to its pool.
@@ -473,6 +503,7 @@ impl StakingState {
         };
         let p = self.params.clone();
         let escalate = p.jail_escalation_height > 0 && height >= p.jail_escalation_height;
+        let grace = p.restart_grace_height > 0 && height >= p.restart_grace_height;
 
         // 1. Judge the epoch that just ended: jail, exit, rotate.
         let ids: Vec<Address> = self.registry.keys().copied().collect();
@@ -487,10 +518,19 @@ impl StakingState {
                 && height >= p.bench_height
                 && r.missed_slots >= BENCH_MISSES
                 && r.missed_slots * 10 >= r.proposed_slots;
-            if (slots >= p.jail_min_slots || benched)
+            let bad = (slots >= p.jail_min_slots || benched)
                 && r.missed_slots * 10_000 > slots * p.jail_miss_bps
-                && !r.genesis
-            {
+                && !r.genesis;
+            let jail = bad && (!grace || self.last_bad.contains(&id));
+            if grace && (slots > 0 || benched) {
+                // Kept through a jail: the first epoch after it gets no grace.
+                if bad {
+                    self.last_bad.insert(id);
+                } else {
+                    self.last_bad.remove(&id);
+                }
+            }
+            if jail {
                 r.times_jailed += 1;
                 let epochs = if escalate {
                     // 1, 2, 4, 8, 16, then 24: a node that is down all day
@@ -501,9 +541,9 @@ impl StakingState {
                 };
                 r.jailed_until_epoch = epoch + epochs;
                 out.jailed.push(id);
-            } else if escalate && slots >= p.jail_min_slots && r.times_jailed > 0 {
+            } else if escalate && slots >= p.jail_min_slots && r.times_jailed > 0 && !bad {
                 // A full epoch served as an active validator without being
-                // jailed clears the streak.
+                // jailed clears the streak (a bad one let off by the grace does not).
                 r.times_jailed = 0;
             }
             r.proposed_slots = 0;
@@ -511,6 +551,7 @@ impl StakingState {
             if r.exiting {
                 let (operator, amount) = (r.operator, r.self_stake);
                 self.registry.remove(&id);
+                self.last_bad.remove(&id);
                 self.unbondings
                     .entry(operator)
                     .or_default()
@@ -527,6 +568,9 @@ impl StakingState {
                 moved.identity = new_id;
                 self.registry.remove(&id);
                 self.registry.insert(new_id, moved);
+                if self.last_bad.remove(&id) {
+                    self.last_bad.insert(new_id);
+                }
                 // Delegations follow the validator: re-key its pool.
                 if let Some(pool) = self.pools.remove(&id) {
                     self.pools.insert(new_id, pool);
@@ -973,6 +1017,69 @@ mod tests {
         assert_eq!(s.registry[&busy].jailed_until_epoch, 0);
         assert_eq!(s.registry[&busy].missed_slots, 0);
         assert!(!s.is_benched(busy), "bench clears with the epoch counters");
+    }
+
+    /// From `restart_grace_height` one bad epoch (an upgrade restart) only
+    /// benches; the second in a row jails. Epochs without slots (in jail) do
+    /// not count, so the first bad epoch after a jail jails again at once.
+    #[test]
+    fn restart_grace_jails_only_the_second_bad_epoch_in_a_row() {
+        let mrsn = U256::from(10u64).pow(U256::from(18u64));
+        let mut s = StakingState::default();
+        s.set_params(ValidatorSetParams {
+            activation_height: 10,
+            epoch_blocks: 10,
+            jail_min_slots: 5,
+            bench_height: 10,
+            jail_escalation_height: 10,
+            restart_grace_height: 10,
+            ..ValidatorSetParams::default()
+        });
+        s.seed_genesis(&[(addr(1), U256::from(1_000_000u64) * mrsn)], 10);
+        let v = addr(9);
+        s.register_validator(addr(8), v, U256::from(5_000u64) * mrsn, 0, 12)
+            .unwrap();
+        s.epoch_transition(20);
+        assert!(s.active_set.contains(&v));
+        let miss3 = |s: &mut StakingState| {
+            for _ in 0..3 {
+                s.record_slots(addr(1), &[v]);
+            }
+        };
+
+        // A restart early in the epoch: benched, not jailed.
+        miss3(&mut s);
+        assert!(s.is_benched(v));
+        assert!(s.epoch_transition(30).jailed.is_empty());
+        assert_eq!(s.registry[&v].jailed_until_epoch, 0);
+        assert!(s.last_bad.contains(&v) && s.active_set.contains(&v));
+
+        // A good epoch clears the flag.
+        for _ in 0..10 {
+            s.record_slots(v, &[]);
+        }
+        s.epoch_transition(40);
+        assert!(!s.last_bad.contains(&v));
+
+        // Down two epochs in a row: let off once, jailed at the end of the second.
+        miss3(&mut s);
+        s.epoch_transition(50);
+        assert_eq!(s.registry[&v].jailed_until_epoch, 0);
+        miss3(&mut s);
+        s.epoch_transition(60);
+        assert_eq!(s.registry[&v].jailed_until_epoch, 7);
+        assert!(!s.active_set.contains(&v));
+        assert!(s.last_bad.contains(&v), "kept through the jail");
+
+        // The jailed epoch has no slots and does not count; back at 70 with no grace.
+        s.epoch_transition(70);
+        assert!(s.active_set.contains(&v));
+        miss3(&mut s);
+        s.epoch_transition(80);
+        assert_eq!(
+            s.registry[&v].jailed_until_epoch, 10,
+            "jailed at once, for 2 epochs"
+        );
     }
 
     #[test]

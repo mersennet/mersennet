@@ -386,6 +386,13 @@ impl StateBackend for RedbState {
             state.staking.active_set = active.iter().map(|a| Address::from_slice(a)).collect();
             state.staking.current_epoch = epoch;
         }
+        state.staking.last_bad.clear();
+        if let Ok(meta) = read_txn.open_table(HEIGHT_META)
+            && let Some(v) = meta.get(b"validator_last_bad".as_slice())?
+        {
+            let ids: Vec<Vec<u8>> = bincode::deserialize(v.value())?;
+            state.staking.last_bad = ids.iter().map(|a| Address::from_slice(a)).collect();
+        }
 
         state.collateral_assets.clear();
         for a in snapshot.collateral_assets {
@@ -615,6 +622,19 @@ impl StateBackend for RedbState {
                 meta.remove(b"validator_registry".as_slice())?;
             } else {
                 meta.insert(b"validator_registry".as_slice(), registry.as_slice())?;
+            }
+            meta.remove(b"validator_last_bad".as_slice())?;
+            if !state.staking.last_bad.is_empty() {
+                let ids: Vec<Vec<u8>> = state
+                    .staking
+                    .last_bad
+                    .iter()
+                    .map(|a| a.as_slice().to_vec())
+                    .collect();
+                meta.insert(
+                    b"validator_last_bad".as_slice(),
+                    bincode::serialize(&ids)?.as_slice(),
+                )?;
             }
         }
         write_txn.commit()?;
@@ -1008,10 +1028,18 @@ impl StateBackend for RedbState {
             )
         };
         let validator_registry = match read_txn.open_table(HEIGHT_META) {
-            Ok(meta) => meta
-                .get(b"validator_registry".as_slice())?
-                .map(|v| vec![(b"validator_registry".to_vec(), v.value().to_vec())])
-                .unwrap_or_default(),
+            Ok(meta) => {
+                let mut out = Vec::new();
+                for key in [
+                    b"validator_registry".as_slice(),
+                    b"validator_last_bad".as_slice(),
+                ] {
+                    if let Some(v) = meta.get(key)? {
+                        out.push((key.to_vec(), v.value().to_vec()));
+                    }
+                }
+                out
+            }
             Err(_) => Vec::new(),
         };
 
@@ -1092,6 +1120,7 @@ impl StateBackend for RedbState {
         {
             let mut meta = write_txn.open_table(HEIGHT_META)?;
             meta.remove(b"validator_registry".as_slice())?;
+            meta.remove(b"validator_last_bad".as_slice())?;
             for (key, value) in &snapshot.validator_registry {
                 meta.insert(key.as_slice(), value.as_slice())?;
             }

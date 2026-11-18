@@ -279,6 +279,10 @@ struct ReceiptDto {
     #[serde(rename = "type")]
     tx_type: String,
     logs: Vec<LogDto>,
+    /// Return data of a call to the staking precompile: what a claim or a
+    /// withdrawal paid, which no log records.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1630,6 +1634,8 @@ fn receipt_to_dto(
         logs_bloom: logs_bloom_hex(&receipt.logs),
         tx_type: "0x0".to_string(),
         logs,
+        output: (tx.to == Some(mersennet::precompile_abi::STAKING_PRECOMPILE))
+            .then(|| format!("0x{}", hex::encode(&receipt.output))),
     }
 }
 
@@ -2159,6 +2165,50 @@ mod tests {
                 .1
                 .message
                 .contains("pending-transaction RPC disabled")
+        );
+    }
+
+    #[test]
+    fn receipts_of_staking_calls_carry_their_return_data() {
+        // The mapping alone: executing a precompile call here would race the
+        // process-wide orders context other tests' engines install.
+        let temp_dir = TempDir::new().expect("temp dir");
+        let mut eng = Engine::new_with_state(1, temp_dir.path());
+        let from = Address::from_slice(&[0x11; 20]);
+        eng.fund_account(from, U256::from(1_000_000u64), 0);
+        eng.submit_tx_unsigned(Transaction {
+            from,
+            to: Some(Address::from_slice(&[0x22; 20])),
+            value: U256::from(1u64),
+            data: Bytes::new(),
+            gas_limit: 21_000,
+            gas_price: U256::from(1u64),
+            nonce: 0,
+            chain_id: Some(1),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+            raw: None,
+        })
+        .expect("tx accepted");
+        let block = eng.execute_block().expect("block executed");
+        let hash = tx_hash(&block.transactions[0]);
+        let dto = |tx: &Transaction, receipt: &Receipt| {
+            serde_json::to_value(receipt_to_dto(&block, tx, receipt, 0, hash)).expect("json")
+        };
+
+        let transfer = dto(&block.transactions[0], &block.receipts[0]);
+        assert!(transfer.get("output").is_none(), "no output on other calls");
+
+        // A claim whose call returned the 5 wei it paid.
+        let mut claim = block.transactions[0].clone();
+        claim.to = Some(mersennet::precompile_abi::STAKING_PRECOMPILE);
+        let mut receipt = block.receipts[0].clone();
+        receipt.output = Bytes::from(U256::from(5u64).to_be_bytes::<32>().to_vec());
+        assert_eq!(
+            dto(&claim, &receipt)["output"],
+            Value::from(format!("0x{}5", "0".repeat(63)))
         );
     }
 
