@@ -977,17 +977,38 @@ fn main() -> anyhow::Result<()> {
                                         std::time::Duration::from_secs(1),
                                     ) {
                                         HeightProbe::Found(blocks) => {
-                                            if let Ok(mut e) = eng.lock() {
-                                                for b in blocks {
-                                                    e.import_block(b);
+                                            // Only a block that attaches to our head
+                                            // means we were just behind. One from
+                                            // another branch (a peer stranded on a
+                                            // fork) must not stop us: on 23 Nov the
+                                            // privacy chain's three upgraded
+                                            // validators each found a stranded
+                                            // validator's block at their height, could
+                                            // not import it, did not propose, and the
+                                            // height failed over for 24 rounds.
+                                            let applied = match eng.lock() {
+                                                Ok(mut e) => {
+                                                    for b in blocks {
+                                                        e.import_block(b);
+                                                    }
+                                                    e.latest_height() >= next_height
                                                 }
+                                                Err(_) => true,
+                                            };
+                                            if applied {
+                                                info!(
+                                                    height = next_height,
+                                                    round = waiting_round,
+                                                    "peers already hold this height: imported it instead of proposing"
+                                                );
+                                            } else {
+                                                tracing::warn!(
+                                                    height = next_height,
+                                                    round = waiting_round,
+                                                    "a peer holds this height on another branch (it does not attach to our head): proposing"
+                                                );
                                             }
-                                            info!(
-                                                height = next_height,
-                                                round = waiting_round,
-                                                "peers already hold this height: importing it instead of proposing"
-                                            );
-                                            false
+                                            !applied
                                         }
                                         HeightProbe::NotFound => true,
                                         HeightProbe::NoAnswer => {
