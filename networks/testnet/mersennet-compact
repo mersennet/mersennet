@@ -119,10 +119,13 @@ if ! "$BIN" --compact-state "$STATE" "${args[@]}" 2>&1 | sed 's/^/    /'; then
     exit 1
 fi
 [[ -f "$STATE.compact/db" ]] || { log "compaction left no database; the node's state is untouched" >&2; restart_unchanged; exit 1; }
-owner="$(stat -c %U:%G "$STATE")"
+owner="$(stat -c %u:%g "$STATE")"   # numeric: the service user may have no name here
 mv "$STATE" "$OLD"
 mv "$STATE.compact" "$STATE"
-chown -R "$owner" "$STATE"
+# From here on never stop half-way: a node left stopped is worse than one that
+# --finish puts back on the old copy.
+set +e
+chown -R "$owner" "$STATE" || log "warning: could not give $STATE to $owner; the node may fail to start and --finish then puts the old copy back"
 date -u '+%Y-%m-%d %H:%M:%S UTC' > "$OLD.started"
 log "done: $((state_mb / 1024)) GB -> $(( $(du -sm "$STATE" | cut -f1) / 1024 )) GB. The old copy stays at $OLD until the node has started on the new one (mersennet-compact --finish)"
 if [[ $RESTART -eq 1 ]]; then
