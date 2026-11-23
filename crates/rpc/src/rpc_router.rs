@@ -5,7 +5,7 @@ use mersennet::events::{
     BridgeEvent, BridgeQueueKind, DomainEvent, DomainEventRecord, MersennetOrdersEvent,
 };
 use mersennet::mersennet_orders::{Order, OrderBookView, OrderOutcome, Side, TimeInForce};
-use revm::primitives::{Address, B256, Bytes, U256};
+use revm::primitives::{Address, B256, Bytes, ExecutionResult, HaltReason, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -16,6 +16,8 @@ pub struct RpcError {
     #[allow(dead_code)]
     pub code: i64,
     pub message: String,
+    /// JSON-RPC `error.data` (the revert bytes of an `eth_call` revert).
+    pub data: Option<Value>,
 }
 
 impl RpcError {
@@ -23,8 +25,88 @@ impl RpcError {
         Self {
             code,
             message: message.into(),
+            data: None,
         }
     }
+
+    pub fn with_data(code: i64, message: impl Into<String>, data: Value) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            data: Some(data),
+        }
+    }
+}
+
+/// JSON-RPC error code of an EVM revert (geth, EIP-1474 style): the message is
+/// `execution reverted[: <reason>]` and `data` carries the revert bytes.
+pub const EXECUTION_REVERTED: i64 = 3;
+
+/// Decode the reason of a Solidity `Error(string)` revert (selector
+/// 0x08c379a0). `None` for any other revert data (custom errors, panics,
+/// empty or malformed data).
+pub fn decode_revert_reason(data: &[u8]) -> Option<String> {
+    let body = data.strip_prefix(&[0x08, 0xc3, 0x79, 0xa0][..])?;
+    let word = |at: usize| -> Option<usize> {
+        let w = body.get(at..at.checked_add(32)?)?;
+        // An offset or length that does not fit in 8 bytes is malformed.
+        if w[..24].iter().any(|b| *b != 0) {
+            return None;
+        }
+        usize::try_from(u64::from_be_bytes(w[24..].try_into().ok()?)).ok()
+    };
+    let offset = word(0)?;
+    let len = word(offset)?;
+    let start = offset.checked_add(32)?;
+    let bytes = body.get(start..start.checked_add(len)?)?;
+    Some(String::from_utf8_lossy(bytes).into_owned())
+}
+
+/// The error an `eth_call` / `eth_estimateGas` returns for a reverted call:
+/// code 3, `execution reverted` plus the decoded `Error(string)` reason when
+/// there is one, and the raw revert bytes as `data`.
+pub fn revert_error(output: &[u8]) -> RpcError {
+    let message = match decode_revert_reason(output) {
+        Some(reason) => format!("execution reverted: {reason}"),
+        None => "execution reverted".to_string(),
+    };
+    RpcError::with_data(
+        EXECUTION_REVERTED,
+        message,
+        Value::String(format!("0x{}", hex::encode(output))),
+    )
+}
+
+/// Human-readable reason of an EVM halt, worded like geth's VM errors.
+fn halt_message(reason: &HaltReason) -> String {
+    match reason {
+        HaltReason::OutOfGas(_) => "out of gas".into(),
+        HaltReason::OpcodeNotFound | HaltReason::NotActivated => "invalid opcode".into(),
+        HaltReason::InvalidFEOpcode => "invalid opcode: INVALID".into(),
+        HaltReason::InvalidJump => "invalid jump destination".into(),
+        HaltReason::StackUnderflow => "stack underflow".into(),
+        HaltReason::StackOverflow => "stack limit reached 1024".into(),
+        HaltReason::OutOfOffset => "return data out of bounds".into(),
+        HaltReason::CreateCollision => "contract address collision".into(),
+        HaltReason::PrecompileError => "precompile failed".into(),
+        HaltReason::NonceOverflow => "nonce uint64 overflow".into(),
+        HaltReason::CreateContractSizeLimit => "max code size exceeded".into(),
+        HaltReason::CreateContractStartingWithEF => "invalid code: must not begin with 0xef".into(),
+        HaltReason::CreateInitCodeSizeLimit => "max initcode size exceeded".into(),
+        HaltReason::OverflowPayment => "gas uint64 overflow".into(),
+        HaltReason::StateChangeDuringStaticCall | HaltReason::CallNotAllowedInsideStatic => {
+            "write protection".into()
+        }
+        HaltReason::OutOfFunds => "insufficient balance for transfer".into(),
+        HaltReason::CallTooDeep => "max call depth exceeded".into(),
+        other => format!("execution halted: {other:?}"),
+    }
+}
+
+/// The error an `eth_call` returns for a halted call (out of gas, invalid
+/// opcode, ...): -32000 with the halt reason, no data, as geth does.
+pub fn halt_error(reason: &HaltReason) -> RpcError {
+    RpcError::new(-32000, halt_message(reason))
 }
 
 /// Genesis-funded system address used as the caller for consensus-routed
@@ -593,7 +675,10 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
             Ok(Value::String(hex_u64(nonce)))
         }
-        "mersennet_call" | "eth_call" => {
+        // Legacy alias with the pre-error behaviour: a revert is returned as
+        // the result (its raw revert bytes, `0x` for a bare revert) and a halt
+        // as `0x`. Kept so existing `mersennet_call` users see no change.
+        "mersennet_call" => {
             require_transparent_simulation_enabled(engine)?;
             let input = parse_call_input(params)?;
             let to = input
@@ -604,14 +689,41 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                 .map_err(|err| RpcError::new(-32000, err.to_string()))?;
             Ok(Value::String(format!("0x{}", hex::encode(&output))))
         }
+        // A revert is a JSON-RPC error (code 3, reason, revert bytes as data)
+        // and a halt a -32000 error, like geth; only a success has a result.
+        "eth_call" => {
+            require_transparent_simulation_enabled(engine)?;
+            let input = parse_call_input(params)?;
+            let to = input
+                .to
+                .ok_or_else(|| RpcError::new(-32602, "to address required for eth_call"))?;
+            let result = engine
+                .simulate_call_result(
+                    input.from,
+                    Some(to),
+                    input.data,
+                    input.gas_limit,
+                    input.value,
+                )
+                .map_err(|err| RpcError::new(-32000, err.to_string()))?;
+            match result {
+                ExecutionResult::Success { output, .. } => Ok(Value::String(format!(
+                    "0x{}",
+                    hex::encode(output.into_data())
+                ))),
+                ExecutionResult::Revert { output, .. } => Err(revert_error(&output)),
+                ExecutionResult::Halt { reason, .. } => Err(halt_error(&reason)),
+            }
+        }
         "eth_estimateGas" => {
             require_transparent_simulation_enabled(engine)?;
             let input = parse_call_input(params)?;
             if input.data.is_empty() && input.to.is_some() {
                 Ok(Value::String(hex_u64(21000)))
             } else {
-                let exec = engine
-                    .simulate_call(
+                let gas_limit = input.gas_limit;
+                let result = engine
+                    .simulate_call_result(
                         input.from,
                         input.to,
                         input.data,
@@ -619,7 +731,21 @@ pub fn route(call: &str, params: Value, engine: &mut Engine) -> RpcResult<Value>
                         input.value,
                     )
                     .map_err(|err| RpcError::new(-32000, err.to_string()))?;
-                Ok(Value::String(hex_u64(exec.gas_used)))
+                match result {
+                    ExecutionResult::Success { gas_used, .. } => {
+                        Ok(Value::String(hex_u64(gas_used)))
+                    }
+                    ExecutionResult::Revert { output, .. } => Err(revert_error(&output)),
+                    // geth's wording when the call does not fit in the cap.
+                    ExecutionResult::Halt {
+                        reason: HaltReason::OutOfGas(_),
+                        ..
+                    } => Err(RpcError::new(
+                        -32000,
+                        format!("gas required exceeds allowance ({gas_limit})"),
+                    )),
+                    ExecutionResult::Halt { reason, .. } => Err(halt_error(&reason)),
+                }
             }
         }
         "net_version" => Ok(Value::String(engine.chain_id.to_string())),
