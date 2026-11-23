@@ -77,12 +77,56 @@ Usage: mersennet --config <config.json> [--mode full|validator] [--rpc] [options
   --snapshot-chunk-size <n>  snapshot transfer chunk size (bytes)
   --snapshot-max-bytes <n>   refuse snapshots larger than this
   --devnet                   run the local devnet demo in the current directory (development only)
+  --compact-state <dir> [--keep-blocks <n>]
+                             offline, node stopped: rewrite the sled state at <dir> into
+                             <dir>.compact with only its live data (sled leaves freed records
+                             behind after restarts); --keep-blocks also drops history older
+                             than the most recent n blocks, like pruning. Then swap the
+                             directories (the installer does this with --prune)
   -V, --version              print the build id (Mersennet/<version>-<sha>) and exit
   -h, --help                 this text
 
 Operators: install with  curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash
 Guide: https://docs.mersennet.com/validators/run-a-node/
 ";
+
+/// `mersennet --compact-state <dir> [--keep-blocks <n>]`: see
+/// `mersennet::compact`. Writes `<dir>.compact`; the caller swaps.
+fn compact_state_cli(args: Vec<String>) -> anyhow::Result<()> {
+    let mut dir: Option<std::path::PathBuf> = None;
+    let mut keep: Option<u64> = None;
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--keep-blocks" => {
+                let v = it.next().ok_or_else(|| anyhow::anyhow!("--keep-blocks needs a number"))?;
+                keep = Some(v.parse().map_err(|_| anyhow::anyhow!("--keep-blocks needs a number, got '{v}'"))?);
+            }
+            other if dir.is_none() && !other.starts_with("--") => dir = Some(other.into()),
+            other => anyhow::bail!("--compact-state: unexpected argument '{other}'\n\n{USAGE}"),
+        }
+    }
+    let dir = dir.ok_or_else(|| anyhow::anyhow!("--compact-state needs the state directory"))?;
+    let dir = dir.canonicalize().map_err(|e| anyhow::anyhow!("{}: {e}", dir.display()))?;
+    let mut dst = dir.clone().into_os_string();
+    dst.push(".compact");
+    let dst = std::path::PathBuf::from(dst);
+    let started = std::time::Instant::now();
+    println!("compacting {} into {}{}", dir.display(), dst.display(),
+        keep.map(|k| format!(" (keeping the most recent {k} blocks)")).unwrap_or_default());
+    let report = mersennet::compact::compact_state(&dir, &dst, keep, |line| println!("{line}"))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_dir_all(&dst);
+        })?;
+    println!(
+        "done in {}s: head {}, block floor {}, other files copied: {}",
+        started.elapsed().as_secs(),
+        report.latest_height.map(|h| h.to_string()).unwrap_or_else(|| "-".into()),
+        report.block_floor.map(|h| h.to_string()).unwrap_or_else(|| "none".into()),
+        if report.other_files.is_empty() { "none".into() } else { report.other_files.join(", ") }
+    );
+    Ok(())
+}
 
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
 /// Set by the producer from just before `execute_block` until the block has
@@ -210,6 +254,9 @@ fn main() -> anyhow::Result<()> {
     if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
         return Ok(());
+    }
+    if std::env::args().nth(1).as_deref() == Some("--compact-state") {
+        return compact_state_cli(std::env::args().skip(2).collect());
     }
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()

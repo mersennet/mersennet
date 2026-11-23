@@ -4,6 +4,7 @@ pub mod bridge_export;
 pub mod chain_features;
 pub mod code_publication;
 pub mod commit_reveal;
+pub mod compact;
 pub mod config;
 pub mod consensus;
 pub mod cross_chain;
