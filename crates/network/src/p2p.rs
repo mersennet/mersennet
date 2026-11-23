@@ -965,6 +965,7 @@ impl NetworkNode {
                     let mut full_batch;
                     let mut round: usize = 0;
                     let mut last_cert_try: Option<std::time::Instant> = None;
+                    let mut last_probe: Option<std::time::Instant> = None;
                     while running.load(Ordering::SeqCst) {
                         let from = match engine.lock() {
                             Ok(eng) => eng.latest_height().saturating_add(1),
@@ -1057,6 +1058,34 @@ impl NetworkNode {
                                 }
                                 None => warn!(height, "no peer had a finality certificate for this height yet"),
                             }
+                        }
+                        // Fork-point discovery: another branch is in sight. Ask
+                        // every peer for the blocks from a little below our head,
+                        // so the competing block where the branches part is known
+                        // here (Engine::fork_probe_height) and the tie-break can
+                        // settle a split nothing will finalize.
+                        let probe = engine.lock().ok().and_then(|e| e.fork_probe_height());
+                        if let Some(from) = probe
+                            && last_probe.is_none_or(|t| t.elapsed() >= Duration::from_secs(8))
+                        {
+                            last_probe = Some(std::time::Instant::now());
+                            let mut seen = 0usize;
+                            for peer in &peers {
+                                let Some(blocks) =
+                                    ask_for_blocks_from(&derive_tcp_addr(peer), from, Duration::from_secs(3))
+                                else {
+                                    continue;
+                                };
+                                if let Ok(mut e) = engine.lock() {
+                                    let next = e.latest_height().saturating_add(1);
+                                    for b in blocks.into_iter().filter(|b| b.number < next) {
+                                        // Heights we hold: kept as competitors.
+                                        e.import_block(b);
+                                        seen += 1;
+                                    }
+                                }
+                            }
+                            info!(from, blocks = seen, "fork-point discovery: asked peers for the blocks around our head");
                         }
                         if !full_batch {
                             std::thread::sleep(Duration::from_secs(4));

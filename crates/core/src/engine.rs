@@ -1574,6 +1574,31 @@ impl Engine {
             .filter(|h| *h >= self.block_number && self.finalized_hash(*h).is_none())
     }
 
+    /// Fork-point discovery: the height from which to ask peers for blocks
+    /// when another branch is in sight (a block that does not extend our head,
+    /// or a competing block whose parent is not ours), so that the sibling at
+    /// the height where the branches part is known here and the tie-break can
+    /// compare the two. After a partition heals, gossip only carries new
+    /// blocks and block-sync only asks above our head: without this, neither
+    /// side would ever see the other's block at the fork point.
+    pub fn fork_probe_height(&self) -> Option<u64> {
+        let depth = REORG_DEPTH as u64;
+        let mut lowest: Option<u64> = self.wanted_certificate();
+        for (h, alts) in &self.alt_blocks {
+            if self.finalized_hash(*h).is_some() {
+                continue;
+            }
+            let our_parent = h
+                .checked_sub(1)
+                .and_then(|p| self.block_by_number(p))
+                .map(|b| b.hash);
+            if alts.iter().any(|b| Some(b.parent_hash) != our_parent) {
+                lowest = Some(lowest.map_or(*h, |l| l.min(*h)));
+            }
+        }
+        lowest.map(|h| h.saturating_sub(depth).max(1))
+    }
+
     fn mark_unrecoverable(&mut self) {
         if self.unrecoverable_since.is_none() {
             self.unrecoverable_since = Some(std::time::Instant::now());
@@ -1603,11 +1628,12 @@ impl Engine {
         &mut self,
         grace: std::time::Duration,
     ) -> Option<(u64, B256, B256)> {
-        // Catching up, the heights we hold are history, not a split at the
-        // tip: votes for them were never seen here, and they are final.
-        if self.highest_observed_height > self.latest_height().saturating_add(3) {
-            return None;
-        }
+        // Far behind the network (catching up after a restart), the heights we
+        // hold are history whose votes this node never saw, not a split at the
+        // tip. They cannot be switched (no checkpoint) and must not count as
+        // an unresolved split either.
+        let catching_up =
+            self.highest_observed_height > self.latest_height().saturating_add(REORG_DEPTH as u64);
         let mut heights: Vec<u64> = self.alt_blocks.keys().copied().collect();
         heights.sort_unstable();
         self.split_seen_at
@@ -1653,7 +1679,7 @@ impl Engine {
             // node cannot switch; if the split outlasts ten grace periods the
             // other side has the quorum's attention and only a heal helps.
             if !self.checkpoints.iter().any(|c| c.height == h) {
-                if seen.elapsed() >= grace.saturating_mul(10) {
+                if !catching_up && seen.elapsed() >= grace.saturating_mul(10) {
                     self.mark_unrecoverable();
                 }
                 return None;
@@ -8996,16 +9022,33 @@ mod fork_recovery_tests {
             );
             assert!(!hi.needs_heal(0), "{backend}");
 
-            // Catching up: what we hold is history, not a split at the tip.
+            // Behind the network but holding the checkpoint (the losing side of
+            // a partition is often the shorter branch): it still switches.
             let (mut hi, lo) = split();
             hi.import_block(lo.clone());
+            hi.highest_observed_height = hi.latest_height() + 100;
+            assert!(
+                hi.resolve_unfinalized_split(grace).is_some(),
+                "{backend}: behind, still switches"
+            );
+            assert_eq!(
+                hi.block_by_number(lo.number).map(|x| x.hash),
+                Some(lo.hash),
+                "{backend}"
+            );
+
+            // Catching up without a checkpoint: history, not a split. No
+            // switch and no heal, however long it lasts.
+            let (mut hi, lo) = split();
+            hi.import_block(lo.clone());
+            hi.checkpoints.clear();
             hi.highest_observed_height = hi.latest_height() + 100;
             assert_eq!(
                 hi.resolve_unfinalized_split(grace),
                 None,
                 "{backend}: catching up"
             );
-            assert!(!hi.needs_heal(0), "{backend}");
+            assert!(!hi.needs_heal(0), "{backend}: no heal while catching up");
 
             // No checkpoint (a restart since): no switch; a long split asks
             // for a heal, a short one does not.
@@ -9032,6 +9075,50 @@ mod fork_recovery_tests {
                 "{backend}: stays"
             );
             assert!(hi.needs_heal(0), "{backend}: past ten grace periods, heal");
+        }
+    }
+
+    #[test]
+    fn another_branch_in_sight_asks_for_the_blocks_around_the_fork_point() {
+        for backend in ["sled", "redb"] {
+            let mut a = engine(backend);
+            let mut b = engine(backend);
+            for _ in 0..3 {
+                let blk = produce(&mut a);
+                b.import_block(blk);
+            }
+            assert_eq!(
+                a.fork_probe_height(),
+                None,
+                "{backend}: one branch, nothing to ask"
+            );
+            let h = a.block_number;
+            transfer(&mut a, 0, 1);
+            let a1 = produce(&mut a);
+            let a2 = produce(&mut a);
+            transfer(&mut b, 0, 2);
+            let b1 = produce(&mut b);
+            let b2 = produce(&mut b);
+            // b sees a's newer block (another branch): it wants the blocks from
+            // a little below, and with them learns a's block at the fork point.
+            b.import_block(a2.clone());
+            let from = b.fork_probe_height().expect("another branch in sight");
+            assert!(from <= h, "{backend}: from at or below the fork point");
+            for blk in [a1.clone(), a2.clone()] {
+                b.import_block(blk);
+            }
+            assert!(
+                b.alt_blocks
+                    .get(&h)
+                    .is_some_and(|v| v.iter().any(|x| x.hash == a1.hash)),
+                "{backend}: sibling known"
+            );
+            assert_eq!(
+                b.block_by_number(h + 1).map(|x| x.hash),
+                Some(b2.hash),
+                "{backend}: b still on its branch"
+            );
+            assert_ne!(b1.hash, a1.hash);
         }
     }
 
