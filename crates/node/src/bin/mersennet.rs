@@ -1334,6 +1334,57 @@ fn main() -> anyhow::Result<()> {
                     })?;
             }
 
+            // History pruning (engine.prune_keep_blocks, 0 = archive): delete the
+            // oldest blocks beyond the most recent N, 256 per engine-lock
+            // acquisition with a short pause, then one step every few seconds
+            // to follow the head. The first pass on a node with full history
+            // reads each old block once (for its hashes) and takes hours; the
+            // node serves and validates normally meanwhile.
+            let prune_keep = app_config.engine.prune_keep_blocks;
+            if prune_keep > 0 {
+                let eng = engine.clone();
+                let shutdown_pr = Arc::clone(&shutdown);
+                let keep = prune_keep.max(mersennet::engine::MIN_PRUNE_KEEP_BLOCKS);
+                if keep != prune_keep {
+                    tracing::warn!(
+                        configured = prune_keep,
+                        keep,
+                        "engine.prune_keep_blocks raised to the minimum"
+                    );
+                }
+                std::thread::Builder::new()
+                    .name("history-prune".into())
+                    .spawn(move || {
+                        // Let the node finish startup/sync before touching disk.
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        tracing::info!(keep, "history pruning on: blocks older than the most recent {keep} are deleted");
+                        let mut logged_at: u64 = 0;
+                        loop {
+                            if shutdown_pr.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            let step = match eng.lock() {
+                                Ok(e) => e.prune_history_step(keep, 256),
+                                Err(_) => break,
+                            };
+                            match step {
+                                Ok(Some(floor)) => {
+                                    if floor.saturating_sub(logged_at) >= 100_000 {
+                                        tracing::info!(block_floor = floor, "history pruned");
+                                        logged_at = floor;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(15));
+                                }
+                                Ok(None) => std::thread::sleep(std::time::Duration::from_secs(10)),
+                                Err(err) => {
+                                    tracing::warn!(error = %err, "history prune step failed; retrying");
+                                    std::thread::sleep(std::time::Duration::from_secs(30));
+                                }
+                            }
+                        }
+                    })?;
+            }
+
             // Liveness watchdog (see WatchdogConfig). Exit codes: 3 = head stalled
             // while the network moved on, 4 = engine lock unobtainable.
             if app_config.watchdog.enabled {

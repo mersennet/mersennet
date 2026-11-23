@@ -1170,6 +1170,66 @@ impl PersistentState {
         Ok(())
     }
 
+    /// See `StateBackend::block_floor`.
+    pub fn block_floor(&self) -> Result<Option<u64>> {
+        Ok(self
+            .height_meta
+            .get("block_floor")?
+            .and_then(|v| decode_be_u64(&v)))
+    }
+
+    /// See `StateBackend::prune_blocks`. Keys are removed through batches,
+    /// never by iterating the `blocks` tree: an iterator yields every value,
+    /// and on a 4M-block node that is ~100 GB read for one step.
+    pub fn prune_blocks(&self, from: u64, to: u64) -> Result<u64> {
+        if to <= from {
+            return Ok(0);
+        }
+        let in_range = |h: u64| h >= from && h < to;
+        let mut index = sled::Batch::default();
+        let mut blocks = sled::Batch::default();
+        let mut roots = sled::Batch::default();
+        let mut deleted = 0u64;
+        for number in from..to {
+            let key = number.to_be_bytes();
+            if let Some(data) = self.blocks.get(key)? {
+                // The hashes live only in the block. One that no longer decodes
+                // still goes; its index entries then stay behind, and lookups
+                // through them find nothing below the floor.
+                if let Ok(block) = serde_json::from_slice::<Block>(&data) {
+                    let bk = history_block_key(block.hash);
+                    if let Some(v) = self.history_index.get(bk)?
+                        && decode_be_u64(&v).is_some_and(in_range)
+                    {
+                        index.remove(bk.to_vec());
+                    }
+                    for tx in &block.transactions {
+                        let tk = history_tx_key(tx.canonical_hash());
+                        if let Some(v) = self.history_index.get(tk)?
+                            && decode_tx_location(&v).is_some_and(|(h, _)| in_range(h))
+                        {
+                            index.remove(tk.to_vec());
+                        }
+                    }
+                }
+                blocks.remove(key.to_vec());
+                deleted += 1;
+            }
+            roots.remove(key.to_vec());
+        }
+        // Index first, then the blocks: a crash in between leaves blocks whose
+        // entries are already gone, and the redo from the old floor finds and
+        // removes them. The floor moves last.
+        self.history_index.apply_batch(index)?;
+        self.pruning.apply_batch(roots)?;
+        self.blocks.apply_batch(blocks)?;
+        let floor = self.block_floor()?.unwrap_or(0).max(to);
+        self.height_meta
+            .insert("block_floor", &floor.to_be_bytes())?;
+        self.db.flush()?;
+        Ok(deleted)
+    }
+
     pub fn load_block(&self, number: u64) -> Result<Option<Block>> {
         match self.blocks.get(number.to_be_bytes())? {
             Some(data) => Ok(Some(serde_json::from_slice(&data)?)),
@@ -1628,6 +1688,14 @@ impl crate::state_trait::StateBackend for PersistentState {
 
     fn set_history_index_floor(&self, height: u64) -> Result<()> {
         PersistentState::set_history_index_floor(self, height)
+    }
+
+    fn block_floor(&self) -> Result<Option<u64>> {
+        PersistentState::block_floor(self)
+    }
+
+    fn prune_blocks(&self, from: u64, to: u64) -> Result<u64> {
+        PersistentState::prune_blocks(self, from, to)
     }
 
     fn record_height(&self, height: u64, state_root: B256) -> Result<()> {

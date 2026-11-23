@@ -256,6 +256,16 @@ pub struct EngineConfig {
     /// canonical config.
     #[serde(default = "default_resume_root_check")]
     pub resume_root_check: String,
+    /// History pruning, node-local and consensus-neutral: keep only the most
+    /// recent N blocks (raised to `engine::MIN_PRUNE_KEEP_BLOCKS`, 10,000) and
+    /// delete older ones, with their hash/tx index entries, in the background.
+    /// 0 (the default) keeps everything: an archive node. A validator needs no
+    /// history; 100,000 (~2.3 days) keeps a node at ~15 GB instead of ~120 GB.
+    /// A pruned node answers block and log queries below its floor with
+    /// null / "history pruned", and peers sync older blocks from archive nodes.
+    /// Never on the fleet-config sync list (deploy/sync-fleet-config.sh).
+    #[serde(default)]
+    pub prune_keep_blocks: u64,
 }
 
 fn default_storage_backend() -> String {
@@ -666,6 +676,7 @@ impl Default for EngineConfig {
             fee_treasury_address: None,
             storage_backend: default_storage_backend(),
             resume_root_check: default_resume_root_check(),
+            prune_keep_blocks: 0,
         }
     }
 }

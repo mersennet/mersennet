@@ -493,6 +493,18 @@ struct StateCheckpoint {
 /// within the same block interval, so 1 would do; 16 covers a slow round.
 const REORG_DEPTH: usize = 16;
 
+/// Fewest recent blocks a pruned node keeps (`engine.prune_keep_blocks` below
+/// this is raised to it): far more than the restart window (1,024), the
+/// in-memory chain (2,048) and the reorg depth, and ~5.5 hours of history for
+/// peers catching up after a short outage. Archive nodes serve everything older.
+pub const MIN_PRUNE_KEEP_BLOCKS: u64 = 10_000;
+/// What `prune_history_step` raises `keep` to: the minimum, except in this
+/// crate's unit tests, which prune a chain of a dozen blocks.
+#[cfg(not(test))]
+const PRUNE_KEEP_FLOOR: u64 = MIN_PRUNE_KEEP_BLOCKS;
+#[cfg(test)]
+const PRUNE_KEEP_FLOOR: u64 = 1;
+
 /// The timestamp a height's failover clock counts from: the head's, unless
 /// the head was stamped before its parent. A validator whose clock ran 74
 /// minutes slow did that on 1 Nov, and every next leader counted the height
@@ -1649,7 +1661,35 @@ impl Engine {
         if let Some(b) = self.chain.iter().find(|block| block.number == number) {
             return Some(b.clone());
         }
+        if number < self.block_floor() {
+            return None;
+        }
         self.evm.state.load_block(number).ok().flatten()
+    }
+
+    /// Lowest block height this node still stores: 0 on an archive node,
+    /// `head + 1 - engine.prune_keep_blocks` (give or take a step) on a pruned
+    /// one. Below it every block read answers "not held".
+    pub fn block_floor(&self) -> u64 {
+        self.evm.state.block_floor().ok().flatten().unwrap_or(0)
+    }
+
+    /// One step of history pruning (`engine.prune_keep_blocks` = `keep`,
+    /// raised to `MIN_PRUNE_KEEP_BLOCKS`): delete up to `batch` of the oldest
+    /// stored blocks below `head + 1 - keep`, with their history-index entries.
+    /// Returns the new floor, or `None` when nothing is due. Blocks are not in
+    /// the state root, so this never touches consensus. Cheap enough to run
+    /// under the engine lock between consensus work, like the index backfill.
+    pub fn prune_history_step(&self, keep: u64, batch: u64) -> Result<Option<u64>> {
+        let keep = keep.max(PRUNE_KEEP_FLOOR);
+        let target = self.latest_height().saturating_add(1).saturating_sub(keep);
+        let floor = self.block_floor();
+        if target <= floor {
+            return Ok(None);
+        }
+        let to = target.min(floor.saturating_add(batch.max(1)));
+        self.evm.state.prune_blocks(floor, to)?;
+        Ok(Some(to))
     }
 
     /// Block by hash: the in-memory window first, then the persisted
@@ -1701,6 +1741,12 @@ impl Engine {
         if from > to {
             return Vec::new();
         }
+        // Nothing below the pruning floor is stored (`eth_getLogs` refuses
+        // such a range before it gets here).
+        let from = from.max(self.block_floor());
+        if from > to {
+            return Vec::new();
+        }
         let window_start = self.chain.first().map(|b| b.number).unwrap_or(u64::MAX);
         let mut out = Vec::with_capacity((to - from + 1) as usize);
         if from < window_start {
@@ -1740,16 +1786,18 @@ impl Engine {
                 start
             }
         };
-        if floor == 0 {
+        // On a pruned node there is nothing to index below the block floor.
+        let block_floor = self.block_floor();
+        if floor <= block_floor {
             return Ok(None);
         }
-        let low = floor.saturating_sub(batch);
+        let low = floor.saturating_sub(batch).max(block_floor);
         let blocks = self.evm.state.load_blocks_range(low, floor - 1)?;
         for block in &blocks {
             self.evm.state.index_block(block)?;
         }
         self.evm.state.set_history_index_floor(low)?;
-        Ok(if low == 0 { None } else { Some(low) })
+        Ok(if low <= block_floor { None } else { Some(low) })
     }
 
     /// Cap the in-memory chain to a recent window. Older blocks remain on
@@ -7621,6 +7669,169 @@ mod history_index_tests {
                     "{backend}: block {n}"
                 );
             }
+        }
+    }
+
+    /// Every block with its hash and the hashes of its transactions.
+    fn history(e: &Engine) -> Vec<(u64, B256, Vec<B256>)> {
+        (0..=e.latest_height())
+            .filter_map(|n| e.get_block(n))
+            .map(|b| {
+                let txs = b.transactions.iter().map(|t| t.canonical_hash()).collect();
+                (b.number, b.hash, txs)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pruning_deletes_old_blocks_and_their_index_entries_and_keeps_the_rest() {
+        for backend in ["sled", "redb"] {
+            let mut e = engine(backend);
+            for n in 0..12u64 {
+                if n % 2 == 0 {
+                    transfer(&mut e, n / 2);
+                }
+                produce(&mut e);
+            }
+            let tip = e.latest_height();
+            let all = history(&e);
+            assert!(
+                all.iter().filter(|(_, _, txs)| !txs.is_empty()).count() >= 4,
+                "{backend}: blocks with txs"
+            );
+            let root = e.evm.state.compute_state_root();
+            // Reads must come from the store, not the in-memory window.
+            let keep_in_memory = e.chain.len() - 1;
+            e.chain.drain(0..keep_in_memory);
+
+            assert_eq!(
+                e.block_floor(),
+                0,
+                "{backend}: an archive node has no floor"
+            );
+            let keep = 4;
+            let mut steps = 0;
+            while let Some(floor) = e.prune_history_step(keep, 3).unwrap() {
+                steps += 1;
+                assert!(
+                    floor <= tip + 1 - keep,
+                    "{backend}: never past head + 1 - keep"
+                );
+                assert!(steps < 100, "{backend}: pruning must terminate");
+            }
+            assert!(steps >= 2, "{backend}: batches of 3 take several steps");
+            let floor = tip + 1 - keep;
+            assert_eq!(e.block_floor(), floor, "{backend}");
+            assert_eq!(
+                e.prune_history_step(keep, 3).unwrap(),
+                None,
+                "{backend}: nothing more is due"
+            );
+
+            for (n, hash, txs) in &all {
+                if *n < floor {
+                    assert!(e.get_block(*n).is_none(), "{backend}: block {n} is pruned");
+                    assert!(
+                        e.get_block_by_hash(*hash).is_none(),
+                        "{backend}: hash of {n}"
+                    );
+                    assert_eq!(
+                        e.evm.state.block_number_by_hash(*hash).unwrap(),
+                        None,
+                        "{backend}: index entry of {n} deleted"
+                    );
+                    for t in txs {
+                        assert!(
+                            e.find_transaction_located(*t).is_none(),
+                            "{backend}: tx in {n}"
+                        );
+                        assert_eq!(
+                            e.evm.state.tx_location(*t).unwrap(),
+                            None,
+                            "{backend}: tx index entry in {n} deleted"
+                        );
+                    }
+                } else {
+                    assert_eq!(
+                        e.get_block(*n).map(|b| b.hash),
+                        Some(*hash),
+                        "{backend}: block {n} kept"
+                    );
+                    assert_eq!(
+                        e.get_block_by_hash(*hash).map(|b| b.number),
+                        Some(*n),
+                        "{backend}: hash of {n}"
+                    );
+                    for t in txs {
+                        assert_eq!(
+                            e.find_transaction_located(*t).map(|(b, _)| b.number),
+                            Some(*n),
+                            "{backend}: tx in {n}"
+                        );
+                    }
+                }
+            }
+            let range: Vec<u64> = e.blocks_in_range(0, tip).iter().map(|b| b.number).collect();
+            assert_eq!(
+                range,
+                (floor..=tip).collect::<Vec<_>>(),
+                "{backend}: ranges start at the floor"
+            );
+            assert_eq!(
+                e.evm.state.compute_state_root(),
+                root,
+                "{backend}: blocks are not state"
+            );
+            // Redoing a step (a crash before the floor moved) finds nothing left.
+            assert_eq!(
+                e.evm.state.prune_blocks(0, floor).unwrap(),
+                0,
+                "{backend}: idempotent"
+            );
+            assert_eq!(
+                e.block_floor(),
+                floor,
+                "{backend}: the floor never moves down"
+            );
+
+            // The chain goes on; the floor follows the head.
+            produce(&mut e);
+            while e.prune_history_step(keep, 3).unwrap().is_some() {}
+            assert_eq!(
+                e.block_floor(),
+                floor + 1,
+                "{backend}: one more block, one more pruned"
+            );
+            assert!(
+                e.get_block(e.latest_height()).is_some(),
+                "{backend}: the head is kept"
+            );
+        }
+    }
+
+    #[test]
+    fn index_backfill_stops_at_the_block_floor() {
+        for backend in ["sled", "redb"] {
+            let mut e = engine(backend);
+            for n in 0..10u64 {
+                if n % 3 == 0 {
+                    transfer(&mut e, n / 3);
+                }
+                produce(&mut e);
+            }
+            while e.prune_history_step(4, 100).unwrap().is_some() {}
+            let floor = e.block_floor();
+            assert!(floor > 0, "{backend}");
+            let mut steps = 0;
+            while e.backfill_history_index_step(2).unwrap().is_some() {
+                steps += 1;
+                assert!(steps < 100, "{backend}: backfill must terminate");
+            }
+            assert_eq!(
+                e.history_index_floor(),
+                Some(floor),
+                "{backend}: indexed down to the floor, not genesis"
+            );
         }
     }
 }

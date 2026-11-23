@@ -750,6 +750,19 @@ fn dispatch(
             let engine = engine
                 .lock()
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
+            // A pruned node would silently answer part of the range.
+            let floor = engine.block_floor();
+            if filter.from_block < floor {
+                return Err((
+                    id.clone(),
+                    rpc_error_with_code(
+                        -32000,
+                        format!(
+                            "history pruned: this node keeps blocks from {floor} on (engine.prune_keep_blocks); ask an archive node such as https://rpc.mersennet.com"
+                        ),
+                    ),
+                ));
+            }
             let logs = collect_logs(&engine, &filter);
             serde_json::to_value(logs)
                 .map_err(|err| (id.clone(), rpc_error_internal(err.to_string())))?
@@ -1986,6 +1999,65 @@ mod tests {
             .expect("null for unknown"),
         );
         assert!(missing.is_null());
+
+        // A pruned node (engine.prune_keep_blocks): what is below the floor is
+        // null, and a log range reaching under it is refused, not cut short.
+        let floor = old_block.number + 1;
+        engine
+            .lock()
+            .unwrap()
+            .evm
+            .state
+            .prune_blocks(0, floor)
+            .expect("prune");
+        let pruned_block = result(
+            dispatch(
+                test_request(
+                    "eth_getBlockByNumber",
+                    json!([hex_u64(old_block.number), false]),
+                ),
+                &engine,
+                &filters,
+            )
+            .expect("null below the floor"),
+        );
+        assert!(pruned_block.is_null());
+        let pruned_receipt = result(
+            dispatch(
+                test_request("eth_getTransactionReceipt", json!([hex_b256(hash)])),
+                &engine,
+                &filters,
+            )
+            .expect("null below the floor"),
+        );
+        assert!(pruned_receipt.is_null());
+        let pruned_logs = dispatch(
+            test_request(
+                "eth_getLogs",
+                json!([{ "fromBlock": "0x0", "toBlock": "latest" }]),
+            ),
+            &engine,
+            &filters,
+        )
+        .expect_err("range under the floor");
+        assert_eq!(pruned_logs.1.code, -32000);
+        assert!(
+            pruned_logs.1.message.contains("history pruned"),
+            "{}",
+            pruned_logs.1.message
+        );
+        let kept_logs = result(
+            dispatch(
+                test_request(
+                    "eth_getLogs",
+                    json!([{ "fromBlock": hex_u64(floor), "toBlock": "latest" }]),
+                ),
+                &engine,
+                &filters,
+            )
+            .expect("logs from the floor up"),
+        );
+        assert!(kept_logs.is_array());
     }
 
     #[test]

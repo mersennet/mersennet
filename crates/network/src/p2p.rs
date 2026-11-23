@@ -533,6 +533,23 @@ pub fn probe_peers(peers: &[String], height: u64, timeout: Duration) -> HeightPr
 
 /// One sync request for the blocks from `height`: what the peer sent (empty
 /// if it does not hold `height` yet), or `None` if it did not answer in time.
+/// The answer to a peer's `sync_request(from)`: up to 256 blocks from `from`
+/// to our head. `get_block` reads heights below the in-memory window from
+/// disk, so a peer far behind can still be caught up. A pruned node does not
+/// hold `from`: it answers empty ("not held") so the requester asks another
+/// peer, never the blocks from its floor up (a gap the requester could not
+/// import).
+fn sync_blocks_from(eng: &Engine, from: u64) -> Vec<WireBlock> {
+    if from < eng.block_floor() {
+        return Vec::new();
+    }
+    let batch_end = eng.latest_height().min(from.saturating_add(255));
+    (from..=batch_end)
+        .filter_map(|n| eng.get_block(n))
+        .map(|b| block_to_wire(&b))
+        .collect()
+}
+
 fn ask_for_blocks_from(addr: &str, height: u64, timeout: Duration) -> Option<Vec<Block>> {
     let socket: std::net::SocketAddr = addr.parse().ok()?;
     let mut stream = std::net::TcpStream::connect_timeout(&socket, timeout).ok()?;
@@ -777,17 +794,7 @@ impl NetworkNode {
                                         // then RELEASE it before touching the socket.
                                         let data = match engine.lock() {
                                             Ok(eng) => {
-                                                let height = eng.latest_height();
-                                                // Serve up to a bounded batch per request.
-                                                // Use get_block so heights below the
-                                                // in-memory window are read from disk — a
-                                                // peer far behind can still be caught up.
-                                                let batch_end =
-                                                    height.min(from.saturating_add(255));
-                                                let blocks: Vec<WireBlock> = (from..=batch_end)
-                                                    .filter_map(|n| eng.get_block(n))
-                                                    .map(|b| block_to_wire(&b))
-                                                    .collect();
+                                                let blocks = sync_blocks_from(&eng, from);
                                                 Some(
                                                     serde_json::to_vec(&blocks).unwrap_or_default(),
                                                 )
@@ -1264,6 +1271,43 @@ mod tests {
             probe_peers(&peers, 1, Duration::from_secs(2)),
             HeightProbe::NotFound
         ));
+    }
+
+    #[test]
+    fn a_pruned_node_answers_not_held_below_its_floor() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Engine::new_with_backend(131071, dir.path().join("node"), "sled");
+        let validator = Address::from_slice(&[0x44; 20]);
+        e.add_validator(validator, U256::from(1_000_000u64))
+            .unwrap();
+        e.set_local_validator(validator);
+        for _ in 0..8 {
+            e.execute_block().unwrap();
+        }
+        let tip = e.latest_height();
+        let numbers = |v: Vec<WireBlock>| -> Vec<u64> {
+            v.iter()
+                .filter_map(wire_to_block)
+                .map(|b| b.number)
+                .collect()
+        };
+        // Archive node: everything from the asked height to the head.
+        assert_eq!(
+            numbers(sync_blocks_from(&e, 1)),
+            (1..=tip).collect::<Vec<_>>()
+        );
+
+        e.evm.state.prune_blocks(0, 5).unwrap();
+        assert_eq!(e.block_floor(), 5);
+        // Below the floor: empty, so the requester moves on to another peer
+        // (not blocks 5.. that it could not attach to its head).
+        assert!(sync_blocks_from(&e, 1).is_empty());
+        assert!(sync_blocks_from(&e, 4).is_empty());
+        // From the floor up it is served as before.
+        assert_eq!(
+            numbers(sync_blocks_from(&e, 5)),
+            (5..=tip).collect::<Vec<_>>()
+        );
     }
 
     #[test]
