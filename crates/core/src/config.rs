@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use revm::primitives::{Address, U256};
+use revm::primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -152,6 +152,57 @@ pub fn default_mark_price_height(chain_id: u64) -> Option<u64> {
     match chain_id {
         131071 => Some(3_102_100),
         524287 | 8191 => Some(0),
+        _ => None,
+    }
+}
+
+/// A finalized block built into the binary that anchors a chain's history:
+/// a node syncing below it accepts a block whose hash it cannot re-derive
+/// from the receipts its peers store, on its parent link and on the state the
+/// checkpoint block commits to (`Engine::apply_imported_block` has the rules
+/// and why they are sound).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HistoryCheckpoint {
+    pub height: u64,
+    pub hash: B256,
+}
+
+/// The 131071 history checkpoint.
+///
+/// TODO(release): the release owner sets the final value when the release is
+/// built; this one is a placeholder read from https://rpc.mersennet.com on
+/// 23 Nov 2026 (block 4,264,001, empty, proposed by our validator 0x728b74df,
+/// finalized). How to choose it (ops `internal/genesis-replay-2670941.md`):
+/// - a finalized block whose contents re-derive its hash (an empty block
+///   always does: it has no receipts to disagree on) and whose state root our
+///   nodes reproduce: one proposed by one of our four validators;
+/// - above every stored block that does not re-derive its hash from the
+///   receipts our nodes store (2,670,941 and any other block an old build
+///   produced after a switch): blocks above the checkpoint are checked in
+///   full, so a syncing node stops at the first one that does not re-derive;
+/// - every block from the checkpoint up to the height where all our nodes run
+///   this release must re-derive from what they store (new history always
+///   does: importers keep the producer's receipts root from then on). If a
+///   block above the checkpoint is found that does not, raise the checkpoint
+///   above it in the release build.
+///
+/// Check before publishing: a throwaway node replays from genesis on the
+/// release build and passes the checkpoint (its replayed state must match
+/// the checkpoint's state root, or it stops there).
+pub const HISTORY_CHECKPOINT_131071: HistoryCheckpoint = HistoryCheckpoint {
+    height: 4_264_001,
+    hash: revm::primitives::b256!(
+        "c72267633c3924c02fef956152ab991265378644a4fa8cd4739ca33b3d3e9f16"
+    ),
+};
+
+/// The history checkpoint built in for `chain_id`, if it has one. Not
+/// configurable: below the checkpoint a block's hash is not re-derived, so
+/// the value has to be one every node of the chain agrees on, set at release.
+/// Chains that enforce the full block-hash check from genesis need none.
+pub fn default_history_checkpoint(chain_id: u64) -> Option<HistoryCheckpoint> {
+    match chain_id {
+        131071 => Some(HISTORY_CHECKPOINT_131071),
         _ => None,
     }
 }
@@ -1059,5 +1110,25 @@ mod canonical_config_tests {
         let p = cfg.validator_set.to_params(524287);
         assert_eq!((p.restart_grace_height, p.delegator_share_height), (0, 0));
         assert_eq!(default_timestamp_order_height(524287), None);
+    }
+
+    /// Only 131071 has history that needs a checkpoint, and its checkpoint
+    /// has to sit above the stored blocks that do not re-derive their hash.
+    #[test]
+    fn the_history_checkpoint_is_built_in_for_131071_only() {
+        let cp = default_history_checkpoint(131071).expect("131071 has one");
+        assert_eq!(cp, HISTORY_CHECKPOINT_131071);
+        assert!(
+            cp.height > 2_670_941,
+            "above the known block that does not re-derive"
+        );
+        assert!(
+            cp.height >= SWITCH_3720600,
+            "above the last switch before it"
+        );
+        assert_ne!(cp.hash, B256::ZERO);
+        for chain in [524287, 8191, 1337] {
+            assert_eq!(default_history_checkpoint(chain), None, "{chain}");
+        }
     }
 }

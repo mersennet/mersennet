@@ -274,6 +274,18 @@ pub struct Block {
     /// blocks before signing and for genesis.
     #[serde(default)]
     pub proposer_sig: Option<(U256, U256, u64)>,
+    /// The receipts root this block's hash commits to, kept only when it is
+    /// not the root of `receipts`. An importer stores the receipts it rebuilds
+    /// by re-executing the block (the wire form drops logs), and a producer on
+    /// an older build after a switch hashed receipts this node does not
+    /// rebuild: without this root the stored block, and every copy served
+    /// from it, would no longer re-derive its own hash. `None` whenever
+    /// `receipts` re-derive the hash (every block an up-to-date producer
+    /// makes) and for blocks stored before this field existed. Omitted from
+    /// the JSON when `None`, so those blocks are stored byte for byte as
+    /// before, and older binaries ignore the field when it is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_receipts_root: Option<B256>,
 }
 
 impl Default for Block {
@@ -310,6 +322,7 @@ impl Default for Block {
             shielded_event_root: B256::ZERO,
             state_proof: None,
             proposer_sig: None,
+            producer_receipts_root: None,
         }
     }
 }
@@ -592,6 +605,11 @@ pub struct Engine {
     /// Consensus switch (`None` = off): from this height a block stamped
     /// before its parent is invalid.
     timestamp_order_height: Option<u64>,
+    /// The finalized block that anchors the history below it (the chain's
+    /// built-in `config::default_history_checkpoint`, `None` = every block
+    /// from `signed_tx_height` must re-derive its hash). See
+    /// `apply_imported_block`.
+    history_checkpoint: Option<crate::config::HistoryCheckpoint>,
     pub min_base_fee: U256,
     pub fee_treasury_bps: u64,
     pub fee_proposer_bps: u64,
@@ -969,6 +987,7 @@ impl Engine {
             signed_tx_height: None,
             mark_price_height: None,
             timestamp_order_height: None,
+            history_checkpoint: None,
             min_base_fee: U256::ZERO,
             fee_treasury_bps: 0,
             fee_proposer_bps: 0,
@@ -1797,39 +1816,11 @@ impl Engine {
             .collect();
         let local_hash = orphaned.first().map(|b| b.hash).unwrap_or(B256::ZERO);
 
-        // Restore consensus state to just before `height`.
-        self.evm.db = cp.evm_db;
-        self.orders.state = cp.orders;
-        self.bridge.orders_to_evm.restore(cp.bridge_orders_to_evm);
-        self.bridge.evm_to_orders.restore(cp.bridge_evm_to_orders);
-        self.base_fee = cp.base_fee;
-        self.consensus.inner = cp.consensus;
+        // Restore consensus state to just before `height`; the orphan's block
+        // record is overwritten when the canonical block at `height` is stored.
+        self.restore_checkpoint(cp);
         self.chain.retain(|b| b.number < height);
         self.block_number = height;
-        self.checkpoints.retain(|c| c.height < height);
-        // Persist the rolled-back image so a crash here resumes at height-1
-        // instead of on the orphaned branch (the orphan's block record is
-        // overwritten when the canonical block at `height` is stored).
-        let prev = height.saturating_sub(1);
-        if let Err(err) = self
-            .evm
-            .state
-            .begin_commit(prev)
-            .and_then(|_| {
-                self.evm.state.commit_state(
-                    &self.evm.db,
-                    &self.orders.state,
-                    &self.bridge.orders_to_evm,
-                    &self.bridge.evm_to_orders,
-                    prev,
-                )
-            })
-            .and_then(|_| self.evm.state.end_commit())
-        {
-            tracing::error!(%err, "reorg: failed to persist rolled-back state");
-        }
-        // Flat (RPC read) cache mirrors the committed EVM state; rebuild it.
-        self.rebuild_flat_state(prev);
         // Give the orphaned blocks' transactions back to the mempool so they
         // are not lost if the canonical block did not include them.
         for b in &orphaned {
@@ -1858,6 +1849,57 @@ impl Engine {
             self.import_block(canon);
         }
         true
+    }
+
+    /// Put back the state captured before `cp.height` and persist it at
+    /// `cp.height - 1`, so a crash right after resumes there instead of on
+    /// the undone block. The caller fixes up `chain` and `block_number`.
+    fn restore_checkpoint(&mut self, cp: StateCheckpoint) {
+        let height = cp.height;
+        self.evm.db = cp.evm_db;
+        self.orders.state = cp.orders;
+        self.bridge.orders_to_evm.restore(cp.bridge_orders_to_evm);
+        self.bridge.evm_to_orders.restore(cp.bridge_evm_to_orders);
+        self.base_fee = cp.base_fee;
+        self.consensus.inner = cp.consensus;
+        self.checkpoints.retain(|c| c.height < height);
+        let prev = height.saturating_sub(1);
+        if let Err(err) = self
+            .evm
+            .state
+            .begin_commit(prev)
+            .and_then(|_| {
+                self.evm.state.commit_state(
+                    &self.evm.db,
+                    &self.orders.state,
+                    &self.bridge.orders_to_evm,
+                    &self.bridge.evm_to_orders,
+                    prev,
+                )
+            })
+            .and_then(|_| self.evm.state.end_commit())
+        {
+            tracing::error!(%err, height, "failed to persist rolled-back state");
+        }
+        // Flat (RPC read) cache mirrors the committed EVM state; rebuild it.
+        self.rebuild_flat_state(prev);
+    }
+
+    /// Undo a block this node executed and committed at `height` (it has
+    /// not been stored or appended): back to the state before it, persisted
+    /// at `height - 1`, so the next block offered for `height` applies on the
+    /// right state.
+    fn undo_block(&mut self, height: u64) {
+        match self.checkpoints.iter().position(|c| c.height == height) {
+            Some(pos) => {
+                let cp = self.checkpoints.remove(pos).expect("position exists");
+                self.restore_checkpoint(cp);
+            }
+            None => tracing::error!(
+                height,
+                "no checkpoint to undo the block from; the node needs a state resync"
+            ),
+        }
     }
 
     fn rebuild_flat_state(&mut self, height: u64) {
@@ -2406,6 +2448,15 @@ impl Engine {
 
     pub fn set_timestamp_order_height(&mut self, height: Option<u64>) {
         self.timestamp_order_height = height;
+    }
+
+    /// The chain's history checkpoint (`config::default_history_checkpoint`).
+    pub fn set_history_checkpoint(&mut self, checkpoint: Option<crate::config::HistoryCheckpoint>) {
+        self.history_checkpoint = checkpoint;
+    }
+
+    pub fn history_checkpoint(&self) -> Option<crate::config::HistoryCheckpoint> {
+        self.history_checkpoint
     }
 
     pub fn timestamp_order_height(&self) -> Option<u64> {
@@ -3293,6 +3344,8 @@ impl Engine {
             shielded_event_root,
             state_proof,
             proposer_sig: None,
+            // The producer stores the receipts it hashed.
+            producer_receipts_root: None,
         };
 
         self.chain.push(block.clone());
@@ -3691,6 +3744,8 @@ impl Engine {
             shielded_event_root,
             state_proof,
             proposer_sig: None,
+            // The producer stores the receipts it hashed.
+            producer_receipts_root: None,
         };
 
         self.chain.push(block.clone());
@@ -4023,9 +4078,16 @@ impl Engine {
     /// replicate them for full state-root parity.
     fn apply_imported_block(&mut self, mut block: Block) -> Result<()> {
         debug_assert_eq!(block.number, self.block_number);
+        let history_checkpoint = self
+            .history_checkpoint
+            .filter(|cp| cp.height == block.number);
         // Only worth a checkpoint near the tip; a replay of finalized
-        // history cannot be reorged.
-        if self.highest_observed_height <= block.number.saturating_add(REORG_DEPTH as u64) {
+        // history cannot be reorged. The history checkpoint's block is the
+        // exception: it is undone if the state it leads to is not the one it
+        // commits to (below).
+        if self.highest_observed_height <= block.number.saturating_add(REORG_DEPTH as u64)
+            || history_checkpoint.is_some()
+        {
             self.checkpoint_before(block.number);
         }
 
@@ -4047,6 +4109,16 @@ impl Engine {
                 block.number,
                 block.parent_hash,
                 expected_parent
+            );
+        }
+        if let Some(cp) = history_checkpoint
+            && block.hash != cp.hash
+        {
+            anyhow::bail!(
+                "block {} hash {} is not the history checkpoint {} built into this release",
+                block.number,
+                block.hash,
+                cp.hash
             );
         }
         let parent_ts = self.chain.last().map(|b| b.timestamp);
@@ -4120,26 +4192,72 @@ impl Engine {
         // any account's funds, and any relay could edit the block in transit.
         // Checked before slot accounting so a rejected copy leaves no trace;
         // an intact copy of the same block can still be imported.
-        if self.signed_txs_at(block.number) {
-            if !self.header_commits_to_hash(&block) {
-                anyhow::bail!(
+        //
+        // Below the history checkpoint one part of this is relaxed, and only
+        // one: a block whose hash does not re-derive is still accepted. That
+        // is the history stored before importers kept the producer's receipts
+        // root: they stored the receipts they rebuilt, and where a producer
+        // on an older build hashed different ones (2,670,941, after the
+        // 2,670,700 switch) no peer holds what the hash commits to. Every
+        // other check (parent link, proposer signature and election,
+        // transaction senders, timestamp, fee floor) applies as above it.
+        //
+        // Why that is sound: such a hash binds none of the block's contents
+        // (its parent link included), so below the checkpoint the history is
+        // anchored by the checkpoint block instead. Its hash is built into the
+        // binary, it must re-derive here in full, and it commits to the state
+        // root of the canonical chain at that height. Whatever history a peer
+        // serves below it, executing that history must reproduce exactly that
+        // state root (checked when the checkpoint block commits, below), or
+        // the node undoes the checkpoint block and goes no further. Any fake
+        // history, relaxed blocks edited included, is therefore refused at
+        // the checkpoint unless it leads to the same state there, in which
+        // case this node continues from the canonical state and everything
+        // above is checked in full. (What a relaxed block cannot vouch for is
+        // its own stored record, such as the order of transactions whose
+        // effects commute, never the state.) Above the checkpoint, at the live
+        // head included, a hash that does not re-derive is refused as before.
+        let committed_receipts_root = if self.signed_txs_at(block.number)
+            || history_checkpoint.is_some()
+        {
+            match self.committed_receipts_root(&block) {
+                Some(root) => Some(root),
+                None if self
+                    .history_checkpoint
+                    .is_some_and(|cp| block.number < cp.height) =>
+                {
+                    metrics::increment_counter!(
+                        "mersennet_import_below_checkpoint_unverified_hash_total"
+                    );
+                    tracing::info!(
+                        height = block.number,
+                        block_hash = %block.hash,
+                        proposer = %block.proposer,
+                        "below the history checkpoint: the block hash does not re-derive from the receipts peers store; accepted on its parent link, the checkpoint checks the state it leads to"
+                    );
+                    None
+                }
+                None => anyhow::bail!(
                     "block {} hash {} does not commit to its contents",
                     block.number,
                     block.hash
-                );
+                ),
             }
-            if let Some(tx) = block
+        } else {
+            None
+        };
+        if self.signed_txs_at(block.number)
+            && let Some(tx) = block
                 .transactions
                 .iter()
                 .find(|tx| !self.tx_proves_sender(tx))
-            {
-                anyhow::bail!(
-                    "block {} transaction {} does not prove its sender {}",
-                    block.number,
-                    tx.canonical_hash(),
-                    tx.from
-                );
-            }
+        {
+            anyhow::bail!(
+                "block {} transaction {} does not prove its sender {}",
+                block.number,
+                tx.canonical_hash(),
+                tx.from
+            );
         }
         self.record_leader_slots(block.number, block.proposer);
         if self.highest_observed_height <= block.number.saturating_add(REORG_DEPTH as u64) {
@@ -4241,7 +4359,12 @@ impl Engine {
         // Replace the log-stripped wire receipts with the locally reconstructed
         // ones (see the rebuild note above). Only reached when every tx applied,
         // so the receipt list is complete and index-aligned with the tx list.
+        // If they do not hash to the receipts root the block's hash commits
+        // to, keep that root with the block, so the stored copy and every
+        // copy served from it still re-derive the hash.
         block.receipts = rebuilt_receipts;
+        block.producer_receipts_root = committed_receipts_root
+            .filter(|root| *root != Self::compute_receipts_root(&block.receipts));
 
         // Re-credit the proposer/validator rewards the producer applied.
         self.apply_rewards(&block.rewards)?;
@@ -4255,7 +4378,8 @@ impl Engine {
         // durability: on restart the node resumes from the last committed
         // height and block-sync re-pulls the gap.
         let catching_up = self.highest_observed_height > block.number.saturating_add(64);
-        let should_commit = !catching_up || block.number.is_multiple_of(500);
+        let should_commit =
+            !catching_up || block.number.is_multiple_of(500) || history_checkpoint.is_some();
         if should_commit {
             self.evm.state.begin_commit(block.number)?;
             let state_root = self.evm.state.commit_state(
@@ -4265,6 +4389,28 @@ impl Engine {
                 &self.bridge.evm_to_orders,
                 block.number,
             )?;
+
+            // The history checkpoint anchors everything below it (see the
+            // hash check above): the state this node reached by executing
+            // that history must be the one the checkpoint block commits to.
+            // Otherwise undo the block and go no further: the history it was
+            // served is not the canonical chain, or its state drifted.
+            if history_checkpoint.is_some() && state_root != block.state_root {
+                metrics::increment_counter!("mersennet_history_checkpoint_state_mismatch_total");
+                tracing::error!(
+                    height = block.number,
+                    local = %state_root,
+                    checkpoint = %block.state_root,
+                    "HISTORY CHECKPOINT: the state replayed up to the checkpoint is not the one its block commits to; this node stops here. Restore a snapshot: curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash -s -- --reset-state"
+                );
+                self.undo_block(block.number);
+                anyhow::bail!(
+                    "block {} (history checkpoint): replayed state root {} != committed {}",
+                    block.number,
+                    state_root,
+                    block.state_root
+                );
+            }
 
             // The canonical state root is the producer's `block.state_root`
             // (it is what the block hash commits to, what the SP1 proof binds
@@ -5489,14 +5635,52 @@ impl Engine {
     /// every node) and only then stamps its address into the block, so both
     /// are tried.
     pub fn header_commits_to_hash(&self, block: &Block) -> bool {
-        [self.coinbase, block.coinbase]
-            .iter()
-            .any(|coinbase| self.derive_block_hash_with(block, *coinbase) == block.hash)
+        self.committed_receipts_root(block).is_some()
+    }
+
+    /// The receipts root under which the block's hash re-derives from its
+    /// contents: the root of `receipts`, or else the `producer_receipts_root`
+    /// the block carries. `None` if neither does.
+    ///
+    /// Accepting the carried root binds the block exactly as much as wire
+    /// receipts do: either way the receipts root is a value the sender
+    /// supplies (an importer never compares receipts with its own execution),
+    /// and every other component of the hash (parent, timestamp, gas, signed
+    /// transaction root, state root, ...) still has to match it.
+    fn committed_receipts_root(&self, block: &Block) -> Option<B256> {
+        let tx_root = Self::compute_tx_root(&block.transactions, self.signed_txs_at(block.number));
+        let own = Self::compute_receipts_root(&block.receipts);
+        let carried = block.producer_receipts_root.filter(|root| *root != own);
+        [Some(own), carried].into_iter().flatten().find(|root| {
+            [self.coinbase, block.coinbase].iter().any(|coinbase| {
+                self.derive_block_hash_from(block, tx_root, *root, *coinbase) == block.hash
+            })
+        })
+    }
+
+    /// The hash the block's contents derive with the engine coinbase (what a
+    /// producer hashes before stamping its address into the block), under the
+    /// receipts root the block commits to (`producer_receipts_root` when it
+    /// carries one).
+    pub fn derive_block_hash(&self, block: &Block) -> B256 {
+        self.derive_block_hash_with(block, self.coinbase)
     }
 
     fn derive_block_hash_with(&self, block: &Block, coinbase: Address) -> B256 {
         let tx_root = Self::compute_tx_root(&block.transactions, self.signed_txs_at(block.number));
-        let receipts_root = Self::compute_receipts_root(&block.receipts);
+        let receipts_root = block
+            .producer_receipts_root
+            .unwrap_or_else(|| Self::compute_receipts_root(&block.receipts));
+        self.derive_block_hash_from(block, tx_root, receipts_root, coinbase)
+    }
+
+    fn derive_block_hash_from(
+        &self,
+        block: &Block,
+        tx_root: B256,
+        receipts_root: B256,
+        coinbase: Address,
+    ) -> B256 {
         let mut coinbase_bytes = [0u8; 20];
         coinbase_bytes.copy_from_slice(coinbase.as_slice());
         let witness = mersennet_zkp::sp1::BlockHeaderWitness {
@@ -6923,6 +7107,366 @@ mod reorg_tests {
         assert_eq!(
             a.evm.state.compute_state_root(),
             p.evm.state.compute_state_root()
+        );
+    }
+
+    /// Two funded senders with fixed keys, so separate engines build and
+    /// check the same history.
+    fn sender_keys() -> [k256::ecdsa::SigningKey; 2] {
+        [0x51u8, 0x52].map(|b| k256::ecdsa::SigningKey::from_bytes(&[b; 32].into()).unwrap())
+    }
+
+    /// A fresh node of a chain that enforces the block-hash check from block 1.
+    fn signed_chain_node() -> Engine {
+        let mut e = with_validators(engine());
+        e.set_signed_tx_height(Some(1));
+        for key in sender_keys() {
+            e.fund_account(
+                crate::crypto::address_from_signing_key(&key),
+                U256::from(10u64).pow(U256::from(18u64)),
+                0,
+            );
+        }
+        e
+    }
+
+    fn signed_transfer(key: &k256::ecdsa::SigningKey, nonce: u64) -> Transaction {
+        let tx = Transaction {
+            from: crate::crypto::address_from_signing_key(key),
+            to: Some(Address::repeat_byte(0x22)),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            nonce,
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        crate::crypto::sign_transaction(&tx, key).tx
+    }
+
+    /// A producer on an older build after a switch: same transactions, but a
+    /// receipt that every up-to-date node re-executes differently, hashed
+    /// into the block and signed.
+    #[test]
+    fn a_block_imported_with_receipts_it_rebuilds_differently_keeps_its_hash() {
+        let [alice, _] = sender_keys();
+        let mut p = signed_chain_node();
+        p.submit_tx(signed_transfer(&alice, 0)).unwrap();
+        let honest = produce_as_leader(&mut p, 0);
+        assert_eq!(honest.receipts.len(), 1);
+        let mut old_build = honest.clone();
+        old_build.receipts[0].output = Bytes::from(vec![0xAB]);
+        let old_build = reseal(&p, old_build);
+        let producer_root = Engine::compute_receipts_root(&old_build.receipts);
+
+        let mut a = signed_chain_node();
+        a.import_block(old_build.clone());
+        assert_eq!(a.latest_height(), 1, "imported on its wire receipts");
+        let stored = a.evm.state.load_block(1).unwrap().expect("stored");
+        assert_eq!(
+            stored.receipts[0].output, honest.receipts[0].output,
+            "the node stores the receipts it re-executed"
+        );
+        assert_eq!(stored.producer_receipts_root, Some(producer_root));
+        assert!(
+            a.header_commits_to_hash(&stored),
+            "the block loaded from storage re-derives its hash"
+        );
+        assert!(a.header_commits_to_hash(a.block_by_number(1).unwrap()));
+
+        // Served as stored to a peer that syncs it.
+        let mut b = signed_chain_node();
+        b.import_block(stored);
+        assert_eq!(b.latest_height(), 1, "the served copy imports");
+        let served_on = b.evm.state.load_block(1).unwrap().unwrap();
+        assert_eq!(served_on.producer_receipts_root, Some(producer_root));
+        assert!(b.header_commits_to_hash(&served_on));
+
+        // Blocks whose receipts re-derive the hash are stored as before.
+        let mut c = signed_chain_node();
+        c.import_block(honest);
+        let plain = c.evm.state.load_block(1).unwrap().unwrap();
+        assert_eq!(plain.producer_receipts_root, None);
+        assert!(
+            !String::from_utf8(serde_json::to_vec(&plain).unwrap())
+                .unwrap()
+                .contains("producer_receipts_root")
+        );
+    }
+
+    /// `Block` as binaries built before `producer_receipts_root` define it
+    /// (copied verbatim from release 93cd5c1, doc comments dropped).
+    #[derive(Serialize, Deserialize)]
+    struct OldBlock {
+        pub number: u64,
+        pub chain_id: u64,
+        pub timestamp: u64,
+        pub gas_limit: u64,
+        pub gas_used: u64,
+        pub base_fee: U256,
+        pub coinbase: Address,
+        pub hash: B256,
+        #[serde(default)]
+        pub parent_hash: B256,
+        pub proposer: Address,
+        pub finalized: bool,
+        pub consensus: Finalization,
+        pub unbonded: Vec<Unbonding>,
+        pub applied_validator_changes: Vec<ValidatorChange>,
+        pub slashes: Vec<Slashing>,
+        pub finality_rounds: Vec<RoundResult>,
+        pub slashing_evidence: Vec<SlashingEvidence>,
+        pub rewards: Vec<Reward>,
+        pub total_reward: U256,
+        pub burned_reward: U256,
+        pub state_root: B256,
+        pub transactions: Vec<Transaction>,
+        pub receipts: Vec<Receipt>,
+        pub bridge_orders_to_evm: Vec<BridgeMessage>,
+        pub bridge_evm_to_orders: Vec<BridgeMessage>,
+        pub domain_events: Vec<DomainEvent>,
+        #[serde(default)]
+        pub shielded_state_root: B256,
+        #[serde(default)]
+        pub nullifier_root: B256,
+        #[serde(default)]
+        pub shielded_event_root: B256,
+        #[serde(default)]
+        pub state_proof: Option<crate::zk_proofs::StateTransitionProof>,
+        #[serde(default)]
+        pub proposer_sig: Option<(U256, U256, u64)>,
+    }
+
+    /// Stored blocks are JSON in both backends, and snapshots are copies of
+    /// the store: an older binary must read what this one writes, and the
+    /// other way round.
+    #[test]
+    fn old_and_new_binaries_read_each_others_stored_blocks() {
+        let [alice, _] = sender_keys();
+        let mut p = signed_chain_node();
+        p.submit_tx(signed_transfer(&alice, 0)).unwrap();
+        let block = produce_as_leader(&mut p, 0);
+        assert!(!block.receipts.is_empty() && block.proposer_sig.is_some());
+
+        // Without the root: byte for byte the old format.
+        let plain = serde_json::to_vec(&block).unwrap();
+        let as_old: OldBlock = serde_json::from_slice(&plain).unwrap();
+        assert_eq!(serde_json::to_vec(&as_old).unwrap(), plain);
+
+        // old -> new
+        let from_old: Block =
+            serde_json::from_slice(&serde_json::to_vec(&as_old).unwrap()).unwrap();
+        assert_eq!(from_old.producer_receipts_root, None);
+        assert_eq!(from_old.hash, block.hash);
+        assert!(p.header_commits_to_hash(&from_old));
+
+        // new -> old, with the root: an older binary reads the block (it
+        // checks `receipts`, as it does today for such a block).
+        let mut kept = block.clone();
+        kept.producer_receipts_root = Some(B256::repeat_byte(0x5a));
+        let bytes = serde_json::to_vec(&kept).unwrap();
+        let old: OldBlock = serde_json::from_slice(&bytes).expect("older binaries decode it");
+        assert_eq!(old.hash, kept.hash);
+        assert_eq!(old.receipts.len(), kept.receipts.len());
+        assert_eq!(old.proposer_sig, kept.proposer_sig);
+
+        // new -> new, through both storage backends.
+        for backend in ["sled", "redb"] {
+            let dir = tempdir().unwrap();
+            let store: Box<dyn StateBackend> = match backend {
+                "sled" => Box::new(PersistentState::open(dir.path()).unwrap()),
+                _ => Box::new(RedbState::open(dir.path()).unwrap()),
+            };
+            store.store_block(&kept).unwrap();
+            let loaded = store.load_block(kept.number).unwrap().unwrap();
+            assert_eq!(
+                loaded.producer_receipts_root, kept.producer_receipts_root,
+                "{backend}"
+            );
+            assert_eq!(serde_json::to_vec(&loaded).unwrap(), bytes, "{backend}");
+        }
+    }
+
+    /// Blocks 1-6 of a chain stored the way 131071 stores 2,670,941: block 2's
+    /// receipts are not the ones its hash commits to, and nobody has those.
+    fn history_with_an_unverifiable_block() -> Vec<Block> {
+        let [alice, carol] = sender_keys();
+        let mut p = signed_chain_node();
+        let mut blocks = Vec::new();
+        for (key, nonce) in [
+            (Some(&alice), 0),
+            (Some(&carol), 0),
+            (Some(&alice), 1),
+            (None, 0),
+            (Some(&alice), 2),
+            (None, 0),
+        ] {
+            if let Some(key) = key {
+                p.submit_tx(signed_transfer(key, nonce)).unwrap();
+            }
+            blocks.push(produce_as_leader(&mut p, 0));
+        }
+        blocks[1].receipts[0].output = Bytes::from(vec![0xEE]);
+        let checker = signed_chain_node();
+        for b in &blocks {
+            assert_eq!(checker.header_commits_to_hash(b), b.number != 2);
+        }
+        blocks
+    }
+
+    fn checkpoint(blocks: &[Block], height: u64) -> crate::config::HistoryCheckpoint {
+        crate::config::HistoryCheckpoint {
+            height,
+            hash: blocks[height as usize - 1].hash,
+        }
+    }
+
+    fn sync(e: &mut Engine, blocks: &[Block]) {
+        for b in blocks {
+            e.import_block(b.clone());
+        }
+    }
+
+    #[test]
+    fn below_the_checkpoint_a_block_that_cannot_re_derive_its_hash_is_accepted() {
+        let blocks = history_with_an_unverifiable_block();
+        let mut without = signed_chain_node();
+        sync(&mut without, &blocks);
+        assert_eq!(
+            without.latest_height(),
+            1,
+            "no checkpoint: refused as before"
+        );
+
+        let mut s = signed_chain_node();
+        s.set_history_checkpoint(Some(checkpoint(&blocks, 4)));
+        sync(&mut s, &blocks);
+        assert_eq!(s.latest_height(), 6);
+        let p_root = {
+            // The producer's state, reached by the syncing node through the
+            // block it could not check.
+            let mut reference = signed_chain_node();
+            reference.set_history_checkpoint(Some(checkpoint(&blocks, 4)));
+            sync(&mut reference, &blocks);
+            reference.evm.state.compute_state_root()
+        };
+        assert_eq!(s.evm.state.compute_state_root(), p_root);
+        assert_eq!(s.evm.state.compute_state_root(), blocks[5].state_root);
+        assert_eq!(
+            s.evm
+                .state
+                .load_block(2)
+                .unwrap()
+                .unwrap()
+                .producer_receipts_root,
+            None,
+            "nothing to keep: the root its hash commits to is unknown"
+        );
+    }
+
+    #[test]
+    fn below_the_checkpoint_every_other_check_still_applies() {
+        let blocks = history_with_an_unverifiable_block();
+        let cp = checkpoint(&blocks, 4);
+        // A broken parent link, on the block that cannot re-derive its hash
+        // and on one whose hash no longer re-derives because of the edit.
+        for height in [2usize, 3] {
+            let mut broken = blocks.clone();
+            broken[height - 1].parent_hash = B256::repeat_byte(0x99);
+            let mut s = signed_chain_node();
+            s.set_history_checkpoint(Some(cp));
+            sync(&mut s, &broken);
+            assert_eq!(
+                s.latest_height(),
+                height as u64 - 1,
+                "parent link at {height}"
+            );
+        }
+        // A sender the transaction's signature does not prove.
+        let mut forged = blocks.clone();
+        forged[1].transactions[0].from = Address::repeat_byte(0x66);
+        let mut s = signed_chain_node();
+        s.set_history_checkpoint(Some(cp));
+        sync(&mut s, &forged);
+        assert_eq!(s.latest_height(), 1, "forged sender below the checkpoint");
+    }
+
+    #[test]
+    fn at_and_above_the_checkpoint_a_block_must_re_derive_its_hash() {
+        let blocks = history_with_an_unverifiable_block();
+        let mut above = blocks.clone();
+        above[4].receipts[0].output = Bytes::from(vec![0xEE]);
+        let mut s = signed_chain_node();
+        s.set_history_checkpoint(Some(checkpoint(&blocks, 4)));
+        sync(&mut s, &above);
+        assert_eq!(s.latest_height(), 4, "block 5 is above the checkpoint");
+        // At its head now: the next block arrives live and is held to the
+        // full check too.
+        s.import_block(above[4].clone());
+        assert_eq!(s.latest_height(), 4);
+        s.import_block(blocks[4].clone());
+        assert_eq!(
+            s.latest_height(),
+            6,
+            "the intact copy imports, then the block 6 buffered behind it"
+        );
+
+        let mut at = signed_chain_node();
+        at.set_history_checkpoint(Some(checkpoint(&blocks, 2)));
+        sync(&mut at, &blocks);
+        assert_eq!(
+            at.latest_height(),
+            1,
+            "the checkpoint block itself must commit"
+        );
+    }
+
+    #[test]
+    fn a_wrong_checkpoint_hash_stops_the_sync_at_its_height() {
+        let blocks = history_with_an_unverifiable_block();
+        let mut s = signed_chain_node();
+        s.set_history_checkpoint(Some(crate::config::HistoryCheckpoint {
+            height: 4,
+            hash: B256::repeat_byte(0x42),
+        }));
+        sync(&mut s, &blocks);
+        assert_eq!(s.latest_height(), 3);
+    }
+
+    /// The relaxed block carries nothing its hash binds, so a peer can edit
+    /// it; the state at the checkpoint gives the edit away.
+    #[test]
+    fn history_that_does_not_reach_the_checkpoint_state_is_refused_there() {
+        let blocks = history_with_an_unverifiable_block();
+        let mut fake = blocks.clone();
+        fake[1].transactions.clear();
+        fake[1].receipts.clear();
+        let cp = checkpoint(&blocks, 4);
+        let mut s = signed_chain_node();
+        s.set_history_checkpoint(Some(cp));
+        sync(&mut s, &fake);
+        assert_eq!(
+            s.latest_height(),
+            3,
+            "accepted up to the checkpoint, not past it"
+        );
+        assert_eq!(s.block_number, 4);
+
+        // The refused block was undone: the node holds the state of its
+        // height 3, on disk too, and refuses the checkpoint again on retry.
+        let mut reference = signed_chain_node();
+        reference.set_history_checkpoint(Some(cp));
+        sync(&mut reference, &fake[..3]);
+        assert_eq!(
+            s.evm.state.compute_state_root(),
+            reference.evm.state.compute_state_root()
+        );
+        assert_eq!(s.evm.state.persisted_height().unwrap(), Some(3));
+        s.import_block(fake[3].clone());
+        assert_eq!(s.latest_height(), 3);
+        assert_eq!(
+            s.evm.state.compute_state_root(),
+            reference.evm.state.compute_state_root()
         );
     }
 }
