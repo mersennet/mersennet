@@ -96,6 +96,8 @@ static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
 /// watchdog exits 6 for a state heal: time for a late certificate or our own
 /// block's finality to prove it wrong (Engine::needs_heal).
 const HEAL_AFTER_SECS: u64 = 120;
+/// Blocks deleted per engine-lock acquisition by the history-prune thread.
+const PRUNE_BATCH_BLOCKS: u64 = 128;
 
 /// Shortens the wait after the parent block by how far recent intervals
 /// overshoot the block time: a full block time after the parent arrives still
@@ -1360,9 +1362,9 @@ fn main() -> anyhow::Result<()> {
             }
 
             // History pruning (engine.prune_keep_blocks, 0 = archive): delete the
-            // oldest blocks beyond the most recent N, 256 per engine-lock
-            // acquisition with a short pause, then one step every few seconds
-            // to follow the head. The first pass on a node with full history
+            // oldest blocks beyond the most recent N, PRUNE_BATCH_BLOCKS per
+            // engine-lock acquisition with a pause twice the step's lock time,
+            // then one step every few seconds to follow the head. The first pass on a node with full history
             // reads each old block once (for its hashes) and takes hours; the
             // node serves and validates normally meanwhile.
             let prune_keep = app_config.engine.prune_keep_blocks;
@@ -1388,17 +1390,30 @@ fn main() -> anyhow::Result<()> {
                             if shutdown_pr.load(Ordering::SeqCst) {
                                 break;
                             }
-                            let step = match eng.lock() {
-                                Ok(e) => e.prune_history_step(keep, 256),
+                            // Time the step while holding the lock, then stay away
+                            // twice as long: pruning gets at most a third of the
+                            // engine lock. Back to back (15 ms apart) it held the
+                            // lock ~94% of the time on a 4M-block node; votes and
+                            // imports still got through, but the liveness watchdog's
+                            // try_lock never did, it called the node wedged and
+                            // exited mid-commit (release test, 23 Nov 2026).
+                            let (step, held) = match eng.lock() {
+                                Ok(e) => {
+                                    let t = std::time::Instant::now();
+                                    let r = e.prune_history_step(keep, PRUNE_BATCH_BLOCKS);
+                                    (r, t.elapsed())
+                                }
                                 Err(_) => break,
                             };
                             match step {
                                 Ok(Some(floor)) => {
                                     if floor.saturating_sub(logged_at) >= 100_000 {
-                                        tracing::info!(block_floor = floor, "history pruned");
+                                        tracing::info!(block_floor = floor, step_ms = held.as_millis() as u64, "history pruned");
                                         logged_at = floor;
                                     }
-                                    std::thread::sleep(std::time::Duration::from_millis(15));
+                                    std::thread::sleep(
+                                        held.saturating_mul(2).max(std::time::Duration::from_millis(50)),
+                                    );
                                 }
                                 Ok(None) => std::thread::sleep(std::time::Duration::from_secs(10)),
                                 Err(err) => {
