@@ -207,6 +207,13 @@ pub struct WireBlock {
     pub proposer_sig_s: Option<String>,
     #[serde(default)]
     pub proposer_sig_y: Option<u64>,
+    /// `Block::producer_receipts_root` (hex): the receipts root the hash
+    /// commits to, sent only when `receipts` (the sender's re-executed ones)
+    /// do not hash to it. Absent otherwise, so the wire form of every other
+    /// block is unchanged; older nodes ignore the field and check `receipts`
+    /// as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_receipts_root: Option<String>,
 }
 
 /// A signed BFT finality vote, gossiped on the "vote" topic. The
@@ -383,6 +390,7 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
         proposer_sig_r: block.proposer_sig.map(|(r, _, _)| hex_u256(&r)),
         proposer_sig_s: block.proposer_sig.map(|(_, s, _)| hex_u256(&s)),
         proposer_sig_y: block.proposer_sig.map(|(_, _, y)| y),
+        producer_receipts_root: block.producer_receipts_root.as_ref().map(hex_b256),
     }
 }
 
@@ -408,6 +416,10 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         })
         .collect();
     let rewards = rewards?;
+    let producer_receipts_root = match &wire.producer_receipts_root {
+        Some(root) => Some(parse_hex_b256(root)?),
+        None => None,
+    };
 
     Some(Block {
         number: wire.number,
@@ -481,6 +493,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
             (Some(r), Some(s), Some(y)) => Some((r, s, y)),
             _ => None,
         },
+        producer_receipts_root,
     })
 }
 
@@ -1222,6 +1235,162 @@ mod tests {
             importer.header_commits_to_hash(&back),
             "hash re-derives after the wire round trip"
         );
+    }
+
+    /// `WireBlock` as nodes built before `producer_receipts_root` define it
+    /// (copied verbatim from release 93cd5c1).
+    mod old_wire {
+        use super::super::{WireReceipt, WireReward, WireTx};
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct WireBlock {
+            pub number: u64,
+            pub chain_id: u64,
+            #[serde(default)]
+            pub timestamp: u64,
+            pub gas_limit: u64,
+            pub gas_used: u64,
+            pub base_fee: String,
+            pub coinbase: String,
+            pub hash: String,
+            #[serde(default)]
+            pub parent_hash: String,
+            pub proposer: String,
+            pub finalized: bool,
+            pub state_root: String,
+            pub total_reward: String,
+            pub burned_reward: String,
+            #[serde(default)]
+            pub rewards: Vec<WireReward>,
+            pub transactions: Vec<WireTx>,
+            pub receipts: Vec<WireReceipt>,
+            #[serde(default)]
+            pub shielded_state_root: Option<String>,
+            #[serde(default)]
+            pub nullifier_root: Option<String>,
+            #[serde(default)]
+            pub shielded_event_root: Option<String>,
+            #[serde(default)]
+            pub state_proof: Option<String>,
+            #[serde(default)]
+            pub proposer_sig_r: Option<String>,
+            #[serde(default)]
+            pub proposer_sig_s: Option<String>,
+            #[serde(default)]
+            pub proposer_sig_y: Option<u64>,
+        }
+    }
+
+    #[test]
+    fn old_and_new_nodes_read_each_others_wire_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let block = produced_block(dir.path());
+        assert_eq!(block.producer_receipts_root, None);
+
+        // A block without the root goes out byte for byte as before.
+        let plain = serde_json::to_vec(&block_to_wire(&block)).unwrap();
+        let as_old: old_wire::WireBlock = serde_json::from_slice(&plain).unwrap();
+        assert_eq!(serde_json::to_vec(&as_old).unwrap(), plain);
+
+        // old -> new
+        let old_bytes = serde_json::to_vec(&as_old).unwrap();
+        let from_old =
+            wire_to_block(&serde_json::from_slice::<WireBlock>(&old_bytes).unwrap()).unwrap();
+        assert_eq!(from_old.producer_receipts_root, None);
+        assert_eq!(from_old.hash, block.hash);
+
+        // new -> old, carrying the root: older nodes ignore the field.
+        let mut kept = block.clone();
+        kept.producer_receipts_root = Some(B256::repeat_byte(0x5a));
+        let bytes = serde_json::to_vec(&block_to_wire(&kept)).unwrap();
+        let old: old_wire::WireBlock =
+            serde_json::from_slice(&bytes).expect("older nodes decode it");
+        assert_eq!(old.hash, hex_b256(&kept.hash));
+        assert_eq!(old.receipts.len(), kept.receipts.len());
+        let old_list: Vec<old_wire::WireBlock> =
+            serde_json::from_slice(&serde_json::to_vec(&vec![block_to_wire(&kept)]).unwrap())
+                .expect("a sync response decodes too");
+        assert_eq!(old_list.len(), 1);
+
+        // new -> new
+        let back = wire_to_block(&serde_json::from_slice::<WireBlock>(&bytes).unwrap()).unwrap();
+        assert_eq!(back.producer_receipts_root, kept.producer_receipts_root);
+
+        // A root that does not parse makes the block unreadable, like any
+        // other malformed hash field.
+        let mut bad = block_to_wire(&kept);
+        bad.producer_receipts_root = Some("zz".to_string());
+        assert!(wire_to_block(&bad).is_none());
+    }
+
+    /// A producer on an older build after a switch hashed a receipt that
+    /// up-to-date nodes re-execute differently. The node that imported it
+    /// stores and serves its own receipts; with the producer's root sent
+    /// alongside, the served block still re-derives its hash and a syncing
+    /// peer takes it.
+    #[test]
+    fn a_block_served_with_rebuilt_receipts_still_re_derives_its_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let (key, alice) = mersennet::crypto::generate_keypair();
+        let node = |name: &str| {
+            let path = dir.path().join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            let mut e = Engine::new_with_backend(131071, path, "redb");
+            e.set_signed_tx_height(Some(1));
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+            e
+        };
+        let mut producer = node("producer");
+        let tx = Transaction {
+            from: alice,
+            to: Some(Address::repeat_byte(0x22)),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        producer
+            .submit_tx(mersennet::crypto::sign_transaction(&tx, &key).tx)
+            .unwrap();
+        let mut block = producer.execute_block().unwrap();
+        assert_eq!(block.receipts.len(), 1);
+        block.receipts[0].output = Bytes::from(vec![0xAB]);
+        block.hash = producer.derive_block_hash(&block);
+
+        let mut importer = node("importer");
+        importer.import_block(block.clone());
+        assert_eq!(importer.latest_height(), 1);
+        assert!(
+            importer
+                .get_block(1)
+                .unwrap()
+                .producer_receipts_root
+                .is_some()
+        );
+
+        let served = sync_blocks_from(&importer, 1);
+        let bytes = serde_json::to_vec(&served).unwrap();
+        let received: Vec<Block> = serde_json::from_slice::<Vec<WireBlock>>(&bytes)
+            .unwrap()
+            .iter()
+            .filter_map(wire_to_block)
+            .collect();
+        assert_eq!(received.len(), 1);
+        assert_ne!(
+            received[0].receipts[0].output, block.receipts[0].output,
+            "the importer serves the receipts it re-executed"
+        );
+        let mut peer = node("peer");
+        assert!(peer.header_commits_to_hash(&received[0]));
+        peer.import_block(received[0].clone());
+        assert_eq!(peer.latest_height(), 1, "the syncing peer takes it");
+
+        // An older peer decodes the same response (and checks `receipts`, as
+        // it does today for this block).
+        let old: Vec<old_wire::WireBlock> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(old[0].hash, hex_b256(&block.hash));
     }
 
     /// A stand-in for a peer's sync port that answers one request with

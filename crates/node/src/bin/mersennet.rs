@@ -389,6 +389,13 @@ fn main() -> anyhow::Result<()> {
             mersennet::config::default_timestamp_order_height(app_config.engine.chain_id)
         }),
     );
+    // Built in, never from the config: see `config::default_history_checkpoint`.
+    let history_checkpoint =
+        mersennet::config::default_history_checkpoint(app_config.engine.chain_id);
+    if let Some(cp) = history_checkpoint {
+        info!(height = cp.height, hash = %cp.hash, "history checkpoint built in");
+    }
+    engine.set_history_checkpoint(history_checkpoint);
     engine.set_fee_floor_params(
         app_config.engine.fee_floor_height,
         app_config.engine.min_base_fee_wei,
