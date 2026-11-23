@@ -90,5 +90,14 @@ snapshot)
 esac
 chown -R "$owner" "$DATA_DIR/data" 2>/dev/null || true
 rm -f "$FAILED_MARK"
+# A pruned node just unpacked the full snapshot: rewrite it down to its
+# history before it starts (the old copy goes once the node has started).
+compacted=0
+if [[ -x /usr/local/bin/mersennet-compact ]] && /usr/local/bin/mersennet-compact "$DATA_DIR"; then
+    [[ -d "$STATE.pre-compact" ]] && compacted=1
+fi
 log "state healed; starting $SERVICE"
 start_node
+if [[ $compacted -eq 1 ]]; then
+    /usr/local/bin/mersennet-compact --finish "$DATA_DIR" || true
+fi

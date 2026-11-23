@@ -26,12 +26,18 @@ set -euo pipefail
 #                    the node is forked or logs "state root" differences —
 #                    typically a node that ran an old build through a
 #                    consensus upgrade. One minute to be back in sync.
-#   --prune          Keep only the most recent 100,000 blocks (~2.3 days) and
-#                    delete older ones in the background: a validator needs no
-#                    history, and the disk drops from ~130 GB to a few GB.
+#   --prune          Keep only the most recent 100,000 blocks (~2.3 days): a
+#                    validator needs no history. The first time, the installer
+#                    rewrites the database with only that (mersennet-compact,
+#                    about 10 minutes with the node stopped) and the disk
+#                    drops from ~130 GB to ~3 GB; afterwards older blocks are
+#                    deleted in the background as new ones arrive.
 #                    --prune=N keeps N (at least 10,000); --no-prune keeps
 #                    everything again. Kept across upgrades. Not for nodes that
 #                    serve history (explorers, indexers, public RPC).
+#   --compact        Also rewrite the database of a node that keeps every block
+#                    (an archive node), dropping only dead space. Needs free
+#                    disk of about three quarters of data/state.
 #
 # Works from either layout:
 #   1. The release bundle (https://mersennet.com/downloads/): binary, config
@@ -56,6 +62,7 @@ FROM_SNAPSHOT=1
 RESET_STATE=0
 OPERATOR=""
 PRUNE=""
+COMPACT=0
 SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -69,7 +76,8 @@ while [[ $# -gt 0 ]]; do
         --prune) PRUNE=100000; shift ;;
         --prune=*) PRUNE="${1#*=}"; shift ;;
         --no-prune) PRUNE=0; shift ;;
-        -h|--help) sed -n '3,35p' "$0"; exit 0 ;;
+        --compact) COMPACT=1; shift ;;
+        -h|--help) sed -n '3,41p' "$0"; exit 0 ;;
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
     esac
 done
@@ -96,7 +104,7 @@ esac
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -x "$HERE/mersennet" && -f "$HERE/config.json" ]]; then
     BIN="$HERE/mersennet"; CONF="$HERE/config.json"; UNIT="$HERE/mersennet.service"; CHECK="$HERE/mersennet-check"
-    HEAL="$HERE/mersennet-heal"; HEAL_UNIT="$HERE/mersennet-heal.service"
+    HEAL="$HERE/mersennet-heal"; HEAL_UNIT="$HERE/mersennet-heal.service"; COMPACT_TOOL="$HERE/mersennet-compact"
 else
     REPO_ROOT="$(cd "$HERE/../.." && pwd)"
     BIN="$REPO_ROOT/target/release/mersennet"
@@ -105,6 +113,7 @@ else
     CHECK="$REPO_ROOT/networks/testnet/mersennet-check"
     HEAL="$REPO_ROOT/networks/testnet/mersennet-heal"
     HEAL_UNIT="$REPO_ROOT/networks/testnet/mersennet-heal.service"
+    COMPACT_TOOL="$REPO_ROOT/networks/testnet/mersennet-compact"
 fi
 [[ -x "$BIN" ]] || { echo "error: $BIN not found — download the release bundle or run: cargo build --release --bin mersennet" >&2; exit 1; }
 [[ -f "$CONF" ]] || { echo "error: $CONF not found" >&2; exit 1; }
@@ -143,6 +152,9 @@ if [[ -f "$HEAL" && -f "$HEAL_UNIT" ]]; then
 fi
 if [[ -f "$CHECK" ]]; then
     install -m 0755 "$CHECK" /usr/local/bin/mersennet-check
+fi
+if [[ -f "$COMPACT_TOOL" ]]; then
+    install -m 0755 "$COMPACT_TOOL" /usr/local/bin/mersennet-compact
 fi
 
 echo "==> Creating mersennet user and data directory $DATA_DIR"
@@ -224,7 +236,7 @@ if [[ -n "$PRUNE" ]]; then
     if [[ "$PRUNE" -eq 0 ]]; then
         echo "==> History pruning off: this node keeps every block (archive)"
     else
-        echo "==> History pruning on: keeping the most recent $PRUNE blocks (older ones are deleted in the background)"
+        echo "==> History pruning on: keeping the most recent $PRUNE blocks"
     fi
     python3 - "$PRUNE" <<'PY'
 import json, sys
@@ -317,9 +329,33 @@ if [[ $FROM_SNAPSHOT -eq 1 && ! -d "$DATA_DIR/data/state" ]]; then
     chown -R mersennet:mersennet "$DATA_DIR" 2>/dev/null || true
 fi
 
+# Compaction: a pruned node whose database is far larger than its history
+# needs (the first --prune, or a restored full snapshot) is rewritten with only
+# its live data before it starts; --compact does an archive node too. The old
+# copy is deleted once the node confirms its state root on the new one.
+COMPACTED=0
+if [[ -x /usr/local/bin/mersennet-compact && -d "$DATA_DIR/data/state" ]]; then
+    systemctl stop mersennet 2>/dev/null || true
+    if [[ $COMPACT -eq 1 ]]; then cmode=(--full); [[ "${PRUNE:-}" =~ ^[1-9] ]] && cmode=(--force); else cmode=(); fi
+    if [[ $COMPACT -eq 1 ]] || python3 -c 'import json,sys; sys.exit(0 if int((json.load(open(sys.argv[1])).get("engine") or {}).get("prune_keep_blocks") or 0) > 0 else 1)' /etc/mersennet/config.json 2>/dev/null; then
+        echo "==> Checking whether the chain database needs compacting"
+        if /usr/local/bin/mersennet-compact "${cmode[@]}" "$DATA_DIR" | sed 's/^/    /'; then
+            [[ -d "$DATA_DIR/data/state.pre-compact" ]] && COMPACTED=1
+        else
+            echo "    compaction skipped; the node starts on its database as it was" >&2
+        fi
+    fi
+fi
+
 echo "==> Starting node"
 systemctl restart mersennet
 sleep 3
+if [[ $COMPACTED -eq 1 ]]; then
+    # Waits for the node's state-root check on the new copy; on a failure it
+    # puts the old copy back and restarts the node on it.
+    echo "==> Confirming the node runs on the compacted database"
+    /usr/local/bin/mersennet-compact --finish "$DATA_DIR" | sed 's/^/    /' || true
+fi
 if ! systemctl is-active --quiet mersennet; then
     echo "error: the service did not stay up. Last log lines:" >&2
     journalctl -u mersennet -n 20 --no-pager >&2 || true

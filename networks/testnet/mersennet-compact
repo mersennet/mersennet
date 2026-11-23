@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# mersennet-compact: give back the disk space the chain database holds for
+# nothing. The database (sled) leaves records it freed on disk when the node
+# restarts at the wrong moment; over months that is about half of an archive
+# node's data/state, and almost all of a pruned node's. This rewrites the
+# database with only its live data. The node must be stopped.
+#
+#   mersennet-compact [DATA_DIR]            before the node starts: compacts a
+#                                           pruned node whose state is larger
+#                                           than its history needs
+#   mersennet-compact --force [DATA_DIR]    compact whatever the size
+#   mersennet-compact --full [DATA_DIR]     an archive node (no pruning): copy
+#                                           every block, drop only the dead space
+#   mersennet-compact --finish [DATA_DIR]   after the node started: delete the old
+#                                           copy once the node reported that its
+#                                           state root matches; otherwise put the
+#                                           old copy back and restart
+#
+# DATA_DIR defaults to /var/lib/mersennet. A pruned node keeps
+# engine.prune_keep_blocks blocks from /etc/mersennet/config.json; the copy
+# leaves out older history, so the first prune pass is not needed.
+# Exit status 0 also when there was nothing to do; 1 on an error (the node's
+# state is then untouched).
+set -euo pipefail
+MODE=auto
+case "${1:-}" in
+    --force) MODE=force; shift ;;
+    --full) MODE=full; shift ;;
+    --finish) MODE=finish; shift ;;
+esac
+DATA_DIR="${1:-/var/lib/mersennet}"
+DATA_DIR="${DATA_DIR%/}"
+SERVICE="${MERSENNET_SERVICE:-mersennet}"
+CONFIG="${MERSENNET_CONFIG:-/etc/mersennet/config.json}"
+BIN="${MERSENNET_BIN:-/usr/local/bin/mersennet}"
+STATE="$DATA_DIR/data/state"
+OLD="$STATE.pre-compact"
+log() { echo "mersennet-compact: $*"; }
+
+if [[ $MODE == finish ]]; then
+    [[ -d "$OLD" ]] || exit 0
+    since="$(cat "$OLD.started" 2>/dev/null || echo "-10min")"
+    for _ in $(seq 1 60); do
+        out="$(journalctl -u "$SERVICE" --since "$since" -o cat 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true)"
+        if grep -q "restored state root matches the head block" <<<"$out"; then
+            rm -rf "$OLD" "$OLD.started"
+            log "the node runs on the compacted database (state root checked); the old copy is deleted"
+            exit 0
+        fi
+        if grep -q "RESTORED STATE ROOT MISMATCH" <<<"$out" || ! systemctl is-active --quiet "$SERVICE"; then
+            break
+        fi
+        sleep 2
+    done
+    log "the node did not confirm its state root on the compacted database: putting the old copy back"
+    systemctl stop "$SERVICE" 2>/dev/null || true
+    rm -rf "$STATE.compact-failed"
+    mv "$STATE" "$STATE.compact-failed"
+    mv "$OLD" "$STATE"
+    rm -f "$OLD.started"
+    systemctl reset-failed "$SERVICE" 2>/dev/null || true
+    systemctl start "$SERVICE" || true
+    log "restored; the compacted copy is kept at $STATE.compact-failed for a bug report (delete it to free the space)"
+    exit 1
+fi
+
+[[ -d "$STATE" ]] || { log "no chain state at $STATE: nothing to compact"; exit 0; }
+if [[ ! -f "$STATE/db" || ! -f "$STATE/conf" ]]; then
+    log "$STATE is not a sled database (redb compacts itself): nothing to do"
+    exit 0
+fi
+if systemctl is-active --quiet "$SERVICE"; then
+    log "error: $SERVICE is running; stop it first (sudo systemctl stop $SERVICE)" >&2
+    exit 1
+fi
+if [[ -d "$OLD" ]]; then
+    log "error: $OLD exists from an earlier run; once the node runs fine on $STATE, delete it (or run mersennet-compact --finish)" >&2
+    exit 1
+fi
+keep="$(python3 -c 'import json,sys; print(int((json.load(open(sys.argv[1])).get("engine") or {}).get("prune_keep_blocks") or 0))' "$CONFIG" 2>/dev/null || echo 0)"
+state_mb=$(du -sm "$STATE" | cut -f1)
+free_mb=$(df -Pm "$STATE" | awk 'NR==2 {print $4}')
+if (( keep > 0 )) && [[ $MODE != full ]]; then
+    # A pruned node needs about 3 GB plus ~25 KB a kept block; above twice
+    # that plus 16 GB the dead space is worth a rewrite.
+    need_mb=$(( 3072 + keep / 40 ))
+    if [[ $MODE == auto ]] && (( state_mb < 2 * need_mb + 16384 )); then
+        log "state is $((state_mb / 1024)) GB, as expected for $keep blocks: nothing to compact"
+        exit 0
+    fi
+    args=(--keep-blocks "$keep")
+    what="keeping the most recent $keep blocks"
+else
+    [[ $MODE == auto ]] && { log "archive node (no pruning): run mersennet-compact --full to compact it"; exit 0; }
+    need_mb=$(( state_mb * 3 / 4 ))
+    args=()
+    what="keeping every block"
+fi
+if (( free_mb < need_mb + 2048 )); then
+    log "not enough free disk: $((free_mb / 1024)) GB free, the compacted copy needs up to $(( (need_mb + 2048) / 1024 + 1 )) GB. Nothing changed." >&2
+    exit 1
+fi
+log "compacting $STATE ($((state_mb / 1024)) GB, $what); the node stays stopped meanwhile"
+rm -rf "$STATE.compact"
+if ! "$BIN" --compact-state "$STATE" "${args[@]}" 2>&1 | sed 's/^/    /'; then
+    rm -rf "$STATE.compact"
+    log "compaction failed; the node's state is untouched" >&2
+    exit 1
+fi
+[[ -f "$STATE.compact/db" ]] || { log "compaction left no database; the node's state is untouched" >&2; exit 1; }
+owner="$(stat -c %U:%G "$STATE")"
+mv "$STATE" "$OLD"
+mv "$STATE.compact" "$STATE"
+chown -R "$owner" "$STATE"
+date -u '+%Y-%m-%d %H:%M:%S UTC' > "$OLD.started"
+log "done: $((state_mb / 1024)) GB -> $(( $(du -sm "$STATE" | cut -f1) / 1024 )) GB. The old copy stays at $OLD until the node has started on the new one (mersennet-compact --finish)"
