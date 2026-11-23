@@ -204,7 +204,7 @@ pub fn compact_state(
             if read_since_open >= reopen_bytes {
                 // Close first: sled's file lock refuses a second opener.
                 drop(old);
-                old = open_old()?;
+                old = reopen(open_old)?;
                 read_since_open = 0;
             }
             if last_note.elapsed().as_secs() >= 30 {
@@ -252,7 +252,7 @@ pub fn compact_state(
             read_back += chunk;
             if read_back >= reopen_bytes {
                 drop(new);
-                new = open_new()?;
+                new = reopen(open_new)?;
                 read_back = 0;
             }
             match last_key {
@@ -321,6 +321,27 @@ fn keep_entry(tree: &str, k: &[u8], v: &[u8], floor: u64) -> bool {
             _ => true,
         },
         _ => true,
+    }
+}
+
+/// Open a store we just closed. sled finishes closing in the background (its
+/// flusher holds the file until a flush in progress is done), so right after
+/// heavy writes the file lock can outlive the last handle by a moment: a 71 GB
+/// archive copy failed on its first reopen of the new store. Retry while the
+/// only error is that lock, for up to a minute.
+fn reopen(open: impl Fn() -> Result<sled::Db>) -> Result<sled::Db> {
+    let started = std::time::Instant::now();
+    loop {
+        match open() {
+            Ok(db) => return Ok(db),
+            Err(e)
+                if format!("{e:#}").contains("could not acquire lock")
+                    && started.elapsed() < std::time::Duration::from_secs(60) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 
@@ -431,6 +452,23 @@ mod tests {
         assert!(meta.get("history_index_floor").unwrap().is_none());
         assert_eq!(meta.get("consensus_set").unwrap().as_deref(), Some(&b"set"[..]));
         assert_eq!(db.open_tree("accounts").unwrap().len(), 500);
+    }
+
+    #[test]
+    fn reopen_waits_for_a_lock_released_late() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path().join("s");
+        let held = sled::open(&dir).unwrap();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            drop(held);
+        });
+        let open = || sled::Config::new().path(&dir).open().map_err(anyhow::Error::from);
+        assert!(open().is_err(), "the lock is held");
+        let started = std::time::Instant::now();
+        reopen(open).unwrap();
+        assert!(started.elapsed() >= std::time::Duration::from_millis(300));
+        releaser.join().unwrap();
     }
 
     #[test]
