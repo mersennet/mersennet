@@ -92,6 +92,15 @@ static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::Onc
 /// watchdog restores a snapshot (validator 1 on the 25 Sep roll: benched for
 /// the rest of the epoch).
 static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
+/// Set first on SIGTERM/SIGINT: produce no new block, keep following the
+/// network (gossip, sync, votes) until our head is finalized, then stop. A node
+/// that stopped right after applying a block the network did not finalize
+/// restarted on an orphaned head with no checkpoint to roll back to, and needed
+/// a state heal (privacy-v1, 23 Nov 2026: a full resync). While the process
+/// still runs, finality on another block rolls it back from its checkpoints.
+static DRAINING: AtomicBool = AtomicBool::new(false);
+/// Longest wait for the head's finality on shutdown (systemd allows 90 s).
+const DRAIN_MAX_SECS: u64 = 20;
 /// How long a node stays on a branch it can no longer roll back before the
 /// watchdog exits 6 for a state heal: time for a late certificate or our own
 /// block's finality to prove it wrong (Engine::needs_heal).
@@ -220,7 +229,48 @@ fn main() -> anyhow::Result<()> {
     // resync). Taking the engine lock waits for any in-flight block commit
     // to complete, after which the persisted state is self-consistent.
     ctrlc::set_handler(move || {
-        info!("shutting down: waiting for the in-flight block commit...");
+        info!("shutting down: producing no new block; waiting for our head to be finalized...");
+        DRAINING.store(true, Ordering::SeqCst);
+        // The block we may be broadcasting right now must reach the network first.
+        let mut waited_bc = std::time::Duration::ZERO;
+        while BROADCAST_PENDING.load(Ordering::SeqCst)
+            && waited_bc < std::time::Duration::from_secs(3)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            waited_bc += std::time::Duration::from_millis(50);
+        }
+        // Keep following the network until the head we would restart on is
+        // finalized (or the network rolled us onto the one it finalized).
+        if let Some(engine) = SHUTDOWN_ENGINE.get() {
+            let started = std::time::Instant::now();
+            let mut final_head = false;
+            while started.elapsed() < std::time::Duration::from_secs(DRAIN_MAX_SECS) {
+                final_head = match engine.lock() {
+                    Ok(e) => {
+                        let h = e.latest_height();
+                        h == 0
+                            || (e.finalized_hash(h).is_some()
+                                && e.block_by_number(h).map(|b| b.hash) == e.finalized_hash(h))
+                    }
+                    Err(_) => true,
+                };
+                if final_head {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            if final_head {
+                info!(
+                    waited_ms = started.elapsed().as_millis() as u64,
+                    "head finalized; stopping"
+                );
+            } else {
+                tracing::warn!(
+                    waited_secs = DRAIN_MAX_SECS,
+                    "head not finalized in time (network stalled?); stopping anyway"
+                );
+            }
+        }
         shutdown_clone.store(true, Ordering::SeqCst);
         if let Some(engine) = SHUTDOWN_ENGINE.get() {
             match engine.lock() {
@@ -775,6 +825,12 @@ fn main() -> anyhow::Result<()> {
                         loop {
                             if shutdown_producer.load(Ordering::SeqCst) {
                                 break;
+                            }
+                            // Draining for a shutdown: no new head (DRAINING); the
+                            // other threads keep following the network meanwhile.
+                            if DRAINING.load(Ordering::SeqCst) {
+                                std::thread::sleep(std::time::Duration::from_millis(200));
+                                continue;
                             }
                             // Only members of the current active set propose.
                             // Membership changes at epoch boundaries (open
