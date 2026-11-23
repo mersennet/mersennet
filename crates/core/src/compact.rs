@@ -9,7 +9,8 @@
 //! live records and cannot touch them.
 //!
 //! The fix is to copy what is live into a fresh directory: every tree, entry
-//! by entry. With `keep_blocks` the copy also drops the history a pruned node
+//! by entry, except the hash/tx lookup index, which the node rebuilds from
+//! its blocks in the background after it starts. With `keep_blocks` the copy also drops the history a pruned node
 //! would delete (blocks, their hash/tx index entries and state roots below the
 //! floor) and records the floor, so a validator goes straight to its pruned
 //! size without the hours-long first prune pass.
@@ -145,14 +146,15 @@ pub fn compact_state(
         // 100 GB tree kept everything it had visited reachable and the process
         // grew past 12 GB (OOM on the release test). Between chunks the new
         // store is flushed so its dirty pages can go too.
-        if label == "history_index" && prune_below > 0 {
-            // Hash and transaction lookups for the kept blocks: on an archive
-            // tens of millions of entries, nearly all below the floor, so not
-            // worth reading. With no `history_index_floor` (left out below)
-            // the node indexes the kept blocks itself in the background
-            // (Engine::backfill_history_index_step, ~1 min for 100,000).
+        if label == "history_index" {
+            // Hash and transaction lookups: on an archive tens of millions of
+            // small entries, the slowest tree to copy by far (and on a pruned
+            // copy nearly all below the floor). With no `history_index_floor`
+            // (left out below) the node rebuilds the index from its blocks in
+            // the background after it starts (Engine::backfill_history_index_step:
+            // seconds for 100,000 blocks), newest first, as after an upgrade.
             new.open_tree(&name)?;
-            progress("  history_index: left out; the node rebuilds it for the kept blocks after it starts");
+            progress("  history_index: left out; the node rebuilds it from its blocks after it starts");
             report.trees.push(TreeReport { name: label, ..Default::default() });
             continue;
         }
@@ -173,7 +175,7 @@ pub fn compact_state(
                 chunk_entries += 1;
                 chunk_bytes += k.len() + v.len();
                 last_key = Some(k.to_vec());
-                if prune_below > 0 && !keep_entry(&label, &k, &v, prune_below) {
+                if !keep_entry(&label, &k, &v, prune_below) {
                     tr.skipped += 1;
                 } else {
                     hasher.update(&k);
@@ -260,9 +262,10 @@ pub fn compact_state(
         }
         let to = new.open_tree(&name)?;
         let want = hasher.finalize();
-        if label == "height_meta" && prune_below > 0 {
-            // block_floor was inserted at its sorted position, not appended:
-            // compare the entry count here and the bytes key by key below.
+        if label == "height_meta" {
+            // block_floor may have been inserted at its sorted position and
+            // history_index_floor left out: compare the entry count here and
+            // the bytes key by key below.
             if count != tr.copied {
                 bail!("height_meta: {count} entries in the copy, {} expected", tr.copied);
             }
@@ -306,11 +309,12 @@ pub fn compact_state(
 /// Entries whose layout is not recognised are kept.
 fn keep_entry(tree: &str, k: &[u8], v: &[u8], floor: u64) -> bool {
     match tree {
+        // The backfill's marker: without it the node rebuilds the index.
+        "height_meta" => k != b"history_index_floor",
+        _ if floor == 0 => true,
         // `blocks` and `pruning` are read from the floor on; `history_index`
         // is not copied at all. This stays as a guard.
         "pruning" => decode_be_u64(k).is_none_or(|h| h >= floor),
-        // The backfill's marker: without it the node indexes the kept blocks.
-        "height_meta" => k != b"history_index_floor",
         "history_index" => match k.first() {
             Some(b'b') if k.len() == 33 => decode_be_u64(v).is_none_or(|h| h >= floor),
             Some(b't') if k.len() == 33 => decode_tx_location(v).is_none_or(|(h, _)| h >= floor),
@@ -377,7 +381,14 @@ mod tests {
         assert_eq!(r.block_floor, None);
         assert_eq!(r.other_files, vec!["mersennet_shielded.redb".to_string()]);
         let (a, b) = (sled::open(&src).unwrap(), sled::open(&dst).unwrap());
+        assert_eq!(b.open_tree("history_index").unwrap().len(), 0, "left for the node's backfill");
+        let meta = b.open_tree("height_meta").unwrap();
+        assert!(meta.get("history_index_floor").unwrap().is_none());
+        assert_eq!(meta.len() + 1, a.open_tree("height_meta").unwrap().len());
         for name in a.tree_names() {
+            if &name[..] == b"history_index" || &name[..] == b"height_meta" {
+                continue;
+            }
             assert_eq!(
                 a.open_tree(&name).unwrap().checksum().unwrap(),
                 b.open_tree(&name).unwrap().checksum().unwrap(),
