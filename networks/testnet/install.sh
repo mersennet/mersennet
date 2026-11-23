@@ -339,7 +339,7 @@ if [[ -x /usr/local/bin/mersennet-compact && -d "$DATA_DIR/data/state" ]]; then
     if [[ $COMPACT -eq 1 ]]; then cmode=(--full); [[ "${PRUNE:-}" =~ ^[1-9] ]] && cmode=(--force); else cmode=(); fi
     if [[ $COMPACT -eq 1 ]] || python3 -c 'import json,sys; sys.exit(0 if int((json.load(open(sys.argv[1])).get("engine") or {}).get("prune_keep_blocks") or 0) > 0 else 1)' /etc/mersennet/config.json 2>/dev/null; then
         echo "==> Checking whether the chain database needs compacting"
-        if /usr/local/bin/mersennet-compact "${cmode[@]}" "$DATA_DIR" | sed 's/^/    /'; then
+        if /usr/local/bin/mersennet-compact "${cmode[@]}" "$DATA_DIR" | sed -u 's/^/    /'; then
             [[ -d "$DATA_DIR/data/state.pre-compact" ]] && COMPACTED=1
         else
             echo "    compaction skipped; the node starts on its database as it was" >&2
@@ -354,7 +354,7 @@ if [[ $COMPACTED -eq 1 ]]; then
     # Waits for the node's state-root check on the new copy; on a failure it
     # puts the old copy back and restarts the node on it.
     echo "==> Confirming the node runs on the compacted database"
-    /usr/local/bin/mersennet-compact --finish "$DATA_DIR" | sed 's/^/    /' || true
+    /usr/local/bin/mersennet-compact --finish "$DATA_DIR" | sed -u 's/^/    /' || true
 fi
 if ! systemctl is-active --quiet mersennet; then
     echo "error: the service did not stay up. Last log lines:" >&2

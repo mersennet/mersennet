@@ -112,7 +112,7 @@ fi
 restart_unchanged() { [[ $RESTART -eq 1 ]] && systemctl start "$SERVICE" || true; }
 log "compacting $STATE ($((state_mb / 1024)) GB, $what); the node stays stopped meanwhile"
 rm -rf "$STATE.compact"
-if ! "$BIN" --compact-state "$STATE" "${args[@]}" 2>&1 | sed 's/^/    /'; then
+if ! "$BIN" --compact-state "$STATE" "${args[@]}" 2>&1 | sed -u 's/^/    /'; then
     rm -rf "$STATE.compact"
     log "compaction failed; the node's state is untouched" >&2
     restart_unchanged
