@@ -19,6 +19,7 @@
 //! returns, and keeps the old one until the node has started on the new one.
 
 use anyhow::{Context, Result, bail};
+use std::ops::Bound;
 use std::path::Path;
 
 use crate::state::{decode_be_u64, decode_tx_location};
@@ -47,6 +48,18 @@ pub struct CompactReport {
 
 const BATCH_ENTRIES: usize = 4096;
 const BATCH_BYTES: usize = 32 << 20;
+/// Entries / bytes read per iterator before a fresh one (see the copy loop).
+const CHUNK_ENTRIES: usize = 50_000;
+const CHUNK_BYTES: usize = 64 << 20;
+const REOPEN_BYTES: usize = 256 << 20;
+
+/// The process's peak resident memory (VmHWM), for the progress lines.
+fn peak_rss() -> String {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| s.lines().find(|l| l.starts_with("VmHWM")).map(|l| l[6..].trim().to_string()))
+        .unwrap_or_else(|| "?".into())
+}
 
 /// Copy the live contents of the sled store at `src` into a new store at
 /// `dst` (which must not exist). With `keep_blocks = Some(n)`, blocks below
@@ -65,20 +78,31 @@ pub fn compact_state(
     if !src.join("db").is_file() || !src.join("conf").is_file() {
         bail!("{} is not a sled state directory (no db/conf)", src.display());
     }
-    let cache = 256u64 << 20;
-    let old = sled::Config::new()
-        .path(src)
-        .cache_capacity(cache)
-        .open()
-        .with_context(|| format!("opening {} (is the node still running?)", src.display()))?;
-    let meta = old.open_tree("height_meta")?;
-    let latest = meta.get("latest_height")?.and_then(|v| decode_be_u64(&v));
-    let old_floor = meta.get("block_floor")?.and_then(|v| decode_be_u64(&v));
-    if meta.get("commit_in_progress")?.is_some() {
-        // Copied as-is; the node finishes or repairs the commit at startup
-        // exactly as it would have on the old directory.
-        progress("note: an interrupted-commit marker is set; it is copied unchanged");
-    }
+    let cache = 64u64 << 20;
+    // sled 0.34 keeps what it has read reachable whatever its cache budget
+    // (~0.7 bytes of memory per byte read, measured), so the old store is
+    // closed and opened again every REOPEN_BYTES (MERSENNET_COMPACT_REOPEN_MB
+    // overrides it): on a 2.4 GB test store the peak fell from 3.8 to 1.3 GB.
+    let open_old = || {
+        sled::Config::new()
+            .path(src)
+            .cache_capacity(cache)
+            .open()
+            .with_context(|| format!("opening {} (is the node still running?)", src.display()))
+    };
+    let mut old = open_old()?;
+    let (latest, old_floor) = {
+        let meta = old.open_tree("height_meta")?;
+        if meta.get("commit_in_progress")?.is_some() {
+            // Copied as-is; the node finishes or repairs the commit at startup
+            // exactly as it would have on the old directory.
+            progress("note: an interrupted-commit marker is set; it is copied unchanged");
+        }
+        (
+            meta.get("latest_height")?.and_then(|v| decode_be_u64(&v)),
+            meta.get("block_floor")?.and_then(|v| decode_be_u64(&v)),
+        )
+    };
     let floor = match (keep_blocks, latest) {
         (Some(keep), Some(h)) => {
             let keep = keep.max(crate::engine::MIN_PRUNE_KEEP_BLOCKS);
@@ -89,6 +113,11 @@ pub fn compact_state(
     };
     let prune_below = if keep_blocks.is_some() { floor.unwrap_or(0) } else { 0 };
 
+    let reopen_bytes = std::env::var("MERSENNET_COMPACT_REOPEN_MB")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .map(|mb| mb << 20)
+        .unwrap_or(REOPEN_BYTES);
     let new = sled::Config::new()
         .path(dst)
         .cache_capacity(cache)
@@ -97,40 +126,73 @@ pub fn compact_state(
         .with_context(|| format!("creating {}", dst.display()))?;
 
     let mut report = CompactReport { latest_height: latest, block_floor: floor, ..Default::default() };
+    let mut read_since_open = 0usize;
     for name in old.tree_names() {
         let label = String::from_utf8_lossy(&name).into_owned();
-        let from = old.open_tree(&name)?;
         let to = new.open_tree(&name)?;
         let mut hasher = crc32fast::Hasher::new();
         let mut tr = TreeReport { name: label.clone(), ..Default::default() };
         let mut batch = sled::Batch::default();
         let (mut n, mut bytes) = (0usize, 0usize);
-        let iter = if label == "blocks" && prune_below > 0 {
-            from.range(prune_below.to_be_bytes()..)
+        // Read in chunks, each with a fresh iterator: a single iterator over a
+        // 100 GB tree kept everything it had visited reachable and the process
+        // grew past 12 GB (OOM on the release test). Between chunks the new
+        // store is flushed so its dirty pages can go too.
+        let mut lower: Bound<Vec<u8>> = if label == "blocks" && prune_below > 0 {
+            Bound::Included(prune_below.to_be_bytes().to_vec())
         } else {
-            from.iter()
+            Bound::Unbounded
         };
         let mut last_note = std::time::Instant::now();
-        for item in iter {
-            let (k, v) = item?;
-            if prune_below > 0 && !keep_entry(&label, &k, &v, prune_below) {
-                tr.skipped += 1;
-                continue;
-            }
-            hasher.update(&k);
-            hasher.update(&v);
-            bytes += k.len() + v.len();
-            batch.insert(k, v);
-            n += 1;
-            tr.copied += 1;
-            if n >= BATCH_ENTRIES || bytes >= BATCH_BYTES {
-                to.apply_batch(std::mem::take(&mut batch))?;
-                n = 0;
-                bytes = 0;
-                if last_note.elapsed().as_secs() >= 30 {
-                    progress(&format!("  {label}: {} entries copied", tr.copied));
-                    last_note = std::time::Instant::now();
+        loop {
+            let (mut chunk_entries, mut chunk_bytes) = (0usize, 0usize);
+            let mut last_key: Option<Vec<u8>> = None;
+            let mut exhausted = true;
+            let from = old.open_tree(&name)?;
+            for item in from.range::<Vec<u8>, _>((lower.clone(), Bound::Unbounded)) {
+                let (k, v) = item?;
+                chunk_entries += 1;
+                chunk_bytes += k.len() + v.len();
+                last_key = Some(k.to_vec());
+                if prune_below > 0 && !keep_entry(&label, &k, &v, prune_below) {
+                    tr.skipped += 1;
+                } else {
+                    hasher.update(&k);
+                    hasher.update(&v);
+                    bytes += k.len() + v.len();
+                    batch.insert(k, v);
+                    n += 1;
+                    tr.copied += 1;
+                    if n >= BATCH_ENTRIES || bytes >= BATCH_BYTES {
+                        to.apply_batch(std::mem::take(&mut batch))?;
+                        n = 0;
+                        bytes = 0;
+                    }
                 }
+                if chunk_entries >= CHUNK_ENTRIES || chunk_bytes >= CHUNK_BYTES {
+                    exhausted = false;
+                    break;
+                }
+            }
+            drop(from);
+            to.apply_batch(std::mem::take(&mut batch))?;
+            n = 0;
+            bytes = 0;
+            new.flush()?;
+            read_since_open += chunk_bytes;
+            if read_since_open >= reopen_bytes {
+                // Close first: sled's file lock refuses a second opener.
+                drop(old);
+                old = open_old()?;
+                read_since_open = 0;
+            }
+            if last_note.elapsed().as_secs() >= 30 {
+                progress(&format!("  {label}: {} entries copied (memory peak {})", tr.copied, peak_rss()));
+                last_note = std::time::Instant::now();
+            }
+            match last_key {
+                Some(k) if !exhausted => lower = Bound::Excluded(k),
+                _ => break,
             }
         }
         to.apply_batch(batch)?;
@@ -146,11 +208,25 @@ pub fn compact_state(
         // Read the new tree back: what sled stores must be what we read.
         let mut check = crc32fast::Hasher::new();
         let mut count = 0u64;
-        for item in to.iter() {
-            let (k, v) = item?;
-            check.update(&k);
-            check.update(&v);
-            count += 1;
+        let mut lower: Bound<Vec<u8>> = Bound::Unbounded;
+        loop {
+            let (mut chunk, mut last_key, mut exhausted) = (0usize, None, true);
+            for item in to.range::<Vec<u8>, _>((lower.clone(), Bound::Unbounded)) {
+                let (k, v) = item?;
+                check.update(&k);
+                check.update(&v);
+                count += 1;
+                chunk += k.len() + v.len();
+                last_key = Some(k.to_vec());
+                if chunk >= CHUNK_BYTES {
+                    exhausted = false;
+                    break;
+                }
+            }
+            match last_key {
+                Some(k) if !exhausted => lower = Bound::Excluded(k),
+                _ => break,
+            }
         }
         let want = hasher.finalize();
         if label == "height_meta" && prune_below > 0 {
@@ -159,7 +235,7 @@ pub fn compact_state(
             if count != tr.copied {
                 bail!("height_meta: {count} entries in the copy, {} expected", tr.copied);
             }
-            for item in from.iter() {
+            for item in old.open_tree(&name)?.iter() {
                 let (k, v) = item?;
                 if &k[..] == b"block_floor" {
                     continue;
@@ -172,9 +248,10 @@ pub fn compact_state(
             bail!("{label}: the copy does not match ({count} entries read back, {} written)", tr.copied);
         }
         progress(&format!(
-            "  {label}: {} entries{}",
+            "  {label}: {} entries{} (memory peak {})",
             tr.copied,
-            if tr.skipped > 0 { format!(", {} below the floor left out", tr.skipped) } else { String::new() }
+            if tr.skipped > 0 { format!(", {} below the floor left out", tr.skipped) } else { String::new() },
+            peak_rss()
         ));
         report.trees.push(tr);
     }

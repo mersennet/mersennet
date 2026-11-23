@@ -3,11 +3,14 @@
 # nothing. The database (sled) leaves records it freed on disk when the node
 # restarts at the wrong moment; over months that is about half of an archive
 # node's data/state, and almost all of a pruned node's. This rewrites the
-# database with only its live data. The node must be stopped.
+# database with only its live data, with the node stopped.
 #
-#   mersennet-compact [DATA_DIR]            before the node starts: compacts a
-#                                           pruned node whose state is larger
-#                                           than its history needs
+#   mersennet-compact [DATA_DIR]            compacts a pruned node whose state
+#                                           is 8 GB or more above what its
+#                                           history needs. Run by hand on a
+#                                           running node, it stops it, compacts
+#                                           (about a minute on a pruned node),
+#                                           starts it and confirms the new copy
 #   mersennet-compact --force [DATA_DIR]    compact whatever the size
 #   mersennet-compact --full [DATA_DIR]     an archive node (no pruning): copy
 #                                           every block, drop only the dead space
@@ -69,10 +72,6 @@ if [[ ! -f "$STATE/db" || ! -f "$STATE/conf" ]]; then
     log "$STATE is not a sled database (redb compacts itself): nothing to do"
     exit 0
 fi
-if systemctl is-active --quiet "$SERVICE"; then
-    log "error: $SERVICE is running; stop it first (sudo systemctl stop $SERVICE)" >&2
-    exit 1
-fi
 if [[ -d "$OLD" ]]; then
     log "error: $OLD exists from an earlier run; once the node runs fine on $STATE, delete it (or run mersennet-compact --finish)" >&2
     exit 1
@@ -81,10 +80,11 @@ keep="$(python3 -c 'import json,sys; print(int((json.load(open(sys.argv[1])).get
 state_mb=$(du -sm "$STATE" | cut -f1)
 free_mb=$(df -Pm "$STATE" | awk 'NR==2 {print $4}')
 if (( keep > 0 )) && [[ $MODE != full ]]; then
-    # A pruned node needs about 3 GB plus ~25 KB a kept block; above twice
-    # that plus 16 GB the dead space is worth a rewrite.
+    # A pruned node needs about 3 GB plus ~25 KB a kept block. It gathers dead
+    # space again at ~1.3 GB a day (sled; measured on 4.27M blocks), so 8 GB
+    # above that is worth a rewrite (about a minute at that size).
     need_mb=$(( 3072 + keep / 40 ))
-    if [[ $MODE == auto ]] && (( state_mb < 2 * need_mb + 16384 )); then
+    if [[ $MODE == auto ]] && (( state_mb < need_mb + 8192 )); then
         log "state is $((state_mb / 1024)) GB, as expected for $keep blocks: nothing to compact"
         exit 0
     fi
@@ -100,17 +100,32 @@ if (( free_mb < need_mb + 2048 )); then
     log "not enough free disk: $((free_mb / 1024)) GB free, the compacted copy needs up to $(( (need_mb + 2048) / 1024 + 1 )) GB. Nothing changed." >&2
     exit 1
 fi
+# Run by hand on a running node: stop it (it finishes its head block first),
+# compact, start it again and confirm. The installer and the heal call this
+# with the node already stopped.
+RESTART=0
+if systemctl is-active --quiet "$SERVICE"; then
+    log "stopping $SERVICE for the rewrite; it starts again afterwards"
+    systemctl stop "$SERVICE"
+    RESTART=1
+fi
+restart_unchanged() { [[ $RESTART -eq 1 ]] && systemctl start "$SERVICE" || true; }
 log "compacting $STATE ($((state_mb / 1024)) GB, $what); the node stays stopped meanwhile"
 rm -rf "$STATE.compact"
 if ! "$BIN" --compact-state "$STATE" "${args[@]}" 2>&1 | sed 's/^/    /'; then
     rm -rf "$STATE.compact"
     log "compaction failed; the node's state is untouched" >&2
+    restart_unchanged
     exit 1
 fi
-[[ -f "$STATE.compact/db" ]] || { log "compaction left no database; the node's state is untouched" >&2; exit 1; }
+[[ -f "$STATE.compact/db" ]] || { log "compaction left no database; the node's state is untouched" >&2; restart_unchanged; exit 1; }
 owner="$(stat -c %U:%G "$STATE")"
 mv "$STATE" "$OLD"
 mv "$STATE.compact" "$STATE"
 chown -R "$owner" "$STATE"
 date -u '+%Y-%m-%d %H:%M:%S UTC' > "$OLD.started"
 log "done: $((state_mb / 1024)) GB -> $(( $(du -sm "$STATE" | cut -f1) / 1024 )) GB. The old copy stays at $OLD until the node has started on the new one (mersennet-compact --finish)"
+if [[ $RESTART -eq 1 ]]; then
+    systemctl start "$SERVICE"
+    exec "$0" --finish "$DATA_DIR"
+fi
