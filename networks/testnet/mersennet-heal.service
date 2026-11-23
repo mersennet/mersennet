@@ -1,5 +1,5 @@
 [Unit]
-Description=Mersennet state heal (runs when the node exits 6: on a branch it can no longer roll back)
+Description=Mersennet state heal (runs when the node exits 6, on a branch it can no longer roll back, or 78, an interrupted commit)
 Documentation=https://docs.mersennet.com
 
 [Service]

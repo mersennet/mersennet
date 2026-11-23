@@ -7,8 +7,11 @@
 #
 #   mersennet-heal [DATA_DIR]      # default /var/lib/mersennet
 #
-# Only acts when the node's last exit status really is 6: a crash loop or a
-# config error also fails the unit, and must never cost the chain state.
+# Also on exit 78: the node found an interrupted block commit at start (it was
+# killed in the middle of writing a block), so its state on disk is
+# inconsistent; the documented fix was a manual --reset-state.
+# Only acts on those two exit statuses: a crash loop or a config error also
+# fails the unit, and must never cost the chain state.
 # Keys, node identity and voter_last_voted (outside data/state) are kept.
 #
 # MERSENNET_HEAL_MODE=snapshot (default): download the latest published
@@ -33,10 +36,11 @@ start_node() { systemctl reset-failed "$SERVICE" 2>/dev/null || true; systemctl 
 heal_failed() { log "$1: starting the node as it is; the next attempt is in $((RETRY_AFTER / 60)) min"; touch "$FAILED_MARK"; start_node; exit 1; }
 
 status="$(systemctl show -p ExecMainStatus --value "$SERVICE" 2>/dev/null || echo "")"
-if [[ "$status" != 6 ]]; then
-    log "the node's last exit status is '${status:-none}', not 6 (fork beyond recovery): nothing to heal"
+if [[ "$status" != 6 && "$status" != 78 ]]; then
+    log "the node's last exit status is '${status:-none}', not 6 (fork beyond recovery) or 78 (interrupted commit): nothing to heal"
     exit 0
 fi
+log "the node exited $status ($([[ $status == 6 ]] && echo "on a branch it can no longer roll back" || echo "an interrupted block commit left its state inconsistent")): healing"
 if systemctl is-active --quiet "$SERVICE"; then
     log "$SERVICE is running again: nothing to heal"
     exit 0
