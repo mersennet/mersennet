@@ -227,6 +227,12 @@ pub struct UdpGossip {
     seen_order: VecDeque<String>,
     failure_counts: HashMap<SocketAddr, u32>,
     backoff_until: HashMap<SocketAddr, Instant>,
+    /// Configured (bootstrap) peers. Never pruned or evicted: after an outage
+    /// longer than the peer TTL (a network partition, a peer's long restart)
+    /// both sides had dropped each other, nobody pinged anybody any more, and
+    /// gossip (votes included) never resumed while TCP block-sync went on,
+    /// so the chain moved without finality (devnet split test, 23 Nov 2026).
+    configured: std::collections::HashSet<SocketAddr>,
     config: GossipConfig,
 }
 
@@ -268,6 +274,7 @@ impl UdpGossip {
             seen_order: VecDeque::new(),
             failure_counts: HashMap::new(),
             backoff_until: HashMap::new(),
+            configured: std::collections::HashSet::new(),
             config,
         })
     }
@@ -297,6 +304,7 @@ impl UdpGossip {
         if !is_routable_peer(&peer, true) || self.is_self(&peer) {
             return Ok(());
         }
+        self.configured.insert(peer);
         self.insert_peer_unchecked(peer);
         Ok(())
     }
@@ -403,10 +411,12 @@ impl UdpGossip {
         let ttl = Duration::from_secs(self.config.peer_ttl_secs);
         let now = Instant::now();
         self.peers.retain(|peer| {
-            self.last_seen
-                .get(peer)
-                .map(|seen| now.duration_since(*seen) <= ttl)
-                .unwrap_or(false)
+            self.configured.contains(peer)
+                || self
+                    .last_seen
+                    .get(peer)
+                    .map(|seen| now.duration_since(*seen) <= ttl)
+                    .unwrap_or(false)
         });
         self.last_seen.retain(|peer, _| self.peers.contains(peer));
         self.first_seen.retain(|peer, _| self.peers.contains(peer));
@@ -530,7 +540,7 @@ impl UdpGossip {
             let victim = self
                 .peers
                 .iter()
-                .filter(|p| !self.last_heard.contains_key(p))
+                .filter(|p| !self.last_heard.contains_key(p) && !self.configured.contains(p))
                 .min_by_key(|p| self.last_seen.get(p).copied())
                 .copied();
             match victim {
@@ -798,6 +808,29 @@ impl TcpSync {
 #[cfg(test)]
 mod wire_format_tests {
     use super::*;
+
+    #[test]
+    fn configured_peers_survive_an_outage_longer_than_the_ttl() {
+        let config = GossipConfig {
+            peer_ttl_secs: 0,
+            ..GossipConfig::default()
+        };
+        let mut gossip = UdpGossip::bind_with_config("127.0.0.1:0", config).unwrap();
+        gossip.add_peer("127.0.0.1:39201").unwrap();
+        let learned: SocketAddr = "127.0.0.1:39202".parse().unwrap();
+        gossip.insert_peer_unchecked(learned);
+        assert_eq!(gossip.peers_snapshot().len(), 2);
+        std::thread::sleep(Duration::from_millis(1100));
+        gossip.prune_peers();
+        // The learned peer ages out; the configured one stays a gossip
+        // target, so pings and votes reach it again once it is reachable.
+        let left: Vec<String> = gossip
+            .peers_snapshot()
+            .into_iter()
+            .map(|p| p.addr)
+            .collect();
+        assert_eq!(left, vec!["127.0.0.1:39201".to_string()]);
+    }
 
     #[test]
     fn bootstrap_peers_may_be_host_names() {

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Mersennet testnet full-node installer.
 #
-#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET] [--reset-state]
+#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET] [--reset-state] [--prune]
 #
 #   --data-dir DIR   Put chain data and the node key under DIR instead of
 #                    /var/lib/mersennet (e.g. a mounted block volume:
@@ -26,6 +26,12 @@ set -euo pipefail
 #                    the node is forked or logs "state root" differences —
 #                    typically a node that ran an old build through a
 #                    consensus upgrade. One minute to be back in sync.
+#   --prune          Keep only the most recent 100,000 blocks (~2.3 days) and
+#                    delete older ones in the background: a validator needs no
+#                    history, and the disk drops from ~130 GB to a few GB.
+#                    --prune=N keeps N (at least 10,000); --no-prune keeps
+#                    everything again. Kept across upgrades. Not for nodes that
+#                    serve history (explorers, indexers, public RPC).
 #
 # Works from either layout:
 #   1. The release bundle (https://mersennet.com/downloads/): binary, config
@@ -49,6 +55,7 @@ RPC_ADDR=""
 FROM_SNAPSHOT=1
 RESET_STATE=0
 OPERATOR=""
+PRUNE=""
 SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -59,7 +66,10 @@ while [[ $# -gt 0 ]]; do
         --operator) OPERATOR="${2:?--operator needs a 0x address}"; shift 2 ;;
         --reset-state) RESET_STATE=1; shift ;;
         --operator=*) OPERATOR="${1#*=}"; shift ;;
-        -h|--help) sed -n '3,22p' "$0"; exit 0 ;;
+        --prune) PRUNE=100000; shift ;;
+        --prune=*) PRUNE="${1#*=}"; shift ;;
+        --no-prune) PRUNE=0; shift ;;
+        -h|--help) sed -n '3,35p' "$0"; exit 0 ;;
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
     esac
 done
@@ -182,6 +192,8 @@ canon = json.load(open(sys.argv[1]))
 mine = json.load(open(sys.argv[2]))
 keep_top = {"rpc", "ws"}
 keep_p2p = {"listen", "operator_address", "node_key_path", "peer_store_path"}
+# Node-local engine settings (history pruning is this node's choice).
+keep_engine = {"prune_keep_blocks"}
 merged = {k: v for k, v in canon.items() if k not in keep_top and k != "p2p"}
 for k in keep_top:
     if k in mine:
@@ -193,6 +205,11 @@ for k in keep_p2p:
     if k in mine.get("p2p", {}):
         p2p[k] = mine["p2p"][k]
 merged["p2p"] = p2p
+engine = dict(merged.get("engine", {}))
+for k in keep_engine:
+    if k in mine.get("engine", {}):
+        engine[k] = mine["engine"][k]
+merged["engine"] = engine
 json.dump(merged, open(sys.argv[2], "w"), indent=2)
 PY
 else
@@ -201,6 +218,21 @@ fi
 if [[ -n "$RPC_ADDR" ]]; then
     echo "==> Exposing JSON-RPC on $RPC_ADDR (was 127.0.0.1:8545)"
     sed -i "s#\"addr\": \"127.0.0.1:8545\"#\"addr\": \"$RPC_ADDR\"#" /etc/mersennet/config.json
+fi
+if [[ -n "$PRUNE" ]]; then
+    [[ "$PRUNE" =~ ^[0-9]+$ ]] || { echo "error: --prune=N needs a number of blocks" >&2; exit 1; }
+    if [[ "$PRUNE" -eq 0 ]]; then
+        echo "==> History pruning off: this node keeps every block (archive)"
+    else
+        echo "==> History pruning on: keeping the most recent $PRUNE blocks (older ones are deleted in the background)"
+    fi
+    python3 - "$PRUNE" <<'PY'
+import json, sys
+p = "/etc/mersennet/config.json"
+cfg = json.load(open(p))
+cfg.setdefault("engine", {})["prune_keep_blocks"] = int(sys.argv[1])
+json.dump(cfg, open(p, "w"), indent=2)
+PY
 fi
 # Operator already recorded by an earlier install (kept across upgrades): the
 # closing message must not tell such an operator to run the command again.
