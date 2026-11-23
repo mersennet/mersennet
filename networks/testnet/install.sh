@@ -27,11 +27,11 @@ set -euo pipefail
 #                    typically a node that ran an old build through a
 #                    consensus upgrade. One minute to be back in sync.
 #   --prune          Keep only the most recent 100,000 blocks (~2.3 days): a
-#                    validator needs no history. The first time, the installer
-#                    rewrites the database with only that (mersennet-compact,
-#                    about 10 minutes with the node stopped) and the disk
-#                    drops from ~130 GB to ~3 GB; afterwards older blocks are
-#                    deleted in the background as new ones arrive.
+#                    validator needs no history. The installer rewrites the
+#                    database with only that (mersennet-compact, under a
+#                    minute with the node stopped) and the disk drops from
+#                    ~130 GB to ~3 GB; afterwards older blocks are deleted in
+#                    the background as new ones arrive.
 #                    --prune=N keeps N (at least 10,000); --no-prune keeps
 #                    everything again. Kept across upgrades. Not for nodes that
 #                    serve history (explorers, indexers, public RPC).
