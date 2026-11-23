@@ -92,6 +92,10 @@ static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::Onc
 /// watchdog restores a snapshot (validator 1 on the 25 Sep roll: benched for
 /// the rest of the epoch).
 static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
+/// How long a node stays on a branch it can no longer roll back before the
+/// watchdog exits 6 for a state heal: time for a late certificate or our own
+/// block's finality to prove it wrong (Engine::needs_heal).
+const HEAL_AFTER_SECS: u64 = 120;
 
 /// Shortens the wait after the parent block by how far recent intervals
 /// overshoot the block time: a full block time after the parent arrives still
@@ -1205,6 +1209,7 @@ fn main() -> anyhow::Result<()> {
                 let net_voter = network.clone();
                 let shutdown_voter = Arc::clone(&shutdown);
                 let voter_key = identity.signing_key.clone();
+                let voter_addr = mersennet::crypto::address_from_signing_key(&voter_key);
                 // The highest height this key has voted for survives restarts
                 // (and state heals, which only swap the state directory): a
                 // voter that came back with last_voted = 0 re-voted its last
@@ -1269,11 +1274,24 @@ fn main() -> anyhow::Result<()> {
                             for (height, block_hash) in to_vote {
                                 let (r, s, y) =
                                     mersennet::crypto::sign_vote(height, block_hash, &voter_key);
-                                // Record our own vote locally too.
+                                // Record our own vote locally too, with its
+                                // signature when it is the validator's key, so
+                                // a quorum we complete is kept as a certificate.
                                 if let Ok(mut e) = eng_voter.lock() {
                                     let me = e.local_validator();
                                     if let Some(me) = me {
-                                        e.record_finality_vote(height, block_hash, me);
+                                        if voter_addr == me {
+                                            let sig = mersennet::finality_cert::VoteSig {
+                                                r,
+                                                s,
+                                                y_parity: y,
+                                            };
+                                            e.record_signed_finality_vote(
+                                                height, block_hash, me, sig,
+                                            );
+                                        } else {
+                                            e.record_finality_vote(height, block_hash, me);
+                                        }
                                     }
                                 }
                                 if let Err(err) =
@@ -1385,8 +1403,36 @@ fn main() -> anyhow::Result<()> {
                     })?;
             }
 
+            // Fork recovery, tie-break: two blocks at an unfinalized height for
+            // longer than three block times (a 2-2 split, or a failover race whose
+            // votes split) and every node follows the lower hash; finality on the
+            // next block then settles it (Engine::resolve_unfinalized_split).
+            {
+                let eng = engine.clone();
+                let shutdown_tb = Arc::clone(&shutdown);
+                let grace = std::time::Duration::from_millis(
+                    app_config.p2p.block_time_ms.saturating_mul(3).max(3_000),
+                );
+                std::thread::Builder::new()
+                    .name("fork-tiebreak".into())
+                    .spawn(move || {
+                        loop {
+                            if shutdown_tb.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            let Ok(mut e) = eng.lock() else { break };
+                            if let Some((height, from, to)) = e.resolve_unfinalized_split(grace) {
+                                tracing::warn!(height, %from, %to, "unfinalized split resolved by the tie-break");
+                            }
+                        }
+                    })?;
+            }
+
             // Liveness watchdog (see WatchdogConfig). Exit codes: 3 = head stalled
-            // while the network moved on, 4 = engine lock unobtainable.
+            // while the network moved on, 4 = engine lock unobtainable, 6 = on a
+            // branch the node can no longer roll back (fork recovery): the service
+            // restores a snapshot instead of restarting into the same state.
             if app_config.watchdog.enabled {
                 let eng = engine.clone();
                 let shutdown_wd = Arc::clone(&shutdown);
@@ -1423,6 +1469,15 @@ fn main() -> anyhow::Result<()> {
                             while started.elapsed() < std::time::Duration::from_secs(10) {
                                 match eng.try_lock() {
                                     Ok(e) => {
+                                        if e.needs_heal(HEAL_AFTER_SECS) {
+                                            tracing::error!(
+                                                head = e.latest_height(),
+                                                "FORK beyond recovery: the network finalized (or the tie-break chose) another block below this node's rollback window — exiting with code 6 so the service restores a snapshot"
+                                            );
+                                            let _ = e.flush_state();
+                                            arm_exit_deadline();
+                                            std::process::exit(6);
+                                        }
                                         snapshot = Some((e.latest_height(), e.highest_observed_height()));
                                         break;
                                     }

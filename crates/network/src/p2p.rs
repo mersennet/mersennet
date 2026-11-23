@@ -550,6 +550,61 @@ fn sync_blocks_from(eng: &Engine, from: u64) -> Vec<WireBlock> {
         .collect()
 }
 
+/// The answer to a `cert_request` (8 bytes: the height): that height's
+/// finality certificate, empty when this node does not hold one; `None` for
+/// a malformed request (no answer at all).
+fn certificate_answer(eng: &Engine, request: &[u8]) -> Option<Vec<u8>> {
+    let height = u64::from_be_bytes(request.try_into().ok()?);
+    Some(
+        eng.finality_certificate(height)
+            .map(|c| c.to_bytes())
+            .unwrap_or_default(),
+    )
+}
+
+/// Ask peers, one after another, for the finality certificate of `height`;
+/// the first answer that is a certificate for that height is returned. It is
+/// not trusted here: `Engine::apply_finality_certificate` checks every
+/// signature and the stake behind them.
+pub fn fetch_certificate(
+    peers: &[String],
+    height: u64,
+    timeout: Duration,
+) -> Option<mersennet::finality_cert::FinalityCertificate> {
+    for peer in peers {
+        let Ok(socket) = derive_tcp_addr(peer).parse::<std::net::SocketAddr>() else {
+            continue;
+        };
+        let Ok(mut stream) = std::net::TcpStream::connect_timeout(&socket, timeout) else {
+            continue;
+        };
+        let _ = stream.set_read_timeout(Some(timeout));
+        let _ = stream.set_write_timeout(Some(timeout));
+        let request = crate::net_transport::GossipPacket {
+            topic: "cert_request".to_string(),
+            data: height.to_be_bytes().to_vec(),
+            id: String::new(),
+            ttl: 0,
+        };
+        if TcpSync::send_packet(&mut stream, &request).is_err() {
+            continue;
+        }
+        let Ok(Some(response)) = TcpSync::recv_packet_limited(&mut stream, 1024 * 1024) else {
+            continue;
+        };
+        if response.topic != "cert_response" {
+            continue;
+        }
+        if let Some(cert) =
+            mersennet::finality_cert::FinalityCertificate::from_bytes(&response.data)
+            && cert.height == height
+        {
+            return Some(cert);
+        }
+    }
+    None
+}
+
 fn ask_for_blocks_from(addr: &str, height: u64, timeout: Duration) -> Option<Vec<Block>> {
     let socket: std::net::SocketAddr = addr.parse().ok()?;
     let mut stream = std::net::TcpStream::connect_timeout(&socket, timeout).ok()?;
@@ -742,6 +797,27 @@ impl NetworkNode {
                                         in_flight_worker.fetch_sub(1, Ordering::SeqCst);
                                         return;
                                     }
+                                    if request.topic == "cert_request" {
+                                        // Fork recovery: the finality certificate
+                                        // (signed votes) of one height, for a peer
+                                        // that missed those votes. Empty when we do
+                                        // not hold one; old nodes do not answer.
+                                        if let Some(data) = engine
+                                            .lock()
+                                            .ok()
+                                            .and_then(|e| certificate_answer(&e, &request.data))
+                                        {
+                                            let pkt = crate::net_transport::GossipPacket {
+                                                topic: "cert_response".to_string(),
+                                                data,
+                                                id: String::new(),
+                                                ttl: 0,
+                                            };
+                                            let _ = TcpSync::send_packet(&mut stream, &pkt);
+                                        }
+                                        in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                        return;
+                                    }
                                     if request.topic == "tx_push" {
                                         // Large transaction delivered peer-to-peer
                                         // (see broadcast_tx_with_raw): a contract
@@ -875,6 +951,7 @@ impl NetworkNode {
                     std::thread::sleep(Duration::from_secs(2));
                     let mut full_batch;
                     let mut round: usize = 0;
+                    let mut last_cert_try: Option<std::time::Instant> = None;
                     while running.load(Ordering::SeqCst) {
                         let from = match engine.lock() {
                             Ok(eng) => eng.latest_height().saturating_add(1),
@@ -946,6 +1023,27 @@ impl NetworkNode {
                             // at wire speed instead of one batch per tick.
                             full_batch = blocks.len() >= 256;
                             break;
+                        }
+                        // Fork recovery: a block did not extend our head and we
+                        // never saw the votes that finalized it. Ask peers for
+                        // its certificate; once applied, the next delivery of
+                        // that block rolls us back onto the finalized chain.
+                        let wanted = engine.lock().ok().and_then(|e| e.wanted_certificate());
+                        if let Some(height) = wanted
+                            && last_cert_try.is_none_or(|t| t.elapsed() >= Duration::from_secs(8))
+                        {
+                            last_cert_try = Some(std::time::Instant::now());
+                            match fetch_certificate(&peers, height, Duration::from_secs(5)) {
+                                Some(cert) => {
+                                    let outcome = engine
+                                        .lock()
+                                        .ok()
+                                        .map(|mut e| e.apply_finality_certificate(&cert));
+                                    info!(height, outcome = ?outcome, "finality certificate fetched from a peer");
+                                    full_batch = true; // re-request the block at once
+                                }
+                                None => warn!(height, "no peer had a finality certificate for this height yet"),
+                            }
                         }
                         if !full_batch {
                             std::thread::sleep(Duration::from_secs(4));
@@ -1156,7 +1254,13 @@ fn handle_vote(engine: &Arc<Mutex<Engine>>, wire: &WireVote) {
         Err(_) => return,
     };
     if let Ok(mut eng) = engine.lock() {
-        eng.record_finality_vote(wire.height, block_hash, signer);
+        // With its signature, so a quorum is kept as a finality certificate.
+        let sig = mersennet::finality_cert::VoteSig {
+            r,
+            s,
+            y_parity: wire.y_parity,
+        };
+        eng.record_signed_finality_vote(wire.height, block_hash, signer, sig);
     }
 }
 
@@ -1271,6 +1375,106 @@ mod tests {
             probe_peers(&peers, 1, Duration::from_secs(2)),
             HeightProbe::NotFound
         ));
+    }
+
+    /// A peer's sync port that answers one `cert_request` with `answer`, or
+    /// never answers (an old node) when `answer` is `None`.
+    fn fake_cert_peer(answer: Option<Vec<u8>>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let _ = TcpSync::recv_packet(&mut stream);
+            let Some(data) = answer else {
+                std::thread::sleep(Duration::from_secs(5));
+                return;
+            };
+            let response = crate::net_transport::GossipPacket {
+                topic: "cert_response".to_string(),
+                data,
+                id: String::new(),
+                ttl: 0,
+            };
+            let _ = TcpSync::send_packet(&mut stream, &response);
+        });
+        addr
+    }
+
+    #[test]
+    fn a_finality_certificate_is_served_fetched_and_applied() {
+        use mersennet::engine::CertificateOutcome;
+        use mersennet::finality_cert::VoteSig;
+        let key = |i: u8| k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap();
+        let addr = |i: u8| mersennet::crypto::address_from_signing_key(&key(i));
+        let node = |dir: &std::path::Path| {
+            let mut e = Engine::new_with_backend(131071, dir, "sled");
+            for i in 1..=4u8 {
+                e.add_validator(addr(i), U256::from(1_000_000u64)).unwrap();
+            }
+            e
+        };
+        let (da, db) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut a = node(da.path());
+        let mut b = node(db.path());
+        let leader = a.leader_for_height(1, 0).unwrap();
+        a.set_local_validator(leader);
+        let block = a.execute_block().unwrap();
+        for i in 1..=3u8 {
+            let (r, s, y_parity) = mersennet::crypto::sign_vote(1, block.hash, &key(i));
+            a.record_signed_finality_vote(1, block.hash, addr(i), VoteSig { r, s, y_parity });
+        }
+        assert_eq!(a.finalized_hash(1), Some(block.hash));
+
+        // What the server answers.
+        let held = certificate_answer(&a, &1u64.to_be_bytes()).unwrap();
+        assert!(!held.is_empty());
+        assert_eq!(
+            certificate_answer(&a, &2u64.to_be_bytes()),
+            Some(Vec::new()),
+            "not held: empty"
+        );
+        assert_eq!(
+            certificate_answer(&a, &[1, 2, 3]),
+            None,
+            "malformed: no answer"
+        );
+
+        // An old node never answers, a node without it answers empty, the
+        // third has it: the fetch moves on and returns it.
+        let peers = [
+            fake_cert_peer(None),
+            fake_cert_peer(Some(Vec::new())),
+            fake_cert_peer(Some(held)),
+        ];
+        let cert = fetch_certificate(&peers, 1, Duration::from_millis(500))
+            .expect("found on the third peer");
+        assert_eq!(cert.block_hash, block.hash);
+        assert!(
+            fetch_certificate(
+                &[fake_cert_peer(Some(Vec::new()))],
+                1,
+                Duration::from_millis(500)
+            )
+            .is_none()
+        );
+        // A certificate for another height is not taken for this one.
+        let wrong = certificate_answer(&a, &1u64.to_be_bytes()).unwrap();
+        assert!(
+            fetch_certificate(
+                &[fake_cert_peer(Some(wrong))],
+                2,
+                Duration::from_millis(500)
+            )
+            .is_none()
+        );
+
+        assert_eq!(
+            b.apply_finality_certificate(&cert),
+            CertificateOutcome::Applied
+        );
+        assert_eq!(b.finalized_hash(1), Some(block.hash));
     }
 
     #[test]

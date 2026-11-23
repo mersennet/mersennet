@@ -1,0 +1,12 @@
+[Unit]
+Description=Mersennet state heal (runs when the node exits 6: on a branch it can no longer roll back)
+Documentation=https://docs.mersennet.com
+
+[Service]
+Type=oneshot
+# Downloading and unpacking a snapshot takes a while on a slow line.
+TimeoutStartSec=3h
+ExecStart=/usr/local/bin/mersennet-heal /var/lib/mersennet
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mersennet-heal

@@ -6,6 +6,9 @@ Wants=network-online.target
 # Wait for the data volume (install.sh --data-dir on a mounted disk) so the
 # node never starts against an empty mountpoint on the root filesystem.
 RequiresMountsFor=/var/lib/mersennet
+# Exit 6: the node is on a branch it can no longer roll back. It is not
+# restarted into the same state; mersennet-heal restores a snapshot instead.
+OnFailure=mersennet-heal.service
 
 [Service]
 Type=simple
@@ -20,6 +23,7 @@ ExecStart=/usr/local/bin/mersennet \
 
 Restart=always
 RestartSec=5
+RestartPreventExitStatus=6
 StartLimitInterval=200
 StartLimitBurst=5
 

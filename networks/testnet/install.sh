@@ -86,12 +86,15 @@ esac
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -x "$HERE/mersennet" && -f "$HERE/config.json" ]]; then
     BIN="$HERE/mersennet"; CONF="$HERE/config.json"; UNIT="$HERE/mersennet.service"; CHECK="$HERE/mersennet-check"
+    HEAL="$HERE/mersennet-heal"; HEAL_UNIT="$HERE/mersennet-heal.service"
 else
     REPO_ROOT="$(cd "$HERE/../.." && pwd)"
     BIN="$REPO_ROOT/target/release/mersennet"
     CONF="$REPO_ROOT/networks/testnet/config.json"
     UNIT="$REPO_ROOT/networks/testnet/mersennet.service"
     CHECK="$REPO_ROOT/networks/testnet/mersennet-check"
+    HEAL="$REPO_ROOT/networks/testnet/mersennet-heal"
+    HEAL_UNIT="$REPO_ROOT/networks/testnet/mersennet-heal.service"
 fi
 [[ -x "$BIN" ]] || { echo "error: $BIN not found — download the release bundle or run: cargo build --release --bin mersennet" >&2; exit 1; }
 [[ -f "$CONF" ]] || { echo "error: $CONF not found" >&2; exit 1; }
@@ -121,6 +124,13 @@ if [[ -f /usr/local/bin/mersennet ]] && ! cmp -s "$BIN" /usr/local/bin/mersennet
     cp -a /usr/local/bin/mersennet /usr/local/bin/mersennet.prev   # rollback copy
 fi
 install -m 0755 "$BIN" /usr/local/bin/mersennet
+# Self-heal: a node on a branch it can no longer roll back exits 6 and
+# mersennet-heal.service restores the latest snapshot (see mersennet.service).
+if [[ -f "$HEAL" && -f "$HEAL_UNIT" ]]; then
+    install -m 0755 "$HEAL" /usr/local/bin/mersennet-heal
+    sed "s#/var/lib/mersennet#$DATA_DIR#g" "$HEAL_UNIT" > /etc/systemd/system/mersennet-heal.service
+    chmod 0644 /etc/systemd/system/mersennet-heal.service
+fi
 if [[ -f "$CHECK" ]]; then
     install -m 0755 "$CHECK" /usr/local/bin/mersennet-check
 fi

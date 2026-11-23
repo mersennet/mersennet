@@ -1698,6 +1698,24 @@ impl crate::state_trait::StateBackend for PersistentState {
         PersistentState::prune_blocks(self, from, to)
     }
 
+    fn store_finality_certificate(&self, height: u64, bytes: &[u8]) -> Result<()> {
+        use crate::finality_cert::{CERT_KEEP_HEIGHTS, cert_key};
+        let mut batch = sled::Batch::default();
+        batch.insert(cert_key(height).to_vec(), bytes.to_vec());
+        if height >= CERT_KEEP_HEIGHTS {
+            batch.remove(cert_key(height - CERT_KEEP_HEIGHTS).to_vec());
+        }
+        self.height_meta.apply_batch(batch)?;
+        Ok(())
+    }
+
+    fn load_finality_certificate(&self, height: u64) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .height_meta
+            .get(crate::finality_cert::cert_key(height))?
+            .map(|v| v.to_vec()))
+    }
+
     fn record_height(&self, height: u64, state_root: B256) -> Result<()> {
         PersistentState::record_height(self, height, state_root)
     }

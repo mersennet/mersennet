@@ -493,6 +493,19 @@ struct StateCheckpoint {
 /// within the same block interval, so 1 would do; 16 covers a slow round.
 const REORG_DEPTH: usize = 16;
 
+/// What `Engine::apply_finality_certificate` did with a peer's certificate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CertificateOutcome {
+    /// The height is now finalized with the certificate's hash.
+    Applied,
+    /// Already finalized here with the same hash.
+    AlreadyFinal,
+    /// Finalized here with another hash (carried): refused.
+    Conflicts(B256),
+    /// Valid signatures carry less than the finality threshold: refused.
+    Insufficient,
+}
+
 /// Fewest recent blocks a pruned node keeps (`engine.prune_keep_blocks` below
 /// this is raised to it): far more than the restart window (1,024), the
 /// in-memory chain (2,048) and the reorg depth, and ~5.5 hours of history for
@@ -721,6 +734,26 @@ pub struct Engine {
     /// Competing proposals seen for recent heights, so a finalized block we
     /// rejected as "duplicate height" can be applied straight after rollback.
     alt_blocks: std::collections::HashMap<u64, Vec<Block>>,
+    /// Fork recovery. The signatures behind `finality_votes` (height -> hash
+    /// -> voter -> signature): a quorum is kept as a finality certificate and
+    /// served to peers that missed the votes.
+    vote_sigs: std::collections::HashMap<
+        u64,
+        std::collections::HashMap<
+            B256,
+            std::collections::HashMap<Address, crate::finality_cert::VoteSig>,
+        >,
+    >,
+    /// Height whose finality certificate this node needs from a peer: a block
+    /// there does not extend our head and nothing finalized it locally.
+    wanted_cert: Option<u64>,
+    /// When a competing sibling was first seen for a height (tie-break grace).
+    split_seen_at: std::collections::HashMap<u64, std::time::Instant>,
+    /// Since when this node has been on a branch it can no longer roll back:
+    /// past its checkpoints, finality or the tie-break chose another block.
+    /// Cleared when a block we hold is finalized or a rollback succeeds. The
+    /// watchdog exits 6 after a while so the service heals the state.
+    unrecoverable_since: Option<std::time::Instant>,
 }
 
 impl Engine {
@@ -1008,6 +1041,10 @@ impl Engine {
             local_validator: None,
             finality_votes: std::collections::HashMap::new(),
             finalized_heights: std::collections::HashMap::new(),
+            vote_sigs: std::collections::HashMap::new(),
+            wanted_cert: None,
+            split_seen_at: std::collections::HashMap::new(),
+            unrecoverable_since: None,
         }
     }
 
@@ -1369,17 +1406,29 @@ impl Engine {
         let threshold = self.finality_threshold();
         if !threshold.is_zero() && voted_stake >= threshold {
             self.finalized_heights.insert(height, block_hash);
+            self.keep_finality_certificate(height, block_hash);
+            if self.wanted_cert == Some(height) {
+                self.wanted_cert = None;
+            }
             // Fork choice: if we applied a different block at this height,
             // the network has overruled us — roll back and follow.
-            if let Some(local) = self.block_by_number(height).map(|b| b.hash)
-                && local != block_hash
-            {
-                self.reorg_to_finalized(height, block_hash);
+            match self.block_by_number(height).map(|b| b.hash) {
+                // One of our blocks is final: whatever conflict we saw is over.
+                Some(local) if local == block_hash => self.unrecoverable_since = None,
+                Some(_) => {
+                    if self.reorg_to_finalized(height, block_hash) {
+                        self.unrecoverable_since = None;
+                    } else {
+                        self.mark_unrecoverable();
+                    }
+                }
+                None => {}
             }
             // Bound memory: drop vote-tracking for heights well behind.
             let cutoff = height.saturating_sub(256);
             self.finality_votes.retain(|h, _| *h >= cutoff);
             self.finalized_heights.retain(|h, _| *h >= cutoff);
+            self.vote_sigs.retain(|h, _| *h >= cutoff);
             metrics::increment_counter!("mersennet_bft_finalized_total");
             tracing::info!(height, block_hash = %block_hash, "block finalized by 2/3 stake quorum");
             return true;
@@ -1395,6 +1444,235 @@ impl Engine {
     /// The finalized block hash for `height`, if any.
     pub fn finalized_hash(&self, height: u64) -> Option<B256> {
         self.finalized_heights.get(&height).copied()
+    }
+
+    /// `record_finality_vote` with the vote's signature, so a quorum can be
+    /// kept as a finality certificate and served to peers (fork recovery).
+    /// The caller recovered `voter` from `sig` (gossip) or signed it itself.
+    pub fn record_signed_finality_vote(
+        &mut self,
+        height: u64,
+        block_hash: B256,
+        voter: Address,
+        sig: crate::finality_cert::VoteSig,
+    ) -> bool {
+        if !self.stake_of(voter).is_zero() && !self.finalized_heights.contains_key(&height) {
+            self.vote_sigs
+                .entry(height)
+                .or_default()
+                .entry(block_hash)
+                .or_default()
+                .insert(voter, sig);
+        }
+        self.record_finality_vote(height, block_hash, voter)
+    }
+
+    /// Store the certificate of a height that just finalized, when the
+    /// signatures held for its hash carry the quorum on their own (a vote
+    /// recorded without its signature does not count toward a certificate).
+    fn keep_finality_certificate(&mut self, height: u64, block_hash: B256) {
+        let Some(sigs) = self.vote_sigs.get(&height).and_then(|m| m.get(&block_hash)) else {
+            return;
+        };
+        let signed_stake = sigs
+            .keys()
+            .fold(U256::ZERO, |acc, a| acc.saturating_add(self.stake_of(*a)));
+        let threshold = self.finality_threshold();
+        if threshold.is_zero() || signed_stake < threshold {
+            return;
+        }
+        let cert = crate::finality_cert::FinalityCertificate {
+            height,
+            block_hash,
+            votes: sigs.values().copied().collect(),
+        };
+        if let Err(err) = self
+            .evm
+            .state
+            .store_finality_certificate(height, &cert.to_bytes())
+        {
+            tracing::warn!(height, %err, "could not store the finality certificate");
+        }
+    }
+
+    /// The finality certificate of `height`, if this node kept one (the last
+    /// `finality_cert::CERT_KEEP_HEIGHTS` heights it finalized), for a peer.
+    pub fn finality_certificate(
+        &self,
+        height: u64,
+    ) -> Option<crate::finality_cert::FinalityCertificate> {
+        self.evm
+            .state
+            .load_finality_certificate(height)
+            .ok()
+            .flatten()
+            .and_then(|b| crate::finality_cert::FinalityCertificate::from_bytes(&b))
+            .filter(|c| c.height == height)
+    }
+
+    /// Apply a finality certificate a peer sent: every signature is checked,
+    /// only validators' stake counts, and the quorum rule is the one live
+    /// votes go through. A certificate for another hash than the one already
+    /// finalized here at that height is refused.
+    pub fn apply_finality_certificate(
+        &mut self,
+        cert: &crate::finality_cert::FinalityCertificate,
+    ) -> CertificateOutcome {
+        if let Some(finalized) = self.finalized_hash(cert.height) {
+            return if finalized == cert.block_hash {
+                CertificateOutcome::AlreadyFinal
+            } else {
+                CertificateOutcome::Conflicts(finalized)
+            };
+        }
+        let votes = cert.verified_votes();
+        let stake = votes.iter().fold(U256::ZERO, |acc, (a, _)| {
+            acc.saturating_add(self.stake_of(*a))
+        });
+        let threshold = self.finality_threshold();
+        if threshold.is_zero() || stake < threshold {
+            return CertificateOutcome::Insufficient;
+        }
+        for (signer, sig) in votes {
+            self.record_signed_finality_vote(cert.height, cert.block_hash, signer, sig);
+        }
+        if self.finalized_hash(cert.height) == Some(cert.block_hash) {
+            tracing::warn!(
+                height = cert.height,
+                block_hash = %cert.block_hash,
+                "finality certificate from a peer: the network finalized this block; following it"
+            );
+            CertificateOutcome::Applied
+        } else {
+            CertificateOutcome::Insufficient
+        }
+    }
+
+    /// The height whose finality certificate this node should ask peers for:
+    /// a block there did not extend our head and nothing finalized it here.
+    pub fn wanted_certificate(&self) -> Option<u64> {
+        self.wanted_cert
+            .filter(|h| *h >= self.block_number && self.finalized_hash(*h).is_none())
+    }
+
+    fn mark_unrecoverable(&mut self) {
+        if self.unrecoverable_since.is_none() {
+            self.unrecoverable_since = Some(std::time::Instant::now());
+        }
+    }
+
+    /// This node has been on a branch it can no longer roll back for at least
+    /// `min_secs` (finality or the tie-break chose another block below its
+    /// checkpoints): only a state heal helps. The watchdog exits with 6.
+    pub fn needs_heal(&self, min_secs: u64) -> bool {
+        self.unrecoverable_since
+            .is_some_and(|t| t.elapsed().as_secs() >= min_secs)
+    }
+
+    /// Tie-break for a split nothing will finalize (two validators on each
+    /// side of a 4-validator chain, or a failover race where the votes split):
+    /// when we hold a block at an unfinalized height and a sibling (same
+    /// parent, hash re-derives) has been known for `grace`, every node prefers
+    /// the lower hash. A node holding the higher one rolls back that height
+    /// and applies the lower; a validator that voted for the loser does not
+    /// vote at that height again, but votes for the winner's child, and
+    /// finality on the child covers its parent. The rule depends only on the
+    /// two hashes, so every node picks the same block whichever it applied.
+    /// Fork choice only: block validity and votes are unchanged. Returns the
+    /// height and the two hashes when it switched.
+    pub fn resolve_unfinalized_split(
+        &mut self,
+        grace: std::time::Duration,
+    ) -> Option<(u64, B256, B256)> {
+        // Catching up, the heights we hold are history, not a split at the
+        // tip: votes for them were never seen here, and they are final.
+        if self.highest_observed_height > self.latest_height().saturating_add(3) {
+            return None;
+        }
+        let mut heights: Vec<u64> = self.alt_blocks.keys().copied().collect();
+        heights.sort_unstable();
+        self.split_seen_at
+            .retain(|h, _| heights.binary_search(h).is_ok());
+        for h in heights {
+            if self.finalized_hash(h).is_some() {
+                continue;
+            }
+            let Some(ours) = self.block_by_number(h).cloned() else {
+                continue;
+            };
+            // A finalized descendant of ours makes ours canonical.
+            if self
+                .finalized_heights
+                .iter()
+                .any(|(k, f)| *k > h && self.block_by_number(*k).map(|b| b.hash) == Some(*f))
+            {
+                continue;
+            }
+            let Some(seen) = self.split_seen_at.get(&h).copied() else {
+                continue;
+            };
+            if seen.elapsed() < grace {
+                // The lowest split decides; wait for it rather than look higher.
+                return None;
+            }
+            let best = self.alt_blocks.get(&h).and_then(|alts| {
+                alts.iter()
+                    .filter(|b| {
+                        b.parent_hash == ours.parent_hash
+                            && b.hash < ours.hash
+                            && self.header_commits_to_hash(b)
+                            && self.proposer_authenticated(b)
+                    })
+                    .min_by_key(|b| b.hash)
+                    .cloned()
+            });
+            let Some(best) = best else {
+                continue;
+            };
+            // Only a height this process applied has a checkpoint to roll back
+            // to. Without one (a restart since, or deeper than the window) the
+            // node cannot switch; if the split outlasts ten grace periods the
+            // other side has the quorum's attention and only a heal helps.
+            if !self.checkpoints.iter().any(|c| c.height == h) {
+                if seen.elapsed() >= grace.saturating_mul(10) {
+                    self.mark_unrecoverable();
+                }
+                return None;
+            }
+            metrics::increment_counter!("mersennet_tiebreak_switch_total");
+            tracing::warn!(
+                height = h,
+                ours = %ours.hash,
+                winner = %best.hash,
+                "TIE-BREAK: two blocks at an unfinalized height; following the lower hash, as every node does"
+            );
+            if self.reorg_to_finalized(h, best.hash) {
+                self.unrecoverable_since = None;
+                // Keep the block we left, in case finality picks it after all.
+                self.remember_alt_block(ours.clone());
+                return Some((h, ours.hash, best.hash));
+            }
+            self.mark_unrecoverable();
+            return None;
+        }
+        None
+    }
+
+    /// The checks `apply_imported_block` makes on a block's proposer: its
+    /// signature recovers to `block.proposer`, a staked validator elected
+    /// leader for that height at some round. For blocks not (yet) applied.
+    fn proposer_authenticated(&self, block: &Block) -> bool {
+        if block.number == 0 || self.consensus.validators().is_empty() {
+            return true;
+        }
+        let Some((r, s, y)) = block.proposer_sig else {
+            return false;
+        };
+        crypto::recover_block_proposer(block.number, block.hash, r, s, y)
+            .is_ok_and(|a| a == block.proposer)
+            && !self.stake_of(block.proposer).is_zero()
+            && (0..MAX_LEADER_ROUND_WINDOW)
+                .any(|round| self.leader_for_height(block.number, round) == Some(block.proposer))
     }
 
     /// Set the scheduled activation height for the privacy hard
@@ -1483,9 +1761,14 @@ impl Engine {
     /// Remember a competing proposal for a height we already hold, so it can
     /// be applied immediately if finality picks it over ours.
     fn remember_alt_block(&mut self, block: Block) {
-        let entry = self.alt_blocks.entry(block.number).or_default();
+        let height = block.number;
+        let entry = self.alt_blocks.entry(height).or_default();
         if entry.len() < 4 && !entry.iter().any(|b| b.hash == block.hash) {
             entry.push(block);
+            // Starts the tie-break grace (resolve_unfinalized_split).
+            self.split_seen_at
+                .entry(height)
+                .or_insert_with(std::time::Instant::now);
         }
     }
 
@@ -3621,8 +3904,10 @@ impl Engine {
                 self.finalized_heights.insert(parent_height, parent_hash);
                 self.import_buffer.insert(height, next);
                 if !self.reorg_to_finalized(parent_height, parent_hash) {
+                    self.mark_unrecoverable();
                     break;
                 }
+                self.unrecoverable_since = None;
                 continue;
             }
             if let Err(e) = self.apply_imported_block(next) {
@@ -3636,6 +3921,12 @@ impl Engine {
                 if msg.contains("parent hash mismatch") {
                     metrics::increment_counter!("mersennet_import_fork_detected_total");
                     self.fork_detected_at = Some(std::time::Instant::now());
+                    // Nothing finalized this block here: ask peers for the
+                    // votes that did (the sync loop fetches the certificate;
+                    // once applied, the next delivery takes the rollback above).
+                    if self.finalized_hash(height).is_none() {
+                        self.wanted_cert = Some(height);
+                    }
                     tracing::error!(
                         height,
                         error = %msg,
@@ -7832,6 +8123,425 @@ mod history_index_tests {
                 Some(floor),
                 "{backend}: indexed down to the floor, not genesis"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod fork_recovery_tests {
+    //! Fork recovery: finality certificates, the tie-break for unfinalized
+    //! splits, and the heal signal. Four validators of equal stake (finality
+    //! needs 3), two engines with the same genesis that diverge at a height.
+    use super::*;
+    use crate::finality_cert::{FinalityCertificate, VoteSig};
+    use revm::primitives::{Address, U256};
+    use tempfile::tempdir;
+
+    const MRSN: u64 = 1_000_000_000_000_000_000;
+    fn key(i: u8) -> k256::ecdsa::SigningKey {
+        k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap()
+    }
+    fn addr(i: u8) -> Address {
+        crate::crypto::address_from_signing_key(&key(i))
+    }
+    fn engine(backend: &str) -> Engine {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("engine");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut e = Engine::new_with_backend(131071, sub, backend);
+        std::mem::forget(dir);
+        for i in 1..=4u8 {
+            e.add_validator(addr(i), U256::from(1_000_000u64) * U256::from(MRSN))
+                .unwrap();
+        }
+        e.fund_account(addr(9), U256::from(1_000u64) * U256::from(MRSN), 0);
+        e
+    }
+    /// Produce and sign as the round-0 leader, as the node binary does.
+    fn produce(e: &mut Engine) -> Block {
+        let leader = e.leader_for_height(e.block_number, 0).expect("leader");
+        e.set_local_validator(leader);
+        let mut b = e.execute_block().expect("produce");
+        let k = (1..=4u8)
+            .map(key)
+            .find(|k| crate::crypto::address_from_signing_key(k) == leader)
+            .unwrap();
+        b.proposer = leader;
+        b.coinbase = leader;
+        b.consensus.proposer = leader;
+        let sig = crate::crypto::sign_block_proposal(b.number, b.hash, &k);
+        b.proposer_sig = Some(sig);
+        e.attach_proposer_sig(b.number, leader, sig);
+        b
+    }
+    /// A transfer from addr(9), so two engines build different blocks.
+    fn transfer(e: &mut Engine, nonce: u64, amount: u64) {
+        e.submit_tx_unsigned(Transaction {
+            from: addr(9),
+            to: Some(Address::repeat_byte(0x77)),
+            value: U256::from(amount),
+            data: Bytes::new(),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            nonce,
+            chain_id: Some(131071),
+            signature: None,
+            tx_type: 0,
+            shielded_payload: None,
+            hash: None,
+            raw: None,
+        })
+        .expect("tx accepted");
+    }
+    fn sig(i: u8, height: u64, hash: B256) -> VoteSig {
+        let (r, s, y_parity) = crate::crypto::sign_vote(height, hash, &key(i));
+        VoteSig { r, s, y_parity }
+    }
+    /// Validators `who` vote for `(height, hash)` on `e`, with signatures.
+    fn vote(e: &mut Engine, who: &[u8], height: u64, hash: B256) {
+        for i in who {
+            e.record_signed_finality_vote(height, hash, addr(*i), sig(*i, height, hash));
+        }
+    }
+    fn head(e: &Engine) -> (u64, B256, B256) {
+        let b = e.block_by_number(e.latest_height()).expect("head").clone();
+        (b.number, b.hash, e.evm.state.compute_state_root())
+    }
+
+    #[test]
+    fn a_quorum_is_kept_as_a_certificate_and_checked_when_applied() {
+        for backend in ["sled", "redb"] {
+            let mut a = engine(backend);
+            let mut b = engine(backend);
+            let b1 = produce(&mut a);
+            b.import_block(b1.clone());
+            assert_eq!(
+                a.finality_certificate(1),
+                None,
+                "{backend}: nothing before finality"
+            );
+            vote(&mut a, &[1, 2, 3], 1, b1.hash);
+            assert_eq!(a.finalized_hash(1), Some(b1.hash), "{backend}");
+            let cert = a.finality_certificate(1).expect("certificate kept");
+            assert_eq!(cert.block_hash, b1.hash);
+            let mut signers = cert.signers();
+            signers.sort();
+            let mut want = vec![addr(1), addr(2), addr(3)];
+            want.sort();
+            assert_eq!(signers, want, "{backend}: the three signed votes");
+
+            // Too little stake, a non-validator's signature, junk: refused.
+            let two = FinalityCertificate {
+                votes: cert.votes[..2].to_vec(),
+                ..cert.clone()
+            };
+            assert_eq!(
+                b.apply_finality_certificate(&two),
+                CertificateOutcome::Insufficient,
+                "{backend}"
+            );
+            let mut outsider = two.clone();
+            outsider.votes.push(sig(8, 1, b1.hash));
+            outsider.votes.push(VoteSig {
+                r: U256::from(5u64),
+                s: U256::from(6u64),
+                y_parity: 1,
+            });
+            assert_eq!(
+                b.apply_finality_certificate(&outsider),
+                CertificateOutcome::Insufficient,
+                "{backend}"
+            );
+            // Signatures over another hash do not certify this one.
+            let forged = FinalityCertificate {
+                block_hash: B256::repeat_byte(0xEE),
+                ..cert.clone()
+            };
+            assert_eq!(
+                b.apply_finality_certificate(&forged),
+                CertificateOutcome::Insufficient,
+                "{backend}"
+            );
+            assert_eq!(
+                b.finalized_hash(1),
+                None,
+                "{backend}: nothing refused was counted"
+            );
+
+            assert_eq!(
+                b.apply_finality_certificate(&cert),
+                CertificateOutcome::Applied,
+                "{backend}"
+            );
+            assert_eq!(b.finalized_hash(1), Some(b1.hash), "{backend}");
+            assert_eq!(
+                b.apply_finality_certificate(&cert),
+                CertificateOutcome::AlreadyFinal,
+                "{backend}"
+            );
+            // b now keeps (and can serve) the certificate too.
+            assert!(b.finality_certificate(1).is_some(), "{backend}: passed on");
+            let other = FinalityCertificate {
+                block_hash: B256::repeat_byte(0xAB),
+                ..cert
+            };
+            assert_eq!(
+                b.apply_finality_certificate(&other),
+                CertificateOutcome::Conflicts(b1.hash),
+                "{backend}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_node_that_missed_the_votes_rolls_back_onto_the_finalized_chain() {
+        for backend in ["sled", "redb"] {
+            let mut a = engine(backend);
+            let mut b = engine(backend);
+            for _ in 0..3 {
+                let blk = produce(&mut a);
+                b.import_block(blk);
+            }
+            assert_eq!(head(&a), head(&b), "{backend}: same chain to here");
+            // Height 4 splits: b builds its own block (another transfer).
+            let h = a.block_number;
+            transfer(&mut a, 0, 1);
+            let c4 = produce(&mut a);
+            transfer(&mut b, 0, 2);
+            let x4 = produce(&mut b);
+            assert_ne!(c4.hash, x4.hash);
+            let c5 = produce(&mut a);
+            // The network (a) finalizes 4 and 5; b saw none of those votes.
+            vote(&mut a, &[1, 2, 3], h, c4.hash);
+            vote(&mut a, &[1, 2, 3], h + 1, c5.hash);
+
+            // b cannot attach 5 to its 4: it asks for the certificate of 5.
+            b.import_block(c5.clone());
+            assert_eq!(b.latest_height(), h, "{backend}: still on its own 4");
+            assert_eq!(b.wanted_certificate(), Some(h + 1), "{backend}");
+            let cert = a.finality_certificate(h + 1).expect("a serves it");
+            assert_eq!(
+                b.apply_finality_certificate(&cert),
+                CertificateOutcome::Applied
+            );
+            // The next delivery of 5 rolls b back; 4 and 5 then apply.
+            b.import_block(c5.clone());
+            b.import_block(c4.clone());
+            b.import_block(c5.clone());
+            assert_eq!(
+                head(&b),
+                head(&a),
+                "{backend}: b follows the finalized chain"
+            );
+            assert_eq!(b.wanted_certificate(), None, "{backend}");
+            assert!(!b.needs_heal(0), "{backend}");
+        }
+    }
+
+    #[test]
+    fn an_unfinalized_split_converges_on_the_lower_hash_on_every_node() {
+        for backend in ["sled", "redb"] {
+            let mut a = engine(backend);
+            let mut b = engine(backend);
+            for _ in 0..2 {
+                let blk = produce(&mut a);
+                b.import_block(blk);
+            }
+            let h = a.block_number;
+            transfer(&mut a, 0, 1);
+            let ya = produce(&mut a);
+            transfer(&mut b, 0, 2);
+            let yb = produce(&mut b);
+            // Each side sees the other's proposal; nobody has a quorum.
+            a.import_block(yb.clone());
+            b.import_block(ya.clone());
+            let winner = ya.hash.min(yb.hash);
+
+            // Within the grace period nothing moves.
+            assert_eq!(
+                a.resolve_unfinalized_split(std::time::Duration::from_secs(3600)),
+                None
+            );
+            assert_eq!(
+                b.resolve_unfinalized_split(std::time::Duration::from_secs(3600)),
+                None
+            );
+
+            let grace = std::time::Duration::ZERO;
+            let switched = [
+                a.resolve_unfinalized_split(grace),
+                b.resolve_unfinalized_split(grace),
+            ];
+            assert_eq!(
+                switched.iter().filter(|s| s.is_some()).count(),
+                1,
+                "{backend}: exactly the higher hash's holder switches"
+            );
+            assert_eq!(
+                a.block_by_number(h).map(|x| x.hash),
+                Some(winner),
+                "{backend}"
+            );
+            assert_eq!(
+                b.block_by_number(h).map(|x| x.hash),
+                Some(winner),
+                "{backend}"
+            );
+            assert_eq!(
+                a.evm.state.compute_state_root(),
+                b.evm.state.compute_state_root(),
+                "{backend}"
+            );
+            // Stable: no flip back, on either node.
+            assert_eq!(a.resolve_unfinalized_split(grace), None, "{backend}");
+            assert_eq!(b.resolve_unfinalized_split(grace), None, "{backend}");
+            // And the chain goes on from the winner on both.
+            let next = produce(&mut a);
+            b.import_block(next);
+            assert_eq!(head(&a), head(&b), "{backend}");
+        }
+    }
+
+    #[test]
+    fn the_tie_break_ignores_unsigned_siblings_catch_up_and_heights_without_a_checkpoint() {
+        for backend in ["sled", "redb"] {
+            // Two engines split at h; `hi` holds the higher hash (the one
+            // that would switch) and has seen the lower one.
+            let split = || {
+                let mut a = engine(backend);
+                let mut b = engine(backend);
+                let blk = produce(&mut a);
+                b.import_block(blk);
+                transfer(&mut a, 0, 1);
+                let ya = produce(&mut a);
+                transfer(&mut b, 0, 2);
+                let yb = produce(&mut b);
+                if ya.hash > yb.hash { (a, yb) } else { (b, ya) }
+            };
+            let grace = std::time::Duration::ZERO;
+
+            // A sibling whose proposer signature does not verify: ignored.
+            let (mut hi, lo) = split();
+            let mut forged = lo.clone();
+            forged.proposer_sig = None;
+            hi.import_block(forged);
+            assert_eq!(
+                hi.resolve_unfinalized_split(grace),
+                None,
+                "{backend}: unsigned"
+            );
+            assert!(!hi.needs_heal(0), "{backend}");
+
+            // Catching up: what we hold is history, not a split at the tip.
+            let (mut hi, lo) = split();
+            hi.import_block(lo.clone());
+            hi.highest_observed_height = hi.latest_height() + 100;
+            assert_eq!(
+                hi.resolve_unfinalized_split(grace),
+                None,
+                "{backend}: catching up"
+            );
+            assert!(!hi.needs_heal(0), "{backend}");
+
+            // No checkpoint (a restart since): no switch; a long split asks
+            // for a heal, a short one does not.
+            let (mut hi, lo) = split();
+            hi.import_block(lo.clone());
+            hi.checkpoints.clear();
+            let h = lo.number;
+            assert_eq!(
+                hi.resolve_unfinalized_split(std::time::Duration::from_secs(3600)),
+                None
+            );
+            assert!(
+                !hi.needs_heal(0),
+                "{backend}: within the grace nothing happens"
+            );
+            assert_eq!(
+                hi.resolve_unfinalized_split(grace),
+                None,
+                "{backend}: cannot switch"
+            );
+            assert_ne!(
+                hi.block_by_number(h).map(|x| x.hash),
+                Some(lo.hash),
+                "{backend}: stays"
+            );
+            assert!(hi.needs_heal(0), "{backend}: past ten grace periods, heal");
+        }
+    }
+
+    #[test]
+    fn finality_overrides_the_tie_break() {
+        for backend in ["sled", "redb"] {
+            let mut a = engine(backend);
+            let mut b = engine(backend);
+            let blk = produce(&mut a);
+            b.import_block(blk);
+            let h = a.block_number;
+            transfer(&mut a, 0, 1);
+            let ya = produce(&mut a);
+            transfer(&mut b, 0, 2);
+            let yb = produce(&mut b);
+            a.import_block(yb.clone());
+            // The network finalized the HIGHER hash: the tie-break must not
+            // move a node off it.
+            let (hi, lo) = if ya.hash > yb.hash {
+                (ya.clone(), yb.clone())
+            } else {
+                (yb.clone(), ya.clone())
+            };
+            vote(&mut a, &[1, 2, 3], h, hi.hash);
+            let _ = lo;
+            assert_eq!(
+                a.block_by_number(h).map(|x| x.hash),
+                Some(hi.hash),
+                "{backend}: finality decided"
+            );
+            assert_eq!(
+                a.resolve_unfinalized_split(std::time::Duration::ZERO),
+                None,
+                "{backend}"
+            );
+            assert_eq!(
+                a.block_by_number(h).map(|x| x.hash),
+                Some(hi.hash),
+                "{backend}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_node_past_its_checkpoints_asks_for_a_heal() {
+        for backend in ["sled", "redb"] {
+            let mut a = engine(backend);
+            let mut b = engine(backend);
+            let blk = produce(&mut a);
+            b.import_block(blk);
+            let h = a.block_number;
+            // b runs off on its own branch for longer than REORG_DEPTH.
+            transfer(&mut b, 0, 2);
+            for _ in 0..(REORG_DEPTH as u64 + 2) {
+                produce(&mut b);
+            }
+            transfer(&mut a, 0, 1);
+            let c = produce(&mut a);
+            assert!(!b.needs_heal(0), "{backend}");
+            // The network finalized another block at h: too deep to roll back.
+            let cert = {
+                vote(&mut a, &[1, 2, 3], h, c.hash);
+                a.finality_certificate(h).expect("cert")
+            };
+            assert_eq!(
+                b.apply_finality_certificate(&cert),
+                CertificateOutcome::Applied,
+                "{backend}"
+            );
+            assert!(
+                b.needs_heal(0),
+                "{backend}: past the checkpoints, only a heal helps"
+            );
+            assert!(!b.needs_heal(3600), "{backend}: not before the delay");
         }
     }
 }

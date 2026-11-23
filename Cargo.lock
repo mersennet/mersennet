@@ -1967,6 +1967,7 @@ dependencies = [
  "base64",
  "bincode",
  "hex",
+ "k256",
  "mersennet",
  "metrics",
  "revm",

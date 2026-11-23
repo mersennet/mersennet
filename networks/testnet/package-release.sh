@@ -25,6 +25,8 @@ install -m 0644 "$REPO_ROOT/networks/testnet/config.json" "$STAGE/config.json"
 install -m 0644 "$REPO_ROOT/networks/testnet/mersennet.service" "$STAGE/mersennet.service"
 install -m 0755 "$REPO_ROOT/networks/testnet/install.sh" "$STAGE/install.sh"
 install -m 0755 "$REPO_ROOT/networks/testnet/mersennet-check" "$STAGE/mersennet-check"
+install -m 0755 "$REPO_ROOT/networks/testnet/mersennet-heal" "$STAGE/mersennet-heal"
+install -m 0644 "$REPO_ROOT/networks/testnet/mersennet-heal.service" "$STAGE/mersennet-heal.service"
 
 BIN_SHA="$(sha256sum "$STAGE/mersennet" | cut -d' ' -f1)"
 GLIBC="$(objdump -T "$STAGE/mersennet" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n -u | tail -1 || echo unknown)"
@@ -39,6 +41,7 @@ Chain ID 131071 · built from mersennet/mersennet@${SHA} · ${ARCH} · requires 
 | \`mersennet\` | Node binary. sha256 \`${BIN_SHA}\` — identical to the build running on the testnet validators. |
 | \`config.json\` | Canonical testnet config. Never edit \`genesis\`, \`engine.chain_id\` or \`token_economics\`; adjust only \`rpc\`, \`ws\`, \`p2p.listen\` and paths. |
 | \`mersennet.service\` | Hardened systemd unit. |
+| \`mersennet-heal\`, \`mersennet-heal.service\` | Self-heal: when the node exits 6 (on a branch it can no longer roll back), restore the latest snapshot and start it again. |
 | \`install.sh\` | One-command install: binary to /usr/local/bin, config to /etc/mersennet, system user, data dir, service. |
 
 ## Install as a service (Ubuntu 22.04+/Debian 12+)
@@ -61,7 +64,7 @@ connectivity is enough; opening 30303 lets others sync from you.
 Full guide: https://docs.mersennet.com/validators/run-a-node/
 EOF
 
-( cd "$STAGE" && sha256sum mersennet config.json mersennet.service install.sh mersennet-check README.md > SHA256SUMS )
+( cd "$STAGE" && sha256sum mersennet config.json mersennet.service install.sh mersennet-check mersennet-heal mersennet-heal.service README.md > SHA256SUMS )
 # Reproducible tarball: fixed mtimes (the commit time), sorted entries, no
 # owner info, no gzip timestamp — re-running on the same commit yields the
 # same bytes and the same checksum.

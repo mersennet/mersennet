@@ -771,6 +771,28 @@ impl StateBackend for RedbState {
         Ok(())
     }
 
+    fn store_finality_certificate(&self, height: u64, bytes: &[u8]) -> Result<()> {
+        use crate::finality_cert::{CERT_KEEP_HEIGHTS, cert_key};
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut meta = write_txn.open_table(HEIGHT_META)?;
+            meta.insert(cert_key(height).as_slice(), bytes)?;
+            if height >= CERT_KEEP_HEIGHTS {
+                meta.remove(cert_key(height - CERT_KEEP_HEIGHTS).as_slice())?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn load_finality_certificate(&self, height: u64) -> Result<Option<Vec<u8>>> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HEIGHT_META)?;
+        Ok(table
+            .get(crate::finality_cert::cert_key(height).as_slice())?
+            .map(|v| v.value().to_vec()))
+    }
+
     fn block_floor(&self) -> Result<Option<u64>> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(HEIGHT_META)?;

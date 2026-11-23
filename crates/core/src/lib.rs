@@ -16,6 +16,7 @@ pub mod engine_snapshot;
 pub mod errors;
 pub mod events;
 pub mod fba;
+pub mod finality_cert;
 pub mod flat_state;
 pub mod formal_verification;
 pub mod governance;
