@@ -24,8 +24,13 @@ SERVICE="${MERSENNET_SERVICE:-mersennet}"
 MODE="${MERSENNET_HEAL_MODE:-snapshot}"
 MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 STATE="$DATA_DIR/data/state"
+FAILED_MARK="$DATA_DIR/.heal-failed"
+RETRY_AFTER="${MERSENNET_HEAL_RETRY_SECS:-1800}"
 log() { echo "mersennet-heal: $*"; }
-start_node() { systemctl reset-failed "$SERVICE" 2>/dev/null || true; systemctl start "$SERVICE"; }
+start_node() { systemctl reset-failed "$SERVICE" 2>/dev/null || true; systemctl start "$SERVICE" || true; }
+# A failed heal starts the node as it is; it asks again a couple of minutes
+# later. Do not download a snapshot every time: retry after RETRY_AFTER.
+heal_failed() { log "$1: starting the node as it is; the next attempt is in $((RETRY_AFTER / 60)) min"; touch "$FAILED_MARK"; start_node; exit 1; }
 
 status="$(systemctl show -p ExecMainStatus --value "$SERVICE" 2>/dev/null || echo "")"
 if [[ "$status" != 6 ]]; then
@@ -37,6 +42,11 @@ if systemctl is-active --quiet "$SERVICE"; then
     exit 0
 fi
 [[ -d "$STATE" ]] || { log "no chain state at $STATE"; start_node; exit 0; }
+if [[ -f "$FAILED_MARK" ]] && (( $(date +%s) - $(stat -c %Y "$FAILED_MARK") < RETRY_AFTER )); then
+    log "the last heal failed $(( $(date +%s) - $(stat -c %Y "$FAILED_MARK") )) s ago; starting the node as it is until $((RETRY_AFTER / 60)) min have passed"
+    start_node
+    exit 0
+fi
 
 owner="$(stat -c %U:%G "$DATA_DIR" 2>/dev/null || echo mersennet:mersennet)"
 case "$MODE" in
@@ -48,17 +58,15 @@ snapshot)
     tmp="$(mktemp -d "$DATA_DIR/.heal.XXXXXX")"
     trap 'rm -rf "$tmp"' EXIT
     curl -fsSL --max-time 30 -o "$tmp/latest.json" "$MANIFEST" \
-        || { log "snapshot manifest unreachable ($MANIFEST): starting the node as it is, it will ask again"; start_node; exit 1; }
+        || heal_failed "snapshot manifest unreachable ($MANIFEST)"
     url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$tmp/latest.json")
     sha=$(sed -n 's/.*"sha256": *"\([0-9a-f]*\)".*/\1/p' "$tmp/latest.json")
     height=$(sed -n 's/.*"height": *\([0-9]*\).*/\1/p' "$tmp/latest.json")
-    [[ -n "$url" && -n "$sha" ]] || { log "manifest unreadable"; start_node; exit 1; }
+    [[ -n "$url" && -n "$sha" ]] || heal_failed "manifest unreadable"
     log "downloading the snapshot at height ${height:-?}"
     if ! curl -fsSL --retry 3 -o "$tmp/state.tar.zst" "$url" \
         || ! echo "$sha  $tmp/state.tar.zst" | sha256sum -c --quiet -; then
-        log "download or checksum failed: starting the node as it is, it will ask again"
-        start_node
-        exit 1
+        heal_failed "download or checksum failed"
     fi
     command -v zstd >/dev/null 2>&1 || apt-get install -y -qq zstd >/dev/null 2>&1 || true
     log "checksum ok; replacing $STATE"
@@ -77,5 +85,6 @@ snapshot)
     ;;
 esac
 chown -R "$owner" "$DATA_DIR/data" 2>/dev/null || true
+rm -f "$FAILED_MARK"
 log "state healed; starting $SERVICE"
 start_node
