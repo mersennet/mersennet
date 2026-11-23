@@ -118,12 +118,19 @@ pub fn compact_state(
         .and_then(|v| v.parse::<usize>().ok())
         .map(|mb| mb << 20)
         .unwrap_or(REOPEN_BYTES);
-    let new = sled::Config::new()
+    let mut new = sled::Config::new()
         .path(dst)
         .cache_capacity(cache)
         .create_new(true)
         .open()
         .with_context(|| format!("creating {}", dst.display()))?;
+    let open_new = || {
+        sled::Config::new()
+            .path(dst)
+            .cache_capacity(cache)
+            .open()
+            .with_context(|| format!("opening {}", dst.display()))
+    };
 
     let mut report = CompactReport { latest_height: latest, block_floor: floor, ..Default::default() };
     let mut read_since_open = 0usize;
@@ -205,13 +212,17 @@ pub fn compact_state(
             }
         }
         new.flush()?;
-        // Read the new tree back: what sled stores must be what we read.
+        // Read the new tree back: what sled stores must be what we read. The
+        // new store is reopened like the old one while reading (same reason).
+        drop(to);
         let mut check = crc32fast::Hasher::new();
         let mut count = 0u64;
         let mut lower: Bound<Vec<u8>> = Bound::Unbounded;
+        let mut read_back = 0usize;
         loop {
             let (mut chunk, mut last_key, mut exhausted) = (0usize, None, true);
-            for item in to.range::<Vec<u8>, _>((lower.clone(), Bound::Unbounded)) {
+            let t = new.open_tree(&name)?;
+            for item in t.range::<Vec<u8>, _>((lower.clone(), Bound::Unbounded)) {
                 let (k, v) = item?;
                 check.update(&k);
                 check.update(&v);
@@ -223,11 +234,19 @@ pub fn compact_state(
                     break;
                 }
             }
+            drop(t);
+            read_back += chunk;
+            if read_back >= reopen_bytes {
+                drop(new);
+                new = open_new()?;
+                read_back = 0;
+            }
             match last_key {
                 Some(k) if !exhausted => lower = Bound::Excluded(k),
                 _ => break,
             }
         }
+        let to = new.open_tree(&name)?;
         let want = hasher.finalize();
         if label == "height_meta" && prune_below > 0 {
             // block_floor was inserted at its sorted position, not appended:
