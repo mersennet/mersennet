@@ -572,7 +572,13 @@ fn run_one_call(raw: Value, engine: &Arc<Mutex<Engine>>, filters: &FilterStore) 
                 "code" => error.code.to_string(),
                 "method" => method.clone()
             );
-            tracing::warn!(method = %method, code = error.code, message = %error.message, "rpc request failed");
+            if error.code == rpc_router::EXECUTION_REVERTED {
+                // A reverted eth_call/eth_estimateGas is the caller's answer,
+                // not a node fault: keep it out of the warning log.
+                tracing::debug!(method = %method, message = %error.message, "rpc call reverted");
+            } else {
+                tracing::warn!(method = %method, code = error.code, message = %error.message, "rpc request failed");
+            }
             Ok(serde_json::to_string(&RpcErrorResponse {
                 jsonrpc: "2.0",
                 id,
@@ -628,7 +634,7 @@ fn dispatch(
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
-                Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
+                Err(err) => return Err((id.clone(), router_error(err))),
             }
         }
         "mersennet_getBlockByNumber" | "eth_getBlockByNumber" => {
@@ -1035,7 +1041,7 @@ fn dispatch(
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
-                Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
+                Err(err) => return Err((id.clone(), router_error(err))),
             }
         }
         "mersennet_bridge_enqueueOrdersToEvm"
@@ -1048,7 +1054,7 @@ fn dispatch(
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
-                Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
+                Err(err) => return Err((id.clone(), router_error(err))),
             }
         }
         _ => {
@@ -1062,7 +1068,7 @@ fn dispatch(
                 .map_err(|_| (id.clone(), rpc_error_internal("engine lock poisoned")))?;
             match rpc_router::route(call.method.as_str(), params, &mut engine) {
                 Ok(value) => value,
-                Err(err) => return Err((id.clone(), rpc_error_with_code(err.code, err.message))),
+                Err(err) => return Err((id.clone(), router_error(err))),
             }
         }
     };
@@ -1100,6 +1106,15 @@ fn rpc_error_with_code(code: i64, message: impl Into<String>) -> RpcError {
         code,
         message: message.into(),
         data: None,
+    }
+}
+
+/// A router error as a JSON-RPC error, keeping its `data` (revert bytes).
+fn router_error(err: rpc_router::RpcError) -> RpcError {
+    RpcError {
+        code: err.code,
+        message: err.message,
+        data: err.data,
     }
 }
 
@@ -2136,6 +2151,98 @@ mod tests {
         let out = handle_body(&body, &engine, &filters).expect("response");
         let v: Value = serde_json::from_str(&out).expect("json");
         assert_eq!(v["error"]["code"], Value::from(-32600));
+    }
+
+    /// The whole response envelope of a reverted eth_call, as a wallet or
+    /// ethers sees it: `error.code` 3, the reason in `error.message`, the
+    /// revert bytes in `error.data`, no `result`. Plain EVM code only (no
+    /// precompile), so it cannot race the other tests' engines; the
+    /// precompile cases live in tests/eth_call_errors.rs.
+    #[test]
+    fn eth_call_revert_answers_a_json_rpc_error_with_the_revert_bytes() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let mut eng = Engine::new_with_state(1, temp_dir.path());
+        let deployer = Address::from_slice(&[0x11; 20]);
+        eng.fund_account(deployer, U256::from(10_000_000u64), 0);
+        // Runtime: revert with Error("nope"), copied from the code tail.
+        let revert_data = mersennet::precompiles::encode_error_string("nope");
+        let n = revert_data.len() as u8;
+        let mut runtime = vec![
+            0x60, n, 0x80, 0x60, 0x0b, 0x60, 0x00, 0x39, 0x60, 0x00, 0xfd,
+        ];
+        runtime.extend_from_slice(&revert_data);
+        let rn = runtime.len() as u8;
+        let mut init = vec![
+            0x60, rn, 0x80, 0x60, 0x0b, 0x60, 0x00, 0x39, 0x60, 0x00, 0xf3,
+        ];
+        init.extend_from_slice(&runtime);
+        eng.deploy_contract(
+            deployer,
+            Bytes::from(init),
+            1_000_000,
+            U256::from(1u64),
+            0,
+            U256::ZERO,
+        )
+        .expect("deploy accepted");
+        let block = eng.execute_block().expect("block executed");
+        let contract = block.receipts[0].created_address.expect("deployed");
+        let engine = Arc::new(Mutex::new(eng));
+        let filters: FilterStore = Arc::new(Mutex::new(FilterState::new()));
+
+        let body = format!(
+            r#"{{"jsonrpc":"2.0","id":9,"method":"eth_call","params":[{{"to":"0x{}","data":"0x01"}},"latest"]}}"#,
+            hex::encode(contract.as_slice())
+        );
+        let out = handle_body(&body, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["id"], Value::from(9));
+        assert!(v.get("result").is_none(), "no result for a revert: {v}");
+        assert_eq!(v["error"]["code"], Value::from(3));
+        assert_eq!(
+            v["error"]["message"],
+            Value::from("execution reverted: nope")
+        );
+        assert_eq!(
+            v["error"]["data"],
+            Value::from(format!("0x{}", hex::encode(&revert_data)))
+        );
+
+        let estimate = body.replace("eth_call", "eth_estimateGas");
+        let out = handle_body(&estimate, &engine, &filters).expect("response");
+        let v: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v["error"]["code"], Value::from(3));
+        assert_eq!(
+            v["error"]["data"],
+            Value::from(format!("0x{}", hex::encode(&revert_data)))
+        );
+    }
+
+    #[test]
+    fn revert_reason_is_decoded_only_from_well_formed_error_strings() {
+        use rpc_router::decode_revert_reason;
+        let ok = mersennet::precompiles::encode_error_string("unknown market");
+        assert_eq!(decode_revert_reason(&ok).as_deref(), Some("unknown market"));
+        assert_eq!(
+            decode_revert_reason(&mersennet::precompiles::encode_error_string("")).as_deref(),
+            Some("")
+        );
+        // Not Error(string): custom error, Panic(uint256), empty, selector only.
+        assert_eq!(decode_revert_reason(&[0xde, 0xad, 0xbe, 0xef, 0, 0]), None);
+        let mut panic = vec![0x4e, 0x48, 0x7b, 0x71];
+        panic.extend_from_slice(&[0u8; 31]);
+        panic.push(0x01);
+        assert_eq!(decode_revert_reason(&panic), None);
+        assert_eq!(decode_revert_reason(&[]), None);
+        assert_eq!(decode_revert_reason(&ok[..4]), None);
+        // Truncated string body, absurd offset, absurd length.
+        assert_eq!(decode_revert_reason(&ok[..ok.len() - 20]), None);
+        let mut far = ok.to_vec();
+        far[4..36].copy_from_slice(&[0xff; 32]);
+        assert_eq!(decode_revert_reason(&far), None);
+        let mut long = ok.to_vec();
+        long[36 + 24..68].copy_from_slice(&[0xff; 8]);
+        assert_eq!(decode_revert_reason(&long), None);
     }
 
     #[test]

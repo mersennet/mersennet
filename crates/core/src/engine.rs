@@ -4555,6 +4555,59 @@ impl Engine {
         gas_limit: u64,
         value: U256,
     ) -> Result<TxExecution> {
+        let result = self.simulate_call_result(from, to, data, gas_limit, value)?;
+        match result {
+            ExecutionResult::Success {
+                gas_used,
+                output,
+                logs,
+                ..
+            } => {
+                let created_address = output.address().cloned();
+                Ok(TxExecution {
+                    success: true,
+                    gas_used,
+                    output: output.into_data(),
+                    created_address,
+                    logs: logs
+                        .into_iter()
+                        .map(|log| LogEntry {
+                            address: log.address,
+                            topics: log.data.topics().to_vec(),
+                            data: log.data.data.clone(),
+                        })
+                        .collect(),
+                })
+            }
+            ExecutionResult::Revert { gas_used, output } => Ok(TxExecution {
+                success: false,
+                gas_used,
+                output,
+                created_address: None,
+                logs: Vec::new(),
+            }),
+            ExecutionResult::Halt { gas_used, .. } => Ok(TxExecution {
+                success: false,
+                gas_used,
+                output: Bytes::new(),
+                created_address: None,
+                logs: Vec::new(),
+            }),
+        }
+    }
+
+    /// Run a call against the current state without committing anything and
+    /// return revm's own result, so a caller can tell a success, a revert
+    /// (with its data) and a halt (with its reason) apart. Used by
+    /// `eth_call` / `eth_estimateGas`.
+    pub fn simulate_call_result(
+        &mut self,
+        from: Address,
+        to: Option<Address>,
+        data: Bytes,
+        gas_limit: u64,
+        value: U256,
+    ) -> Result<ExecutionResult> {
         let mut env = Env::default();
         env.cfg.chain_id = self.chain_id;
         env.block.number = U256::from(self.block_number);
@@ -4597,7 +4650,9 @@ impl Engine {
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
-        let result = evm.transact_preverified()?;
+        // Restore the contexts before propagating an EVM error, so a failed
+        // simulation never leaves the shielded state taken.
+        let result = evm.transact_preverified();
         precompiles::clear_mersennet_orders_context();
         precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
@@ -4607,44 +4662,7 @@ impl Engine {
             .into_inner()
             .expect("shielded_evm mutex not poisoned");
 
-        match result.result {
-            ExecutionResult::Success {
-                gas_used,
-                output,
-                logs,
-                ..
-            } => {
-                let created_address = output.address().cloned();
-                Ok(TxExecution {
-                    success: true,
-                    gas_used,
-                    output: output.into_data(),
-                    created_address,
-                    logs: logs
-                        .into_iter()
-                        .map(|log| LogEntry {
-                            address: log.address,
-                            topics: log.data.topics().to_vec(),
-                            data: log.data.data.clone(),
-                        })
-                        .collect(),
-                })
-            }
-            ExecutionResult::Revert { gas_used, output } => Ok(TxExecution {
-                success: false,
-                gas_used,
-                output,
-                created_address: None,
-                logs: Vec::new(),
-            }),
-            ExecutionResult::Halt { gas_used, .. } => Ok(TxExecution {
-                success: false,
-                gas_used,
-                output: Bytes::new(),
-                created_address: None,
-                logs: Vec::new(),
-            }),
-        }
+        Ok(result?.result)
     }
 
     pub fn deploy_contract(
@@ -4720,7 +4738,9 @@ impl Engine {
             .append_handler_register(precompiles::register_shielded_precompiles)
             .build();
 
-        let result = evm.transact_preverified()?;
+        // Restore the contexts before propagating an EVM error (see
+        // simulate_call_result).
+        let result = evm.transact_preverified();
         precompiles::clear_mersennet_orders_context();
         precompiles::set_transparent_mersennet_orders_enabled(true);
         precompiles::clear_shielded_evm_context();
@@ -4730,7 +4750,7 @@ impl Engine {
             .into_inner()
             .expect("shielded_evm mutex not poisoned");
 
-        Ok(result.result.output().cloned().unwrap_or_default())
+        Ok(result?.result.output().cloned().unwrap_or_default())
     }
 
     #[allow(dead_code)]
