@@ -1933,6 +1933,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "crc32fast",
  "hex",
  "k256",
  "mersennet-state-proof",
@@ -1967,6 +1968,7 @@ dependencies = [
  "base64",
  "bincode",
  "hex",
+ "k256",
  "mersennet",
  "metrics",
  "revm",

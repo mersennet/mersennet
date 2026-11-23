@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Mersennet testnet full-node installer.
 #
-#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET] [--reset-state]
+#   sudo bash install.sh [--data-dir DIR] [--rpc-public] [--from-genesis] [--operator 0xWALLET] [--reset-state] [--prune]
 #
 #   --data-dir DIR   Put chain data and the node key under DIR instead of
 #                    /var/lib/mersennet (e.g. a mounted block volume:
@@ -26,6 +26,18 @@ set -euo pipefail
 #                    the node is forked or logs "state root" differences —
 #                    typically a node that ran an old build through a
 #                    consensus upgrade. One minute to be back in sync.
+#   --prune          Keep only the most recent 100,000 blocks (~2.3 days): a
+#                    validator needs no history. The installer rewrites the
+#                    database with only that (mersennet-compact, under a
+#                    minute with the node stopped) and the disk drops from
+#                    ~130 GB to ~3 GB; afterwards older blocks are deleted in
+#                    the background as new ones arrive.
+#                    --prune=N keeps N (at least 10,000); --no-prune keeps
+#                    everything again. Kept across upgrades. Not for nodes that
+#                    serve history (explorers, indexers, public RPC).
+#   --compact        Also rewrite the database of a node that keeps every block
+#                    (an archive node), dropping only dead space. Needs free
+#                    disk of about three quarters of data/state.
 #
 # Works from either layout:
 #   1. The release bundle (https://mersennet.com/downloads/): binary, config
@@ -49,6 +61,8 @@ RPC_ADDR=""
 FROM_SNAPSHOT=1
 RESET_STATE=0
 OPERATOR=""
+PRUNE=""
+COMPACT=0
 SNAPSHOT_MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -59,7 +73,11 @@ while [[ $# -gt 0 ]]; do
         --operator) OPERATOR="${2:?--operator needs a 0x address}"; shift 2 ;;
         --reset-state) RESET_STATE=1; shift ;;
         --operator=*) OPERATOR="${1#*=}"; shift ;;
-        -h|--help) sed -n '3,22p' "$0"; exit 0 ;;
+        --prune) PRUNE=100000; shift ;;
+        --prune=*) PRUNE="${1#*=}"; shift ;;
+        --no-prune) PRUNE=0; shift ;;
+        --compact) COMPACT=1; shift ;;
+        -h|--help) sed -n '3,41p' "$0"; exit 0 ;;
         *) echo "error: unknown option $1 (see --help)" >&2; exit 1 ;;
     esac
 done
@@ -86,12 +104,16 @@ esac
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -x "$HERE/mersennet" && -f "$HERE/config.json" ]]; then
     BIN="$HERE/mersennet"; CONF="$HERE/config.json"; UNIT="$HERE/mersennet.service"; CHECK="$HERE/mersennet-check"
+    HEAL="$HERE/mersennet-heal"; HEAL_UNIT="$HERE/mersennet-heal.service"; COMPACT_TOOL="$HERE/mersennet-compact"
 else
     REPO_ROOT="$(cd "$HERE/../.." && pwd)"
     BIN="$REPO_ROOT/target/release/mersennet"
     CONF="$REPO_ROOT/networks/testnet/config.json"
     UNIT="$REPO_ROOT/networks/testnet/mersennet.service"
     CHECK="$REPO_ROOT/networks/testnet/mersennet-check"
+    HEAL="$REPO_ROOT/networks/testnet/mersennet-heal"
+    HEAL_UNIT="$REPO_ROOT/networks/testnet/mersennet-heal.service"
+    COMPACT_TOOL="$REPO_ROOT/networks/testnet/mersennet-compact"
 fi
 [[ -x "$BIN" ]] || { echo "error: $BIN not found — download the release bundle or run: cargo build --release --bin mersennet" >&2; exit 1; }
 [[ -f "$CONF" ]] || { echo "error: $CONF not found" >&2; exit 1; }
@@ -121,8 +143,18 @@ if [[ -f /usr/local/bin/mersennet ]] && ! cmp -s "$BIN" /usr/local/bin/mersennet
     cp -a /usr/local/bin/mersennet /usr/local/bin/mersennet.prev   # rollback copy
 fi
 install -m 0755 "$BIN" /usr/local/bin/mersennet
+# Self-heal: a node on a branch it can no longer roll back exits 6 and
+# mersennet-heal.service restores the latest snapshot (see mersennet.service).
+if [[ -f "$HEAL" && -f "$HEAL_UNIT" ]]; then
+    install -m 0755 "$HEAL" /usr/local/bin/mersennet-heal
+    sed "s#/var/lib/mersennet#$DATA_DIR#g" "$HEAL_UNIT" > /etc/systemd/system/mersennet-heal.service
+    chmod 0644 /etc/systemd/system/mersennet-heal.service
+fi
 if [[ -f "$CHECK" ]]; then
     install -m 0755 "$CHECK" /usr/local/bin/mersennet-check
+fi
+if [[ -f "$COMPACT_TOOL" ]]; then
+    install -m 0755 "$COMPACT_TOOL" /usr/local/bin/mersennet-compact
 fi
 
 echo "==> Creating mersennet user and data directory $DATA_DIR"
@@ -172,6 +204,8 @@ canon = json.load(open(sys.argv[1]))
 mine = json.load(open(sys.argv[2]))
 keep_top = {"rpc", "ws"}
 keep_p2p = {"listen", "operator_address", "node_key_path", "peer_store_path"}
+# Node-local engine settings (history pruning is this node's choice).
+keep_engine = {"prune_keep_blocks"}
 merged = {k: v for k, v in canon.items() if k not in keep_top and k != "p2p"}
 for k in keep_top:
     if k in mine:
@@ -183,6 +217,11 @@ for k in keep_p2p:
     if k in mine.get("p2p", {}):
         p2p[k] = mine["p2p"][k]
 merged["p2p"] = p2p
+engine = dict(merged.get("engine", {}))
+for k in keep_engine:
+    if k in mine.get("engine", {}):
+        engine[k] = mine["engine"][k]
+merged["engine"] = engine
 json.dump(merged, open(sys.argv[2], "w"), indent=2)
 PY
 else
@@ -191,6 +230,21 @@ fi
 if [[ -n "$RPC_ADDR" ]]; then
     echo "==> Exposing JSON-RPC on $RPC_ADDR (was 127.0.0.1:8545)"
     sed -i "s#\"addr\": \"127.0.0.1:8545\"#\"addr\": \"$RPC_ADDR\"#" /etc/mersennet/config.json
+fi
+if [[ -n "$PRUNE" ]]; then
+    [[ "$PRUNE" =~ ^[0-9]+$ ]] || { echo "error: --prune=N needs a number of blocks" >&2; exit 1; }
+    if [[ "$PRUNE" -eq 0 ]]; then
+        echo "==> History pruning off: this node keeps every block (archive)"
+    else
+        echo "==> History pruning on: keeping the most recent $PRUNE blocks"
+    fi
+    python3 - "$PRUNE" <<'PY'
+import json, sys
+p = "/etc/mersennet/config.json"
+cfg = json.load(open(p))
+cfg.setdefault("engine", {})["prune_keep_blocks"] = int(sys.argv[1])
+json.dump(cfg, open(p, "w"), indent=2)
+PY
 fi
 # Operator already recorded by an earlier install (kept across upgrades): the
 # closing message must not tell such an operator to run the command again.
@@ -275,9 +329,33 @@ if [[ $FROM_SNAPSHOT -eq 1 && ! -d "$DATA_DIR/data/state" ]]; then
     chown -R mersennet:mersennet "$DATA_DIR" 2>/dev/null || true
 fi
 
+# Compaction: a pruned node whose database is far larger than its history
+# needs (the first --prune, or a restored full snapshot) is rewritten with only
+# its live data before it starts; --compact does an archive node too. The old
+# copy is deleted once the node confirms its state root on the new one.
+COMPACTED=0
+if [[ -x /usr/local/bin/mersennet-compact && -d "$DATA_DIR/data/state" ]]; then
+    systemctl stop mersennet 2>/dev/null || true
+    if [[ $COMPACT -eq 1 ]]; then cmode=(--full); [[ "${PRUNE:-}" =~ ^[1-9] ]] && cmode=(--force); else cmode=(); fi
+    if [[ $COMPACT -eq 1 ]] || python3 -c 'import json,sys; sys.exit(0 if int((json.load(open(sys.argv[1])).get("engine") or {}).get("prune_keep_blocks") or 0) > 0 else 1)' /etc/mersennet/config.json 2>/dev/null; then
+        echo "==> Checking whether the chain database needs compacting"
+        if /usr/local/bin/mersennet-compact "${cmode[@]}" "$DATA_DIR" | sed -u 's/^/    /'; then
+            [[ -d "$DATA_DIR/data/state.pre-compact" ]] && COMPACTED=1
+        else
+            echo "    compaction skipped; the node starts on its database as it was" >&2
+        fi
+    fi
+fi
+
 echo "==> Starting node"
 systemctl restart mersennet
 sleep 3
+if [[ $COMPACTED -eq 1 ]]; then
+    # Waits for the node's state-root check on the new copy; on a failure it
+    # puts the old copy back and restarts the node on it.
+    echo "==> Confirming the node runs on the compacted database"
+    /usr/local/bin/mersennet-compact --finish "$DATA_DIR" | sed -u 's/^/    /' || true
+fi
 if ! systemctl is-active --quiet mersennet; then
     echo "error: the service did not stay up. Last log lines:" >&2
     journalctl -u mersennet -n 20 --no-pager >&2 || true

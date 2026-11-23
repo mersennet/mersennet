@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# mersennet-heal — restore this node's chain state when the node itself asks for
+# it: the node exits with code 6 when it is on a branch it can no longer roll
+# back (the network finalized another block below its rollback window). The
+# unit does not restart it into the same state (RestartPreventExitStatus=6);
+# systemd starts mersennet-heal.service instead (OnFailure=), which runs this.
+#
+#   mersennet-heal [DATA_DIR]      # default /var/lib/mersennet
+#
+# Also on exit 78: the node found an interrupted block commit at start (it was
+# killed in the middle of writing a block), so its state on disk is
+# inconsistent; the documented fix was a manual --reset-state.
+# Only acts on those two exit statuses: a crash loop or a config error also
+# fails the unit, and must never cost the chain state.
+# Keys, node identity and voter_last_voted (outside data/state) are kept.
+#
+# MERSENNET_HEAL_MODE=snapshot (default): download the latest published
+#   snapshot, check its SHA-256 against the manifest, then replace data/state.
+#   The old state goes only after the download verified (small disks cannot
+#   hold both the old state and the unpacked snapshot).
+# MERSENNET_HEAL_MODE=resync: discard data/state and sync from genesis (a
+#   chain without a snapshot server, such as the closed privacy testnet).
+set -euo pipefail
+DATA_DIR="${1:-/var/lib/mersennet}"
+DATA_DIR="${DATA_DIR%/}"
+SERVICE="${MERSENNET_SERVICE:-mersennet}"
+MODE="${MERSENNET_HEAL_MODE:-snapshot}"
+MANIFEST="${MERSENNET_SNAPSHOT_MANIFEST:-http://46.225.30.187:8088/latest.json}"
+STATE="$DATA_DIR/data/state"
+FAILED_MARK="$DATA_DIR/.heal-failed"
+RETRY_AFTER="${MERSENNET_HEAL_RETRY_SECS:-1800}"
+log() { echo "mersennet-heal: $*"; }
+start_node() { systemctl reset-failed "$SERVICE" 2>/dev/null || true; systemctl start "$SERVICE" || true; }
+# A failed heal starts the node as it is; it asks again a couple of minutes
+# later. Do not download a snapshot every time: retry after RETRY_AFTER.
+heal_failed() { log "$1: starting the node as it is; the next attempt is in $((RETRY_AFTER / 60)) min"; touch "$FAILED_MARK"; start_node; exit 1; }
+
+status="$(systemctl show -p ExecMainStatus --value "$SERVICE" 2>/dev/null || echo "")"
+if [[ "$status" != 6 && "$status" != 78 ]]; then
+    log "the node's last exit status is '${status:-none}', not 6 (fork beyond recovery) or 78 (interrupted commit): nothing to heal"
+    exit 0
+fi
+log "the node exited $status ($([[ $status == 6 ]] && echo "on a branch it can no longer roll back" || echo "an interrupted block commit left its state inconsistent")): healing"
+if systemctl is-active --quiet "$SERVICE"; then
+    log "$SERVICE is running again: nothing to heal"
+    exit 0
+fi
+[[ -d "$STATE" ]] || { log "no chain state at $STATE"; start_node; exit 0; }
+if [[ -f "$FAILED_MARK" ]] && (( $(date +%s) - $(stat -c %Y "$FAILED_MARK") < RETRY_AFTER )); then
+    log "the last heal failed $(( $(date +%s) - $(stat -c %Y "$FAILED_MARK") )) s ago; starting the node as it is until $((RETRY_AFTER / 60)) min have passed"
+    start_node
+    exit 0
+fi
+
+owner="$(stat -c %U:%G "$DATA_DIR" 2>/dev/null || echo mersennet:mersennet)"
+case "$MODE" in
+resync)
+    log "discarding $STATE; the node syncs again from genesis"
+    rm -rf "$STATE"
+    ;;
+snapshot)
+    tmp="$(mktemp -d "$DATA_DIR/.heal.XXXXXX")"
+    trap 'rm -rf "$tmp"' EXIT
+    curl -fsSL --max-time 30 -o "$tmp/latest.json" "$MANIFEST" \
+        || heal_failed "snapshot manifest unreachable ($MANIFEST)"
+    url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$tmp/latest.json")
+    sha=$(sed -n 's/.*"sha256": *"\([0-9a-f]*\)".*/\1/p' "$tmp/latest.json")
+    height=$(sed -n 's/.*"height": *\([0-9]*\).*/\1/p' "$tmp/latest.json")
+    [[ -n "$url" && -n "$sha" ]] || heal_failed "manifest unreadable"
+    log "downloading the snapshot at height ${height:-?}"
+    if ! curl -fsSL --retry 3 -o "$tmp/state.tar.zst" "$url" \
+        || ! echo "$sha  $tmp/state.tar.zst" | sha256sum -c --quiet -; then
+        heal_failed "download or checksum failed"
+    fi
+    command -v zstd >/dev/null 2>&1 || apt-get install -y -qq zstd >/dev/null 2>&1 || true
+    log "checksum ok; replacing $STATE"
+    rm -rf "$STATE"
+    mkdir -p "$STATE"
+    if ! zstd -dc "$tmp/state.tar.zst" | tar -xf - -C "$STATE"; then
+        log "extraction failed: the node starts from genesis instead"
+        rm -rf "$STATE"
+    fi
+    rm -f "$STATE/SNAPSHOT_INFO"
+    ;;
+*)
+    log "unknown MERSENNET_HEAL_MODE '$MODE'"
+    start_node
+    exit 1
+    ;;
+esac
+chown -R "$owner" "$DATA_DIR/data" 2>/dev/null || true
+rm -f "$FAILED_MARK"
+# A pruned node just unpacked the full snapshot: rewrite it down to its
+# history before it starts (the old copy goes once the node has started).
+compacted=0
+if [[ -x /usr/local/bin/mersennet-compact ]] && /usr/local/bin/mersennet-compact "$DATA_DIR"; then
+    [[ -d "$STATE.pre-compact" ]] && compacted=1
+fi
+log "state healed; starting $SERVICE"
+start_node
+if [[ $compacted -eq 1 ]]; then
+    /usr/local/bin/mersennet-compact --finish "$DATA_DIR" || true
+fi

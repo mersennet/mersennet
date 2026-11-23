@@ -207,6 +207,13 @@ pub struct WireBlock {
     pub proposer_sig_s: Option<String>,
     #[serde(default)]
     pub proposer_sig_y: Option<u64>,
+    /// `Block::producer_receipts_root` (hex): the receipts root the hash
+    /// commits to, sent only when `receipts` (the sender's re-executed ones)
+    /// do not hash to it. Absent otherwise, so the wire form of every other
+    /// block is unchanged; older nodes ignore the field and check `receipts`
+    /// as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_receipts_root: Option<String>,
 }
 
 /// A signed BFT finality vote, gossiped on the "vote" topic. The
@@ -383,6 +390,7 @@ pub fn block_to_wire(block: &Block) -> WireBlock {
         proposer_sig_r: block.proposer_sig.map(|(r, _, _)| hex_u256(&r)),
         proposer_sig_s: block.proposer_sig.map(|(_, s, _)| hex_u256(&s)),
         proposer_sig_y: block.proposer_sig.map(|(_, _, y)| y),
+        producer_receipts_root: block.producer_receipts_root.as_ref().map(hex_b256),
     }
 }
 
@@ -408,6 +416,10 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
         })
         .collect();
     let rewards = rewards?;
+    let producer_receipts_root = match &wire.producer_receipts_root {
+        Some(root) => Some(parse_hex_b256(root)?),
+        None => None,
+    };
 
     Some(Block {
         number: wire.number,
@@ -481,6 +493,7 @@ pub fn wire_to_block(wire: &WireBlock) -> Option<Block> {
             (Some(r), Some(s), Some(y)) => Some((r, s, y)),
             _ => None,
         },
+        producer_receipts_root,
     })
 }
 
@@ -533,6 +546,78 @@ pub fn probe_peers(peers: &[String], height: u64, timeout: Duration) -> HeightPr
 
 /// One sync request for the blocks from `height`: what the peer sent (empty
 /// if it does not hold `height` yet), or `None` if it did not answer in time.
+/// The answer to a peer's `sync_request(from)`: up to 256 blocks from `from`
+/// to our head. `get_block` reads heights below the in-memory window from
+/// disk, so a peer far behind can still be caught up. A pruned node does not
+/// hold `from`: it answers empty ("not held") so the requester asks another
+/// peer, never the blocks from its floor up (a gap the requester could not
+/// import).
+fn sync_blocks_from(eng: &Engine, from: u64) -> Vec<WireBlock> {
+    if from < eng.block_floor() {
+        return Vec::new();
+    }
+    let batch_end = eng.latest_height().min(from.saturating_add(255));
+    (from..=batch_end)
+        .filter_map(|n| eng.get_block(n))
+        .map(|b| block_to_wire(&b))
+        .collect()
+}
+
+/// The answer to a `cert_request` (8 bytes: the height): that height's
+/// finality certificate, empty when this node does not hold one; `None` for
+/// a malformed request (no answer at all).
+fn certificate_answer(eng: &Engine, request: &[u8]) -> Option<Vec<u8>> {
+    let height = u64::from_be_bytes(request.try_into().ok()?);
+    Some(
+        eng.finality_certificate(height)
+            .map(|c| c.to_bytes())
+            .unwrap_or_default(),
+    )
+}
+
+/// Ask peers, one after another, for the finality certificate of `height`;
+/// the first answer that is a certificate for that height is returned. It is
+/// not trusted here: `Engine::apply_finality_certificate` checks every
+/// signature and the stake behind them.
+pub fn fetch_certificate(
+    peers: &[String],
+    height: u64,
+    timeout: Duration,
+) -> Option<mersennet::finality_cert::FinalityCertificate> {
+    for peer in peers {
+        let Ok(socket) = derive_tcp_addr(peer).parse::<std::net::SocketAddr>() else {
+            continue;
+        };
+        let Ok(mut stream) = std::net::TcpStream::connect_timeout(&socket, timeout) else {
+            continue;
+        };
+        let _ = stream.set_read_timeout(Some(timeout));
+        let _ = stream.set_write_timeout(Some(timeout));
+        let request = crate::net_transport::GossipPacket {
+            topic: "cert_request".to_string(),
+            data: height.to_be_bytes().to_vec(),
+            id: String::new(),
+            ttl: 0,
+        };
+        if TcpSync::send_packet(&mut stream, &request).is_err() {
+            continue;
+        }
+        let Ok(Some(response)) = TcpSync::recv_packet_limited(&mut stream, 1024 * 1024) else {
+            continue;
+        };
+        if response.topic != "cert_response" {
+            continue;
+        }
+        if let Some(cert) =
+            mersennet::finality_cert::FinalityCertificate::from_bytes(&response.data)
+            && cert.height == height
+        {
+            return Some(cert);
+        }
+    }
+    None
+}
+
 fn ask_for_blocks_from(addr: &str, height: u64, timeout: Duration) -> Option<Vec<Block>> {
     let socket: std::net::SocketAddr = addr.parse().ok()?;
     let mut stream = std::net::TcpStream::connect_timeout(&socket, timeout).ok()?;
@@ -725,6 +810,27 @@ impl NetworkNode {
                                         in_flight_worker.fetch_sub(1, Ordering::SeqCst);
                                         return;
                                     }
+                                    if request.topic == "cert_request" {
+                                        // Fork recovery: the finality certificate
+                                        // (signed votes) of one height, for a peer
+                                        // that missed those votes. Empty when we do
+                                        // not hold one; old nodes do not answer.
+                                        if let Some(data) = engine
+                                            .lock()
+                                            .ok()
+                                            .and_then(|e| certificate_answer(&e, &request.data))
+                                        {
+                                            let pkt = crate::net_transport::GossipPacket {
+                                                topic: "cert_response".to_string(),
+                                                data,
+                                                id: String::new(),
+                                                ttl: 0,
+                                            };
+                                            let _ = TcpSync::send_packet(&mut stream, &pkt);
+                                        }
+                                        in_flight_worker.fetch_sub(1, Ordering::SeqCst);
+                                        return;
+                                    }
                                     if request.topic == "tx_push" {
                                         // Large transaction delivered peer-to-peer
                                         // (see broadcast_tx_with_raw): a contract
@@ -777,17 +883,7 @@ impl NetworkNode {
                                         // then RELEASE it before touching the socket.
                                         let data = match engine.lock() {
                                             Ok(eng) => {
-                                                let height = eng.latest_height();
-                                                // Serve up to a bounded batch per request.
-                                                // Use get_block so heights below the
-                                                // in-memory window are read from disk — a
-                                                // peer far behind can still be caught up.
-                                                let batch_end =
-                                                    height.min(from.saturating_add(255));
-                                                let blocks: Vec<WireBlock> = (from..=batch_end)
-                                                    .filter_map(|n| eng.get_block(n))
-                                                    .map(|b| block_to_wire(&b))
-                                                    .collect();
+                                                let blocks = sync_blocks_from(&eng, from);
                                                 Some(
                                                     serde_json::to_vec(&blocks).unwrap_or_default(),
                                                 )
@@ -868,6 +964,8 @@ impl NetworkNode {
                     std::thread::sleep(Duration::from_secs(2));
                     let mut full_batch;
                     let mut round: usize = 0;
+                    let mut last_cert_try: Option<std::time::Instant> = None;
+                    let mut last_probe: Option<std::time::Instant> = None;
                     while running.load(Ordering::SeqCst) {
                         let from = match engine.lock() {
                             Ok(eng) => eng.latest_height().saturating_add(1),
@@ -939,6 +1037,55 @@ impl NetworkNode {
                             // at wire speed instead of one batch per tick.
                             full_batch = blocks.len() >= 256;
                             break;
+                        }
+                        // Fork recovery: a block did not extend our head and we
+                        // never saw the votes that finalized it. Ask peers for
+                        // its certificate; once applied, the next delivery of
+                        // that block rolls us back onto the finalized chain.
+                        let wanted = engine.lock().ok().and_then(|e| e.wanted_certificate());
+                        if let Some(height) = wanted
+                            && last_cert_try.is_none_or(|t| t.elapsed() >= Duration::from_secs(8))
+                        {
+                            last_cert_try = Some(std::time::Instant::now());
+                            match fetch_certificate(&peers, height, Duration::from_secs(5)) {
+                                Some(cert) => {
+                                    let outcome = engine
+                                        .lock()
+                                        .ok()
+                                        .map(|mut e| e.apply_finality_certificate(&cert));
+                                    info!(height, outcome = ?outcome, "finality certificate fetched from a peer");
+                                    full_batch = true; // re-request the block at once
+                                }
+                                None => warn!(height, "no peer had a finality certificate for this height yet"),
+                            }
+                        }
+                        // Fork-point discovery: another branch is in sight. Ask
+                        // every peer for the blocks from a little below our head,
+                        // so the competing block where the branches part is known
+                        // here (Engine::fork_probe_height) and the tie-break can
+                        // settle a split nothing will finalize.
+                        let probe = engine.lock().ok().and_then(|e| e.fork_probe_height());
+                        if let Some(from) = probe
+                            && last_probe.is_none_or(|t| t.elapsed() >= Duration::from_secs(8))
+                        {
+                            last_probe = Some(std::time::Instant::now());
+                            let mut seen = 0usize;
+                            for peer in &peers {
+                                let Some(blocks) =
+                                    ask_for_blocks_from(&derive_tcp_addr(peer), from, Duration::from_secs(3))
+                                else {
+                                    continue;
+                                };
+                                if let Ok(mut e) = engine.lock() {
+                                    let next = e.latest_height().saturating_add(1);
+                                    for b in blocks.into_iter().filter(|b| b.number < next) {
+                                        // Heights we hold: kept as competitors.
+                                        e.import_block(b);
+                                        seen += 1;
+                                    }
+                                }
+                            }
+                            info!(from, blocks = seen, "fork-point discovery: asked peers for the blocks around our head");
                         }
                         if !full_batch {
                             std::thread::sleep(Duration::from_secs(4));
@@ -1149,7 +1296,13 @@ fn handle_vote(engine: &Arc<Mutex<Engine>>, wire: &WireVote) {
         Err(_) => return,
     };
     if let Ok(mut eng) = engine.lock() {
-        eng.record_finality_vote(wire.height, block_hash, signer);
+        // With its signature, so a quorum is kept as a finality certificate.
+        let sig = mersennet::finality_cert::VoteSig {
+            r,
+            s,
+            y_parity: wire.y_parity,
+        };
+        eng.record_signed_finality_vote(wire.height, block_hash, signer, sig);
     }
 }
 
@@ -1217,6 +1370,162 @@ mod tests {
         );
     }
 
+    /// `WireBlock` as nodes built before `producer_receipts_root` define it
+    /// (copied verbatim from release 93cd5c1).
+    mod old_wire {
+        use super::super::{WireReceipt, WireReward, WireTx};
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize)]
+        pub struct WireBlock {
+            pub number: u64,
+            pub chain_id: u64,
+            #[serde(default)]
+            pub timestamp: u64,
+            pub gas_limit: u64,
+            pub gas_used: u64,
+            pub base_fee: String,
+            pub coinbase: String,
+            pub hash: String,
+            #[serde(default)]
+            pub parent_hash: String,
+            pub proposer: String,
+            pub finalized: bool,
+            pub state_root: String,
+            pub total_reward: String,
+            pub burned_reward: String,
+            #[serde(default)]
+            pub rewards: Vec<WireReward>,
+            pub transactions: Vec<WireTx>,
+            pub receipts: Vec<WireReceipt>,
+            #[serde(default)]
+            pub shielded_state_root: Option<String>,
+            #[serde(default)]
+            pub nullifier_root: Option<String>,
+            #[serde(default)]
+            pub shielded_event_root: Option<String>,
+            #[serde(default)]
+            pub state_proof: Option<String>,
+            #[serde(default)]
+            pub proposer_sig_r: Option<String>,
+            #[serde(default)]
+            pub proposer_sig_s: Option<String>,
+            #[serde(default)]
+            pub proposer_sig_y: Option<u64>,
+        }
+    }
+
+    #[test]
+    fn old_and_new_nodes_read_each_others_wire_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let block = produced_block(dir.path());
+        assert_eq!(block.producer_receipts_root, None);
+
+        // A block without the root goes out byte for byte as before.
+        let plain = serde_json::to_vec(&block_to_wire(&block)).unwrap();
+        let as_old: old_wire::WireBlock = serde_json::from_slice(&plain).unwrap();
+        assert_eq!(serde_json::to_vec(&as_old).unwrap(), plain);
+
+        // old -> new
+        let old_bytes = serde_json::to_vec(&as_old).unwrap();
+        let from_old =
+            wire_to_block(&serde_json::from_slice::<WireBlock>(&old_bytes).unwrap()).unwrap();
+        assert_eq!(from_old.producer_receipts_root, None);
+        assert_eq!(from_old.hash, block.hash);
+
+        // new -> old, carrying the root: older nodes ignore the field.
+        let mut kept = block.clone();
+        kept.producer_receipts_root = Some(B256::repeat_byte(0x5a));
+        let bytes = serde_json::to_vec(&block_to_wire(&kept)).unwrap();
+        let old: old_wire::WireBlock =
+            serde_json::from_slice(&bytes).expect("older nodes decode it");
+        assert_eq!(old.hash, hex_b256(&kept.hash));
+        assert_eq!(old.receipts.len(), kept.receipts.len());
+        let old_list: Vec<old_wire::WireBlock> =
+            serde_json::from_slice(&serde_json::to_vec(&vec![block_to_wire(&kept)]).unwrap())
+                .expect("a sync response decodes too");
+        assert_eq!(old_list.len(), 1);
+
+        // new -> new
+        let back = wire_to_block(&serde_json::from_slice::<WireBlock>(&bytes).unwrap()).unwrap();
+        assert_eq!(back.producer_receipts_root, kept.producer_receipts_root);
+
+        // A root that does not parse makes the block unreadable, like any
+        // other malformed hash field.
+        let mut bad = block_to_wire(&kept);
+        bad.producer_receipts_root = Some("zz".to_string());
+        assert!(wire_to_block(&bad).is_none());
+    }
+
+    /// A producer on an older build after a switch hashed a receipt that
+    /// up-to-date nodes re-execute differently. The node that imported it
+    /// stores and serves its own receipts; with the producer's root sent
+    /// alongside, the served block still re-derives its hash and a syncing
+    /// peer takes it.
+    #[test]
+    fn a_block_served_with_rebuilt_receipts_still_re_derives_its_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let (key, alice) = mersennet::crypto::generate_keypair();
+        let node = |name: &str| {
+            let path = dir.path().join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            let mut e = Engine::new_with_backend(131071, path, "redb");
+            e.set_signed_tx_height(Some(1));
+            e.fund_account(alice, U256::from(10u64).pow(U256::from(18u64)), 0);
+            e
+        };
+        let mut producer = node("producer");
+        let tx = Transaction {
+            from: alice,
+            to: Some(Address::repeat_byte(0x22)),
+            value: U256::from(1u64),
+            gas_limit: 21_000,
+            gas_price: U256::from(2_000_000_000u64),
+            chain_id: Some(131071),
+            ..Default::default()
+        };
+        producer
+            .submit_tx(mersennet::crypto::sign_transaction(&tx, &key).tx)
+            .unwrap();
+        let mut block = producer.execute_block().unwrap();
+        assert_eq!(block.receipts.len(), 1);
+        block.receipts[0].output = Bytes::from(vec![0xAB]);
+        block.hash = producer.derive_block_hash(&block);
+
+        let mut importer = node("importer");
+        importer.import_block(block.clone());
+        assert_eq!(importer.latest_height(), 1);
+        assert!(
+            importer
+                .get_block(1)
+                .unwrap()
+                .producer_receipts_root
+                .is_some()
+        );
+
+        let served = sync_blocks_from(&importer, 1);
+        let bytes = serde_json::to_vec(&served).unwrap();
+        let received: Vec<Block> = serde_json::from_slice::<Vec<WireBlock>>(&bytes)
+            .unwrap()
+            .iter()
+            .filter_map(wire_to_block)
+            .collect();
+        assert_eq!(received.len(), 1);
+        assert_ne!(
+            received[0].receipts[0].output, block.receipts[0].output,
+            "the importer serves the receipts it re-executed"
+        );
+        let mut peer = node("peer");
+        assert!(peer.header_commits_to_hash(&received[0]));
+        peer.import_block(received[0].clone());
+        assert_eq!(peer.latest_height(), 1, "the syncing peer takes it");
+
+        // An older peer decodes the same response (and checks `receipts`, as
+        // it does today for this block).
+        let old: Vec<old_wire::WireBlock> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(old[0].hash, hex_b256(&block.hash));
+    }
+
     /// A stand-in for a peer's sync port that answers one request with
     /// `blocks`, or never answers when `blocks` is `None`.
     fn fake_peer(blocks: Option<Vec<Block>>) -> String {
@@ -1264,6 +1573,143 @@ mod tests {
             probe_peers(&peers, 1, Duration::from_secs(2)),
             HeightProbe::NotFound
         ));
+    }
+
+    /// A peer's sync port that answers one `cert_request` with `answer`, or
+    /// never answers (an old node) when `answer` is `None`.
+    fn fake_cert_peer(answer: Option<Vec<u8>>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let _ = TcpSync::recv_packet(&mut stream);
+            let Some(data) = answer else {
+                std::thread::sleep(Duration::from_secs(5));
+                return;
+            };
+            let response = crate::net_transport::GossipPacket {
+                topic: "cert_response".to_string(),
+                data,
+                id: String::new(),
+                ttl: 0,
+            };
+            let _ = TcpSync::send_packet(&mut stream, &response);
+        });
+        addr
+    }
+
+    #[test]
+    fn a_finality_certificate_is_served_fetched_and_applied() {
+        use mersennet::engine::CertificateOutcome;
+        use mersennet::finality_cert::VoteSig;
+        let key = |i: u8| k256::ecdsa::SigningKey::from_bytes(&[i; 32].into()).unwrap();
+        let addr = |i: u8| mersennet::crypto::address_from_signing_key(&key(i));
+        let node = |dir: &std::path::Path| {
+            let mut e = Engine::new_with_backend(131071, dir, "sled");
+            for i in 1..=4u8 {
+                e.add_validator(addr(i), U256::from(1_000_000u64)).unwrap();
+            }
+            e
+        };
+        let (da, db) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut a = node(da.path());
+        let mut b = node(db.path());
+        let leader = a.leader_for_height(1, 0).unwrap();
+        a.set_local_validator(leader);
+        let block = a.execute_block().unwrap();
+        for i in 1..=3u8 {
+            let (r, s, y_parity) = mersennet::crypto::sign_vote(1, block.hash, &key(i));
+            a.record_signed_finality_vote(1, block.hash, addr(i), VoteSig { r, s, y_parity });
+        }
+        assert_eq!(a.finalized_hash(1), Some(block.hash));
+
+        // What the server answers.
+        let held = certificate_answer(&a, &1u64.to_be_bytes()).unwrap();
+        assert!(!held.is_empty());
+        assert_eq!(
+            certificate_answer(&a, &2u64.to_be_bytes()),
+            Some(Vec::new()),
+            "not held: empty"
+        );
+        assert_eq!(
+            certificate_answer(&a, &[1, 2, 3]),
+            None,
+            "malformed: no answer"
+        );
+
+        // An old node never answers, a node without it answers empty, the
+        // third has it: the fetch moves on and returns it.
+        let peers = [
+            fake_cert_peer(None),
+            fake_cert_peer(Some(Vec::new())),
+            fake_cert_peer(Some(held)),
+        ];
+        let cert = fetch_certificate(&peers, 1, Duration::from_millis(500))
+            .expect("found on the third peer");
+        assert_eq!(cert.block_hash, block.hash);
+        assert!(
+            fetch_certificate(
+                &[fake_cert_peer(Some(Vec::new()))],
+                1,
+                Duration::from_millis(500)
+            )
+            .is_none()
+        );
+        // A certificate for another height is not taken for this one.
+        let wrong = certificate_answer(&a, &1u64.to_be_bytes()).unwrap();
+        assert!(
+            fetch_certificate(
+                &[fake_cert_peer(Some(wrong))],
+                2,
+                Duration::from_millis(500)
+            )
+            .is_none()
+        );
+
+        assert_eq!(
+            b.apply_finality_certificate(&cert),
+            CertificateOutcome::Applied
+        );
+        assert_eq!(b.finalized_hash(1), Some(block.hash));
+    }
+
+    #[test]
+    fn a_pruned_node_answers_not_held_below_its_floor() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Engine::new_with_backend(131071, dir.path().join("node"), "sled");
+        let validator = Address::from_slice(&[0x44; 20]);
+        e.add_validator(validator, U256::from(1_000_000u64))
+            .unwrap();
+        e.set_local_validator(validator);
+        for _ in 0..8 {
+            e.execute_block().unwrap();
+        }
+        let tip = e.latest_height();
+        let numbers = |v: Vec<WireBlock>| -> Vec<u64> {
+            v.iter()
+                .filter_map(wire_to_block)
+                .map(|b| b.number)
+                .collect()
+        };
+        // Archive node: everything from the asked height to the head.
+        assert_eq!(
+            numbers(sync_blocks_from(&e, 1)),
+            (1..=tip).collect::<Vec<_>>()
+        );
+
+        e.evm.state.prune_blocks(0, 5).unwrap();
+        assert_eq!(e.block_floor(), 5);
+        // Below the floor: empty, so the requester moves on to another peer
+        // (not blocks 5.. that it could not attach to its head).
+        assert!(sync_blocks_from(&e, 1).is_empty());
+        assert!(sync_blocks_from(&e, 4).is_empty());
+        // From the floor up it is served as before.
+        assert_eq!(
+            numbers(sync_blocks_from(&e, 5)),
+            (5..=tip).collect::<Vec<_>>()
+        );
     }
 
     #[test]

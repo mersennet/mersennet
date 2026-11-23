@@ -259,6 +259,15 @@ if [[ -n "${datadir:-}" && -d "$datadir" ]]; then
     used="$(du -sh "$datadir" 2>/dev/null | cut -f1)"
     free="$(df -h "$datadir" 2>/dev/null | awk 'NR==2{print $4" free on "$6}')"
     printf 'Data dir     %s — %s used, %s\n' "$datadir" "${used:-?}" "${free:-?}"
+    # A pruned node gathers dead database space again (~1.3 GB a day); past
+    # what mersennet-compact would act on, say how to give it back.
+    keep="$(python3 -c 'import json,sys; print(int((json.load(open(sys.argv[1])).get("engine") or {}).get("prune_keep_blocks") or 0))' /etc/mersennet/config.json 2>/dev/null || echo 0)"
+    if (( keep > 0 )) && [[ -d "$datadir/data/state" ]]; then
+        state_mb=$(du -sm "$datadir/data/state" 2>/dev/null | cut -f1)
+        if (( ${state_mb:-0} >= 3072 + keep / 40 + 8192 )); then
+            printf '             %s: pruned node, %s GB of chain data where its history needs ~%s GB. sudo mersennet-compact gives the rest back (the node stops for about a minute).\n' "$(yellow 'Dead space')" "$((state_mb / 1024))" "$(( (3072 + keep / 40) / 1024 + 1 ))"
+        fi
+    fi
     if [[ -f "$datadir/keys/node_key.json" ]]; then
         printf 'Node key     %s (back this up to keep your peer identity)\n' "$datadir/keys/node_key.json"
     fi

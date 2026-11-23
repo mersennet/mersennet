@@ -771,6 +771,91 @@ impl StateBackend for RedbState {
         Ok(())
     }
 
+    fn store_finality_certificate(&self, height: u64, bytes: &[u8]) -> Result<()> {
+        use crate::finality_cert::{CERT_KEEP_HEIGHTS, cert_key};
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut meta = write_txn.open_table(HEIGHT_META)?;
+            meta.insert(cert_key(height).as_slice(), bytes)?;
+            if height >= CERT_KEEP_HEIGHTS {
+                meta.remove(cert_key(height - CERT_KEEP_HEIGHTS).as_slice())?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn load_finality_certificate(&self, height: u64) -> Result<Option<Vec<u8>>> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HEIGHT_META)?;
+        Ok(table
+            .get(crate::finality_cert::cert_key(height).as_slice())?
+            .map(|v| v.value().to_vec()))
+    }
+
+    fn block_floor(&self) -> Result<Option<u64>> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HEIGHT_META)?;
+        Ok(table
+            .get(b"block_floor".as_slice())?
+            .and_then(|v| decode_be_u64(v.value())))
+    }
+
+    /// One write transaction: the blocks, their index entries, their recorded
+    /// roots and the floor move together or not at all.
+    fn prune_blocks(&self, from: u64, to: u64) -> Result<u64> {
+        if to <= from {
+            return Ok(0);
+        }
+        let in_range = |h: u64| h >= from && h < to;
+        let mut deleted = 0u64;
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut blocks = write_txn.open_table(BLOCKS)?;
+            let mut index = write_txn.open_table(HISTORY_INDEX)?;
+            let mut roots = write_txn.open_table(PRUNING)?;
+            let mut meta = write_txn.open_table(HEIGHT_META)?;
+            for number in from..to {
+                let key = number.to_be_bytes();
+                let data = blocks.remove(key.as_slice())?.map(|v| v.value().to_vec());
+                roots.remove(key.as_slice())?;
+                let Some(data) = data else { continue };
+                deleted += 1;
+                let Ok(block) = serde_json::from_slice::<Block>(&data) else {
+                    continue;
+                };
+                let bk = history_block_key(block.hash);
+                let points_here = index
+                    .get(bk.as_slice())?
+                    .and_then(|v| decode_be_u64(v.value()))
+                    .is_some_and(in_range);
+                if points_here {
+                    index.remove(bk.as_slice())?;
+                }
+                for tx in &block.transactions {
+                    let tk = history_tx_key(tx.canonical_hash());
+                    let points_here = index
+                        .get(tk.as_slice())?
+                        .and_then(|v| decode_tx_location(v.value()))
+                        .is_some_and(|(h, _)| in_range(h));
+                    if points_here {
+                        index.remove(tk.as_slice())?;
+                    }
+                }
+            }
+            let prev = meta
+                .get(b"block_floor".as_slice())?
+                .and_then(|v| decode_be_u64(v.value()))
+                .unwrap_or(0);
+            meta.insert(
+                b"block_floor".as_slice(),
+                prev.max(to).to_be_bytes().as_slice(),
+            )?;
+        }
+        write_txn.commit()?;
+        Ok(deleted)
+    }
+
     fn load_block(&self, number: u64) -> Result<Option<Block>> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(BLOCKS)?;

@@ -62,6 +62,31 @@ pub trait StateBackend: Send + std::fmt::Debug {
     fn set_history_index_floor(&self, _height: u64) -> Result<()> {
         Ok(())
     }
+    /// History pruning (`engine.prune_keep_blocks`): the lowest block height
+    /// still stored once pruning has run; `None` on an archive node (nothing
+    /// pruned). Blocks below it are gone on purpose, so reads answer "not held"
+    /// without touching the disk.
+    fn block_floor(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
+    /// Delete the stored blocks `from..to` with their history-index entries
+    /// (block hash, tx hashes, only where they still point into the range)
+    /// and recorded state roots, then record `to` as the block floor (it never
+    /// moves down). Blocks already gone are skipped, so a step cut short by a
+    /// crash is simply redone from the old floor. Returns the blocks deleted.
+    /// None of this is in the state root.
+    fn prune_blocks(&self, _from: u64, _to: u64) -> Result<u64> {
+        anyhow::bail!("history pruning is not supported by this state backend")
+    }
+    /// Fork recovery: keep the finality certificate (signed votes, see
+    /// `finality_cert`) of `height` and drop the one `CERT_KEEP_HEIGHTS`
+    /// below it. Node-local, not in the state root.
+    fn store_finality_certificate(&self, _height: u64, _bytes: &[u8]) -> Result<()> {
+        Ok(())
+    }
+    fn load_finality_certificate(&self, _height: u64) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
 
     fn record_height(&self, height: u64, state_root: B256) -> Result<()>;
     /// Durability marker around a block commit (account state, orders,

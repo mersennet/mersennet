@@ -77,12 +77,56 @@ Usage: mersennet --config <config.json> [--mode full|validator] [--rpc] [options
   --snapshot-chunk-size <n>  snapshot transfer chunk size (bytes)
   --snapshot-max-bytes <n>   refuse snapshots larger than this
   --devnet                   run the local devnet demo in the current directory (development only)
+  --compact-state <dir> [--keep-blocks <n>]
+                             offline, node stopped: rewrite the sled state at <dir> into
+                             <dir>.compact with only its live data (sled leaves freed records
+                             behind after restarts); --keep-blocks also drops history older
+                             than the most recent n blocks, like pruning. Then swap the
+                             directories (the installer does this with --prune)
   -V, --version              print the build id (Mersennet/<version>-<sha>) and exit
   -h, --help                 this text
 
 Operators: install with  curl -fsSL https://mersennet.com/downloads/install.sh | sudo bash
 Guide: https://docs.mersennet.com/validators/run-a-node/
 ";
+
+/// `mersennet --compact-state <dir> [--keep-blocks <n>]`: see
+/// `mersennet::compact`. Writes `<dir>.compact`; the caller swaps.
+fn compact_state_cli(args: Vec<String>) -> anyhow::Result<()> {
+    let mut dir: Option<std::path::PathBuf> = None;
+    let mut keep: Option<u64> = None;
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--keep-blocks" => {
+                let v = it.next().ok_or_else(|| anyhow::anyhow!("--keep-blocks needs a number"))?;
+                keep = Some(v.parse().map_err(|_| anyhow::anyhow!("--keep-blocks needs a number, got '{v}'"))?);
+            }
+            other if dir.is_none() && !other.starts_with("--") => dir = Some(other.into()),
+            other => anyhow::bail!("--compact-state: unexpected argument '{other}'\n\n{USAGE}"),
+        }
+    }
+    let dir = dir.ok_or_else(|| anyhow::anyhow!("--compact-state needs the state directory"))?;
+    let dir = dir.canonicalize().map_err(|e| anyhow::anyhow!("{}: {e}", dir.display()))?;
+    let mut dst = dir.clone().into_os_string();
+    dst.push(".compact");
+    let dst = std::path::PathBuf::from(dst);
+    let started = std::time::Instant::now();
+    println!("compacting {} into {}{}", dir.display(), dst.display(),
+        keep.map(|k| format!(" (keeping the most recent {k} blocks)")).unwrap_or_default());
+    let report = mersennet::compact::compact_state(&dir, &dst, keep, |line| println!("{line}"))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_dir_all(&dst);
+        })?;
+    println!(
+        "done in {}s: head {}, block floor {}, other files copied: {}",
+        started.elapsed().as_secs(),
+        report.latest_height.map(|h| h.to_string()).unwrap_or_else(|| "-".into()),
+        report.block_floor.map(|h| h.to_string()).unwrap_or_else(|| "none".into()),
+        if report.other_files.is_empty() { "none".into() } else { report.other_files.join(", ") }
+    );
+    Ok(())
+}
 
 static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::OnceLock::new();
 /// Set by the producer from just before `execute_block` until the block has
@@ -92,6 +136,21 @@ static SHUTDOWN_ENGINE: std::sync::OnceLock<Arc<Mutex<Engine>>> = std::sync::Onc
 /// watchdog restores a snapshot (validator 1 on the 25 Sep roll: benched for
 /// the rest of the epoch).
 static BROADCAST_PENDING: AtomicBool = AtomicBool::new(false);
+/// Set first on SIGTERM/SIGINT: produce no new block, keep following the
+/// network (gossip, sync, votes) until our head is finalized, then stop. A node
+/// that stopped right after applying a block the network did not finalize
+/// restarted on an orphaned head with no checkpoint to roll back to, and needed
+/// a state heal (privacy-v1, 23 Nov 2026: a full resync). While the process
+/// still runs, finality on another block rolls it back from its checkpoints.
+static DRAINING: AtomicBool = AtomicBool::new(false);
+/// Longest wait for the head's finality on shutdown (systemd allows 90 s).
+const DRAIN_MAX_SECS: u64 = 20;
+/// How long a node stays on a branch it can no longer roll back before the
+/// watchdog exits 6 for a state heal: time for a late certificate or our own
+/// block's finality to prove it wrong (Engine::needs_heal).
+const HEAL_AFTER_SECS: u64 = 120;
+/// Blocks deleted per engine-lock acquisition by the history-prune thread.
+const PRUNE_BATCH_BLOCKS: u64 = 128;
 
 /// Shortens the wait after the parent block by how far recent intervals
 /// overshoot the block time: a full block time after the parent arrives still
@@ -196,6 +255,9 @@ fn main() -> anyhow::Result<()> {
         print!("{USAGE}");
         return Ok(());
     }
+    if std::env::args().nth(1).as_deref() == Some("--compact-state") {
+        return compact_state_cli(std::env::args().skip(2).collect());
+    }
     // initialize structured tracing from env and install Prometheus metrics
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -214,7 +276,48 @@ fn main() -> anyhow::Result<()> {
     // resync). Taking the engine lock waits for any in-flight block commit
     // to complete, after which the persisted state is self-consistent.
     ctrlc::set_handler(move || {
-        info!("shutting down: waiting for the in-flight block commit...");
+        info!("shutting down: producing no new block; waiting for our head to be finalized...");
+        DRAINING.store(true, Ordering::SeqCst);
+        // The block we may be broadcasting right now must reach the network first.
+        let mut waited_bc = std::time::Duration::ZERO;
+        while BROADCAST_PENDING.load(Ordering::SeqCst)
+            && waited_bc < std::time::Duration::from_secs(3)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            waited_bc += std::time::Duration::from_millis(50);
+        }
+        // Keep following the network until the head we would restart on is
+        // finalized (or the network rolled us onto the one it finalized).
+        if let Some(engine) = SHUTDOWN_ENGINE.get() {
+            let started = std::time::Instant::now();
+            let mut final_head = false;
+            while started.elapsed() < std::time::Duration::from_secs(DRAIN_MAX_SECS) {
+                final_head = match engine.lock() {
+                    Ok(e) => {
+                        let h = e.latest_height();
+                        h == 0
+                            || (e.finalized_hash(h).is_some()
+                                && e.block_by_number(h).map(|b| b.hash) == e.finalized_hash(h))
+                    }
+                    Err(_) => true,
+                };
+                if final_head {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            if final_head {
+                info!(
+                    waited_ms = started.elapsed().as_millis() as u64,
+                    "head finalized; stopping"
+                );
+            } else {
+                tracing::warn!(
+                    waited_secs = DRAIN_MAX_SECS,
+                    "head not finalized in time (network stalled?); stopping anyway"
+                );
+            }
+        }
         shutdown_clone.store(true, Ordering::SeqCst);
         if let Some(engine) = SHUTDOWN_ENGINE.get() {
             match engine.lock() {
@@ -389,6 +492,13 @@ fn main() -> anyhow::Result<()> {
             mersennet::config::default_timestamp_order_height(app_config.engine.chain_id)
         }),
     );
+    // Built in, never from the config: see `config::default_history_checkpoint`.
+    let history_checkpoint =
+        mersennet::config::default_history_checkpoint(app_config.engine.chain_id);
+    if let Some(cp) = history_checkpoint {
+        info!(height = cp.height, hash = %cp.hash, "history checkpoint built in");
+    }
+    engine.set_history_checkpoint(history_checkpoint);
     engine.set_fee_floor_params(
         app_config.engine.fee_floor_height,
         app_config.engine.min_base_fee_wei,
@@ -763,6 +873,12 @@ fn main() -> anyhow::Result<()> {
                             if shutdown_producer.load(Ordering::SeqCst) {
                                 break;
                             }
+                            // Draining for a shutdown: no new head (DRAINING); the
+                            // other threads keep following the network meanwhile.
+                            if DRAINING.load(Ordering::SeqCst) {
+                                std::thread::sleep(std::time::Duration::from_millis(200));
+                                continue;
+                            }
                             // Only members of the current active set propose.
                             // Membership changes at epoch boundaries (open
                             // validator set), so re-check every poll.
@@ -964,17 +1080,38 @@ fn main() -> anyhow::Result<()> {
                                         std::time::Duration::from_secs(1),
                                     ) {
                                         HeightProbe::Found(blocks) => {
-                                            if let Ok(mut e) = eng.lock() {
-                                                for b in blocks {
-                                                    e.import_block(b);
+                                            // Only a block that attaches to our head
+                                            // means we were just behind. One from
+                                            // another branch (a peer stranded on a
+                                            // fork) must not stop us: on 23 Nov the
+                                            // privacy chain's three upgraded
+                                            // validators each found a stranded
+                                            // validator's block at their height, could
+                                            // not import it, did not propose, and the
+                                            // height failed over for 24 rounds.
+                                            let applied = match eng.lock() {
+                                                Ok(mut e) => {
+                                                    for b in blocks {
+                                                        e.import_block(b);
+                                                    }
+                                                    e.latest_height() >= next_height
                                                 }
+                                                Err(_) => true,
+                                            };
+                                            if applied {
+                                                info!(
+                                                    height = next_height,
+                                                    round = waiting_round,
+                                                    "peers already hold this height: imported it instead of proposing"
+                                                );
+                                            } else {
+                                                tracing::warn!(
+                                                    height = next_height,
+                                                    round = waiting_round,
+                                                    "a peer holds this height on another branch (it does not attach to our head): proposing"
+                                                );
                                             }
-                                            info!(
-                                                height = next_height,
-                                                round = waiting_round,
-                                                "peers already hold this height: importing it instead of proposing"
-                                            );
-                                            false
+                                            !applied
                                         }
                                         HeightProbe::NotFound => true,
                                         HeightProbe::NoAnswer => {
@@ -1205,6 +1342,7 @@ fn main() -> anyhow::Result<()> {
                 let net_voter = network.clone();
                 let shutdown_voter = Arc::clone(&shutdown);
                 let voter_key = identity.signing_key.clone();
+                let voter_addr = mersennet::crypto::address_from_signing_key(&voter_key);
                 // The highest height this key has voted for survives restarts
                 // (and state heals, which only swap the state directory): a
                 // voter that came back with last_voted = 0 re-voted its last
@@ -1269,11 +1407,24 @@ fn main() -> anyhow::Result<()> {
                             for (height, block_hash) in to_vote {
                                 let (r, s, y) =
                                     mersennet::crypto::sign_vote(height, block_hash, &voter_key);
-                                // Record our own vote locally too.
+                                // Record our own vote locally too, with its
+                                // signature when it is the validator's key, so
+                                // a quorum we complete is kept as a certificate.
                                 if let Ok(mut e) = eng_voter.lock() {
                                     let me = e.local_validator();
                                     if let Some(me) = me {
-                                        e.record_finality_vote(height, block_hash, me);
+                                        if voter_addr == me {
+                                            let sig = mersennet::finality_cert::VoteSig {
+                                                r,
+                                                s,
+                                                y_parity: y,
+                                            };
+                                            e.record_signed_finality_vote(
+                                                height, block_hash, me, sig,
+                                            );
+                                        } else {
+                                            e.record_finality_vote(height, block_hash, me);
+                                        }
                                     }
                                 }
                                 if let Err(err) =
@@ -1334,8 +1485,100 @@ fn main() -> anyhow::Result<()> {
                     })?;
             }
 
+            // History pruning (engine.prune_keep_blocks, 0 = archive): delete the
+            // oldest blocks beyond the most recent N, PRUNE_BATCH_BLOCKS per
+            // engine-lock acquisition with a pause twice the step's lock time,
+            // then one step every few seconds to follow the head. The first pass on a node with full history
+            // reads each old block once (for its hashes) and takes hours; the
+            // node serves and validates normally meanwhile.
+            let prune_keep = app_config.engine.prune_keep_blocks;
+            if prune_keep > 0 {
+                let eng = engine.clone();
+                let shutdown_pr = Arc::clone(&shutdown);
+                let keep = prune_keep.max(mersennet::engine::MIN_PRUNE_KEEP_BLOCKS);
+                if keep != prune_keep {
+                    tracing::warn!(
+                        configured = prune_keep,
+                        keep,
+                        "engine.prune_keep_blocks raised to the minimum"
+                    );
+                }
+                std::thread::Builder::new()
+                    .name("history-prune".into())
+                    .spawn(move || {
+                        // Let the node finish startup/sync before touching disk.
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        tracing::info!(keep, "history pruning on: blocks older than the most recent {keep} are deleted");
+                        let mut logged_at: u64 = 0;
+                        loop {
+                            if shutdown_pr.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            // Time the step while holding the lock, then stay away
+                            // twice as long: pruning gets at most a third of the
+                            // engine lock. Back to back (15 ms apart) it held the
+                            // lock ~94% of the time on a 4M-block node; votes and
+                            // imports still got through, but the liveness watchdog's
+                            // try_lock never did, it called the node wedged and
+                            // exited mid-commit (release test, 23 Nov 2026).
+                            let (step, held) = match eng.lock() {
+                                Ok(e) => {
+                                    let t = std::time::Instant::now();
+                                    let r = e.prune_history_step(keep, PRUNE_BATCH_BLOCKS);
+                                    (r, t.elapsed())
+                                }
+                                Err(_) => break,
+                            };
+                            match step {
+                                Ok(Some(floor)) => {
+                                    if floor.saturating_sub(logged_at) >= 100_000 {
+                                        tracing::info!(block_floor = floor, step_ms = held.as_millis() as u64, "history pruned");
+                                        logged_at = floor;
+                                    }
+                                    std::thread::sleep(
+                                        held.saturating_mul(2).max(std::time::Duration::from_millis(50)),
+                                    );
+                                }
+                                Ok(None) => std::thread::sleep(std::time::Duration::from_secs(10)),
+                                Err(err) => {
+                                    tracing::warn!(error = %err, "history prune step failed; retrying");
+                                    std::thread::sleep(std::time::Duration::from_secs(30));
+                                }
+                            }
+                        }
+                    })?;
+            }
+
+            // Fork recovery, tie-break: two blocks at an unfinalized height for
+            // longer than three block times (a 2-2 split, or a failover race whose
+            // votes split) and every node follows the lower hash; finality on the
+            // next block then settles it (Engine::resolve_unfinalized_split).
+            {
+                let eng = engine.clone();
+                let shutdown_tb = Arc::clone(&shutdown);
+                let grace = std::time::Duration::from_millis(
+                    app_config.p2p.block_time_ms.saturating_mul(3).max(3_000),
+                );
+                std::thread::Builder::new()
+                    .name("fork-tiebreak".into())
+                    .spawn(move || {
+                        loop {
+                            if shutdown_tb.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            let Ok(mut e) = eng.lock() else { break };
+                            if let Some((height, from, to)) = e.resolve_unfinalized_split(grace) {
+                                tracing::warn!(height, %from, %to, "unfinalized split resolved by the tie-break");
+                            }
+                        }
+                    })?;
+            }
+
             // Liveness watchdog (see WatchdogConfig). Exit codes: 3 = head stalled
-            // while the network moved on, 4 = engine lock unobtainable.
+            // while the network moved on, 4 = engine lock unobtainable, 6 = on a
+            // branch the node can no longer roll back (fork recovery): the service
+            // restores a snapshot instead of restarting into the same state.
             if app_config.watchdog.enabled {
                 let eng = engine.clone();
                 let shutdown_wd = Arc::clone(&shutdown);
@@ -1372,6 +1615,15 @@ fn main() -> anyhow::Result<()> {
                             while started.elapsed() < std::time::Duration::from_secs(10) {
                                 match eng.try_lock() {
                                     Ok(e) => {
+                                        if e.needs_heal(HEAL_AFTER_SECS) {
+                                            tracing::error!(
+                                                head = e.latest_height(),
+                                                "FORK beyond recovery: the network finalized (or the tie-break chose) another block below this node's rollback window — exiting with code 6 so the service restores a snapshot"
+                                            );
+                                            let _ = e.flush_state();
+                                            arm_exit_deadline();
+                                            std::process::exit(6);
+                                        }
                                         snapshot = Some((e.latest_height(), e.highest_observed_height()));
                                         break;
                                     }
